@@ -163,32 +163,18 @@ def css(scale) -> str:
     /* Checkboxes and radios are tiny by default. */
     .stCheckbox, .stRadio label {{ min-height: 44px; display: flex; align-items: center; }}
 
-    /* ---- KNOWING WHERE YOU ARE -------------------------------------
-       Baba: "they are not too blind, they are little bit blind" — so a
-       quiet outline, not a light show. Partial sight and an unsteady
-       hand both need the target to acknowledge you BEFORE you commit to
-       pressing it, and an older person often hovers for a moment first.
+    /* HOVER LIGHTING WAS REMOVED on Baba's instruction — "that's the
+       thing of the past". It lived HERE as well as in theme.py, and
+       because a11y is injected after theme, this copy was the one that
+       actually won: deleting it from theme alone changed nothing. If
+       hover ever reappears, look for a second definition before assuming
+       the first did not work.
 
-       Three things change together, each small: a brighter border, a
-       faint lift of the surface, and a slight scale. Any one alone is
-       easy to miss with reduced contrast sensitivity; together they read
-       clearly without flashing. No colour change, because colour alone
-       is exactly what a person with low vision may not perceive. */
-    .stButton button:hover:not(:disabled) {{
-        border-color: #f59e0b !important;
-        background-color: rgba(224, 163, 64, 0.10) !important;
-        transform: scale(1.03);
-        transition: transform 90ms ease-out, background-color 90ms ease-out,
-                    border-color 90ms ease-out;
-    }}
-    /* The press itself must be felt, or a shaking hand cannot tell a
-       real press from a graze. */
+       The press state stays, because a shaking hand needs to know a
+       press registered. */
     .stButton button:active:not(:disabled) {{
         transform: scale(0.97);
-        background-color: rgba(224, 163, 64, 0.20) !important;
     }}
-    /* A disabled control must look plainly unavailable rather than
-       simply unresponsive, or people press it repeatedly. */
     .stButton button:disabled {{
         opacity: 0.45 !important;
         cursor: not-allowed;

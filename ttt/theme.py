@@ -299,32 +299,74 @@ def css() -> str:
     .st-key-topbar .stPopover button:hover {{ color: var(--amber) !important; }}
 
     /* ---- COMMAND ROWS ---------------------------------------------
-       A terminal line, not a toolbar: same size, same colour, evenly
-       spaced, left-aligned, and pressed hard against the box it acts on.
-       The pipes do the work borders would otherwise have to. */
-    [class*="st-key-cmdrow_"] {{ margin-bottom: -0.55rem; }}
+       A real grid, which is what Baba meant by "an underlying invisible
+       table". grid-auto-columns:1fr makes every cell identical whatever
+       the word inside it, so nothing can drift out of line — the problem
+       the pipes were there to hide.
+
+       With cells, the pipes are gone: a thin shared border separates
+       them better and gives a far larger target to press, which matters
+       more here than the typography did. Corners are nearly square, so
+       the row reads as a terminal table rather than a strip of pills. */
+    [class*="st-key-cmdrow_"] {{ margin-bottom: -0.5rem; }}
     [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"] {{
+      display: grid !important;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
       gap: 0 !important;
-      align-items: center;
-      flex-wrap: nowrap !important;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      overflow: hidden;
     }}
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"] {{
+      width: auto !important;
+      min-width: 0 !important;
+      flex: none !important;
+      border-right: 1px solid var(--line);
+    }}
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"]:last-child {{ border-right: none; }}
     [class*="st-key-cmdrow_"] div[data-testid="stVerticalBlock"] {{ gap: 0; }}
-    .cmdpipe {{
-      color: var(--line);
-      text-align: center;
-      font-family: var(--mono);
-      font-size: 0.95rem;
-      line-height: 2.3;
-      user-select: none;
+    [class*="st-key-cmdrow_"] div[data-testid="stElementContainer"] {{ width: 100%; }}
+
+    [class*="st-key-cmdrow_"] .stButton button {{
+      width: 100% !important;
+      height: 44px !important;
+      min-height: 44px !important;
+      padding: 0 !important;
+      justify-content: center;
+      font-size: 0.92rem !important;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      border: none !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      color: var(--prose) !important;
     }}
-    /* The pressed state. Streamlit re-renders after a click, so :active
-       is gone before the eye sees it — the flash is driven from Python
-       instead and lands here as the primary style. */
+    [class*="st-key-cmdrow_"] .stButton button p {{
+      color: inherit !important; font-weight: 600; letter-spacing: 0.04em;
+    }}
+    /* Pressed: the whole cell fills, so the feedback is unmissable. */
     [class*="st-key-cmdrow_"] .stButton button[kind="primary"] {{
-      color: var(--amber) !important;
+      background: var(--amber) !important;
+      color: var(--bg) !important;
     }}
     [class*="st-key-cmdrow_"] .stButton button[kind="primary"] p {{
-      color: var(--amber) !important;
+      color: var(--bg) !important;
+    }}
+    [class*="st-key-cmdrow_"] iframe {{
+      width: 100% !important; height: 44px !important; display: block;
+    }}
+    /* Streamlit wraps a component iframe in its own container which
+       reports a slightly different height than a button cell, leaving a
+       few pixels of ragged edge in an otherwise exact grid. */
+    [class*="st-key-cmdrow_"] div[data-testid="stColumn"] {{
+      display: flex; align-items: stretch;
+    }}
+    [class*="st-key-cmdrow_"] [data-testid="stIFrame"],
+    [class*="st-key-cmdrow_"] div[data-testid="stElementContainer"] {{
+      height: 44px !important; display: flex; align-items: stretch;
     }}
 
     /* The bare − and + above a box: same terminal language, pushed to
@@ -351,79 +393,12 @@ def css() -> str:
     }}
     [class*="st-key-sizerow_"] .stButton button:disabled {{ opacity: 0.3 !important; }}
 
-    /* The row above the transcript: text links, not buttons. Baba asked
-       for "text links" so the row costs almost nothing — the text is what
-       matters on that screen, not the furniture around it. */
-    .st-key-txttools .stButton button,
-    [class*="st-key-txttools_"] .stButton button,
-    [class*="st-key-cmdrow_"] .stButton button {{
-      background: transparent !important;
-      border: none !important;
-      color: var(--prose) !important;
-      font-size: 0.95rem;
-      padding: 0 0.4rem !important;
-      min-width: 44px;
-    }}
-    .st-key-txttools .stButton button:hover:not(:disabled),
-    [class*="st-key-txttools_"] .stButton button:hover:not(:disabled),
-    [class*="st-key-cmdrow_"] .stButton button:hover:not(:disabled) {{
-      color: var(--amber) !important;
-      background: transparent !important;
-      transform: none;
-    }}
-    .st-key-txttools div[data-testid="stHorizontalBlock"],
-    [class*="st-key-txttools_"] div[data-testid="stHorizontalBlock"],
-    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"] {{
-      align-items: center; flex-wrap: nowrap !important;
-    }}
-    .st-key-txttools div[data-testid="stColumn"],
-    [class*="st-key-txttools_"] div[data-testid="stColumn"],
-    /* Columns here must keep the RATIO they were given, not shrink to
-       their content. An iframe has an intrinsic 300px width, so a
-       content-sized column made the copy command four times wider than
-       the buttons beside it. This is the third time the same global rule
-       has broken a layout that asked for proportions — the pattern is
-       always: anything that is not a plain button needs the exemption. */
-    /* MUST use the full child-combinator path. The global pill rule is
-       div[stHorizontalBlock] > div[stColumn], which out-specifies a
-       plain descendant selector — !important does not settle that, the
-       selector has to be at least as specific. This is the FOURTH time
-       that rule has silently won: the gear, the patch bay, the paste
-       column, and now this. */
-    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
-      > div[data-testid="stColumn"] {{
-      flex: 1 1 0 !important;
-      width: auto !important;
-      min-width: 0 !important;
-    }}
-    /* The pipe columns stay narrow. */
-    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
-      > div[data-testid="stColumn"]:nth-child(odd) {{
-      flex: 0 0 12px !important;
-    }}
-    [class*="st-key-cmdrow_"] div[data-testid="stElementContainer"] {{ width: 100%; }}
-    /* The paste and copy controls are IFRAMES, not buttons. Shrinking a
-       column to its content works for text but collapses an iframe,
-       which clipped "paste" down to "as". They are always first in the
-       row, so the first column keeps a real width. */
-    [class*="st-key-cmdrow_"] iframe {{ width: 100% !important; height: 38px !important; }}
-    [class*="st-key-cmdrow_"] .stButton button {{
-      width: 100% !important;
-      height: 38px !important;
-      min-height: 38px !important;
-      padding: 0 0.35rem !important;
-      justify-content: flex-start;
-      font-size: 0.95rem !important;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      border: none !important;
-      background: transparent !important;
-      color: var(--prose) !important;
-    }}
-    [class*="st-key-cmdrow_"] .stButton button p {{
-      color: inherit !important; font-weight: 600; letter-spacing: 0.05em;
-    }}
-    [class*="st-key-cmdrow_"] .cmdpipe {{ line-height: 38px; }}
+    /* The txttools row that used to live here is gone: every command
+       row in the app is now the grid defined above. A second, older
+       definition of the SAME selectors survived here for a while and
+       silently won — it set 38px cells and re-added hover, so the grid
+       above appeared not to work. Deleting rules is part of changing
+       them. */
 
     /* Language switch: short labels, so nearly round. */
     .st-key-langrow .stButton button {{

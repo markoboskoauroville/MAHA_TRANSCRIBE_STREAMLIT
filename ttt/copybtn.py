@@ -165,15 +165,15 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
                 display:flex; align-items:center;
                 justify-content:{"flex-start" if not size else "center"}; }}
   button {{
-    {"width:100%; height:38px; border:none; background:transparent;"
-     " justify-content:flex-start; padding:0 0.35rem; font-weight:600;"
-     " letter-spacing:0.05em;"
+    {"width:100%; height:44px; border:none; background:transparent;"
+     " justify-content:center; padding:0; font-weight:600;"
+     " letter-spacing:0.04em;"
      if not size else
      f"width:{size}px; height:{size}px; border-radius:50%;"}
     {"color:" + FG + ";" if not size else
      "border:1px solid " + GOLD + "; background:" + GOLD + "; color:" + BG + ";"}
     font-family: ui-monospace, monospace; font-weight:800;
-    font-size:{13 if not size else max(13, int(size * 0.30))}px;
+    font-size:{"0.92rem" if not size else str(max(13, int(size * 0.30))) + "px"};
     letter-spacing:0.06em; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
     transition: transform 90ms ease-out, filter 90ms ease-out;

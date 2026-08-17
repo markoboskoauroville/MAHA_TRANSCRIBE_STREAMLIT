@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v45 (a)"
+APP_VERSION = "v46 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1360,32 +1360,23 @@ def flashing(name: str) -> bool:
 
 
 def cmd_row(where: str, items, target_key: str = None, copy_text: str = ""):
-    """One terminal line:  | paste | translate | clear |
+    """A row of equal cells, laid out on a real grid.
 
-    Every item is the same width and the same style, with a pipe before
-    the first, between each, and after the last — Baba's correction, and
-    it is what makes the row read as one line of commands instead of
-    words scattered across the screen. paste and copy are components
-    rather than buttons, but they are styled to be indistinguishable.
+    Baba asked for "an underlying invisible table" and he was right about
+    the cause: the pipes were compensating for a layout that was only
+    approximately aligned, so they drifted against the words beside them.
+    The row is now a CSS grid — every cell exactly the same width, all
+    baselines shared, nothing to drift.
+
+    And with real cells, the pipes are redundant: a thin border does the
+    separating better and gives a much larger thing to press, which
+    matters more here than a typographic flourish. An HTML <table> could
+    not have done this — paste and copy are components living in iframes,
+    and an iframe cannot sit inside markdown.
     """
     with st.container(key=f"cmdrow_{where}"):
-        n = len(items)
-        # pipe, item, pipe, item ... pipe, then empty space to the right
-        # Equal item columns and narrow pipe columns, so every command is
-        # the same width whatever its word length — a terminal line, not
-        # a ransom note.
-        widths = [0.14]
-        for _ in items:
-            widths += [1.0, 0.14]
-        widths += [max(0.3, 4.0 - n * 1.14)]
-        cols = st.columns(widths)
-
-        def pipe(col):
-            col.markdown('<div class="cmdpipe">|</div>', unsafe_allow_html=True)
-
-        pipe(cols[0])
-        for i, (label, key, cb) in enumerate(items):
-            col = cols[1 + i * 2]
+        cols = st.columns(len(items))
+        for col, (label, key, cb) in zip(cols, items):
             with col:
                 if label == "paste":
                     got = paste_target(where)
@@ -1397,12 +1388,11 @@ def cmd_row(where: str, items, target_key: str = None, copy_text: str = ""):
                         copybtn.cp_html(copy_text or "", label=t("copy_word"),
                                         done_label=t("copy_done_word"),
                                         failed_label="—", size=0),
-                        height=38)
+                        height=40)
                 else:
                     st.button(label, key=key, use_container_width=True,
                               type="primary" if flashing(key or label) else "secondary",
                               on_click=cb)
-            pipe(cols[2 + i * 2])
 
 
 def tab_signature(name: str):

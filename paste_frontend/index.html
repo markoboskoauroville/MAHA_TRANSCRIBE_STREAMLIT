@@ -27,11 +27,11 @@
      border, no background. The only difference anyone should see is the
      word itself. */
   #pad {
-    width:100%; min-width:0; height:38px; box-sizing:border-box;
-    display:flex; align-items:center; justify-content:flex-start;
+    width:100%; min-width:0; height:44px; box-sizing:border-box;
+    display:flex; align-items:center; justify-content:center;
     background:transparent; color:#f2ddb4;
-    border:none; padding:0 0.35rem; cursor:pointer;
-    font-size:0.95rem; letter-spacing:0.05em; font-weight:600;
+    border:none; padding:0; cursor:pointer;
+    font-size:0.92rem; letter-spacing:0.04em; font-weight:600;
     white-space:nowrap;
   }
   #pad.focus, #pad.done { color:#f59e0b; }
@@ -105,11 +105,11 @@ window.addEventListener("message", function (event) {
     if (L.word) { pad.setAttribute('aria-label', L.word); pad.title = L.word; }
     set('idle');
   }
-  post("streamlit:setFrameHeight", { height: 38 });
+  post("streamlit:setFrameHeight", { height: 44 });
 });
 
 set('idle');
 post("streamlit:componentReady", { apiVersion: 1 });
-post("streamlit:setFrameHeight", { height: 38 });
+post("streamlit:setFrameHeight", { height: 44 });
 </script>
 </body></html>
