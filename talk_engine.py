@@ -70,6 +70,24 @@ def sentences_of(text):
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     return [text[a:b].strip() for a, b in split_units(text)]
 
+PAGE_CHARS = 1500   # roughly a minute or two of speech; never splits a sentence
+
+def paginate(sentences, max_chars=PAGE_CHARS):
+    """Group sentences into reading-length pages, always breaking at a
+    sentence boundary, never mid-sentence. A very long single document
+    becomes several short, resumable reading sessions instead of one long
+    uninterruptible one — see HANDOVER.md for why this exists."""
+    pages, cur, cur_len = [], [], 0
+    for s in sentences:
+        if cur and cur_len + len(s) > max_chars:
+            pages.append(cur)
+            cur, cur_len = [], 0
+        cur.append(s)
+        cur_len += len(s) + 1
+    if cur:
+        pages.append(cur)
+    return pages or [[]]
+
 # ---------- live synthesis, one sentence, no disk, no cache ----------
 def _communicate(edge_tts, text, voice):
     """edge-tts 7.x defaults to SentenceBoundary; ask for WordBoundary

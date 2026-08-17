@@ -47,7 +47,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v5 (a)"
+APP_VERSION = "v6 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -113,6 +113,8 @@ STRINGS = {
     "translate_btn":      {"en": "Translate",         "hr": "Prevedi"},
     "translate_fail":     {"en": "Translation failed", "hr": "Prijevod nije uspio"},
     "swap_help":          {"en": "Swap languages",    "hr": "Zamijeni jezike"},
+    "page_label":         {"en": "Page",             "hr": "Stranica"},
+    "next_page":          {"en": "Next page",         "hr": "Sljedeća stranica"},
 }
 
 
@@ -535,11 +537,17 @@ def _subtitle(text: str) -> str:
     return f'<div class="subtitle-box">{html.escape(text)}</div>'
 
 
-def read_sentences_live(raw: str, vkey: str, doc_slot, sub_slot, audio_slot):
+def read_sentences_live(raw: str, vkey: str, doc_slot, sub_slot, audio_slot,
+                        page_key: str, page_slot, force_page=False):
     """Shared by Talk and Translate: synthesize and play one sentence at a
     time, highlighting the current one in doc_slot and mirroring it alone in
     sub_slot (the NaturalReader-style subtitle box). No disk cache, no
-    word-level timing — see HANDOVER.md for why."""
+    word-level timing — see HANDOVER.md for why.
+
+    Long text is split into pages (tk.paginate) so one document never becomes
+    one unbroken, uninterruptible reading session. A new page starts reading
+    the instant Next page is pressed — no message, no waiting, no sense of
+    having hit a limit."""
     try:
         sentences = tk.sentences_of(raw)
     except Exception as e:          # never let the engine take the page down
@@ -548,9 +556,22 @@ def read_sentences_live(raw: str, vkey: str, doc_slot, sub_slot, audio_slot):
     if not sentences:
         st.info(t("nothing_to_read"))
         return
-    for i, sent in enumerate(sentences):
+
+    pages = tk.paginate(sentences)
+    n_pages = len(pages)
+    digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
+    if st.session_state.get(page_key + "_digest") != digest:
+        st.session_state[page_key] = 0
+        st.session_state[page_key + "_digest"] = digest
+    page_idx = min(max(st.session_state.get(page_key, 0), 0), n_pages - 1)
+    page_sentences = pages[page_idx]
+
+    if n_pages > 1:
+        page_slot.caption(f"{t('page_label')} {page_idx + 1}/{n_pages}")
+
+    for i, sent in enumerate(page_sentences):
         parts = []
-        for j, s in enumerate(sentences):
+        for j, s in enumerate(page_sentences):
             safe = html.escape(s)
             if j == i:
                 parts.append(
@@ -568,8 +589,19 @@ def read_sentences_live(raw: str, vkey: str, doc_slot, sub_slot, audio_slot):
             break
         audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
         time.sleep(dur + 0.15)
-    doc_slot.markdown(html.escape(raw))
+
+    doc_slot.markdown(html.escape(" ".join(page_sentences)))
     sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+    if page_idx + 1 < n_pages:
+        def _next_page():
+            st.session_state[page_key] = page_idx + 1
+            st.session_state[page_key + "_auto"] = True
+        page_slot.button(
+            f"▶ {t('next_page')} ({page_idx + 2}/{n_pages})",
+            key=page_key + "_nextbtn", use_container_width=True,
+            on_click=_next_page,
+        )
 
 
 def _set_translate_lang(which: str, code: str):
@@ -673,10 +705,11 @@ elif active == "talk":
     doc_slot = st.empty()
     sub_slot = st.empty()
     audio_slot = st.empty()
+    page_slot = st.empty()
 
-    if read_clicked or st.session_state.pop("_auto_read", False):
+    if read_clicked or st.session_state.pop("_auto_read", False) or st.session_state.pop("talk_page_auto", False):
         raw = (st.session_state.get("talk_text") or "").strip()
-        read_sentences_live(raw, vkey, doc_slot, sub_slot, audio_slot)
+        read_sentences_live(raw, vkey, doc_slot, sub_slot, audio_slot, "talk_page", page_slot)
     else:
         sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
 
@@ -713,11 +746,12 @@ else:
         tdoc_slot = st.empty()
         tsub_slot = st.empty()
         taudio_slot = st.empty()
+        tpage_slot = st.empty()
 
-        if tread_clicked:
+        if tread_clicked or st.session_state.pop("translate_page_auto", False):
             raw = (st.session_state.get("translate_out") or "").strip()
             tgt = st.session_state.get("translate_tgt", "en")
             vkey = TRANSLATE_VKEY.get(tgt, "ukF")
-            read_sentences_live(raw, vkey, tdoc_slot, tsub_slot, taudio_slot)
+            read_sentences_live(raw, vkey, tdoc_slot, tsub_slot, taudio_slot, "translate_page", tpage_slot)
         else:
             tsub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
