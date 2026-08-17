@@ -363,10 +363,3 @@ TTT signifie Talk To Type, « parler pour que cela soit écrit ». LLL signifie 
 # a noun: someone unsure whether they are in the right place is answered
 # by "What is this?" far better than by "More" or "Info". Screen readers
 # announce it as written, so it must read as a whole sentence.
-MORE_LABEL = {
-    "hr": "Što je ovo?",
-    "en": "What is this?",
-    "it": "Che cos'è?",
-    "de": "Was ist das?",
-    "fr": "Qu'est-ce que c'est ?",
-}

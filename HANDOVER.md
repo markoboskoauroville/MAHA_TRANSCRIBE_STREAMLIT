@@ -142,7 +142,35 @@ accept. The CSS at the top of `app.py` overrides both; keep it. Main
 actions (Read, Translate, Correct) may stay wide; choosers (languages,
 voices, engines) must not.
 
-## 1. INCIDENT: the red TypeError screen (17.8.2026)
+## 1. INCIDENT: stale-module crashes (TWICE — 17.8.2026)
+
+**It happened again, and that is the important part.** The first time was
+`ls_bridge` (below). The second was `help_text.MORE_LABEL`: the login
+screen was rewritten to use a new constant, both files were pushed
+together and correct on GitHub, every local test passed — and the
+deployed app died with `AttributeError` on the login screen, locking
+everyone out of the entire app.
+
+Same mechanism both times, and the reason local testing CANNOT catch it:
+a local run is always a cold start, so the module is always fresh. Only a
+warm production process runs new `app.py` against an old module.
+
+**The rule that follows, now enforced in code:** anything `app.py` reads
+from a local module must survive that module being one version behind.
+Never a bare `module.CONSTANT` on a path that runs before login — an
+AttributeError there is total, because nobody can get past it to reach
+anything else. Login-screen access now goes through `_ht()`, which falls
+back through: module absent -> table absent -> language absent ->
+Croatian absent, and returns something usable at every step. Verified by
+deleting `MORE_LABEL` outright and confirming the app still loads and
+logs in.
+
+**Recovery when it does happen:** reboot the app from Manage app. A
+rerun is not enough; the process must actually restart.
+
+---
+
+## 1a. The original incident (ls_bridge)
 
 **Symptom.** Every page load died with
 `TypeError: This app has encountered an error`, traceback pointing at

@@ -154,7 +154,7 @@ st.markdown(
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v28 (a)"
+APP_VERSION = "v29 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -466,6 +466,52 @@ if not st.session_state.get("_authed"):
     _try_remembered()
 
 
+# Small constants that app.py needs are read through a guard, NEVER
+# straight off the module. Streamlit re-executes app.py on every rerun but
+# keeps imported modules cached in sys.modules for the life of the
+# process, so a warm process can run NEW app.py against an OLD help_text
+# — and a plain attribute access then dies with AttributeError on the
+# login screen, locking everyone out of the whole app.
+#
+# This has now happened twice (HANDOVER §1 was the same shape with
+# ls_bridge). The lesson was written down and then repeated anyway, so it
+# is worth stating as a rule: anything app.py reads from a local module
+# must survive that module being one version behind. A fallback here costs
+# nothing; an AttributeError costs the entire app.
+_LOGIN_FALLBACK = {
+    "MORE_LABEL": {"hr": "Što je ovo?", "en": "What is this?",
+                   "it": "Che cos'è?", "de": "Was ist das?",
+                   "fr": "Qu'est-ce que c'est ?"},
+    "LOGIN_LABELS": {"hr": {"password": "Lozinka", "remember": "Zapamti me",
+                            "wrong": "Pogrešna lozinka."}},
+    "WELCOME": {"hr": ""},
+    "LOGIN_GUIDE": {"hr": ""},
+}
+
+
+def _ht(name: str, lang: str):
+    """A value from help_text that cannot bring the app down.
+
+    Falls back to the module being absent, the table being absent, the
+    language being absent, and Croatian being absent — in that order. Any
+    of those is a cosmetic loss; an AttributeError on the login screen is
+    total, because nobody can get past it to reach anything else.
+    """
+    table = getattr(help_text, name, None)
+    if not isinstance(table, dict) or not table:
+        table = _LOGIN_FALLBACK.get(name, {})
+    if lang in table:
+        return table[lang]
+    if "hr" in table:
+        return table["hr"]
+    fb = _LOGIN_FALLBACK.get(name, {})
+    return fb.get(lang) or fb.get("hr") or ""
+
+
+def _more_label(lang: str) -> str:
+    return _ht("MORE_LABEL", lang) or _LOGIN_FALLBACK["MORE_LABEL"]["hr"]
+
+
 def check_password() -> bool:
     def _entered():
         entered = st.session_state.get("_pw_input", "")
@@ -508,7 +554,7 @@ def check_password() -> bool:
 
     st.session_state.setdefault("login_lang", "hr")
     ll = st.session_state["login_lang"]
-    labels = help_text.LOGIN_LABELS.get(ll, help_text.LOGIN_LABELS["hr"])
+    labels = _ht("LOGIN_LABELS", ll)
 
     # ONE BOX, and nothing else.
     #
@@ -535,7 +581,7 @@ def check_password() -> bool:
     # st.expander gives a real disclosure widget: a proper button with the
     # right ARIA state, keyboard reachable, and the content stays in the
     # page for a screen reader rather than being hidden from it.
-    with st.expander(help_text.MORE_LABEL.get(ll, help_text.MORE_LABEL["hr"]),
+    with st.expander(_more_label(ll),
                      expanded=st.session_state.get("_login_open", False)):
         lcols = st.columns(len(LANGS5))
         for col, code in zip(lcols, LANGS5):
@@ -544,9 +590,9 @@ def check_password() -> bool:
                 type="primary" if st.session_state["login_lang"] == code else "secondary",
                 on_click=_set_login_lang, args=(code,),
             )
-        st.markdown(help_text.WELCOME.get(ll, help_text.WELCOME["hr"]))
+        st.markdown(_ht("WELCOME", ll))
         st.markdown("---")
-        st.markdown(help_text.LOGIN_GUIDE.get(ll, help_text.LOGIN_GUIDE["hr"]))
+        st.markdown(_ht("LOGIN_GUIDE", ll))
     return False
 
 
