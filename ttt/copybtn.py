@@ -35,6 +35,11 @@ EDGE = "rgba(232,220,192,0.25)"
 # Enough for a 44px target plus breathing room; Streamlit reserves this
 # height in the page whether or not the button fills it.
 HEIGHT = 58
+# His CP button is an 86px amber circle. Kept as a circle here because it
+# is the one control people reach for constantly, and a round target is
+# easier to hit than a bar when your hand is not steady.
+CP_SIZE = 86
+CP_HEIGHT = CP_SIZE + 8
 
 
 def _js(value) -> str:
@@ -130,6 +135,70 @@ def html(text: str, label: str, busy: str, done: str, failed: str,
     b.disabled = false;
     // Return to resting so the button is obviously ready again, rather
     // than sitting on a stale "Copied" that no longer means anything.
+    timer = setTimeout(() => set('idle'), 2200);
+  }});
+</script>
+"""
+
+
+def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
+            label: str = "CP") -> str:
+    """The round amber CP button from Baba's own app.
+
+    Same behaviour as the wide one — it announces what it is doing — but
+    the states have to fit inside a circle, so they are short: CP, a
+    spinner, OK, X. The circle is 86px, well beyond the 44px floor,
+    because this is the control people reach for most and a round target
+    is the easiest thing to hit with an unsteady hand.
+    """
+    payload = _js(text or "")
+    labels = _js({"idle": label, "busy": "\u00b7\u00b7\u00b7",
+                  "done": done_label, "failed": failed_label})
+    return f"""
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body {{ margin:0; padding:0; background:transparent;
+                display:flex; align-items:center; justify-content:center; }}
+  button {{
+    width:{CP_SIZE}px; height:{CP_SIZE}px; border-radius:50%;
+    border:1px solid {GOLD}; background:{GOLD}; color:{BG};
+    font-family: ui-monospace, monospace; font-weight:800;
+    font-size:26px; letter-spacing:0.06em; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: transform 90ms ease-out, filter 90ms ease-out;
+  }}
+  button:hover:not(:disabled) {{ filter: brightness(1.08); }}
+  button:active:not(:disabled) {{ transform: scale(0.93); }}
+  button:focus-visible {{ outline:3px solid {GOLD}; outline-offset:3px; }}
+  button.failed {{ background:{BG}; color:#f48383; border-color:#f48383; }}
+  @media (prefers-reduced-motion: reduce) {{
+    button {{ transition:none; }}
+    button:active:not(:disabled) {{ transform:none; }}
+  }}
+</style>
+<button id="b" type="button" aria-live="polite" aria-label="{label}"></button>
+<script>
+  const TEXT = {payload};
+  const L = {labels};
+  const b = document.getElementById('b');
+  let timer = null;
+  function set(s) {{ b.textContent = L[s]; b.className = (s === 'failed') ? 'failed' : ''; }}
+  set('idle');
+  b.addEventListener('click', async () => {{
+    if (timer) {{ clearTimeout(timer); timer = null; }}
+    set('busy'); b.disabled = true;
+    let ok = false;
+    try {{ await navigator.clipboard.writeText(TEXT); ok = true; }}
+    catch (e) {{
+      try {{
+        const ta = document.createElement('textarea');
+        ta.value = TEXT; ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        ok = document.execCommand('copy'); ta.remove();
+      }} catch (e2) {{ ok = false; }}
+    }}
+    set(ok ? 'done' : 'failed'); b.disabled = false;
     timer = setTimeout(() => set('idle'), 2200);
   }});
 </script>

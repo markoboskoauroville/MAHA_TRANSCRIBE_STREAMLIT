@@ -236,6 +236,46 @@ def css() -> str:
       color: var(--prose);
     }}
 
+    /* ---- ROWS THAT MUST KEEP THEIR PROPORTIONS ---------------------
+       The pill rules let columns size to their content, which is right
+       for a row of choices and WRONG wherever a ratio was asked for.
+       It is why the gear sat on the LEFT: st.columns([6, 1]) collapsed
+       to two content-width columns, so the empty spacer had no width.
+       Any row wrapped in one of these keyed containers keeps the ratio
+       it was given. */
+    /* Equal shares would be just as wrong as content-width: st.columns
+       was asked for 6:1 and 1:2:1, so the ratio is restated here rather
+       than flattened. First attempt used flex:1 1 0 for all of them and
+       parked the gear dead centre. */
+    .st-key-topbar div[data-testid="stColumn"] {{
+      width: auto !important; min-width: 0 !important;
+    }}
+    .st-key-topbar div[data-testid="stColumn"]:first-child {{ flex: 6 1 0 !important; }}
+    .st-key-topbar div[data-testid="stColumn"]:last-child  {{ flex: 0 0 auto !important; }}
+
+    [class*="st-key-cprow"] div[data-testid="stColumn"] {{
+      width: auto !important; min-width: 0 !important;
+    }}
+    [class*="st-key-cprow"] div[data-testid="stColumn"]:nth-child(1) {{ flex: 1 1 0 !important; }}
+    [class*="st-key-cprow"] div[data-testid="stColumn"]:nth-child(2) {{ flex: 2 1 0 !important; }}
+    [class*="st-key-cprow"] div[data-testid="stColumn"]:nth-child(3) {{ flex: 1 1 0 !important; }}
+    .st-key-topbar div[data-testid="stHorizontalBlock"],
+    [class*="st-key-cprow"] div[data-testid="stHorizontalBlock"] {{
+      justify-content: space-between;
+      flex-wrap: nowrap !important;
+      align-items: center;
+    }}
+
+    /* The gear itself: quiet until touched, like his. */
+    .st-key-topbar .stPopover button {{
+      background: transparent !important;
+      border: none !important;
+      color: var(--dim) !important;
+      font-size: 1.35rem;
+      padding: 4px 6px !important;
+    }}
+    .st-key-topbar .stPopover button:hover {{ color: var(--amber) !important; }}
+
     /* ---- RHYTHM ---------------------------------------------------
        His spacing is tight: 4px inside a row, 6px between rows. Streamlit
        is far airier by default, which is what makes it look like a form

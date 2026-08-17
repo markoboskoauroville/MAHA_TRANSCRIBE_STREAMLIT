@@ -161,7 +161,7 @@ st.markdown(theme.css(), unsafe_allow_html=True)
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v30 (a)"
+APP_VERSION = "v31 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -297,9 +297,13 @@ STRINGS = {
                             "hr": "Pričekaj {s} prije novog pokušaja."},
     "gate_min":           {"en": "min",               "hr": "min"},
     "gate_sec":           {"en": "s",                 "hr": "s"},
+    "clear_btn":          {"en": "clear",             "hr": "obriši"},
+    "grammar_btn":        {"en": "GRAMMAR",           "hr": "GRAMATIKA"},
+    "reshape_btn":        {"en": "RE-SHAPE",          "hr": "PREOBLIKUJ"},
     "copy_idle":          {"en": "Copy",              "hr": "Kopiraj"},
     "copy_busy":          {"en": "Copying…",          "hr": "Kopiram…"},
     "copy_done":          {"en": "Copied ✓",          "hr": "Kopirano ✓"},
+    "copy_done_short":    {"en": "OK",                "hr": "OK"},
     "copy_failed":        {"en": "Could not copy",    "hr": "Nije uspjelo"},
     "text_smaller":       {"en": "Smaller text",      "hr": "Manje slovo"},
     "text_bigger":        {"en": "Bigger text",       "hr": "Veće slovo"},
@@ -1110,13 +1114,35 @@ def llm_bridge():
     return LLMBridge(prov) if prov else None
 
 
-def copy_pill(text: str, where: str):
-    """A copy button under a reading surface.
+def cp_row(text: str, where: str, state_key: str = None):
+    """The row that sits ABOVE a text box in Baba's own app: the round
+    amber CP in the middle, clear on the right.
 
-    Nothing is rendered for empty text: a button that would copy nothing
-    is a target that wastes a press, and presses are expensive for the
-    people this app is for.
+    Paste belongs on the left and is not here yet — deliberately. The
+    component iframe is granted clipboard-WRITE but not clipboard-READ
+    (measured, HANDOVER §14), so a paste button built like this one would
+    do nothing for every real user. It needs the native paste event
+    instead, which is its own spoon. A button that lies is worse than a
+    button that is missing.
     """
+    has_text = bool((text or "").strip())
+    with st.container(key="cprow_" + where):
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            if has_text:
+                components.html(
+                    copybtn.cp_html(text, done_label=t("copy_done_short"),
+                                    failed_label="X"),
+                    height=copybtn.CP_HEIGHT)
+        if has_text and state_key:
+            def _clear(k=state_key):
+                st.session_state[k] = ""
+            c3.button(t("clear_btn"), key=f"clear_{where}", on_click=_clear)
+
+
+def copy_pill(text: str, where: str):
+    """Kept as the plain wide copy button for places where the round CP
+    would be too much furniture."""
     if not (text or "").strip():
         return
     components.html(
@@ -1560,9 +1586,13 @@ def voice_picker(prefix: str):
 # ----------------------------------------------------------------------
 # Gear — settings + help, upper right. Nothing else in the top bar.
 # ----------------------------------------------------------------------
-_, gear_col = st.columns([6, 1])
+# Wrapped in a keyed container so the 6:1 ratio survives the pill CSS —
+# without it both columns shrink to their content and the gear lands on
+# the left, which is where it wrongly sat until this was found.
+with st.container(key="topbar"):
+    _, gear_col = st.columns([6, 1])
 with gear_col:
-    with st.popover("⚙️", use_container_width=False):
+    with st.popover("⚙", use_container_width=False):
         lang_now = st.session_state.get("ui_lang", "hr")
         lcol1, lcol2 = st.columns(2)
         lcol1.button("[HR]", key="ui_hr",
@@ -2166,6 +2196,11 @@ if active == "transcribe":
 
     if "transcript_box" in st.session_state:
         text_size_pills("transcript")
+        # His order, from the handoff: the round CP sits ABOVE the source
+        # box, not below it. Reaching for copy should not mean scrolling
+        # past the text you just made.
+        cp_row(st.session_state.get("transcript_box", ""), "transcript",
+               state_key="transcript_box")
         st.text_area(t("transcript_label"), key="transcript_box", height=200,
                      label_visibility="collapsed")
 
@@ -2174,8 +2209,6 @@ if active == "transcribe":
                      help=t("correct_help"), on_click=do_correct)
         bcol2.button(t("read_this_btn"), use_container_width=True, key="bridge_btn",
                      help=t("read_this_help"), on_click=read_this)
-
-        copy_pill(st.session_state.get("transcript_box", ""), "transcript")
 
         if st.session_state.get("_correct_error"):
             st.error(st.session_state.pop("_correct_error"))
@@ -2204,8 +2237,20 @@ if active == "transcribe":
             except Exception as e:
                 st.session_state["_ai_error"] = f"{t('ai_fail')}: {e}"
 
-        pcols = st.columns(len(TR.PRESETS))
-        for i, pid in enumerate(TR.PRESETS):
+        # GRAMMAR and RE-SHAPE side by side, full width, amber — the two
+        # things people actually do to dictated text, given the weight
+        # they have in his app. The rest stay as small pills underneath.
+        gcol1, gcol2 = st.columns(2)
+        gcol1.button(t("grammar_btn"), key="tr_grammar", type="primary",
+                     use_container_width=True,
+                     on_click=_apply_transform, args=("fix", ""))
+        gcol2.button(t("reshape_btn"), key="tr_reshape", type="primary",
+                     use_container_width=True,
+                     on_click=_apply_transform, args=("tidy", ""))
+
+        rest = [p for p in TR.PRESETS if p not in ("fix", "tidy")]
+        pcols = st.columns(len(rest))
+        for i, pid in enumerate(rest):
             pcols[i].button(
                 TR.preset_label(pid, st.session_state.get("ui_lang", "hr")),
                 key="tr_preset_" + pid, on_click=_apply_transform, args=(pid, ""))
@@ -2265,10 +2310,9 @@ elif active == "talk":
             return audio, dur, None
 
     text_size_pills("talk")
+    cp_row(st.session_state.get("talk_text", ""), "talk", state_key="talk_text")
     st.text_area(t("tab_talk"), key="talk_text", height=150,
                  label_visibility="collapsed", placeholder=t("talk_placeholder"))
-
-    copy_pill(st.session_state.get("talk_text", ""), "talk")
 
     rcol1, rcol2 = st.columns(2)
     read_clicked = rcol1.button(t("read_btn"), use_container_width=True, key="read_btn")
@@ -2310,9 +2354,8 @@ elif active == "translate":
 
     if "translate_out" in st.session_state:
         text_size_pills("translate")
+        cp_row(st.session_state.get("translate_out", ""), "translate")
         st.text_area("out", key="translate_out", height=150, label_visibility="collapsed")
-
-        copy_pill(st.session_state.get("translate_out", ""), "translate")
 
         tr_col1, tr_col2 = st.columns(2)
         tread_clicked = tr_col1.button(t("read_btn"), use_container_width=True, key="tr_read_btn")
@@ -2376,6 +2419,7 @@ elif active == "read":
             return tk.synth_sentence(s, rvkey) + (None,)
 
     text_size_pills("read")
+    cp_row(st.session_state.get("read_text", ""), "read", state_key="read_text")
     st.text_area(t("tab_read"), key="read_text", height=170,
                  label_visibility="collapsed", placeholder=t("read_paste_ph"))
 
@@ -2386,8 +2430,6 @@ elif active == "read":
     gap = gcol.slider(t("read_gap"), 0.0, 2.0,
                       float(st.session_state.get("read_gap", 0.0)), 0.1,
                       key="read_gap")
-
-    copy_pill(st.session_state.get("read_text", ""), "read")
 
     bcol1, bcol2 = st.columns(2)
     read_go = bcol1.button(t("read_start"), key="read_go_btn")
