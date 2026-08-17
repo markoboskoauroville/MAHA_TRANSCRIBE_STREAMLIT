@@ -546,6 +546,19 @@ Baba's words: *"everything happening in front of their eyes automatically,
 and they are watching the miracle."* The visible progress is a feature, not
 instrumentation.
 
+### THE STEPS (one at a time, each build-then-test-three-times)
+
+    1. Groq's own keys through the key ring          <- IN PROGRESS
+       so a 429 is a hand-off, not an error
+    2. Per-chunk retry across keys before any gap
+    3. Silence-aware cut points
+    4. Portions land visibly, with a countdown
+    5. Resume after a reload
+    6. Slice while still recording
+
+Step 1 is the engine of all the rest: until Groq rotates properly, a long
+job dies at the first rate limit no matter how well it is chunked.
+
 ### Rules for whoever builds it
 
 - **Never drop audio.** A failed chunk retries on other keys first; only
@@ -561,3 +574,60 @@ instrumentation.
   reloading; completed portions belong in storage, not only in memory.
 - **Test with genuinely long audio**, not a 75-second clip. The bugs live
   in hour three.
+
+---
+
+## 12. PLANNED: one key, one entry — merging sources and deleting keys
+
+Recorded 17.8.2026, to build when its turn comes.
+
+### Two doors, one key ring
+
+A key can arrive two ways:
+
+  * **added** — file picker or paste in Settings, stored in the user's own
+    key ring (localStorage).
+  * **secret** — `APP_PASSWORDS` / `GROQ_API_KEYS` / any future
+    `*_API_KEYS` in Streamlit Cloud secrets, owned by the deployment.
+
+The same key is often in BOTH. It must appear as ONE entry, never two.
+Deduplicate on the SHA-256 fingerprint that `keyring.fingerprint()` already
+computes — never on the raw string, so the comparison never needs the key
+in the clear. When a key exists in both places, keep one entry and record
+both origins on it (`origins: ["secret", "added"]`), because that changes
+what deleting it can mean.
+
+Rotation, testing and counting all operate on the merged ring, so a key
+present twice can never be tried twice, rested twice, or double-counted.
+
+### Deleting a key — what is actually possible
+
+**Answer to Baba's question:** Streamlit secrets are READ-ONLY at runtime.
+`st.secrets` is loaded from the Cloud dashboard (or a local
+`.streamlit/secrets.toml`) and there is no API to write or delete an entry
+from inside a running app. So:
+
+  * **added key -> real deletion.** Remove it from the ring and it is
+    gone from the browser store. Nothing left behind.
+  * **secret key -> suppression only.** The app can put its fingerprint on
+    an ignore list so it is skipped by rotation, by testing and by the
+    counts — it behaves as if absent. But it still exists in secrets, and
+    it comes back the moment the ignore list is cleared. Truly removing it
+    means editing it in the Streamlit dashboard: *Manage app -> Settings ->
+    Secrets*, delete the line, save. The app restarts itself.
+  * **key in both -> deleting removes the added copy and suppresses the
+    secret one**, and the UI must say exactly that rather than implying it
+    vanished everywhere.
+
+### Rules for the UI
+
+  * Show each key ONCE, with a small mark for where it came from
+    (secret / added / both).
+  * Delete is honest about the outcome: "removed" for added keys,
+    "ignored — still in secrets, remove it there to delete it properly"
+    for secrets keys, with the dashboard path spelled out.
+  * The ignore list is per deployment, not per user: one person ignoring
+    a shared app key must not silently change it for everyone else.
+    Store it beside the app's own settings, not in a user's localStorage.
+  * An ignored key stays visible and un-ignorable with one press, or it
+    becomes a key nobody can find again.
