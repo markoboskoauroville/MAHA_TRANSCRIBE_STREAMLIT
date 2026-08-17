@@ -147,6 +147,15 @@ def css(scale) -> str:
         min-height: 44px;
         min-width: 44px;
     }}
+    /* Expander headers are <summary>, not <button>, and default to about
+       22px — half the required target. They are pressed just as often, and
+       the login fold-out IS one, so they get the same floor. */
+    [data-testid="stExpander"] summary,
+    details > summary {{
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }}
     /* Space between targets matters as much as their size: adjacent
        small buttons are a mis-tap waiting to happen. */
     div[data-testid="stHorizontalBlock"] {{ gap: 0.5rem !important; }}

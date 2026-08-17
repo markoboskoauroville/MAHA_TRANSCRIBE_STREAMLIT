@@ -153,7 +153,7 @@ st.markdown(
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v24 (a)"
+APP_VERSION = "v25 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -474,28 +474,52 @@ def check_password() -> bool:
 
     def _set_login_lang(code):
         st.session_state["login_lang"] = code
+        # Picking a language happens INSIDE the fold-out, and Streamlit
+        # collapses an expander on every rerun unless told otherwise.
+        # Without this, choosing your language slams the panel shut in
+        # your face — and the welcome text you were about to read
+        # disappears.
+        st.session_state["_login_open"] = True
 
     if st.session_state.get("_authed"):
         return True
 
     st.session_state.setdefault("login_lang", "hr")
-    lcols = st.columns(len(LANGS5))
-    for col, code in zip(lcols, LANGS5):
-        col.button(
-            code.upper(), key="login_pill_" + code,
-            type="primary" if st.session_state["login_lang"] == code else "secondary",
-            on_click=_set_login_lang, args=(code,),
-        )
-
     ll = st.session_state["login_lang"]
     labels = help_text.LOGIN_LABELS.get(ll, help_text.LOGIN_LABELS["hr"])
-    st.markdown(help_text.WELCOME.get(ll, help_text.WELCOME["hr"]))
+
+    # ONE BOX, and nothing else.
+    #
+    # The old screen led with five language pills, a welcome, an
+    # explanation of the name and a home-screen guide, and only then the
+    # password. Baba: "there is so much text, people get confused. What
+    # do I need to read? Do I need to enter password?" For someone who
+    # struggles to read a screen, a wall of text before the one field
+    # that matters is not generosity, it is an obstacle.
+    #
+    # So: password, Remember me, and a single fold-out underneath. Whoever
+    # can see it may open the whole thing; whoever cannot sees one box and
+    # already knows what to do. Nothing is removed — only folded.
     st.text_input(labels["password"], type="password", key="_pw_input", on_change=_entered)
     st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
         st.error(labels["wrong"])
-    st.markdown("---")
-    st.markdown(help_text.LOGIN_GUIDE.get(ll, help_text.LOGIN_GUIDE["hr"]))
+
+    # st.expander gives a real disclosure widget: a proper button with the
+    # right ARIA state, keyboard reachable, and the content stays in the
+    # page for a screen reader rather than being hidden from it.
+    with st.expander(help_text.MORE_LABEL.get(ll, help_text.MORE_LABEL["hr"]),
+                     expanded=st.session_state.get("_login_open", False)):
+        lcols = st.columns(len(LANGS5))
+        for col, code in zip(lcols, LANGS5):
+            col.button(
+                code.upper(), key="login_pill_" + code,
+                type="primary" if st.session_state["login_lang"] == code else "secondary",
+                on_click=_set_login_lang, args=(code,),
+            )
+        st.markdown(help_text.WELCOME.get(ll, help_text.WELCOME["hr"]))
+        st.markdown("---")
+        st.markdown(help_text.LOGIN_GUIDE.get(ll, help_text.LOGIN_GUIDE["hr"]))
     return False
 
 

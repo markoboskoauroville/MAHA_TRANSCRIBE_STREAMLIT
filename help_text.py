@@ -286,3 +286,16 @@ TTT bedeutet Talk To Type – „sprich, damit es geschrieben wird". LLL bedeute
 
 TTT signifie Talk To Type, « parler pour que cela soit écrit ». LLL signifie Look, Listen, Learn, « regarde, écoute, apprends ». La première moitié transforme ta parole en texte, la seconde lit le texte à haute voix, tout en le regardant et en l'écoutant.""",
 }
+
+
+# The label on the fold-out triangle. Deliberately a question rather than
+# a noun: someone unsure whether they are in the right place is answered
+# by "What is this?" far better than by "More" or "Info". Screen readers
+# announce it as written, so it must read as a whole sentence.
+MORE_LABEL = {
+    "hr": "Što je ovo?",
+    "en": "What is this?",
+    "it": "Che cos'è?",
+    "de": "Was ist das?",
+    "fr": "Qu'est-ce que c'est ?",
+}

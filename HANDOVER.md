@@ -712,7 +712,8 @@ updated. Nothing is started before the one before it is finished.
         native paste EVENT, not the clipboard API.
 
 ### Login and permissions
-    L1. QUIET LOGIN SCREEN. First screen shows ONE
+    L1. QUIET LOGIN SCREEN                        DONE v25
+        First screen shows ONE
         box — password — plus Remember me, and
         nothing else. Baba: "there is so much text,
         people get confused. What do I need to
