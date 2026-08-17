@@ -711,6 +711,60 @@ updated. Nothing is started before the one before it is finished.
         RESEARCH DONE, see §14 — the route is the
         native paste EVENT, not the clipboard API.
 
+### Login and permissions
+    L1. QUIET LOGIN SCREEN. First screen shows ONE
+        box — password — plus Remember me, and
+        nothing else. Baba: "there is so much text,
+        people get confused. What do I need to
+        read? Do I need to enter password?"
+        Under the box, a single triangle. Pressing
+        it unfolds the whole thing: welcome, the
+        TTT-LLL explanation, the five languages,
+        the home-screen guide. A quiet Easter egg —
+        whoever can see it may open it; whoever
+        cannot simply sees one box and knows
+        exactly what to do.
+        The triangle must be a real 44px target and
+        must say what it is to a screen reader; the
+        folded content must still be reachable by
+        keyboard.
+
+    L2. ADMIN CONTROLS WHAT OTHERS SEE.
+        marko0612 (K, not C) is the owner. He gets
+        a panel listing every other user with
+        switches for what each of them may see:
+        their own API keys, the patch bay, the
+        model pickers, the voice catalogue.
+        Everything already exists — this is only
+        showing and hiding. Default for a normal
+        user is everything hidden: they get a clean
+        app that just works, and a capability
+        appears only when Baba turns it on, e.g.
+        because they paid for their own key and
+        want better quality.
+
+        THE ONE HARD PART, and it must be solved
+        first: WHERE THE SWITCHES LIVE. Per-user
+        settings currently live in that user's own
+        browser (localStorage), which Baba's
+        browser cannot write to. A shared, durable
+        store is required or the panel cannot work
+        at all. Streamlit Cloud disk is not durable
+        and secrets are read-only at runtime, so
+        neither is an option.
+        The natural answer is the store we already
+        have: the Apps Script web app behind the
+        usage sheet (§ apps_script/). Add a tab
+        holding one row per user with their
+        permission flags, plus a doGet that returns
+        them; the app reads it at login and Baba's
+        panel writes it back. Same shared secret,
+        no new service, and Baba can also just edit
+        the sheet by hand — which he will like.
+        Alternative if that is ever unwanted: a
+        small JSON in a private GitHub repo via the
+        API. Decide before building.
+
 ### Keys (§12)
     K1. Merge the two key sources into one ring
         entry by fingerprint.
