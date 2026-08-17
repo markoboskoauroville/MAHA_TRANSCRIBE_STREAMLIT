@@ -7,6 +7,21 @@ button does, in plain words.
 
 HELP = {
     "hr": """
+**Što znači ime TTT-LLL?**
+
+To su dvije kratice, po jedna za svaku polovicu aplikacije.
+
+**TTT** je *Talk To Type*, na engleskom "govori da bi se ispisalo". To je prva
+polovica: ti govoriš, a aplikacija tvoje riječi ispisuje kao tekst.
+
+**LLL** je *Look, Listen, Learn*, na engleskom "gledaj, slušaj, uči". To je
+druga polovica: aplikacija čita tekst naglas, ti ga u isto vrijeme vidiš na
+ekranu i čuješ. Gledaš i slušaš istu rečenicu, pa je lakše pratiti.
+
+Zajedno: govor pretvaraš u tekst, i tekst pretvaraš u govor.
+
+---
+
 **Što je ovo?**
 
 Aplikacija radi dvije stvari. Pretvara tvoj govor u tekst, i čita tekst naglas
@@ -56,6 +71,21 @@ Ispod toga je poseban okvir koji pokazuje samo tu jednu rečenicu, veliko i
 """,
 
     "en": """
+**What does the name TTT-LLL mean?**
+
+They are two short names, one for each half of the app.
+
+**TTT** stands for *Talk To Type*. That is the first half: you talk, and the
+app types your words out as text.
+
+**LLL** stands for *Look, Listen, Learn*. That is the second half: the app
+reads text aloud while you see it on screen at the same time. You look at the
+sentence and hear the same sentence, which makes it easier to follow.
+
+Together: speech becomes text, and text becomes speech.
+
+---
+
 **What is this?**
 
 The app does two things. It turns your speech into text, and it reads text

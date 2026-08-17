@@ -18,9 +18,10 @@ import subprocess
 import streamlit as st
 from groq import Groq
 
+import streamlit.components.v1 as components
+
 import talk_engine as tk
-from ls_bridge import ls_bridge
-from help_text import HELP, LOGIN_GUIDE
+import help_text
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -46,7 +47,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v3 (a)"
+APP_VERSION = "v4 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -106,6 +107,20 @@ def t(key: str) -> str:
     return entry.get(lang, entry.get("en", key))
 
 
+def safe_text(name: str) -> str:
+    """Pull a block of prose out of help_text for the current language.
+
+    Deliberately forgiving: help is documentation, and missing documentation
+    must never be able to take the app down (see HANDOVER.md, incident 1).
+    """
+    try:
+        block = getattr(help_text, name, {}) or {}
+        lang = st.session_state.get("ui_lang", "hr")
+        return block.get(lang) or block.get("en") or ""
+    except Exception:
+        return ""
+
+
 # ----------------------------------------------------------------------
 # Secrets
 # ----------------------------------------------------------------------
@@ -142,15 +157,46 @@ def _digest(pw: str) -> str:
 # ----------------------------------------------------------------------
 AUTH_LS_KEY = "maha_auth"
 
+# The bridge is declared HERE, in the entrypoint, on purpose. It used to live
+# in its own module, and a backwards-incompatible change to its signature took
+# the whole app down: Streamlit re-executes app.py on every run but keeps
+# imported modules in sys.modules, so a warm process served the NEW app.py
+# against the OLD module and every run died with TypeError. Glue this small
+# stays with its caller, where it cannot go out of step. See HANDOVER.md.
+_LS_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "ls_bridge_frontend")
+try:
+    _ls_component = components.declare_component("ls_bridge", path=_LS_FRONTEND)
+except Exception:
+    _ls_component = None
+
+
+def ls_sync(writes=None, removes=None, stamp=0):
+    """Read/write browser localStorage. Returns None if unavailable.
+
+    Persistence is a convenience, never a dependency: if anything here fails
+    the app must keep transcribing and reading, just without remembering
+    settings. Nothing in this function is allowed to raise.
+    """
+    if _ls_component is None:
+        return None
+    try:
+        return _ls_component(writes=writes or {}, removes=removes or [],
+                             stamp=stamp, key="ls_sync", default=None)
+    except Exception:
+        return None
+
+
 _pending = st.session_state.pop("_pending_ls", None)
 if _pending:
     st.session_state["_ls_stamp"] = st.session_state.get("_ls_stamp", 0) + 1
-    _ls = ls_bridge(writes=_pending.get("writes"), removes=_pending.get("removes"),
-                    stamp=st.session_state["_ls_stamp"])
+    _ls = ls_sync(writes=_pending.get("writes"), removes=_pending.get("removes"),
+                  stamp=st.session_state["_ls_stamp"])
 else:
-    _ls = ls_bridge(stamp=st.session_state.get("_ls_stamp", 0))
+    _ls = ls_sync(stamp=st.session_state.get("_ls_stamp", 0))
 
 LS_DATA = (_ls or {}).get("data") or {}
+STORAGE_OK = _ls is not None
 
 
 def queue_ls(writes=None, removes=None):
@@ -198,7 +244,7 @@ def check_password() -> bool:
     if st.session_state.get("_authed") is False:
         st.error(t("wrong_password"))
     st.markdown("---")
-    st.markdown(LOGIN_GUIDE[st.session_state.get("ui_lang", "hr")])
+    st.markdown(safe_text("LOGIN_GUIDE"))
     return False
 
 
@@ -384,7 +430,7 @@ with gear_col:
         voice_picker("setvoice")
 
         with st.expander(t("help_title")):
-            st.markdown(HELP[st.session_state.get("ui_lang", "hr")])
+            st.markdown(safe_text("HELP"))
 
         st.button(t("forget_me"), key="forget_btn", use_container_width=True,
                   on_click=forget_me)
@@ -498,7 +544,11 @@ else:
 
     if read_clicked or st.session_state.pop("_auto_read", False):
         raw = (st.session_state.get("talk_text") or "").strip()
-        sentences = tk.sentences_of(raw)
+        try:
+            sentences = tk.sentences_of(raw)
+        except Exception as e:      # never let the engine take the page down
+            sentences = []
+            st.error(f"{t('read_fail')}: {e}")
         if not sentences:
             st.info(t("nothing_to_read"))
         else:
