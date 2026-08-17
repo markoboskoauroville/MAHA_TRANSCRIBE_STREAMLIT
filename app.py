@@ -8,12 +8,16 @@ more accurate model. Groq only, no other providers.
 
 import os
 import hmac
+import html
+import time
 import hashlib
 import tempfile
 import subprocess
 
 import streamlit as st
 from groq import Groq
+
+import talk_engine as tk
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -141,48 +145,110 @@ def to_flac16k(wav_bytes: bytes) -> str:
 
 
 # ----------------------------------------------------------------------
-# UI — record, transcribe, correct. That's the whole workflow.
+# UI — two tabs. Transcribe: press, speak, press, copy. Talk: paste, read.
 # ----------------------------------------------------------------------
 st.caption(f"Maha Transcribe · {APP_VERSION}")
 
-lang_label = st.segmented_control(
-    "Language", ["English", "Croatian"], default="English", required=True
-)
-lang_code = "en" if lang_label == "English" else "hr"
+VOICE_LABELS = {"ukF": "Sonia", "ukM": "Ryan", "hrF": "Gabrijela", "hrM": "Srecko"}
 
-audio = st.audio_input("Record", sample_rate=48000, label_visibility="collapsed")
+tab_transcribe, tab_talk = st.tabs(["Transcribe", "Talk"])
 
-if audio is not None:
-    digest = hashlib.md5(audio.getvalue()).hexdigest()
-    if st.session_state.get("_digest") != digest:
-        old_flac = st.session_state.get("flac_path")
-        if old_flac and os.path.exists(old_flac):
-            os.remove(old_flac)
-        st.session_state["_digest"] = digest
-        st.session_state["model_used"] = None
-        try:
-            with st.spinner("Preparing audio…"):
-                flac_path = to_flac16k(audio.getvalue())
-            st.session_state["flac_path"] = flac_path
-            with st.spinner("Transcribing…"):
-                text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
-            st.session_state["transcript_box"] = text
-            st.session_state["model_used"] = PRIMARY_MODEL
-        except Exception as e:
-            st.error(str(e))
+with tab_transcribe:
+    lang_label = st.segmented_control(
+        "Language", ["English", "Croatian"], default="English", required=True,
+        key="transcribe_lang",
+    )
+    lang_code = "en" if lang_label == "English" else "hr"
 
-if "transcript_box" in st.session_state:
-    st.text_area("Transcript", key="transcript_box", height=200, label_visibility="collapsed")
+    audio = st.audio_input("Record", sample_rate=48000, label_visibility="collapsed")
 
-    if st.button("🔁 Correct — re-check with the accurate model", use_container_width=True, key="correct_btn"):
-        try:
-            with st.spinner("Re-transcribing with whisper-large-v3…"):
-                corrected = transcribe(st.session_state["flac_path"], CORRECTION_MODEL, lang_code)
-            st.session_state["transcript_box"] = corrected
-            st.session_state["model_used"] = CORRECTION_MODEL
-            st.rerun()
-        except Exception as e:
-            st.error(str(e))
+    if audio is not None:
+        digest = hashlib.md5(audio.getvalue()).hexdigest()
+        if st.session_state.get("_digest") != digest:
+            old_flac = st.session_state.get("flac_path")
+            if old_flac and os.path.exists(old_flac):
+                os.remove(old_flac)
+            st.session_state["_digest"] = digest
+            st.session_state["model_used"] = None
+            try:
+                with st.spinner("Preparing audio…"):
+                    flac_path = to_flac16k(audio.getvalue())
+                st.session_state["flac_path"] = flac_path
+                with st.spinner("Transcribing…"):
+                    text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
+                st.session_state["transcript_box"] = text
+                st.session_state["model_used"] = PRIMARY_MODEL
+            except Exception as e:
+                st.error(str(e))
 
-    if st.session_state.get("model_used"):
-        st.caption(st.session_state["model_used"])
+    if "transcript_box" in st.session_state:
+        st.text_area("Transcript", key="transcript_box", height=200, label_visibility="collapsed")
+
+        bcol1, bcol2 = st.columns(2)
+        with bcol1:
+            if st.button("🔁 Correct", use_container_width=True, key="correct_btn",
+                         help="Re-check with the accurate model"):
+                try:
+                    with st.spinner("Re-transcribing with whisper-large-v3…"):
+                        corrected = transcribe(st.session_state["flac_path"], CORRECTION_MODEL, lang_code)
+                    st.session_state["transcript_box"] = corrected
+                    st.session_state["model_used"] = CORRECTION_MODEL
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        with bcol2:
+            if st.button("🔊 Read this", use_container_width=True, key="bridge_btn",
+                         help="Send this transcript to the Talk tab"):
+                st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
+                st.toast("Sent to the Talk tab.")
+
+        if st.session_state.get("model_used"):
+            st.caption(st.session_state["model_used"])
+
+with tab_talk:
+    voice_label = st.segmented_control(
+        "Voice", ["Sonia", "Ryan", "Gabrijela", "Srecko"], default="Sonia",
+        required=True, key="talk_voice",
+    )
+    vkey = {v: k for k, v in VOICE_LABELS.items()}[voice_label]
+
+    st.text_area(
+        "Text to read", key="talk_text", height=150, label_visibility="collapsed",
+        placeholder="Paste text here, or send it from Transcribe with Read this",
+    )
+
+    rcol1, rcol2 = st.columns(2)
+    read_clicked = rcol1.button("▶ Read", use_container_width=True, key="read_btn")
+    rcol2.button("■ Stop", use_container_width=True, key="stop_btn",
+                 help="Interrupts the reading in progress")
+
+    doc_slot = st.empty()
+    audio_slot = st.empty()
+
+    if read_clicked:
+        raw = (st.session_state.get("talk_text") or "").strip()
+        sentences = tk.sentences_of(raw)
+        if not sentences:
+            st.info("Nothing to read yet.")
+        else:
+            for i, sent in enumerate(sentences):
+                parts = []
+                for j, s in enumerate(sentences):
+                    safe = html.escape(s)
+                    if j == i:
+                        parts.append(
+                            '<span style="background:#e0a340;color:#0d0d0d;'
+                            'border-radius:4px;padding:1px 4px;">' + safe + "</span>"
+                        )
+                    else:
+                        parts.append(safe)
+                doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
+                try:
+                    audio_bytes, dur = tk.synth_sentence(sent, vkey)
+                except Exception as e:
+                    st.error(f"Could not read sentence {i + 1}: {e}")
+                    break
+                audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                time.sleep(dur + 0.15)
+            doc_slot.markdown(html.escape(raw))
+
