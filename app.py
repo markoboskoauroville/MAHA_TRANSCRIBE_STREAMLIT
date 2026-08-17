@@ -35,7 +35,37 @@ st.markdown(
     .stTextArea textarea { font-size: 1.15rem; line-height: 1.55; }
     .block-container { padding-top: 2.5rem; max-width: 640px; }
     div[data-testid="stAudioInput"] { margin-bottom: 0.6rem; }
-    .stButton button { border-radius: 999px; }
+
+    /* --- PILL ROWS -------------------------------------------------
+       Streamlit stacks columns vertically below ~640px, which turned
+       every small choice (HR/EN/IT/DE/FR, voices, engines) into a
+       column of full-width slabs on a phone. Keep those rows
+       horizontal and let them wrap, and size each button to its own
+       text rather than the container. Small pills, in a row. */
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0.4rem !important;
+        align-items: center;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        width: auto !important;
+        flex: 0 0 auto !important;
+        min-width: 0 !important;
+    }
+    div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] { gap: 0.4rem; }
+
+    .stButton button {
+        border-radius: 999px;
+        width: auto;
+        min-width: 0;
+        padding: 0.3rem 1.05rem;
+        white-space: nowrap;
+    }
+    /* Buttons that genuinely are the main action of their row keep
+       their full width — only the small choosers are shrunk. */
+    .stButton button[kind="primaryFormSubmit"],
+    .stButton button[kind="secondaryFormSubmit"] { width: 100%; }
+
     .st-key-correct_btn button { background-color: #4dd6e8; color: #0d0d0d; border-color: #4dd6e8; }
     .st-key-correct_btn button:hover { background-color: #6fe0ee; border-color: #6fe0ee; }
     .subtitle-box {
@@ -48,7 +78,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v10 (a)"
+APP_VERSION = "v11 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -296,7 +326,7 @@ def check_password() -> bool:
     lcols = st.columns(len(LANGS5))
     for col, code in zip(lcols, LANGS5):
         col.button(
-            code.upper(), key="login_pill_" + code, use_container_width=True,
+            code.upper(), key="login_pill_" + code,
             type="primary" if st.session_state["login_lang"] == code else "secondary",
             on_click=_set_login_lang, args=(code,),
         )
@@ -780,7 +810,7 @@ def render_key_list(ring: dict, rings_all: dict, provider: str, test_one_fn):
                     kk["last_error"] = err
                 persist_keys(rings_all)
             st.button(t("test_btn"), key=f"{provider}_test_{idx}",
-                     use_container_width=True, on_click=_test_this)
+                     on_click=_test_this)
 
 
 def sp_synthesize(ring: dict, text: str, voice_id: str, model: str = "simba-3.2"):
@@ -1020,7 +1050,7 @@ def voice_picker(prefix: str):
         cols = st.columns(len(VOICES_BY_LANG[lang]))
         for col, name in zip(cols, VOICES_BY_LANG[lang]):
             col.button(
-                name, key=f"{prefix}_{name}", use_container_width=True,
+                name, key=f"{prefix}_{name}",
                 type="primary" if name == current else "secondary",
                 on_click=pick_voice, args=(name,),
             )
@@ -1034,20 +1064,20 @@ with gear_col:
     with st.popover("⚙️", use_container_width=False):
         lang_now = st.session_state.get("ui_lang", "hr")
         lcol1, lcol2 = st.columns(2)
-        lcol1.button("[HR]", key="ui_hr", use_container_width=True,
+        lcol1.button("[HR]", key="ui_hr",
                      type="primary" if lang_now == "hr" else "secondary",
                      on_click=set_ui_lang, args=("hr",))
-        lcol2.button("[ENG]", key="ui_en", use_container_width=True,
+        lcol2.button("[ENG]", key="ui_en",
                      type="primary" if lang_now == "en" else "secondary",
                      on_click=set_ui_lang, args=("en",))
 
         st.caption(t("settings_speech"))
         scol1, scol2 = st.columns(2)
         speech_now = st.session_state.get("speech_lang", "hr")
-        scol1.button(t("lang_hr"), key="sp_hr", use_container_width=True,
+        scol1.button(t("lang_hr"), key="sp_hr",
                      type="primary" if speech_now == "hr" else "secondary",
                      on_click=set_speech_lang, args=("hr",))
-        scol2.button(t("lang_en"), key="sp_en", use_container_width=True,
+        scol2.button(t("lang_en"), key="sp_en",
                      type="primary" if speech_now == "en" else "secondary",
                      on_click=set_speech_lang, args=("en",))
 
@@ -1090,10 +1120,10 @@ with gear_col:
                 def _set_engine(e):
                     st.session_state["voice_engine"] = e
 
-                ecol1.button(t("engine_edge"), key="eng_edge", use_container_width=True,
+                ecol1.button(t("engine_edge"), key="eng_edge",
                              type="primary" if engine_now == "edge" else "secondary",
                              on_click=_set_engine, args=("edge",))
-                ecol2.button(t("engine_speechify"), key="eng_sp", use_container_width=True,
+                ecol2.button(t("engine_speechify"), key="eng_sp",
                              type="primary" if engine_now == "speechify" else "secondary",
                              on_click=_set_engine, args=("speechify",))
 
@@ -1132,10 +1162,10 @@ with gear_col:
                 def _set_tengine(e):
                     st.session_state["transcribe_engine"] = e
 
-                tcol1.button(t("engine_groq"), key="teng_groq", use_container_width=True,
+                tcol1.button(t("engine_groq"), key="teng_groq",
                              type="primary" if tengine_now == "groq" else "secondary",
                              on_click=_set_tengine, args=("groq",))
-                tcol2.button(t("engine_assemblyai"), key="teng_aai", use_container_width=True,
+                tcol2.button(t("engine_assemblyai"), key="teng_aai",
                              type="primary" if tengine_now == "assemblyai" else "secondary",
                              on_click=_set_tengine, args=("assemblyai",))
 
@@ -1337,7 +1367,7 @@ def lang_pills(prefix: str, which: str, current: str):
     cols = st.columns(len(LANGS5))
     for col, code in zip(cols, LANGS5):
         col.button(
-            code.upper(), key=f"{prefix}_{code}", use_container_width=True,
+            code.upper(), key=f"{prefix}_{code}",
             type="primary" if code == current else "secondary",
             on_click=_set_translate_lang, args=(which, code),
         )
@@ -1353,10 +1383,10 @@ if active == "transcribe":
 
     speech_now = st.session_state.get("speech_lang", "hr")
     lcol1, lcol2 = st.columns(2)
-    lcol1.button(t("lang_hr"), key="tr_hr", use_container_width=True,
+    lcol1.button(t("lang_hr"), key="tr_hr",
                  type="primary" if speech_now == "hr" else "secondary",
                  on_click=set_speech_lang, args=("hr",))
-    lcol2.button(t("lang_en"), key="tr_en", use_container_width=True,
+    lcol2.button(t("lang_en"), key="tr_en",
                  type="primary" if speech_now == "en" else "secondary",
                  on_click=set_speech_lang, args=("en",))
     lang_code = speech_now
@@ -1479,7 +1509,7 @@ elif active == "talk":
         current_sp = st.session_state.get("sp_voice", "beatrice_32")
         for i, vid in enumerate(SP_CURATED):
             cols[i % 4].button(
-                vid.split("_")[0].title(), key=f"talksp_{vid}", use_container_width=True,
+                vid.split("_")[0].title(), key=f"talksp_{vid}",
                 type="primary" if vid == current_sp else "secondary",
                 on_click=pick_sp_voice, args=(vid,),
             )
@@ -1526,7 +1556,7 @@ else:
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
 
     _, swap_col, _ = st.columns([2.5, 1, 2.5])
-    swap_col.button("⇄", key="swap_langs", use_container_width=True,
+    swap_col.button("⇄", key="swap_langs",
                      help=t("swap_help"), on_click=swap_translate_langs)
 
     lang_pills("tgtpill", "tgt", st.session_state["translate_tgt"])

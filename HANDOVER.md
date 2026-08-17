@@ -9,6 +9,37 @@ Entrypoint: `app.py` · Version: see `APP_VERSION` in `app.py`
 
 ---
 
+## 0. HARD RULES — read before touching anything
+
+These are Baba's standing instructions. Breaking one has already cost real
+work at least once, which is why each is written down here rather than
+remembered.
+
+**1. Multiple repos with the same app name -> ASK, never guess.**
+Baba has several repos that look like the same application at different
+ages. Picking by name, by guess, or by "looks most complete" is forbidden.
+If more than one candidate exists, stop and ask which is authoritative
+BEFORE reading or porting anything from it. This rule exists because MA
+Reader was ported from `mareader` — an old, superseded port — when the real
+one was `ma-reader-thermux`. Known case, settled: **MA Reader means
+`markoboskoauroville/ma-reader-thermux`, and nothing else.** Its
+`1md_ma_reader_handover_[ENG].md` is the source of truth; read that first.
+
+**2. The handover is part of the work, not paperwork after it.**
+Workflow on every change, in order: build -> test -> push -> THEN update
+this file. It must always describe the newest feature. If this file
+disagrees with the code, the code is right and this file is a bug.
+
+**3. Aesthetics are a requirement, not a finishing touch.**
+Think like a visual designer, every time. Concretely and permanently: a
+button is the size of its text, never the width of the page. Small pills,
+arranged in tidy rows that wrap. Streamlit's default (`use_container_width`
+plus columns that stack below ~640px) turns every small choice into a
+column of full-width slabs on a phone — that is a bug, not a default to
+accept. The CSS at the top of `app.py` overrides both; keep it. Main
+actions (Read, Translate, Correct) may stay wide; choosers (languages,
+voices, engines) must not.
+
 ## 1. INCIDENT: the red TypeError screen (17.8.2026)
 
 **Symptom.** Every page load died with
