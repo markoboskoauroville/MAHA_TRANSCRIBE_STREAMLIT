@@ -142,7 +142,7 @@ def html(text: str, label: str, busy: str, done: str, failed: str,
 
 
 def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
-            label: str = "CP") -> str:
+            label: str = "CP", size: int = CP_SIZE) -> str:
     """The round amber CP button from Baba's own app.
 
     Same behaviour as the wide one — it announces what it is doing — but
@@ -161,10 +161,10 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
   html, body {{ margin:0; padding:0; background:transparent;
                 display:flex; align-items:center; justify-content:center; }}
   button {{
-    width:{CP_SIZE}px; height:{CP_SIZE}px; border-radius:50%;
+    width:{size}px; height:{size}px; border-radius:50%;
     border:1px solid {GOLD}; background:{GOLD}; color:{BG};
     font-family: ui-monospace, monospace; font-weight:800;
-    font-size:26px; letter-spacing:0.06em; cursor:pointer;
+    font-size:{max(13, int(size * 0.30))}px; letter-spacing:0.06em; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
     transition: transform 90ms ease-out, filter 90ms ease-out;
   }}

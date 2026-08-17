@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v39 (a)"
+APP_VERSION = "v40 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -68,7 +68,7 @@ from ttt import keyring as kr
 from ttt import providers as PROVIDERS
 from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
-from ttt import transform as TR
+from ttt import transform as TR_
 from ttt import vision
 from ttt import routing as RO
 from ttt import audio as ttt_audio
@@ -254,8 +254,11 @@ TRANSLATE_MODEL = "openai/gpt-oss-120b"
 # language is instant and needs no reload.
 # ----------------------------------------------------------------------
 STRINGS = {
-    "tab_transcribe":     {"en": "Transcribe",       "hr": "Transkripcija"},
-    "tab_talk":           {"en": "Talk",             "hr": "Čitanje"},
+    # Single letters. The tab bar is the one row that is always on
+    # screen, so it should cost the least. T transcribe, R read, TR
+    # translate, and the gear.
+    "tab_transcribe":     {"en": "T",                "hr": "T"},
+    "tab_talk":           {"en": "R",                "hr": "R"},
     "speech_lang_label":  {"en": "Speech language",  "hr": "Jezik govora"},
     "lang_en":            {"en": "ENG",              "hr": "ENG"},
     "lang_hr":            {"en": "HR",               "hr": "HR"},
@@ -289,7 +292,7 @@ STRINGS = {
                             "hr": "Lozinka nije postavljena u Secrets. Dodaj APP_PASSWORDS (listu) u Streamlit Cloud → Settings → Secrets."},
     "no_groq_secret":     {"en": "No Groq key in Secrets. Add GROQ_API_KEYS (a list) in Streamlit Cloud → Settings → Secrets.",
                             "hr": "Nema Groq ključa u Secrets. Dodaj GROQ_API_KEYS (listu) u Streamlit Cloud → Settings → Secrets."},
-    "tab_translate":      {"en": "Translate",        "hr": "Prevedi"},
+    "tab_translate":      {"en": "TR",               "hr": "TR"},
     "tab_read":           {"en": "Read",             "hr": "Čitaonica"},
     # The gear is the tab label itself — a symbol everyone already
     # knows, and one less word in a row of words.
@@ -388,6 +391,7 @@ STRINGS = {
     "paste_btn":          {"en": "paste",             "hr": "zalijepi"},
     "paste_hint":         {"en": "tap, then paste",   "hr": "dodirni, pa zalijepi"},
     "paste_done":         {"en": "pasted ✓",          "hr": "zalijepljeno ✓"},
+    "pick_any":           {"en": "Upload",            "hr": "Upload"},
     "pick_sound":         {"en": "Sound file",        "hr": "Zvučna datoteka"},
     "pick_image":         {"en": "Picture",           "hr": "Slika"},
     "clear_btn":          {"en": "clear",             "hr": "obriši"},
@@ -486,7 +490,10 @@ def groq_keys() -> list:
 
 
 PASSWORDS = app_passwords()
-st.session_state.setdefault("ui_lang", "hr")
+# English is the default interface language. This line used to say
+# "hr" and quietly won over every other change, which is why the app
+# kept coming back in Croatian however many defaults were switched.
+st.session_state.setdefault("ui_lang", "en")
 if not PASSWORDS:
     st.error(t("no_password_secret"))
     st.stop()
@@ -956,9 +963,19 @@ def _save_server_settings(user: str, settings: dict) -> None:
         pass
 
 
+# Bumped when a stored preference must be overridden rather than obeyed.
+# The interface language went English in v39, but anyone who had used the
+# app already had "hr" saved and kept seeing Croatian — the setting was
+# doing its job, which is exactly why the change appeared not to work.
+SETTINGS_EPOCH = 2
+
+
 def _apply_settings(values: dict) -> None:
     """Seed session_state. Only safe before the matching widgets render."""
+    stale = int(values.get("epoch", 1)) < SETTINGS_EPOCH
     for k in SETTINGS_KEYS:
+        if k == "ui_lang" and stale:
+            continue            # let the new default win, once
         if values.get(k):
             st.session_state[k] = values[k]
 
@@ -1770,6 +1787,7 @@ if LS_DATA.get(SETTINGS_LS_KEY) and not st.session_state.get("_ls_applied"):
 
 def persist_settings():
     values = {k: st.session_state.get(k) for k in SETTINGS_KEYS}
+    values["epoch"] = SETTINGS_EPOCH
     _save_server_settings(USER, values)
     queue_ls(writes={SETTINGS_LS_KEY: json.dumps(values)})
 
@@ -2087,32 +2105,23 @@ if active == "transcribe":
             except Exception as e:
                 st.error(str(e))
 
-    # Two pickers, named and nothing else. Streamlit's own "Limit 500MB
-    # per file • MP3, WAV, …" line is hidden in CSS: it is noise for
-    # someone who just wants to hand over a file, and it is the longest
-    # text on the tab.
-    ucol1, ucol2 = st.columns(2)
-    with ucol1:
-        st.caption(t("pick_sound"))
-        picked_audio = st.file_uploader(
-            t("pick_sound"),
-            type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "wma", "mp4",
-                  "webm", "mpga", "mpeg", "opus"],
-            label_visibility="collapsed", key="audio_upload")
-    with ucol2:
-        st.caption(t("pick_image"))
-        picked_image = st.file_uploader(
-            t("pick_image"), type=["png", "jpg", "jpeg", "webp", "gif"],
-            label_visibility="collapsed", key="image_upload")
-    picked = picked_image if picked_image is not None else picked_audio
+    # ONE upload, and the file decides what happens to it. Two pickers
+    # meant choosing before doing, and choosing wrongly was possible;
+    # a person with a file in their hand should not have to classify it
+    # first. `type` is left OPEN rather than listing extensions, because
+    # Android's chooser greys out anything not in the accept list — which
+    # is what made pictures unselectable when the lists were combined.
+    picked = st.file_uploader(
+        t("pick_any"), label_visibility="collapsed", key="any_upload")
 
     if picked is not None:
         raw = picked.getvalue()
         digest = hashlib.md5(raw).hexdigest()
         if st.session_state.get("_pick_digest") != digest:
             st.session_state["_pick_digest"] = digest
-            is_image = (picked.name or "").lower().endswith(
-                (".png", ".jpg", ".jpeg", ".webp", ".gif"))
+            name = (picked.name or "").lower()
+            is_image = name.endswith((".png", ".jpg", ".jpeg", ".webp",
+                                      ".gif", ".bmp", ".heic", ".heif"))
             if is_image:
                 try:
                     with st.spinner(t("img_working")):
@@ -2184,51 +2193,67 @@ if active == "transcribe":
                             pass
 
     if "transcript_box" in st.session_state:
-        text_size_pills("transcript")
-        # His order, from the handoff: the round CP sits ABOVE the source
-        # box, not below it. Reaching for copy should not mean scrolling
-        # past the text you just made.
-        cp_row(st.session_state.get("transcript_box", ""), "transcript",
-               state_key="transcript_box")
-        st.text_area(t("transcript_label"), key="transcript_box", height=200,
+        # THE RESULT, AND ALMOST NOTHING ELSE.
+        #
+        # One quiet row above the box — smaller, bigger, copy, clear —
+        # then the text. Reading lives on its own tab and is not offered
+        # here; a screen that shows you your words should not also be a
+        # menu. GRAMMAR and RE-SHAPE stay because they act ON this text
+        # and are two presses from Baba's own app; the extra presets and
+        # the free-form AI box were removed as clutter.
+        with st.container(key="txttools"):
+            tcol1, tcol2, tcol3, tcol4, _ = st.columns([1, 1, 1, 1, 3])
+            scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+
+            def _smaller():
+                st.session_state["text_scale"] = a11y.smaller(
+                    st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+                persist_settings()
+
+            def _bigger():
+                st.session_state["text_scale"] = a11y.bigger(
+                    st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+                persist_settings()
+
+            tcol1.button("−", key="tx_minus", help=t("text_smaller"),
+                         disabled=a11y.at_min(scale), on_click=_smaller)
+            tcol2.button("+", key="tx_plus", help=t("text_bigger"),
+                         disabled=a11y.at_max(scale), on_click=_bigger)
+            with tcol3:
+                if (st.session_state.get("transcript_box") or "").strip():
+                    # A small CP for this row: the 86px circle belongs
+                    # above a reading box, not in a line of text links,
+                    # where it overflowed onto the text below.
+                    components.html(
+                        copybtn.cp_html(st.session_state["transcript_box"],
+                                        done_label="OK", failed_label="X",
+                                        size=40),
+                        height=48)
+
+            def _clear_all():
+                for k in ("transcript_box", "_transcript_prev", "flac_path",
+                          "_digest", "_pick_digest", "_transcribe_method"):
+                    st.session_state.pop(k, None)
+
+            tcol4.button(SYM["clear"], key="tx_clear", help=t("clear_btn"),
+                         on_click=_clear_all)
+
+        st.text_area(t("transcript_label"), key="transcript_box", height=220,
                      label_visibility="collapsed")
 
-        bcol1, bcol2 = st.columns(2)
-        bcol1.button(t("correct_btn"), use_container_width=True, key="correct_btn",
-                     help=t("correct_help"), on_click=do_correct)
-        bcol2.button(t("read_this_btn"), use_container_width=True, key="bridge_btn",
-                     help=t("read_this_help"), on_click=read_this)
-
-        if st.session_state.get("_correct_error"):
-            st.error(st.session_state.pop("_correct_error"))
-
-        method = st.session_state.get("_transcribe_method")
-        if method and method != "direct":
-            st.caption(t("method_" + method))
-            if "[…]" in (st.session_state.get("transcript_box") or ""):
-                st.caption(t("method_gap"))
-
-        # ---- AI text transform -------------------------------------
-        # Presets for the everyday things, plus a free box for anything
-        # else. Every run keeps the previous version so a bad result is
-        # always one press away from being undone — the text is often
-        # something the person just dictated and cannot easily retype.
         def _apply_transform(preset="", instruction=""):
             source = (st.session_state.get("transcript_box") or "").strip()
             try:
                 llm = llm_bridge()
                 if llm is None:
                     raise RuntimeError(t("routing_none"))
-                out = TR.run(llm, source, instruction=instruction, preset=preset)
+                out = TR_.run(llm, source, instruction=instruction, preset=preset)
                 st.session_state["_transcript_prev"] = source
                 st.session_state["transcript_box"] = out
                 USAGE.log("transform", len(source), UNIT_CHARS, llm.id)
             except Exception as e:
                 st.session_state["_ai_error"] = f"{t('ai_fail')}: {e}"
 
-        # GRAMMAR and RE-SHAPE side by side, full width, amber — the two
-        # things people actually do to dictated text, given the weight
-        # they have in his app. The rest stay as small pills underneath.
         gcol1, gcol2 = st.columns(2)
         gcol1.button(t("grammar_btn"), key="tr_grammar", type="primary",
                      use_container_width=True,
@@ -2237,33 +2262,23 @@ if active == "transcribe":
                      use_container_width=True,
                      on_click=_apply_transform, args=("tidy", ""))
 
-        rest = [p for p in TR.PRESETS if p not in ("fix", "tidy")]
-        pcols = st.columns(len(rest))
-        for i, pid in enumerate(rest):
-            pcols[i].button(
-                TR.preset_label(pid, st.session_state.get("ui_lang", "en")),
-                key="tr_preset_" + pid, on_click=_apply_transform, args=(pid, ""))
-
-        st.text_input(t("ai_ask"), key="ai_instruction",
-                      label_visibility="collapsed", placeholder=t("ai_ask"))
-
-        acol1, acol2 = st.columns(2)
-        acol1.button(t("ai_apply"), key="ai_apply_btn",
-                     on_click=lambda: _apply_transform(
-                         "", st.session_state.get("ai_instruction", "")))
         if st.session_state.get("_transcript_prev"):
             def _undo():
                 prev = st.session_state.pop("_transcript_prev", None)
                 if prev is not None:
                     st.session_state["transcript_box"] = prev
-            acol2.button(SYM["undo"], key="ai_undo_btn", help=t("ai_undo"), on_click=_undo)
+            st.button(SYM["undo"], key="ai_undo_btn", help=t("ai_undo"),
+                      on_click=_undo)
 
         if st.session_state.get("_ai_error"):
             st.error(st.session_state.pop("_ai_error"))
+        if st.session_state.get("_correct_error"):
+            st.error(st.session_state.pop("_correct_error"))
 
-# ----------------------------------------------------------------------
-# Talk
-# ----------------------------------------------------------------------
+        method = st.session_state.get("_transcribe_method")
+        if method and method != "direct":
+            st.caption(t("method_" + method))
+
     # The spoken language, at the very bottom: it is set once and then
     # left alone, so it does not belong above the thing people came for.
     st.caption("")

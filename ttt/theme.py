@@ -293,6 +293,29 @@ def css() -> str:
     }}
     .st-key-topbar .stPopover button:hover {{ color: var(--amber) !important; }}
 
+    /* The row above the transcript: text links, not buttons. Baba asked
+       for "text links" so the row costs almost nothing — the text is what
+       matters on that screen, not the furniture around it. */
+    .st-key-txttools .stButton button {{
+      background: transparent !important;
+      border: none !important;
+      color: var(--dim) !important;
+      font-size: 1.1rem;
+      padding: 0 0.4rem !important;
+      min-width: 44px;
+    }}
+    .st-key-txttools .stButton button:hover:not(:disabled) {{
+      color: var(--amber) !important;
+      background: transparent !important;
+      transform: none;
+    }}
+    .st-key-txttools div[data-testid="stHorizontalBlock"] {{
+      align-items: center; flex-wrap: nowrap !important;
+    }}
+    .st-key-txttools div[data-testid="stColumn"] {{
+      width: auto !important; flex: 0 0 auto !important; min-width: 0 !important;
+    }}
+
     /* Language switch: short labels, so nearly round. */
     .st-key-langrow .stButton button {{
       border-radius: 999px;
