@@ -200,6 +200,30 @@ PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
 
 # Croatian first everywhere, English second.
+# ----------------------------------------------------------------------
+# Symbols instead of words for the controls that have an obvious one.
+# Baba: "there are too much letters in this app" — and he is right, a
+# wall of Croatian verbs is heavy on a small screen.
+#
+# BUT every glyph keeps its word as the tooltip AND as its accessible
+# name. A symbol alone is faster for someone who already knows it and
+# worse for someone who does not, and this app is built for people who
+# may be confused as well as people who cannot see well. The picture
+# carries the meaning; the word is still there for anyone who needs it.
+#
+# Only glyphs from the basic geometric/arrow blocks are used, because
+# those render in the monospace stack everywhere. No emoji: they arrive
+# coloured, break the palette, and vary wildly between phones.
+SYM = {
+    "read":   "\u25b6",   # play
+    "stop":   "\u25a0",   # stop
+    "clear":  "\u2715",   # cross
+    "paste":  "\u21e9",   # down arrow: bring text in
+    "undo":   "\u21ba",   # anticlockwise
+    "save":   "\u2605",   # star
+    "next":   "\u25b8",   # small play, for the next page
+}
+
 VOICE_SHORT = {"Gabrijela": "Gabby", "Srecko": "Srećko"}
 VOICES_BY_LANG = {"hr": ["Gabrijela", "Srecko"], "en": ["Sonia", "Ryan"]}
 VOICE_TO_VKEY = {"Gabrijela": "hrF", "Srecko": "hrM", "Sonia": "ukF", "Ryan": "ukM"}
@@ -493,8 +517,8 @@ def paste_target(where: str):
         return None
     try:
         val = _paste_component(
-            labels={"idle": t("paste_btn"), "hint": t("paste_hint"),
-                    "done": t("paste_done")},
+            labels={"idle": SYM["paste"], "hint": SYM["paste"] + " …",
+                    "done": "\u2713", "word": t("paste_btn")},
             key=f"paste_{where}", default=None)
     except Exception:
         return None
@@ -1231,7 +1255,7 @@ def cp_row(text: str, where: str, state_key: str = None):
         if has_text and state_key:
             def _clear(k=state_key):
                 st.session_state[k] = ""
-            c3.button(t("clear_btn"), key=f"clear_{where}", on_click=_clear)
+            c3.button(SYM["clear"], key=f"clear_{where}", help=t("clear_btn"), on_click=_clear)
 
 
 def copy_pill(text: str, where: str):
@@ -1248,6 +1272,44 @@ def copy_pill(text: str, where: str):
         ),
         height=copybtn.HEIGHT,
     )
+
+
+def name_the_symbols():
+    """Give the symbol buttons a real name for assistive technology.
+
+    Streamlit hardcodes aria-label="" on its buttons, so a glyph-only
+    button ends up with the GLYPH as its accessible name — verified from
+    the accessibility tree, where ▶ and ■ were announced as the character
+    itself, which a screen reader reads as "black right-pointing
+    triangle". On an app built for people who cannot see well that is not
+    a trade worth making, so the words are put back where only assistive
+    technology sees them.
+
+    Done from a component iframe because CSS cannot set an attribute.
+    The iframe is srcdoc, so same-origin, so it can reach the parent DOM.
+    A MutationObserver keeps it applied across Streamlit's re-renders.
+    Purely additive: if any of it fails, the buttons still work and only
+    the announcement is lost.
+    """
+    mapping = {
+        SYM["read"]: t("read_btn"), SYM["stop"]: t("stop_btn"),
+        SYM["clear"]: t("clear_btn"), SYM["undo"]: t("ai_undo"),
+        SYM["save"]: t("read_save"), SYM["paste"]: t("paste_btn"),
+        SYM["next"]: t("next_page"),
+    }
+    components.html(
+        "<script>(function(){"
+        "var M=" + json.dumps(mapping, ensure_ascii=False) + ";"
+        "function apply(){try{"
+        "var d=window.parent.document;"
+        "d.querySelectorAll('button').forEach(function(b){"
+        "  var s=(b.innerText||'').trim();"
+        "  if(M[s]){ b.setAttribute('aria-label', M[s]); b.setAttribute('title', M[s]); }"
+        "});}catch(e){}}"
+        "apply(); setTimeout(apply,300); setTimeout(apply,1200);"
+        "try{var o=new MutationObserver(function(){apply();});"
+        "o.observe(window.parent.document.body,{childList:true,subtree:true});}catch(e){}"
+        "})();</script>", height=0)
 
 
 def text_size_pills(where: str):
@@ -1895,9 +1957,9 @@ def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
             st.session_state[page_key] = page_idx + 1
             st.session_state[page_key + "_auto"] = True
         page_slot.button(
-            f"▶ {t('next_page')} ({page_idx + 2}/{n_pages})",
-            key=page_key + "_nextbtn", use_container_width=True,
-            on_click=_next_page,
+            f"{SYM['next']} {page_idx + 2}/{n_pages}",
+            key=page_key + "_nextbtn",
+            help=t("next_page"), on_click=_next_page,
         )
 
 
@@ -1961,6 +2023,7 @@ st.segmented_control(
     key="active_tab", required=True, label_visibility="collapsed",
 )
 active = st.session_state.get("active_tab") or "transcribe"
+name_the_symbols()
 
 
 if active == "transcribe":
@@ -2181,7 +2244,7 @@ if active == "transcribe":
                 prev = st.session_state.pop("_transcript_prev", None)
                 if prev is not None:
                     st.session_state["transcript_box"] = prev
-            acol2.button(t("ai_undo"), key="ai_undo_btn", on_click=_undo)
+            acol2.button(SYM["undo"], key="ai_undo_btn", help=t("ai_undo"), on_click=_undo)
 
         if st.session_state.get("_ai_error"):
             st.error(st.session_state.pop("_ai_error"))
@@ -2229,8 +2292,8 @@ elif active == "talk":
                  label_visibility="collapsed", placeholder=t("talk_placeholder"))
 
     rcol1, rcol2 = st.columns(2)
-    read_clicked = rcol1.button(t("read_btn"), use_container_width=True, key="read_btn")
-    rcol2.button(t("stop_btn"), use_container_width=True, key="stop_btn", help=t("stop_help"))
+    read_clicked = rcol1.button(SYM["read"], key="read_btn", help=t("read_btn"))
+    rcol2.button(SYM["stop"], key="stop_btn", help=t("stop_btn"))
 
     doc_slot = st.empty()
     sub_slot = st.empty()
@@ -2272,7 +2335,7 @@ elif active == "translate":
         st.text_area("out", key="translate_out", height=150, label_visibility="collapsed")
 
         tr_col1, tr_col2 = st.columns(2)
-        tread_clicked = tr_col1.button(t("read_btn"), use_container_width=True, key="tr_read_btn")
+        tread_clicked = tr_col1.button(SYM["read"], key="tr_read_btn", help=t("read_btn"))
         tr_col2.button(t("stop_btn"), use_container_width=True, key="tr_stop_btn", help=t("stop_help"))
 
         tdoc_slot = st.empty()
@@ -2346,7 +2409,7 @@ elif active == "read":
                       key="read_gap")
 
     bcol1, bcol2 = st.columns(2)
-    read_go = bcol1.button(t("read_start"), key="read_go_btn")
+    read_go = bcol1.button(SYM["read"], key="read_go_btn", help=t("read_start"))
 
     def _keep_text():
         txt = (st.session_state.get("read_text") or "").strip()
@@ -2357,7 +2420,7 @@ elif active == "read":
             st.session_state["_read_msg"] = t("read_saved")
             st.session_state["_read_msg_until"] = time.time() + 6
 
-    bcol2.button(t("read_save"), key="read_keep_btn", on_click=_keep_text)
+    bcol2.button(SYM["save"], key="read_keep_btn", help=t("read_save"), on_click=_keep_text)
     # Hold the confirmation for a few seconds of wall clock rather than
     # popping it on the next rerun — Streamlit reruns for many reasons
     # (a slider nudge, an expander opening), and a message that vanishes

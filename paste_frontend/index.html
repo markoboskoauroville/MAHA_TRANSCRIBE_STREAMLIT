@@ -36,7 +36,8 @@
   @media (prefers-reduced-motion: reduce) { #pad { transition:none; } }
 </style>
 
-<div id="pad" role="button" tabindex="0" aria-live="polite">paste</div>
+<div id="pad" role="button" tabindex="0" aria-live="polite"
+     aria-label="paste" title="paste">\u21e9</div>
 <textarea id="sink" aria-hidden="true"></textarea>
 
 <script>
@@ -50,7 +51,7 @@ function setComponentValue(value) {
 
 const pad  = document.getElementById('pad');
 const sink = document.getElementById('sink');
-let L = { idle: "paste", hint: "tap, then paste", done: "pasted" };
+let L = { idle: "\u21e9", hint: "\u21e9 \u2026", done: "\u2713" };
 let timer = null;
 
 function set(state) {
@@ -93,7 +94,13 @@ window.addEventListener("message", function (event) {
   const msg = event.data;
   if (!msg || msg.type !== "streamlit:render") return;
   const args = msg.args || {};
-  if (args.labels) { L = args.labels; set('idle'); }
+  if (args.labels) {
+    L = args.labels;
+    // The word stays as the accessible name and the tooltip even though
+    // the face of the button is a glyph.
+    if (L.word) { pad.setAttribute('aria-label', L.word); pad.title = L.word; }
+    set('idle');
+  }
   post("streamlit:setFrameHeight", { height: 60 });
 });
 
