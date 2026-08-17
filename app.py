@@ -17,10 +17,16 @@ import hashlib
 import tempfile
 import subprocess
 import base64
+from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v37 (a)"
+APP_VERSION = "v38 (a)"
+
+# How many blocks to keep ready ahead of the one playing. Three, so a
+# hand-off is never heard even if one block is slow or one request has to
+# be retried on another key.
+PREFETCH_AHEAD = 3
 
 import streamlit as st
 from groq import Groq
@@ -2294,6 +2300,14 @@ elif active == "talk":
         parts = job["parts"]
         cached = job["cache"].get(idx)
 
+        def _make_quiet(i):
+            """Worker body. Swallows its own errors so one failed block
+            cannot cancel the others, and touches no Streamlit API."""
+            try:
+                _make(i)
+            except Exception:
+                pass
+
         def _make(i):
             """Build block i into the cache. Returns it."""
             if i in job["cache"] or i >= len(parts):
@@ -2333,17 +2347,34 @@ elif active == "talk":
 
         st.button(t("new_text"), key="talk_new", on_click=_new_text)
 
-        # ONE BLOCK IN ADVANCE, exactly as Baba asked. This runs AFTER the
-        # player is on the page, and the player is a client-side iframe
-        # that is already playing — so Python carrying on here does not
-        # interrupt the sound. By the time this block's audio ends, the
-        # next one is already in the cache and the swap is instant.
-        if idx + 1 < len(parts) and (idx + 1) not in job["cache"]:
+        # THREE BLOCKS AHEAD, BUILT IN PARALLEL.
+        #
+        # This runs AFTER the player is on the page. The player is a
+        # client-side iframe already playing, so Python carrying on here
+        # does not interrupt the sound — that is what makes prefetching
+        # free from the listener's point of view.
+        #
+        # In parallel rather than one after another: three blocks built
+        # in sequence take three times as long, and the whole point is to
+        # stay far enough ahead that a hand-off is never heard. The
+        # provider calls are network-bound, so threads overlap the waiting
+        # almost perfectly.
+        #
+        # Safe because ttt/keyring.rotate() takes a lock around choosing a
+        # key and recording its verdict (but NOT around the request), so
+        # several threads can share one key ring without racing. Nothing
+        # in the worker touches Streamlit — st.* is not thread-safe, so
+        # the workers only synthesise and write files, and save_rings()
+        # is called back here on the main thread.
+        wanted = [i for i in range(idx + 1, min(idx + 1 + PREFETCH_AHEAD, len(parts)))
+                  if i not in job["cache"]]
+        if wanted:
             try:
-                _make(idx + 1)
+                with ThreadPoolExecutor(max_workers=len(wanted)) as pool:
+                    list(pool.map(_make_quiet, wanted))
                 save_rings()
             except Exception:
-                pass          # a failed prefetch just means a short wait later
+                pass          # a failed prefetch only costs a short wait later
 
     else:
         # ---- WRITING -------------------------------------------------

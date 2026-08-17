@@ -18,6 +18,7 @@ those repos kept verbatim because each was learned the hard way:
 
 import hashlib
 import re
+import threading
 import time
 
 COOL_SECONDS = 120.0        # a rate-limited key rests this long, then returns
@@ -168,6 +169,18 @@ def revive_all(ring: dict) -> int:
     return n
 
 
+# One lock for all ring bookkeeping. Blocks of audio are generated in
+# PARALLEL now, so several threads reach the same ring at once. Without
+# this, two threads can pick the same key at the same instant, or one can
+# overwrite the other's verdict — a key buried or a call count lost for
+# no reason anyone could later explain.
+#
+# The lock covers ONLY choosing a key and recording what happened, never
+# the network call in between. Holding it across the request would
+# serialise every provider call and undo the parallelism entirely.
+_LOCK = threading.Lock()
+
+
 def rotate(ring: dict, attempt):
     """Walk the ring until a key works, applying the standard verdicts.
 
@@ -175,32 +188,38 @@ def rotate(ring: dict, attempt):
     "dead" | "cool" | "soft". A "soft" failure is not the key's fault, so
     it stops immediately rather than burning through every key.
 
-    Returns `(result, error)`. This is the one place rotation policy lives;
-    every provider uses it rather than writing the loop again.
+    Returns `(result, error)`. This is the one place rotation policy lives.
+    Safe to call from several worker threads at once.
     """
     keys = ring.get("keys") or []
     n = len(keys)
     if not n:
         return None, "No keys yet — add one in Settings."
-    idx = ring.get("active", 0) % n
+    with _LOCK:
+        idx = ring.get("active", 0) % n
     last = ""
     for _ in range(n):
-        i = pick(ring, idx)
+        with _LOCK:
+            i = pick(ring, idx)
+            key = keys[i]["key"] if i is not None else None
         if i is None:
             break
-        result, err, kind = attempt(keys[i]["key"])
+        result, err, kind = attempt(key)        # network, deliberately unlocked
         if not err:
             billed = 0
             if isinstance(result, dict):
                 billed = result.get("billable_characters_count") or 0
-            mark_ok(ring, i, billed)
+            with _LOCK:
+                mark_ok(ring, i, billed)
             return result, None
         last = err
-        if kind == "dead":
-            mark_dead(ring, i, err)
-        elif kind == "cool":
-            mark_cool(ring, i, err)
+        if kind in ("dead", "cool"):
+            with _LOCK:
+                if kind == "dead":
+                    mark_dead(ring, i, err)
+                else:
+                    mark_cool(ring, i, err)
         else:
             return None, err        # not the key's fault; keep it, stop here
         idx = (i + 1) % n
-    return None, f"All {n} key(s) unavailable. Last: {last or 'none'}"
+    return None, f"All {n} key(s) unavailable. Last: {last}"
