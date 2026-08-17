@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v40 (a)"
+APP_VERSION = "v41 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -391,6 +391,9 @@ STRINGS = {
     "paste_btn":          {"en": "paste",             "hr": "zalijepi"},
     "paste_hint":         {"en": "tap, then paste",   "hr": "dodirni, pa zalijepi"},
     "paste_done":         {"en": "pasted ✓",          "hr": "zalijepljeno ✓"},
+    "sig_transcribe":     {"en": "transcribe",        "hr": "transkripcija"},
+    "sig_read":           {"en": "read",              "hr": "čitanje"},
+    "sig_translate":      {"en": "translate",         "hr": "prijevod"},
     "pick_any":           {"en": "Upload",            "hr": "Upload"},
     "pick_sound":         {"en": "Sound file",        "hr": "Zvučna datoteka"},
     "pick_image":         {"en": "Picture",           "hr": "Slika"},
@@ -1313,6 +1316,19 @@ def copy_pill(text: str, where: str):
         ),
         height=copybtn.HEIGHT,
     )
+
+
+def tab_signature(name: str):
+    """A quiet word at the bottom right saying which tab you are on.
+
+    The tab bar is single letters now — T, R, TR — which is compact but
+    tells a newcomer nothing. This is the counterweight: the full word,
+    once, in the same dim monospace as the recorder's 00:00, aligned to
+    the right margin so it reads as a signature on the panel rather than
+    as another control. Settings has none; the gear already says it.
+    """
+    st.markdown(f'<div class="tabsig">{html.escape(name)}</div>',
+                unsafe_allow_html=True)
 
 
 def name_the_symbols():
@@ -2291,6 +2307,7 @@ if active == "transcribe":
         lcol2.button(t("lang_en"), key="tr_en",
                      type="primary" if speech_now == "en" else "secondary",
                      on_click=set_speech_lang, args=("en",))
+    tab_signature(t("sig_transcribe"))
 
 
 elif active == "talk":
@@ -2482,6 +2499,9 @@ elif active == "talk":
                 st.info(t("nothing_to_read"))
 
 
+    tab_signature(t("sig_read"))
+
+
 elif active == "translate":
     st.session_state.setdefault("translate_src", "hr")
     st.session_state.setdefault("translate_tgt", "en")
@@ -2531,6 +2551,9 @@ elif active == "translate":
 # block is only wiring. See ttt/read_tab.py for what ported and what did
 # not, and why.
 # ----------------------------------------------------------------------
+    tab_signature(t("sig_translate"))
+
+
 elif active == "settings":
     if True:
         lang_now = st.session_state.get("ui_lang", "en")

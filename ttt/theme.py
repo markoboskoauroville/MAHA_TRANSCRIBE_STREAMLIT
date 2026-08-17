@@ -323,6 +323,20 @@ def css() -> str:
       padding: 0.45rem 0.6rem !important;
     }}
 
+    /* The tab signature: bottom right, in the same quiet monospace as
+       the recorder's 00:00 counter, so it reads as a mark on the panel
+       rather than as another control competing for attention. */
+    .tabsig {{
+      text-align: right;
+      color: var(--dim);
+      font-family: var(--mono);
+      font-size: 0.95rem;
+      letter-spacing: 0.10em;
+      opacity: 0.75;
+      margin: 0.5rem 0 0.1rem;
+      user-select: none;
+    }}
+
     /* ---- RHYTHM ---------------------------------------------------
        His spacing is tight: 4px inside a row, 6px between rows. Streamlit
        is far airier by default, which is what makes it look like a form
