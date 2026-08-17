@@ -28,6 +28,7 @@ from ttt import keyring as kr
 from ttt import providers as PROVIDERS
 from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
+from ttt import transform as TR
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -83,7 +84,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v14 (a)"
+APP_VERSION = "v15 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -158,6 +159,13 @@ STRINGS = {
     "read_speed":         {"en": "Speed",            "hr": "Brzina"},
     "read_gap":           {"en": "Pause between sentences", "hr": "Pauza između rečenica"},
     "read_autosave":      {"en": "Keep texts automatically", "hr": "Automatski čuvaj tekstove"},
+    "ai_ask":             {"en": "Tell the AI what to do with this text",
+                            "hr": "Reci AI-u što da napravi s ovim tekstom"},
+    "ai_apply":           {"en": "Apply",             "hr": "Primijeni"},
+    "ai_undo":            {"en": "Undo",              "hr": "Vrati"},
+    "ai_working":         {"en": "Working…",          "hr": "Radim…"},
+    "ai_fail":            {"en": "The AI could not do that",
+                            "hr": "AI to nije mogao napraviti"},
     "read_storage_note":  {"en": "Texts are kept in this browser only, never the audio. Clearing browser data removes them.",
                             "hr": "Tekstovi se čuvaju samo u ovom pregledniku, nikad zvuk. Brisanje podataka preglednika ih uklanja."},
     "translate_src_ph":   {"en": "Paste text to translate", "hr": "Zalijepi tekst za prijevod"},
@@ -384,6 +392,11 @@ KEYS = groq_keys()
 if not KEYS:
     st.error(t("no_groq_secret"))
     st.stop()
+
+# The registry's Groq provider is constructed with no keys — the app owns
+# them, so hand them over now. Anything asking the registry for the "llm"
+# or "stt" capability depends on this line having run.
+PROVIDERS.set_groq_keys(KEYS)
 
 
 # ----------------------------------------------------------------------
@@ -1598,6 +1611,45 @@ if active == "transcribe":
             st.caption(t("method_" + method))
             if "[…]" in (st.session_state.get("transcript_box") or ""):
                 st.caption(t("method_gap"))
+
+        # ---- AI text transform -------------------------------------
+        # Presets for the everyday things, plus a free box for anything
+        # else. Every run keeps the previous version so a bad result is
+        # always one press away from being undone — the text is often
+        # something the person just dictated and cannot easily retype.
+        def _apply_transform(preset="", instruction=""):
+            source = (st.session_state.get("transcript_box") or "").strip()
+            try:
+                llm = PROVIDERS.with_capability("llm")[0]
+                out = TR.run(llm, source, instruction=instruction, preset=preset)
+                st.session_state["_transcript_prev"] = source
+                st.session_state["transcript_box"] = out
+                USAGE.log("transform", len(source), UNIT_CHARS, llm.id)
+            except Exception as e:
+                st.session_state["_ai_error"] = f"{t('ai_fail')}: {e}"
+
+        pcols = st.columns(len(TR.PRESETS))
+        for i, pid in enumerate(TR.PRESETS):
+            pcols[i].button(
+                TR.preset_label(pid, st.session_state.get("ui_lang", "hr")),
+                key="tr_preset_" + pid, on_click=_apply_transform, args=(pid, ""))
+
+        st.text_input(t("ai_ask"), key="ai_instruction",
+                      label_visibility="collapsed", placeholder=t("ai_ask"))
+
+        acol1, acol2 = st.columns(2)
+        acol1.button(t("ai_apply"), key="ai_apply_btn",
+                     on_click=lambda: _apply_transform(
+                         "", st.session_state.get("ai_instruction", "")))
+        if st.session_state.get("_transcript_prev"):
+            def _undo():
+                prev = st.session_state.pop("_transcript_prev", None)
+                if prev is not None:
+                    st.session_state["transcript_box"] = prev
+            acol2.button(t("ai_undo"), key="ai_undo_btn", on_click=_undo)
+
+        if st.session_state.get("_ai_error"):
+            st.error(st.session_state.pop("_ai_error"))
 
 # ----------------------------------------------------------------------
 # Talk
