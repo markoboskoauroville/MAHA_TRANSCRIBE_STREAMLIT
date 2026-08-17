@@ -169,6 +169,63 @@ def fill_missing_times(sent_marks, total_seconds: float):
     return sent_marks
 
 
+def build_part(part_sentences, synth, char_offset: int, full_text: str,
+               tmpdir: str = None):
+    """One PART: audio plus sentence marks in the part's own timeline.
+
+    Parts exist because of WAITING, not because of any limit. Measured on
+    Edge: 9000 characters synthesise fine, so there is no ceiling to dodge
+    — but 1500 chars takes about 21 seconds to make and yields about 100
+    seconds of speech, while 6000 chars takes 107 seconds before a single
+    word is heard. Splitting means listening starts after one short wait
+    and every later part is prepared while the previous one plays.
+
+    Marks are in the PART's timeline (starting at 0), because each part is
+    its own audio element. Character offsets stay absolute so the text can
+    still be located in the whole.
+    """
+    tmpdir = tmpdir or tempfile.mkdtemp(prefix="ttt_part_")
+    chunks = plan_chunks(part_sentences)
+    paths, all_marks, elapsed = [], [], 0.0
+    for i, (text, rel_off) in enumerate(chunks):
+        audio, seconds, marks = synth(text)
+        p = os.path.join(tmpdir, f"seg_{i:04d}.mp3")
+        with open(p, "wb") as f:
+            f.write(audio)
+        paths.append(p)
+        real = duration_of(p) or seconds
+        all_marks.extend(shift_marks(marks, elapsed, char_offset + rel_off))
+        elapsed += real
+
+    out = os.path.join(tmpdir, "part.mp3")
+    join_audio(paths, out)
+    total = duration_of(out) or elapsed
+
+    sm = sentence_marks(part_sentences, all_marks, full_text)
+    # rebase char spans that sentence_marks resolved against full_text
+    sm = fill_missing_times(sm, total)
+    return out, sm, total, [tmpdir]
+
+
+def plan_parts(sentences, part_chars: int = 1500):
+    """Group sentences into PARTS. Returns [(sentences, char_offset)].
+
+    Sized so one part is a short wait and a comfortable listen — see
+    build_part for the measurements behind the number.
+    """
+    parts, cur, cur_len, offset = [], [], 0, 0
+    for s in sentences:
+        if cur and cur_len + len(s) + 1 > part_chars:
+            parts.append((cur, offset))
+            offset += sum(len(x) + 1 for x in cur)
+            cur, cur_len = [], 0
+        cur.append(s)
+        cur_len += len(s) + 1
+    if cur:
+        parts.append((cur, offset))
+    return parts
+
+
 def build(sentences, synth, tmpdir: str = None):
     """One audio file for the whole text.
 

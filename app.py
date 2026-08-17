@@ -16,10 +16,11 @@ import time
 import hashlib
 import tempfile
 import subprocess
+import base64
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v35 (a)"
+APP_VERSION = "v36 (a)"
 
 import streamlit as st
 from groq import Groq
@@ -67,7 +68,6 @@ from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
-from ttt import player as PLAYER
 from ttt import theme
 from ttt import gate
 from ttt import copybtn
@@ -370,6 +370,8 @@ STRINGS = {
     "img_no_model":       {"en": "No engine here can read pictures.",
                             "hr": "Nijedan pogon ovdje ne može čitati slike."},
     "img_done":           {"en": "Read from a picture.", "hr": "Pročitano iz slike."},
+    "gen_part":           {"en": "Making part {i} of {n}…",
+                            "hr": "Pripremam dio {i} od {n}…"},
     "gen_audio":          {"en": "Making the audio…",  "hr": "Pripremam zvuk…"},
     "new_text":           {"en": "New text",           "hr": "Novi tekst"},
     "prev_sentence":      {"en": "Previous sentence",  "hr": "Prethodna rečenica"},
@@ -514,6 +516,13 @@ try:
     _paste_component = components.declare_component("ttt_paste", path=_PASTE_FRONTEND)
 except Exception:
     _paste_component = None
+
+_PLAYER_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "player_frontend")
+try:
+    _player_component = components.declare_component("ttt_player", path=_PLAYER_FRONTEND)
+except Exception:
+    _player_component = None
 
 
 def paste_target(where: str):
@@ -2272,20 +2281,48 @@ elif active == "talk":
     _tts = current_routes()["tts"]
     engine = _tts.id if _tts else "edge"
 
-    built = st.session_state.get("_talk_audio")
+    job = st.session_state.get("_talk_job")
 
-    if built:
-        # ---- PLAYING -------------------------------------------------
-        components.html(
-            PLAYER.html(built["audio"], built["marks"],
-                        scale=a11y.clamp(st.session_state.get("text_scale",
-                                                              a11y.DEFAULT_SCALE)),
-                        labels={"prev": t("prev_sentence"),
-                                "next": t("next_sentence")}),
-            height=PLAYER.height_for(st.session_state.get("text_scale", 1.0)))
+    if job:
+        # ---- PLAYING, one part at a time ----------------------------
+        # Only ever ONE player on screen. When a part finishes, the
+        # component says so, the next part is made, and the player is
+        # replaced in the same place. Baba: "you just remove that player
+        # and put at the same place the other player."
+        idx = job["index"]
+        parts = job["parts"]
+        cached = job["cache"].get(idx)
+
+        if cached is None:
+            with st.spinner(t("gen_part").format(i=idx + 1, n=len(parts))):
+                sentences, char_off = parts[idx]
+                path, marks, total, temps = SPEECH.build_part(
+                    sentences, job["synth"], char_off, job["full_text"])
+                with open(path, "rb") as f:
+                    audio = f.read()
+                ttt_audio.cleanup(*temps)
+                job["cache"][idx] = {"audio": audio, "marks": marks}
+                cached = job["cache"][idx]
+            save_rings()
+
+        scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+        if _player_component is not None:
+            ev = _player_component(
+                src="data:audio/mpeg;base64," + base64.b64encode(cached["audio"]).decode(),
+                marks=cached["marks"], part=idx + 1, parts=len(parts),
+                scale=scale, autoplay=True, key="talk_player", default=None)
+            # The part finished: move to the next one and let the spinner
+            # above make it. Guarded by a stamp so one finish is one move.
+            if isinstance(ev, dict) and ev.get("at"):
+                seen = st.session_state.get("_talk_player_seen")
+                if seen != ev["at"] and idx + 1 < len(parts):
+                    st.session_state["_talk_player_seen"] = ev["at"]
+                    job["index"] = idx + 1
+                    st.rerun()
 
         def _new_text():
-            st.session_state.pop("_talk_audio", None)
+            st.session_state.pop("_talk_job", None)
+            st.session_state.pop("_talk_player_seen", None)
 
         st.button(t("new_text"), key="talk_new", on_click=_new_text)
 
@@ -2321,20 +2358,14 @@ elif active == "talk":
         if go or st.session_state.pop("_auto_read", False):
             raw = (st.session_state.get("talk_text") or "").strip()
             if raw:
-                try:
-                    with st.spinner(t("gen_audio")):
-                        sentences = tk.sentences_of(raw)
-                        path, marks, total, temps = SPEECH.build(sentences, synth_fn)
-                        with open(path, "rb") as f:
-                            audio = f.read()
-                        ttt_audio.cleanup(*temps)
-                    save_rings()
-                    st.session_state["_talk_audio"] = {
-                        "audio": audio, "marks": marks, "total": total}
-                    USAGE.log("read", len(raw), UNIT_CHARS, engine)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"{t('read_fail')}: {e}")
+                sentences = tk.sentences_of(raw)
+                st.session_state["_talk_job"] = {
+                    "parts": SPEECH.plan_parts(sentences),
+                    "full_text": " ".join(sentences),
+                    "index": 0, "cache": {}, "synth": synth_fn,
+                }
+                USAGE.log("read", len(raw), UNIT_CHARS, engine)
+                st.rerun()
             else:
                 st.info(t("nothing_to_read"))
 
