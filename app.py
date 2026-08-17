@@ -19,7 +19,7 @@ import subprocess
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v33 (a)"
+APP_VERSION = "v34 (a)"
 
 import streamlit as st
 from groq import Groq
@@ -200,6 +200,7 @@ PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
 
 # Croatian first everywhere, English second.
+VOICE_SHORT = {"Gabrijela": "Gabby", "Srecko": "Srećko"}
 VOICES_BY_LANG = {"hr": ["Gabrijela", "Srecko"], "en": ["Sonia", "Ryan"]}
 VOICE_TO_VKEY = {"Gabrijela": "hrF", "Srecko": "hrM", "Sonia": "ukF", "Ryan": "ukM"}
 VOICE_LANG = {"Gabrijela": "hr", "Srecko": "hr", "Sonia": "en", "Ryan": "en"}
@@ -343,6 +344,11 @@ STRINGS = {
     "img_no_model":       {"en": "No engine here can read pictures.",
                             "hr": "Nijedan pogon ovdje ne može čitati slike."},
     "img_done":           {"en": "Read from a picture.", "hr": "Pročitano iz slike."},
+    "paste_btn":          {"en": "paste",             "hr": "zalijepi"},
+    "paste_hint":         {"en": "tap, then paste",   "hr": "dodirni, pa zalijepi"},
+    "paste_done":         {"en": "pasted ✓",          "hr": "zalijepljeno ✓"},
+    "pick_sound":         {"en": "Sound file",        "hr": "Zvučna datoteka"},
+    "pick_image":         {"en": "Picture",           "hr": "Slika"},
     "clear_btn":          {"en": "clear",             "hr": "obriši"},
     "grammar_btn":        {"en": "GRAMMAR",           "hr": "GRAMATIKA"},
     "reshape_btn":        {"en": "RE-SHAPE",          "hr": "PREOBLIKUJ"},
@@ -467,6 +473,39 @@ try:
     _ls_component = components.declare_component("ls_bridge", path=_LS_FRONTEND)
 except Exception:
     _ls_component = None
+
+# The paste target. A REAL component, because it has to send the pasted
+# text back to Python — components.html is one-way. Declared here in the
+# entrypoint for the same reason as the bridge above: a component
+# declared inside a module can go stale in a warm process.
+_PASTE_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "paste_frontend")
+try:
+    _paste_component = components.declare_component("ttt_paste", path=_PASTE_FRONTEND)
+except Exception:
+    _paste_component = None
+
+
+def paste_target(where: str):
+    """Returns pasted text once, or None. Never raises: a paste box that
+    fails must not take the page down."""
+    if _paste_component is None:
+        return None
+    try:
+        val = _paste_component(
+            labels={"idle": t("paste_btn"), "hint": t("paste_hint"),
+                    "done": t("paste_done")},
+            key=f"paste_{where}", default=None)
+    except Exception:
+        return None
+    if not isinstance(val, dict):
+        return None
+    stamp = val.get("at")
+    seen_key = f"_paste_seen_{where}"
+    if stamp and st.session_state.get(seen_key) != stamp:
+        st.session_state[seen_key] = stamp
+        return val.get("text") or None
+    return None
 
 
 def ls_sync(writes=None, removes=None, stamp=0):
@@ -1174,6 +1213,15 @@ def cp_row(text: str, where: str, state_key: str = None):
     has_text = bool((text or "").strip())
     with st.container(key="cprow_" + where):
         c1, c2, c3 = st.columns([1, 2, 1])
+        with c1:
+            if state_key:
+                # A paste TARGET, not a clipboard reader — the iframe is
+                # not granted clipboard-read, so the obvious version would
+                # fail silently. See paste_frontend/index.html.
+                got = paste_target(where)
+                if got:
+                    st.session_state[state_key] = got
+                    st.rerun()
         with c2:
             if has_text:
                 components.html(
@@ -1218,14 +1266,16 @@ def text_size_pills(where: str):
             st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
         persist_settings()
 
-    c1, c2, c3 = st.columns([1, 2, 1])
-    c1.button("A−", key=f"tsz_minus_{where}", help=t("text_smaller"),
-              disabled=a11y.at_min(scale),
-              on_click=_set, args=(a11y.smaller,))
-    c2.caption(f"{t('text_size')} {a11y.percent(scale)}%")
-    c3.button("A+", key=f"tsz_plus_{where}", help=t("text_bigger"),
-              disabled=a11y.at_max(scale),
-              on_click=_set, args=(a11y.bigger,))
+    # Just the two buttons. The sentence "Veličina slova 130%" spelled out
+    # what A− and A+ already show, and cost a whole row on a phone. The
+    # percentage lives in the tooltip for anyone who wants it.
+    c1, c2, _ = st.columns([1, 1, 4])
+    c1.button("A−", key=f"tsz_minus_{where}",
+              help=f"{t('text_smaller')} · {a11y.percent(scale)}%",
+              disabled=a11y.at_min(scale), on_click=_set, args=(a11y.smaller,))
+    c2.button("A+", key=f"tsz_plus_{where}",
+              help=f"{t('text_bigger')} · {a11y.percent(scale)}%",
+              disabled=a11y.at_max(scale), on_click=_set, args=(a11y.bigger,))
 
 
 def vision_model() -> str:
@@ -1664,33 +1714,240 @@ def forget_me():
 
 
 def voice_picker(prefix: str):
-    """Croatian group first, then English, each under its own label."""
+    """Every voice on ONE row, short names, no language headings.
+
+    Baba: "HR ENG, it's not necessary. Gabrijela Srecko, we know, are
+    Croats. Sonia and Ryan are English people." He is right — the headings
+    cost two lines to say what the names already say, and on a phone that
+    is real estate the text box needs. Gabrijela is shortened to Gabby for
+    the same reason; the full name stays in the tooltip.
+    """
     current = st.session_state.get("voice", "Gabrijela")
-    for lang, label_key in (("hr", "group_hr"), ("en", "group_en")):
-        st.caption(t(label_key))
-        cols = st.columns(len(VOICES_BY_LANG[lang]))
-        for col, name in zip(cols, VOICES_BY_LANG[lang]):
-            col.button(
-                name, key=f"{prefix}_{name}",
-                type="primary" if name == current else "secondary",
-                on_click=pick_voice, args=(name,),
-            )
+    names = [n for group in VOICES_BY_LANG.values() for n in group]
+    cols = st.columns(len(names))
+    for col, name in zip(cols, names):
+        col.button(
+            VOICE_SHORT.get(name, name), key=f"{prefix}_{name}",
+            type="primary" if name == current else "secondary",
+            help=name, on_click=pick_voice, args=(name,))
+
+
+def do_correct():
+    try:
+        path = st.session_state.get("flac_path")
+        lang = st.session_state.get("last_lang", "hr")
+        if not path or not os.path.exists(path):
+            raise RuntimeError("Original audio is no longer available.")
+        stt_now = stt_bridge()
+        if stt_now is None:
+            raise RuntimeError(t("routing_none"))
+        if stt_now.handles_big_files:
+            corrected = stt_now.transcribe(path, lang, model=stt_now.accurate_model())
+            st.session_state["transcript_box"] = corrected
+            st.session_state["flac_path"] = path
+            st.session_state["_transcribe_method"] = "direct"
+        else:
+            corrected, method, reusable = transcribe_any_size(
+                path, stt_now.accurate_model() or CORRECTION_MODEL, lang)
+            st.session_state["transcript_box"] = corrected
+            st.session_state["flac_path"] = reusable
+            st.session_state["_transcribe_method"] = method
+    except Exception as e:
+        st.session_state["_correct_error"] = str(e)
+
+
+def read_this():
+    """Move to the Talk tab, carry the text over, pick the voice that matches
+    the language just transcribed, and start reading — no popup, no extra tap."""
+    st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
+    lang = st.session_state.get("last_lang", "hr")
+    current = st.session_state.get("voice", "Gabrijela")
+    if VOICE_LANG.get(current) != lang:
+        st.session_state["voice"] = VOICES_BY_LANG[lang][0]
+    st.session_state["active_tab"] = "talk"
+    st.session_state["_auto_read"] = True
+
+
+def _highlight_span(text: str, start: int = None, end: int = None) -> str:
+    """HTML-escaped text with [start:end) wrapped in the gold highlight span.
+    With no range, the whole text is wrapped (sentence-level, the Edge case).
+    Bounds are clamped defensively — a mark that's ever slightly out of
+    range must never crash the read, just highlight nothing that run."""
+    if start is None or end is None:
+        return ('<span style="background:#f59e0b;color:#0b0d10;'
+                'border-radius:4px;padding:1px 4px;">' + html.escape(text) + "</span>")
+    start = max(0, min(start, len(text)))
+    end = max(start, min(end, len(text)))
+    return (html.escape(text[:start]) +
+            '<span style="background:#f59e0b;color:#0b0d10;'
+            'border-radius:4px;padding:1px 4px;">' + html.escape(text[start:end]) + "</span>" +
+            html.escape(text[end:]))
+
+
+def _subtitle(text: str, start: int = None, end: int = None) -> str:
+    inner = _highlight_span(text, start, end) if text else ""
+    return f'<div class="subtitle-box">{inner}</div>'
+
+
+def _render_page(page_sentences: list, current_idx: int, doc_slot,
+                 word_start: int = None, word_end: int = None) -> None:
+    parts = []
+    for j, s in enumerate(page_sentences):
+        if j == current_idx:
+            parts.append(_highlight_span(s, word_start, word_end))
+        else:
+            parts.append(html.escape(s))
+    doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
+
+
+def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
+                        page_key: str, page_slot, progress_slot=None,
+                        speed: float = 1.0, gap: float = 0.0):
+    """Shared by Talk and Translate: synthesize and play one sentence at a
+    time. Highlights word-by-word when the engine can back it with real
+    per-word timing (Speechify's speech_marks, measured from the audio it
+    just generated — precise, not inferred); falls back to sentence-level
+    otherwise (Edge — its word boundaries are on its own clock and drift,
+    see HANDOVER.md for why that was deliberately dropped everywhere else).
+
+    synth_fn(text) -> (audio_bytes, seconds) or (audio_bytes, seconds, marks).
+    marks is a list of {start, end, start_time, end_time} in the same shape
+    sp_synthesize returns, or falsy/absent for sentence-level.
+
+    Long text is split into pages (tk.paginate) so one document never becomes
+    one unbroken, uninterruptible reading session. A new page starts reading
+    the instant Next page is pressed — no message, no waiting, no sense of
+    having hit a limit."""
+    try:
+        sentences = tk.sentences_of(raw)
+    except Exception as e:          # never let the engine take the page down
+        sentences = []
+        st.error(f"{t('read_fail')}: {e}")
+    if not sentences:
+        st.info(t("nothing_to_read"))
+        return
+
+    pages = tk.paginate(sentences)
+    n_pages = len(pages)
+    digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
+    if st.session_state.get(page_key + "_digest") != digest:
+        st.session_state[page_key] = 0
+        st.session_state[page_key + "_digest"] = digest
+    page_idx = min(max(st.session_state.get(page_key, 0), 0), n_pages - 1)
+    page_sentences = pages[page_idx]
+
+    if n_pages > 1:
+        page_slot.caption(f"{t('page_label')} {page_idx + 1}/{n_pages}")
+
+    total_chars = sum(len(x) for x in page_sentences)
+    spoken_chars = 0
+
+    for i, sent in enumerate(page_sentences):
+        if progress_slot is not None:
+            from ttt import read_tab as _RT
+            progress_slot.caption(_RT.progress_line(
+                spoken_chars, total_chars, i + 1, len(page_sentences),
+                speed=speed, sentence_gap=gap))
+        try:
+            result = synth_fn(sent)
+        except Exception as e:
+            st.error(f"{t('read_fail')} {i + 1}: {e}")
+            break
+        audio_bytes, dur = result[0], result[1]
+        marks = result[2] if len(result) > 2 else None
+
+        if marks:
+            # Word-level: play once, then step the highlight through each
+            # mark's own measured window — never touches playback rate.
+            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            for wi, m in enumerate(marks):
+                _render_page(page_sentences, i, doc_slot, m["start"], m["end"])
+                sub_slot.markdown(_subtitle(sent, m["start"], m["end"]), unsafe_allow_html=True)
+                nxt = marks[wi + 1]["start_time"] if wi + 1 < len(marks) else dur
+                time.sleep(max(0.02, nxt - m["start_time"]))
+        else:
+            _render_page(page_sentences, i, doc_slot)
+            sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
+            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            time.sleep(dur + 0.15)
+
+        spoken_chars += len(sent)
+        if gap:
+            time.sleep(gap)
+
+    doc_slot.markdown(html.escape(" ".join(page_sentences)))
+    sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+    # Log what was actually SPOKEN, not what was pasted — a page that was
+    # never reached should not count against anyone's usage.
+    if spoken_chars:
+        USAGE.log("read", spoken_chars, UNIT_CHARS,
+                  st.session_state.get("voice_engine", "edge"))
+
+    # A key can be discovered dead or rate-limited DURING a read, so the
+    # ring must be written back afterwards. Missing this was a real bug:
+    # a key buried mid-session came back on the next reload and wasted a
+    # request every single time. Cheap and idempotent; always do it.
+    save_rings()
+
+    if page_idx + 1 < n_pages:
+        def _next_page():
+            st.session_state[page_key] = page_idx + 1
+            st.session_state[page_key + "_auto"] = True
+        page_slot.button(
+            f"▶ {t('next_page')} ({page_idx + 2}/{n_pages})",
+            key=page_key + "_nextbtn", use_container_width=True,
+            on_click=_next_page,
+        )
+
+
+def _set_translate_lang(which: str, code: str):
+    st.session_state["translate_" + which] = code
+
+
+def swap_translate_langs():
+    src = st.session_state.get("translate_src", "hr")
+    tgt = st.session_state.get("translate_tgt", "en")
+    st.session_state["translate_src"] = tgt
+    st.session_state["translate_tgt"] = src
+    src_text = st.session_state.get("translate_src_text", "")
+    out_text = st.session_state.get("translate_out", "")
+    st.session_state["translate_src_text"] = out_text
+    st.session_state["translate_out"] = src_text
+
+
+def do_translate():
+    text = (st.session_state.get("translate_src_text") or "").strip()
+    if not text:
+        return
+    src = st.session_state.get("translate_src", "hr")
+    tgt = st.session_state.get("translate_tgt", "en")
+    try:
+        llm = llm_bridge()
+        if llm is None:
+            raise RuntimeError(t("routing_none"))
+        st.session_state["translate_out"] = translate_text(
+            llm, text, LANG_FULL[src], LANG_FULL[tgt])
+        USAGE.log("translate", len(text), UNIT_CHARS, llm.id)
+    except Exception as e:
+        st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
+
+
+def lang_pills(prefix: str, which: str, current: str):
+    cols = st.columns(len(LANGS5))
+    for col, code in zip(cols, LANGS5):
+        col.button(
+            code.upper(), key=f"{prefix}_{code}",
+            type="primary" if code == current else "secondary",
+            on_click=_set_translate_lang, args=(which, code),
+        )
 
 
 # ----------------------------------------------------------------------
-# Settings — a TAB, not a gear popover.
-#
-# It was a small glyph in the corner opening a popover, which Baba found
-# strange, and he is right: a popover is a menu, and this is a place. It
-# holds the interface language, the voices, the patch bay, the keys and
-# the help — as much content as any other tab. It was also the hardest
-# thing in the app to find by accident, which is exactly backwards for
-# this audience.
-#
-# The body is unchanged and still indented one level, so the `if True:`
-# keeps it valid without reflowing several hundred lines. Deliberate: a
-# mass re-indent is the kind of edit that quietly loses a line.
+# Transcribe
 # ----------------------------------------------------------------------
+
+
 # ----------------------------------------------------------------------
 # Tab bar. A segmented control rather than st.tabs, because st.tabs cannot
 # be switched from Python — its session_state updates but the visible
@@ -1754,12 +2011,25 @@ if active == "transcribe":
     # in the wrong one — Baba hit exactly that. There is only one now,
     # and the file type decides what happens to it. Fewer targets, no
     # wrong choice available.
-    picked = st.file_uploader(
-        t("pick_label"),
-        type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "wma", "mp4",
-              "webm", "mpga", "mpeg", "opus",
-              "png", "jpg", "jpeg", "webp", "gif"],
-        label_visibility="collapsed", key="any_upload")
+    # TWO pickers again, and labelled. One combined picker looked tidier
+    # but Android's file chooser filters by the accept list, and with
+    # audio types in it the picture files were greyed out — Baba could
+    # not select an image at all. Two clearly-named pickers beat one that
+    # cannot reach half its file types.
+    ucol1, ucol2 = st.columns(2)
+    with ucol1:
+        st.caption(t("pick_sound"))
+        picked_audio = st.file_uploader(
+            t("pick_sound"),
+            type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "wma", "mp4",
+                  "webm", "mpga", "mpeg", "opus"],
+            label_visibility="collapsed", key="audio_upload")
+    with ucol2:
+        st.caption(t("pick_image"))
+        picked_image = st.file_uploader(
+            t("pick_image"), type=["png", "jpg", "jpeg", "webp", "gif"],
+            label_visibility="collapsed", key="image_upload")
+    picked = picked_image if picked_image is not None else picked_audio
 
     if picked is not None:
         raw = picked.getvalue()
@@ -2137,6 +2407,8 @@ elif active == "read":
         st.caption(t("read_storage_note"))
 
 
+
+
 elif active == "settings":
     if True:
         lang_now = st.session_state.get("ui_lang", "hr")
@@ -2399,221 +2671,3 @@ elif active == "settings":
         if st.session_state.pop("_forgotten", False):
             st.caption(t("forgotten"))
         st.caption(APP_VERSION)
-
-
-
-
-def do_correct():
-    try:
-        path = st.session_state.get("flac_path")
-        lang = st.session_state.get("last_lang", "hr")
-        if not path or not os.path.exists(path):
-            raise RuntimeError("Original audio is no longer available.")
-        stt_now = stt_bridge()
-        if stt_now is None:
-            raise RuntimeError(t("routing_none"))
-        if stt_now.handles_big_files:
-            corrected = stt_now.transcribe(path, lang, model=stt_now.accurate_model())
-            st.session_state["transcript_box"] = corrected
-            st.session_state["flac_path"] = path
-            st.session_state["_transcribe_method"] = "direct"
-        else:
-            corrected, method, reusable = transcribe_any_size(
-                path, stt_now.accurate_model() or CORRECTION_MODEL, lang)
-            st.session_state["transcript_box"] = corrected
-            st.session_state["flac_path"] = reusable
-            st.session_state["_transcribe_method"] = method
-    except Exception as e:
-        st.session_state["_correct_error"] = str(e)
-
-
-def read_this():
-    """Move to the Talk tab, carry the text over, pick the voice that matches
-    the language just transcribed, and start reading — no popup, no extra tap."""
-    st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
-    lang = st.session_state.get("last_lang", "hr")
-    current = st.session_state.get("voice", "Gabrijela")
-    if VOICE_LANG.get(current) != lang:
-        st.session_state["voice"] = VOICES_BY_LANG[lang][0]
-    st.session_state["active_tab"] = "talk"
-    st.session_state["_auto_read"] = True
-
-
-def _highlight_span(text: str, start: int = None, end: int = None) -> str:
-    """HTML-escaped text with [start:end) wrapped in the gold highlight span.
-    With no range, the whole text is wrapped (sentence-level, the Edge case).
-    Bounds are clamped defensively — a mark that's ever slightly out of
-    range must never crash the read, just highlight nothing that run."""
-    if start is None or end is None:
-        return ('<span style="background:#f59e0b;color:#0b0d10;'
-                'border-radius:4px;padding:1px 4px;">' + html.escape(text) + "</span>")
-    start = max(0, min(start, len(text)))
-    end = max(start, min(end, len(text)))
-    return (html.escape(text[:start]) +
-            '<span style="background:#f59e0b;color:#0b0d10;'
-            'border-radius:4px;padding:1px 4px;">' + html.escape(text[start:end]) + "</span>" +
-            html.escape(text[end:]))
-
-
-def _subtitle(text: str, start: int = None, end: int = None) -> str:
-    inner = _highlight_span(text, start, end) if text else ""
-    return f'<div class="subtitle-box">{inner}</div>'
-
-
-def _render_page(page_sentences: list, current_idx: int, doc_slot,
-                 word_start: int = None, word_end: int = None) -> None:
-    parts = []
-    for j, s in enumerate(page_sentences):
-        if j == current_idx:
-            parts.append(_highlight_span(s, word_start, word_end))
-        else:
-            parts.append(html.escape(s))
-    doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
-
-
-def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
-                        page_key: str, page_slot, progress_slot=None,
-                        speed: float = 1.0, gap: float = 0.0):
-    """Shared by Talk and Translate: synthesize and play one sentence at a
-    time. Highlights word-by-word when the engine can back it with real
-    per-word timing (Speechify's speech_marks, measured from the audio it
-    just generated — precise, not inferred); falls back to sentence-level
-    otherwise (Edge — its word boundaries are on its own clock and drift,
-    see HANDOVER.md for why that was deliberately dropped everywhere else).
-
-    synth_fn(text) -> (audio_bytes, seconds) or (audio_bytes, seconds, marks).
-    marks is a list of {start, end, start_time, end_time} in the same shape
-    sp_synthesize returns, or falsy/absent for sentence-level.
-
-    Long text is split into pages (tk.paginate) so one document never becomes
-    one unbroken, uninterruptible reading session. A new page starts reading
-    the instant Next page is pressed — no message, no waiting, no sense of
-    having hit a limit."""
-    try:
-        sentences = tk.sentences_of(raw)
-    except Exception as e:          # never let the engine take the page down
-        sentences = []
-        st.error(f"{t('read_fail')}: {e}")
-    if not sentences:
-        st.info(t("nothing_to_read"))
-        return
-
-    pages = tk.paginate(sentences)
-    n_pages = len(pages)
-    digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
-    if st.session_state.get(page_key + "_digest") != digest:
-        st.session_state[page_key] = 0
-        st.session_state[page_key + "_digest"] = digest
-    page_idx = min(max(st.session_state.get(page_key, 0), 0), n_pages - 1)
-    page_sentences = pages[page_idx]
-
-    if n_pages > 1:
-        page_slot.caption(f"{t('page_label')} {page_idx + 1}/{n_pages}")
-
-    total_chars = sum(len(x) for x in page_sentences)
-    spoken_chars = 0
-
-    for i, sent in enumerate(page_sentences):
-        if progress_slot is not None:
-            from ttt import read_tab as _RT
-            progress_slot.caption(_RT.progress_line(
-                spoken_chars, total_chars, i + 1, len(page_sentences),
-                speed=speed, sentence_gap=gap))
-        try:
-            result = synth_fn(sent)
-        except Exception as e:
-            st.error(f"{t('read_fail')} {i + 1}: {e}")
-            break
-        audio_bytes, dur = result[0], result[1]
-        marks = result[2] if len(result) > 2 else None
-
-        if marks:
-            # Word-level: play once, then step the highlight through each
-            # mark's own measured window — never touches playback rate.
-            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
-            for wi, m in enumerate(marks):
-                _render_page(page_sentences, i, doc_slot, m["start"], m["end"])
-                sub_slot.markdown(_subtitle(sent, m["start"], m["end"]), unsafe_allow_html=True)
-                nxt = marks[wi + 1]["start_time"] if wi + 1 < len(marks) else dur
-                time.sleep(max(0.02, nxt - m["start_time"]))
-        else:
-            _render_page(page_sentences, i, doc_slot)
-            sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
-            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
-            time.sleep(dur + 0.15)
-
-        spoken_chars += len(sent)
-        if gap:
-            time.sleep(gap)
-
-    doc_slot.markdown(html.escape(" ".join(page_sentences)))
-    sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
-
-    # Log what was actually SPOKEN, not what was pasted — a page that was
-    # never reached should not count against anyone's usage.
-    if spoken_chars:
-        USAGE.log("read", spoken_chars, UNIT_CHARS,
-                  st.session_state.get("voice_engine", "edge"))
-
-    # A key can be discovered dead or rate-limited DURING a read, so the
-    # ring must be written back afterwards. Missing this was a real bug:
-    # a key buried mid-session came back on the next reload and wasted a
-    # request every single time. Cheap and idempotent; always do it.
-    save_rings()
-
-    if page_idx + 1 < n_pages:
-        def _next_page():
-            st.session_state[page_key] = page_idx + 1
-            st.session_state[page_key + "_auto"] = True
-        page_slot.button(
-            f"▶ {t('next_page')} ({page_idx + 2}/{n_pages})",
-            key=page_key + "_nextbtn", use_container_width=True,
-            on_click=_next_page,
-        )
-
-
-def _set_translate_lang(which: str, code: str):
-    st.session_state["translate_" + which] = code
-
-
-def swap_translate_langs():
-    src = st.session_state.get("translate_src", "hr")
-    tgt = st.session_state.get("translate_tgt", "en")
-    st.session_state["translate_src"] = tgt
-    st.session_state["translate_tgt"] = src
-    src_text = st.session_state.get("translate_src_text", "")
-    out_text = st.session_state.get("translate_out", "")
-    st.session_state["translate_src_text"] = out_text
-    st.session_state["translate_out"] = src_text
-
-
-def do_translate():
-    text = (st.session_state.get("translate_src_text") or "").strip()
-    if not text:
-        return
-    src = st.session_state.get("translate_src", "hr")
-    tgt = st.session_state.get("translate_tgt", "en")
-    try:
-        llm = llm_bridge()
-        if llm is None:
-            raise RuntimeError(t("routing_none"))
-        st.session_state["translate_out"] = translate_text(
-            llm, text, LANG_FULL[src], LANG_FULL[tgt])
-        USAGE.log("translate", len(text), UNIT_CHARS, llm.id)
-    except Exception as e:
-        st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
-
-
-def lang_pills(prefix: str, which: str, current: str):
-    cols = st.columns(len(LANGS5))
-    for col, code in zip(cols, LANGS5):
-        col.button(
-            code.upper(), key=f"{prefix}_{code}",
-            type="primary" if code == current else "secondary",
-            on_click=_set_translate_lang, args=(which, code),
-        )
-
-
-# ----------------------------------------------------------------------
-# Transcribe
-# ----------------------------------------------------------------------

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html><body style="margin:0">
+<!--
+  Paste target for TTT-LLL.
+
+  A real Streamlit component (declare_component) rather than
+  components.html, because it must send data BACK to Python and
+  components.html is one-way. Uses the same raw postMessage protocol as
+  ls_bridge_frontend next door - that one is proven in production here,
+  and it needs no external script, so there is nothing to fail to load.
+
+  IT DOES NOT READ THE CLIPBOARD. It cannot: this iframe is granted
+  clipboard-write but NOT clipboard-read (measured on the live iframe;
+  HANDOVER section 14), so a button calling readText() would fail
+  silently for every real user. Instead it catches the native paste
+  event, which the browser delivers with no permission at all because the
+  PERSON started it - verified with permissions explicitly withheld.
+-->
+<style>
+  html, body { margin:0; padding:0; background:transparent;
+               font-family: ui-monospace, "JetBrains Mono", monospace; }
+  #pad {
+    width:100%; min-height:44px; box-sizing:border-box;
+    display:flex; align-items:center; justify-content:center;
+    background:#0b0d10; color:#f2ddb4;
+    border:1px dashed #23303d; border-radius:999px;
+    padding:0.5rem 0.7rem; cursor:pointer; font-size:0.9rem;
+    letter-spacing:0.04em; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis;
+    transition: border-color 90ms ease-out, background-color 90ms ease-out;
+  }
+  #pad:hover, #pad.focus { border-color:#f59e0b; background:rgba(245,158,11,0.10); }
+  #pad.done { border-style:solid; border-color:#f59e0b; background:#f59e0b; color:#0b0d10; }
+  #pad:focus-visible { outline:3px solid #f59e0b; outline-offset:2px; }
+  #sink { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+  @media (prefers-reduced-motion: reduce) { #pad { transition:none; } }
+</style>
+
+<div id="pad" role="button" tabindex="0" aria-live="polite">paste</div>
+<textarea id="sink" aria-hidden="true"></textarea>
+
+<script>
+function post(type, extra) {
+  const data = Object.assign({ isStreamlitMessage: true, type: type }, extra || {});
+  window.parent.postMessage(data, "*");
+}
+function setComponentValue(value) {
+  post("streamlit:setComponentValue", { value: value, dataType: "json" });
+}
+
+const pad  = document.getElementById('pad');
+const sink = document.getElementById('sink');
+let L = { idle: "paste", hint: "tap, then paste", done: "pasted" };
+let timer = null;
+
+function set(state) {
+  pad.textContent = L[state] || L.idle;
+  pad.className = (state === 'done') ? 'done' : '';
+}
+function send(text) {
+  if (!text || !text.trim()) return;
+  set('done');
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(function () { set('idle'); }, 2000);
+  setComponentValue({ text: text, at: Date.now() });
+}
+function focusSink() {
+  pad.classList.add('focus');
+  set('hint');
+  sink.value = '';
+  sink.focus();
+  try { sink.setSelectionRange(0, 0); } catch (e) {}
+}
+
+pad.addEventListener('click', focusSink);
+pad.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusSink(); }
+});
+sink.addEventListener('blur', function () {
+  pad.classList.remove('focus');
+  if (pad.className !== 'done') set('idle');
+});
+
+document.addEventListener('paste', function (e) {
+  const dt = e.clipboardData;
+  if (!dt) return;
+  const text = dt.getData('text/plain');
+  if (text && text.trim()) { e.preventDefault(); send(text); }
+});
+sink.addEventListener('input', function () { send(sink.value); });
+
+window.addEventListener("message", function (event) {
+  const msg = event.data;
+  if (!msg || msg.type !== "streamlit:render") return;
+  const args = msg.args || {};
+  if (args.labels) { L = args.labels; set('idle'); }
+  post("streamlit:setFrameHeight", { height: 60 });
+});
+
+set('idle');
+post("streamlit:componentReady", { apiVersion: 1 });
+post("streamlit:setFrameHeight", { height: 60 });
+</script>
+</body></html>
