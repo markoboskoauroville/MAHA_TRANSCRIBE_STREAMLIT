@@ -21,6 +21,25 @@ more accurate). **Read this** sends the transcript straight to the Talk tab.
 4. Any number of Groq keys can be listed in secrets; the app rotates to the
    next one if a key is rate-limited or rejected.
 
+## Settings
+
+Gear icon, upper right: interface language (Croatian by default, English
+available), default speech language, default voice. Whoever logs in — the
+matched password names the settings profile — gets their own saved
+preferences, persisted three ways in priority order:
+
+1. `st.session_state` — already loaded this session.
+2. Browser localStorage, via a small hand-rolled custom component
+   (`ls_bridge.py` / `ls_bridge_frontend/`) — survives server restarts,
+   scoped per browser. `st.components.v1.html()` was tried first and
+   rejected: its iframe is sandboxed without `allow-top-navigation`, so a
+   redirect-based read-back throws `Unsafe attempt to initiate navigation`.
+   A real `declare_component` talks over `postMessage` instead, which the
+   sandbox allows — verified with a headless browser end to end.
+3. A small server-side JSON file — survives only within this container's
+   current lifetime (Streamlit Community Cloud doesn't guarantee disk
+   across restarts), kept as a same-instance fallback, not a durable store.
+
 ## Talk
 
 Paste text (or arrive via Read this), pick a voice, press Read. Each

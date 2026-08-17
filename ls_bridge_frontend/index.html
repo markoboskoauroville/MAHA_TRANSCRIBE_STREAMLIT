@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html><body style="margin:0">
+<script>
+function post(type, extra) {
+  const data = Object.assign({ isStreamlitMessage: true, type: type }, extra || {});
+  window.parent.postMessage(data, "*");
+}
+function setComponentValue(value) {
+  post("streamlit:setComponentValue", { value: value, dataType: "json" });
+}
+function handleRender(args) {
+  try {
+    if (args && args.write_key) {
+      localStorage.setItem(args.write_key, args.write_value);
+    }
+    const out = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf("maha_") === 0) out[k] = localStorage.getItem(k);
+    }
+    setComponentValue({ ok: true, data: out });
+  } catch (e) {
+    setComponentValue({ ok: false, error: String(e) });
+  }
+}
+window.addEventListener("message", function (event) {
+  const msg = event.data;
+  if (!msg) return;
+  if (msg.type === "streamlit:render") {
+    handleRender(msg.args);
+  }
+});
+post("streamlit:componentReady", { apiVersion: 1 });
+post("streamlit:setFrameHeight", { height: 0 });
+</script>
+</body></html>
