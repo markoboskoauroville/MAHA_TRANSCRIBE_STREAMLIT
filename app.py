@@ -8,6 +8,7 @@ Talk: paste text → read aloud live, sentence by sentence, with a subtitle line
 
 import os
 import json
+import glob
 import hmac
 import html
 import time
@@ -47,7 +48,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v7 (a)"
+APP_VERSION = "v8 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -115,6 +116,15 @@ STRINGS = {
     "swap_help":          {"en": "Swap languages",    "hr": "Zamijeni jezike"},
     "page_label":         {"en": "Page",             "hr": "Stranica"},
     "next_page":          {"en": "Next page",         "hr": "Sljedeća stranica"},
+    "upload_label":       {"en": "Or pick an audio file", "hr": "Ili odaberi audio datoteku"},
+    "chunk_progress":     {"en": "Transcribing part", "hr": "Transkribiram dio"},
+    "method_direct":      {"en": "Uploaded as-is.",   "hr": "Poslano izravno."},
+    "method_transcoded":  {"en": "Compressed to fit, then transcribed.",
+                            "hr": "Sažeto da stane, pa transkribirano."},
+    "method_chunked":     {"en": "File was large — split into parts, transcribed, and stitched back together.",
+                            "hr": "Datoteka je velika — podijeljena na dijelove, transkribirana, pa spojena natrag."},
+    "method_gap":         {"en": "Note: one or more parts could not be transcribed (marked […] in the text).",
+                            "hr": "Napomena: jedan ili više dijelova nije transkribiran (označeno […] u tekstu)."},
 }
 
 
@@ -346,26 +356,106 @@ def translate_text(text: str, source_lang: str, target_lang: str) -> str:
     raise RuntimeError(f"All Groq keys failed ({last_err})")
 
 
+def transcode_to_flac(in_path: str) -> str:
+    """ffmpeg auto-detects input format from content, not extension, so this
+    works on whatever a file picker hands it — mp3, m4a, ogg, wav, anything
+    ffmpeg reads. Same 16kHz mono FLAC target Groq documents."""
+    out_path = in_path + ".flac"
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", in_path, "-ar", "16000", "-ac", "1",
+             "-map", "0:a", "-c:a", "flac", out_path],
+            check=True, capture_output=True, timeout=1800,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg not found on the server — check packages.txt.")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg failed: {e.stderr.decode(errors='ignore')[-300:]}")
+    return out_path
+
+
 def to_flac16k(wav_bytes: bytes) -> str:
     """Downsample the browser recording to exactly what Whisper on Groq
     wants: 16kHz mono FLAC. This is Groq's own documented ffmpeg command."""
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(wav_bytes)
         in_path = f.name
-    out_path = in_path[:-4] + ".flac"
     try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", in_path, "-ar", "16000", "-ac", "1",
-             "-map", "0:a", "-c:a", "flac", out_path],
-            check=True, capture_output=True, timeout=60,
-        )
-    except FileNotFoundError:
-        raise RuntimeError("ffmpeg not found on the server — check packages.txt.")
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg failed: {e.stderr.decode(errors='ignore')[-300:]}")
+        return transcode_to_flac(in_path)
     finally:
         os.remove(in_path)
-    return out_path
+
+
+# ----------------------------------------------------------------------
+# Big files: Groq's own hard limit is 25MB. Three tiers, in order, each
+# only attempted if the one before didn't already produce something small
+# enough — never all three unconditionally, and a failure in one tier falls
+# through to the next rather than failing the whole job.
+#   1. Already small enough — upload exactly as given, no transcoding cost.
+#   2. Transcode to 16kHz mono FLAC (routinely 5-10x smaller than a raw
+#      stereo recording) and try again.
+#   3. Still too big — split the transcoded audio into fixed-length chunks
+#      and transcribe each one. One chunk failing (even after that chunk's
+#      own full Groq key rotation) leaves a marker and does not lose the
+#      rest of the transcript.
+# ----------------------------------------------------------------------
+GROQ_MAX_MB = 25
+SAFE_MB = 20                      # matches Baba's own safety margin
+SAFE_BYTES = SAFE_MB * 1024 * 1024
+CHUNK_SECONDS = 600               # 10 minutes; well under the size limit
+                                   # even for dense speech at 16kHz mono FLAC
+
+
+def split_into_chunks(flac_path: str, chunk_seconds: int = CHUNK_SECONDS) -> list:
+    out_dir = tempfile.mkdtemp()
+    pattern = os.path.join(out_dir, "chunk_%04d.flac")
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", flac_path, "-f", "segment",
+         "-segment_time", str(chunk_seconds), "-ar", "16000", "-ac", "1",
+         "-c:a", "flac", pattern],
+        check=True, capture_output=True, timeout=3600,
+    )
+    return sorted(glob.glob(os.path.join(out_dir, "chunk_*.flac")))
+
+
+def transcribe_any_size(path: str, model: str, language: str, progress_cb=None):
+    """Returns (text, method, reusable_path). reusable_path is whichever file
+    actually got transcribed — the original for 'direct', the transcoded
+    FLAC for 'transcoded' or 'chunked' — so a later Correct pass (a different
+    model, not a different file) always has something valid to work from."""
+    size = os.path.getsize(path)
+
+    # Tier 1: small enough already.
+    if size <= SAFE_BYTES:
+        try:
+            return transcribe(path, model, language), "direct", path
+        except Exception:
+            pass   # even a small file can fail to upload; fall through
+
+    # Tier 2: transcode, then re-check.
+    flac_path = transcode_to_flac(path)
+    flac_size = os.path.getsize(flac_path)
+    if flac_size <= SAFE_BYTES:
+        try:
+            return transcribe(flac_path, model, language), "transcoded", flac_path
+        except Exception:
+            pass   # fall through to chunking rather than give up
+
+    # Tier 3: chunk and stitch. A chunk that fails leaves a gap marker
+    # instead of aborting everything already transcribed successfully.
+    chunk_paths = split_into_chunks(flac_path)
+    parts, ok_count = [], 0
+    for i, cp in enumerate(chunk_paths):
+        if progress_cb:
+            progress_cb(i, len(chunk_paths))
+        try:
+            parts.append(transcribe(cp, model, language))
+            ok_count += 1
+        except Exception:
+            parts.append("[…]")
+    if not ok_count:
+        raise RuntimeError("Every chunk failed to transcribe — check the Groq keys.")
+    return " ".join(p for p in parts if p), "chunked", flac_path
 
 
 # ----------------------------------------------------------------------
@@ -515,9 +605,14 @@ active = st.session_state.get("active_tab") or "transcribe"
 
 def do_correct():
     try:
-        corrected = transcribe(st.session_state["flac_path"], CORRECTION_MODEL,
-                               st.session_state.get("last_lang", "hr"))
+        path = st.session_state.get("flac_path")
+        lang = st.session_state.get("last_lang", "hr")
+        if not path or not os.path.exists(path):
+            raise RuntimeError("Original audio is no longer available.")
+        corrected, method, reusable = transcribe_any_size(path, CORRECTION_MODEL, lang)
         st.session_state["transcript_box"] = corrected
+        st.session_state["flac_path"] = reusable
+        st.session_state["_transcribe_method"] = method
     except Exception as e:
         st.session_state["_correct_error"] = str(e)
 
@@ -668,13 +763,57 @@ if active == "transcribe":
             try:
                 with st.spinner(t("preparing_audio")):
                     flac_path = to_flac16k(audio.getvalue())
-                st.session_state["flac_path"] = flac_path
                 with st.spinner(t("transcribing")):
                     text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
                 st.session_state["transcript_box"] = text
+                st.session_state["flac_path"] = flac_path
                 st.session_state["last_lang"] = lang_code
+                st.session_state["_transcribe_method"] = "direct"
             except Exception as e:
                 st.error(str(e))
+
+    uploaded = st.file_uploader(
+        t("upload_label"),
+        type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "wma", "mp4", "webm", "mpga", "mpeg", "opus"],
+        label_visibility="collapsed", key="audio_upload",
+    )
+    if uploaded is not None:
+        file_digest = hashlib.md5(uploaded.getvalue()).hexdigest()
+        if st.session_state.get("_file_digest") != file_digest:
+            old_flac = st.session_state.get("flac_path")
+            if old_flac and os.path.exists(old_flac):
+                try:
+                    os.remove(old_flac)
+                except Exception:
+                    pass
+            st.session_state["_file_digest"] = file_digest
+            suffix = "_" + "".join(c for c in uploaded.name if c.isalnum() or c in "._-")
+            tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+            tmp.write(uploaded.getvalue())
+            tmp.close()
+            progress_bar = st.progress(0.0, text=t("preparing_audio"))
+            try:
+                def _cb(i, n):
+                    progress_bar.progress((i + 1) / n, text=f"{t('chunk_progress')} {i + 1}/{n}")
+                text, method, reusable = transcribe_any_size(tmp.name, PRIMARY_MODEL, lang_code, progress_cb=_cb)
+                progress_bar.empty()
+                st.session_state["transcript_box"] = text
+                st.session_state["last_lang"] = lang_code
+                st.session_state["flac_path"] = reusable
+                st.session_state["_transcribe_method"] = method
+            except Exception as e:
+                progress_bar.empty()
+                st.error(str(e))
+                st.session_state["flac_path"] = None
+            finally:
+                # tmp.name itself is only still needed if tier 1 ('direct')
+                # kept it as the reusable path; anything else made its own
+                # transcoded/chunked files and the raw upload can go.
+                if st.session_state.get("flac_path") != tmp.name and os.path.exists(tmp.name):
+                    try:
+                        os.remove(tmp.name)
+                    except Exception:
+                        pass
 
     if "transcript_box" in st.session_state:
         st.text_area(t("transcript_label"), key="transcript_box", height=200,
@@ -688,6 +827,12 @@ if active == "transcribe":
 
         if st.session_state.get("_correct_error"):
             st.error(st.session_state.pop("_correct_error"))
+
+        method = st.session_state.get("_transcribe_method")
+        if method and method != "direct":
+            st.caption(t("method_" + method))
+            if "[…]" in (st.session_state.get("transcript_box") or ""):
+                st.caption(t("method_gap"))
 
 # ----------------------------------------------------------------------
 # Talk
