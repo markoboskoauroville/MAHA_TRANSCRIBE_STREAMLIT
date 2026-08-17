@@ -835,3 +835,44 @@ because this decides whether a button can exist at all.
 
 So: copy via the clipboard API, paste via the paste event. Anything else
 is a button that looks like it works and does not.
+
+---
+
+## 15. PLANNED: the sheet as two-way storage (not just a log)
+
+Baba's idea, recorded 17.8.2026. The Apps Script web app already accepts
+writes; adding a `doGet` that RETURNS rows makes the same sheet a small
+per-user database. That is worth doing because it is the only durable,
+shared store this deployment has — Cloud disk is not durable, secrets are
+read-only, and localStorage is trapped in one browser.
+
+**First use, and the one to build first: custom prompts.** GRAMMAR and
+RE-SHAPE currently run fixed instructions from `ttt/transform.py`. A
+`settings` tab in the sheet, one row per user, would let each person have
+their own wording — and Baba can edit it by hand in the sheet, which is
+the real appeal.
+
+    user        key              value
+    emina       prompt_grammar   Ispravi pravopis, ne diraj stil.
+    marinko     prompt_reshape   Skrati na natuknice.
+
+**Then, as wanted:** saved texts (the Read archive, which is
+browser-only today and dies with a cleared browser), per-user voice and
+engine choices, and anything else that should follow a person between
+devices.
+
+### Rules for whoever builds it
+
+  * **The sheet is a convenience, never a dependency.** If it is
+    unreachable the app must behave exactly as it does today, with the
+    built-in defaults. Same rule as the usage log: read with a short
+    timeout, swallow every error.
+  * **Cache per session.** A read on every rerun would mean several
+    fetches a second.
+  * **Still no content in the log tabs.** Saved texts, if added, go in
+    their own tab that the owner can see is private data, not mixed into
+    usage rows.
+  * **Write through the same shared token.** No second auth path.
+  * **A prompt from the sheet is untrusted text.** It goes into an LLM
+    instruction, so keep the fencing that `transform.build_prompt`
+    already applies to the material, and cap the length.
