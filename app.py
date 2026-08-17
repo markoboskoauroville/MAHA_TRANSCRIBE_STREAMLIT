@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v42 (a)"
+APP_VERSION = "v43 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -396,6 +396,12 @@ STRINGS = {
     "paste_btn":          {"en": "paste",             "hr": "zalijepi"},
     "paste_hint":         {"en": "tap, then paste",   "hr": "dodirni, pa zalijepi"},
     "paste_done":         {"en": "pasted ✓",          "hr": "zalijepljeno ✓"},
+    "translate_btn_word": {"en": "translate",         "hr": "prevedi"},
+    "clear_word":         {"en": "clear",             "hr": "obriši"},
+    "copy_word":          {"en": "copy",              "hr": "kopiraj"},
+    "copy_done_word":     {"en": "copied",            "hr": "kopirano"},
+    "translate_out_ph":   {"en": "The translation will appear here",
+                            "hr": "Ovdje će se pojaviti prijevod"},
     "sig_transcribe":     {"en": "transcribe",        "hr": "transkripcija"},
     "sig_read":           {"en": "read",              "hr": "čitanje"},
     "sig_translate":      {"en": "translate",         "hr": "prijevod"},
@@ -556,8 +562,10 @@ def paste_target(where: str):
         return None
     try:
         val = _paste_component(
-            labels={"idle": SYM["paste"], "hint": SYM["paste"] + " …",
-                    "done": "\u2713", "word": t("paste_btn")},
+            # The word, not the arrow: this sits in a command row where
+            # every other item is readable.
+            labels={"idle": t("paste_btn"), "hint": t("paste_hint"),
+                    "done": t("paste_done"), "word": t("paste_btn")},
             key=f"paste_{where}", default=None)
     except Exception:
         return None
@@ -2500,38 +2508,44 @@ elif active == "talk":
 
 
 elif active == "translate":
-    # LEFT TO RIGHT IS THE INSTRUCTION.
+    # WORDS, NOT GLYPHS, ABOVE A TEXT BOX.
     #
-    # Baba's principle, and it should hold everywhere in this app: the
-    # buttons in a row are the steps in order, so someone works across
-    # the screen without deciding anything. Here that is
+    # Baba: "Every command above the text box is a command. We need to
+    # see what is it." He is right, and it is not a contradiction of the
+    # symbols elsewhere: ▶ and ■ on a player are universal, but no glyph
+    # says "translate". A command whose meaning has to be guessed is a
+    # command that will not be pressed by the people this app is for.
     #
-    #     ⇩ paste   →   ▶ translate   →   ✕ clear
+    # Order is the instruction, left to right:  paste → translate → clear
     #
-    # above the box they act on. The old layout had translate BELOW the
-    # box and a swap button in the middle of nothing, so the eye had to
-    # hunt for what to press next.
+    # BOTH BOXES ARE ALWAYS THERE. The result box used to appear only
+    # once a translation existed, so the screen changed shape under the
+    # person and there was nothing to tell them where the answer would
+    # land. An empty box waiting is an explanation; a box that materialises
+    # is a surprise.
     st.session_state.setdefault("translate_src", "hr")
     st.session_state.setdefault("translate_tgt", "en")
+    st.session_state.setdefault("translate_out", "")
 
     lang_pills("srcpill", "src", st.session_state["translate_src"])
 
-    with st.container(key="cprow_trsrc"):
-        wcol1, wcol2, wcol3, _ = st.columns([1, 1, 1, 2])
-        with wcol1:
+    with st.container(key="cmdrow_src"):
+        # paste needs a wider column than the plain word buttons: it is
+        # an iframe, so it cannot shrink to its text the way a button can.
+        c1, c2, c3, _ = st.columns([1.4, 1.1, 1, 1])
+        with c1:
             got = paste_target("trsrc")
             if got:
                 st.session_state["translate_src_text"] = got
                 st.rerun()
-        wcol2.button(SYM["go"], key="do_translate_btn",
-                     help=t("translate_btn"), on_click=do_translate)
+        c2.button(t("translate_btn_word"), key="do_translate_btn",
+                  on_click=do_translate)
 
         def _clear_src():
             st.session_state["translate_src_text"] = ""
-            st.session_state.pop("translate_out", None)
+            st.session_state["translate_out"] = ""
 
-        wcol3.button(SYM["clear"], key="tr_clear_src", help=t("clear_btn"),
-                     on_click=_clear_src)
+        c3.button(t("clear_word"), key="tr_clear_src", on_click=_clear_src)
 
     st.text_area("src", key="translate_src_text", height=120,
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
@@ -2541,27 +2555,26 @@ elif active == "translate":
     if st.session_state.get("_translate_error"):
         st.error(st.session_state.pop("_translate_error"))
 
-    if "translate_out" in st.session_state:
-        # The result, and the same left-to-right row over it: copy first,
-        # because that is what people do with a translation.
-        with st.container(key="txttools_tr"):
-            ocol1, ocol2, _ = st.columns([1, 1, 4])
-            with ocol1:
-                if (st.session_state.get("translate_out") or "").strip():
-                    components.html(
-                        copybtn.cp_html(st.session_state["translate_out"],
-                                        done_label="OK", failed_label="X",
-                                        size=40),
-                        height=48)
+    with st.container(key="cmdrow_out"):
+        o1, o2, _ = st.columns([1.4, 1.1, 1.5])
+        with o1:
+            out_now = (st.session_state.get("translate_out") or "").strip()
+            if out_now:
+                components.html(
+                    copybtn.cp_html(out_now, label=t("copy_word"),
+                                    done_label=t("copy_done_word"),
+                                    failed_label="—", size=0),
+                    height=52)
+            else:
+                st.caption(t("copy_word"))
 
-            def _clear_out():
-                st.session_state.pop("translate_out", None)
+        def _clear_out():
+            st.session_state["translate_out"] = ""
 
-            ocol2.button(SYM["clear"], key="tr_clear_out", help=t("clear_btn"),
-                         on_click=_clear_out)
+        o2.button(t("clear_word"), key="tr_clear_out", on_click=_clear_out)
 
-        st.text_area("out", key="translate_out", height=150,
-                     label_visibility="collapsed")
+    st.text_area("out", key="translate_out", height=150,
+                 label_visibility="collapsed", placeholder=t("translate_out_ph"))
 
     tab_signature(t("sig_translate"))
 

@@ -143,6 +143,9 @@ def html(text: str, label: str, busy: str, done: str, failed: str,
 
 def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
             label: str = "CP", size: int = CP_SIZE) -> str:
+    """size=0 means a WORD pill rather than a circle — for command rows
+    where the label has to be readable ("copy") instead of an initialism.
+    Same behaviour and the same state changes either way."""
     """The round amber CP button from Baba's own app.
 
     Same behaviour as the wide one — it announces what it is doing — but
@@ -159,12 +162,16 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
 <meta charset="utf-8">
 <style>
   html, body {{ margin:0; padding:0; background:transparent;
-                display:flex; align-items:center; justify-content:center; }}
+                display:flex; align-items:center;
+                justify-content:{"flex-start" if not size else "center"}; }}
   button {{
-    width:{size}px; height:{size}px; border-radius:50%;
+    {"width:auto; min-width:64px; height:38px; border-radius:999px; padding:0 0.9rem;"
+     if not size else
+     f"width:{size}px; height:{size}px; border-radius:50%;"}
     border:1px solid {GOLD}; background:{GOLD}; color:{BG};
     font-family: ui-monospace, monospace; font-weight:800;
-    font-size:{max(13, int(size * 0.30))}px; letter-spacing:0.06em; cursor:pointer;
+    font-size:{13 if not size else max(13, int(size * 0.30))}px;
+    letter-spacing:0.06em; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
     transition: transform 90ms ease-out, filter 90ms ease-out;
   }}

@@ -298,31 +298,40 @@ def css() -> str:
        matters on that screen, not the furniture around it. */
     .st-key-txttools .stButton button,
     [class*="st-key-txttools_"] .stButton button,
-    [class*="st-key-cprow_trsrc"] .stButton button {{
+    [class*="st-key-cmdrow_"] .stButton button {{
       background: transparent !important;
       border: none !important;
-      color: var(--dim) !important;
-      font-size: 1.1rem;
+      color: var(--prose) !important;
+      font-size: 0.95rem;
       padding: 0 0.4rem !important;
       min-width: 44px;
     }}
     .st-key-txttools .stButton button:hover:not(:disabled),
     [class*="st-key-txttools_"] .stButton button:hover:not(:disabled),
-    [class*="st-key-cprow_trsrc"] .stButton button:hover:not(:disabled) {{
+    [class*="st-key-cmdrow_"] .stButton button:hover:not(:disabled) {{
       color: var(--amber) !important;
       background: transparent !important;
       transform: none;
     }}
     .st-key-txttools div[data-testid="stHorizontalBlock"],
     [class*="st-key-txttools_"] div[data-testid="stHorizontalBlock"],
-    [class*="st-key-cprow_trsrc"] div[data-testid="stHorizontalBlock"] {{
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"] {{
       align-items: center; flex-wrap: nowrap !important;
     }}
     .st-key-txttools div[data-testid="stColumn"],
     [class*="st-key-txttools_"] div[data-testid="stColumn"],
-    [class*="st-key-cprow_trsrc"] div[data-testid="stColumn"] {{
+    [class*="st-key-cmdrow_"] div[data-testid="stColumn"] {{
       width: auto !important; flex: 0 0 auto !important; min-width: 0 !important;
     }}
+    /* The paste and copy controls are IFRAMES, not buttons. Shrinking a
+       column to its content works for text but collapses an iframe,
+       which clipped "paste" down to "as". They are always first in the
+       row, so the first column keeps a real width. */
+    [class*="st-key-cmdrow_"] div[data-testid="stColumn"]:first-child {{
+      flex: 0 0 96px !important;
+      min-width: 96px !important;
+    }}
+    [class*="st-key-cmdrow_"] iframe {{ width: 96px !important; }}
 
     /* Language switch: short labels, so nearly round. */
     .st-key-langrow .stButton button {{

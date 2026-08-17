@@ -19,14 +19,16 @@
 <style>
   html, body { margin:0; padding:0; background:transparent;
                font-family: ui-monospace, "JetBrains Mono", monospace; }
+  /* The word must fit: this pill lives in a narrow command column, and
+     when it was 0.9rem with generous padding the label was clipped to
+     "as". Sized to the text instead of forced to fill. */
   #pad {
-    width:100%; min-height:44px; box-sizing:border-box;
+    width:100%; min-width:0; min-height:40px; box-sizing:border-box;
     display:flex; align-items:center; justify-content:center;
     background:#0b0d10; color:#f2ddb4;
     border:1px dashed #23303d; border-radius:999px;
-    padding:0.5rem 0.7rem; cursor:pointer; font-size:0.9rem;
-    letter-spacing:0.04em; white-space:nowrap; overflow:hidden;
-    text-overflow:ellipsis;
+    padding:0.45rem 0.5rem; cursor:pointer; font-size:0.85rem;
+    letter-spacing:0.02em; white-space:nowrap;
     transition: border-color 90ms ease-out, background-color 90ms ease-out;
   }
   #pad:hover, #pad.focus { border-color:#f59e0b; background:rgba(245,158,11,0.10); }
