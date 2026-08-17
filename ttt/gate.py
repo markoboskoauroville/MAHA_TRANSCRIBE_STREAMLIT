@@ -27,29 +27,53 @@ across all sessions would let anyone lock out the real users at will,
 trading a small risk for a certain one.
 """
 
-# A LINEAR ladder, not a doubling one. Baba's reason, and it is the right
-# one: this app is for people with unsteady hands, who mistype in runs
-# rather than once. A doubling delay reaches a minute after a handful of
-# genuine fumbles and feels like punishment for a disability. Ten seconds
-# more each time is predictable — you can see the shape of it — and
-# predictability is itself an accessibility property.
-STEP_DELAY = 10.0        # each further failure adds this many seconds
-MAX_DELAY = 60.0         # never wait longer than this
-FREE_ATTEMPTS = 3        # three fumbles cost nothing at all
+# Baba's ladder, specified exactly. Three quick tries so an unsteady hand
+# is not punished for fumbling, then it becomes serious very fast.
+#
+#   attempt 1   immediate
+#   attempt 2   after 3 seconds
+#   attempt 3   after 6 seconds
+#   attempt 4   after 1 minute
+#   then        2, 4, 8, 16 minutes, capping at 16
+#
+# The shape matters: the cheap part is generous enough for a real person
+# having trouble typing, and the expensive part climbs fast enough that
+# guessing is pointless. Sixteen minutes is the ceiling because an
+# unbounded wait would be indistinguishable from the app being broken,
+# and someone locked out forever cannot tell the difference.
+LADDER = [
+    0,      # no failures yet
+    3,      # after 1 failure
+    6,      # after 2
+    60,     # after 3  — one minute
+    120,    # after 4  — two
+    240,    # after 5  — four
+    480,    # after 6  — eight
+    960,    # after 7  — sixteen, and the cap
+]
+MAX_DELAY = float(LADDER[-1])
 
 
 def next_delay(failures: int) -> float:
-    """How long to wait after `failures` consecutive failures.
-
-    Three free, then ten seconds more each time up to a minute:
-    0, 0, 0, 10, 20, 30, 40, 50, 60, 60 ...
-
-    Forgiving where the cause is probably a shaking hand, and steadily
-    expensive where the pattern starts to look like guessing.
-    """
-    if failures <= FREE_ATTEMPTS:
+    """Seconds to wait before the next attempt, after `failures` in a row."""
+    if failures <= 0:
         return 0.0
-    return min(STEP_DELAY * (failures - FREE_ATTEMPTS), MAX_DELAY)
+    if failures < len(LADDER):
+        return float(LADDER[failures])
+    return MAX_DELAY
+
+
+def humanise(seconds: float, minutes_word: str = "min", seconds_word: str = "s") -> str:
+    """A wait a person can act on. "960 s" is a number nobody can hold;
+    "16 min" is a decision about whether to make tea."""
+    seconds = max(0, int(round(seconds)))
+    if seconds < 60:
+        return f"{seconds} {seconds_word}"
+    mins = seconds // 60
+    rest = seconds % 60
+    if rest and mins < 3:
+        return f"{mins} {minutes_word} {rest} {seconds_word}"
+    return f"{mins} {minutes_word}"
 
 
 def locked_for(failures: int, last_failure_at: float, now: float) -> float:

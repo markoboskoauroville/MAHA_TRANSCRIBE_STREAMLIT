@@ -154,7 +154,7 @@ st.markdown(
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v27 (a)"
+APP_VERSION = "v28 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -286,8 +286,10 @@ STRINGS = {
     "keys_added":         {"en": "New keys added",      "hr": "Novih ključeva dodano"},
     "keys_good":          {"en": "working",             "hr": "rade"},
     "keys_bad":           {"en": "rejected",            "hr": "odbijeno"},
-    "gate_wait":          {"en": "Please wait {s} seconds before trying again.",
-                            "hr": "Pričekaj {s} sekundi prije novog pokušaja."},
+    "gate_wait":          {"en": "Please wait {s} before trying again.",
+                            "hr": "Pričekaj {s} prije novog pokušaja."},
+    "gate_min":           {"en": "min",               "hr": "min"},
+    "gate_sec":           {"en": "s",                 "hr": "s"},
     "copy_idle":          {"en": "Copy",              "hr": "Kopiraj"},
     "copy_busy":          {"en": "Copying…",          "hr": "Kopiram…"},
     "copy_done":          {"en": "Copied ✓",          "hr": "Kopirano ✓"},
@@ -525,7 +527,8 @@ def check_password() -> bool:
     if st.session_state.get("_authed") is False:
         wait = st.session_state.get("_gate_wait", 0)
         if wait and wait > 0:
-            st.error(f"{labels['wrong']} {t('gate_wait').format(s=int(wait) + 1)}")
+            pretty = gate.humanise(wait, t("gate_min"), t("gate_sec"))
+            st.error(f"{labels['wrong']} {t('gate_wait').format(s=pretty)}")
         else:
             st.error(labels["wrong"])
 
