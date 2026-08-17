@@ -1,9 +1,9 @@
 """
 Maha Transcribe — Streamlit / Groq edition.
 
-Record → ffmpeg downsample to 16kHz mono FLAC (Groq's own documented
-preprocessing target) → Whisper on Groq → optional re-check with the
-more accurate model. Groq only, no other providers.
+Transcribe: record → ffmpeg downsample to 16kHz mono FLAC (Groq's own
+documented preprocessing target) → Whisper on Groq. Groq only.
+Talk: paste text → read aloud live, sentence by sentence, with a subtitle line.
 """
 
 import os
@@ -20,67 +20,79 @@ from groq import Groq
 
 import talk_engine as tk
 from ls_bridge import ls_bridge
+from help_text import HELP, LOGIN_GUIDE
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
 # ----------------------------------------------------------------------
-st.set_page_config(page_title="Maha Transcribe", page_icon="🎙️", layout="centered")
+st.set_page_config(page_title="TTT-LLL", page_icon="🎙️", layout="centered")
 
 st.markdown(
     """
     <style>
     .stTextArea textarea { font-size: 1.15rem; line-height: 1.55; }
-    .block-container { padding-top: 3rem; max-width: 640px; }
+    .block-container { padding-top: 2.5rem; max-width: 640px; }
     div[data-testid="stAudioInput"] { margin-bottom: 0.6rem; }
     .stButton button { border-radius: 999px; }
     .st-key-correct_btn button { background-color: #4dd6e8; color: #0d0d0d; border-color: #4dd6e8; }
     .st-key-correct_btn button:hover { background-color: #6fe0ee; border-color: #6fe0ee; }
+    .subtitle-box {
+        border: 1px solid #3a3a3a; border-radius: 10px; padding: 16px 14px;
+        min-height: 92px; font-size: 1.45rem; line-height: 1.45;
+        color: #e8dcc0; background: #141414;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v2 (a)"
+APP_VERSION = "v3 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
-VOICE_LABELS = {"ukF": "Sonia", "ukM": "Ryan", "hrF": "Gabrijela", "hrM": "Srecko"}
+
+# Croatian first everywhere, English second.
+VOICES_BY_LANG = {"hr": ["Gabrijela", "Srecko"], "en": ["Sonia", "Ryan"]}
+VOICE_TO_VKEY = {"Gabrijela": "hrF", "Srecko": "hrM", "Sonia": "ukF", "Ryan": "ukM"}
+VOICE_LANG = {"Gabrijela": "hr", "Srecko": "hr", "Sonia": "en", "Ryan": "en"}
 
 
 # ----------------------------------------------------------------------
-# Translation — interface chrome only. Speech language (what you're
-# recognising) is a separate, existing setting and is not touched by this.
+# Translation — the whole interface vocabulary lives here, so switching
+# language is instant and needs no reload.
 # ----------------------------------------------------------------------
 STRINGS = {
-    "tab_transcribe":     {"en": "Transcribe",      "hr": "Transkripcija"},
+    "tab_transcribe":     {"en": "Transcribe",       "hr": "Transkripcija"},
     "tab_talk":           {"en": "Talk",             "hr": "Čitanje"},
     "speech_lang_label":  {"en": "Speech language",  "hr": "Jezik govora"},
     "lang_en":            {"en": "English",          "hr": "Engleski"},
     "lang_hr":            {"en": "Croatian",         "hr": "Hrvatski"},
     "transcript_label":   {"en": "Transcript",       "hr": "Transkript"},
-    "correct_btn":        {"en": "🔁 Correct",       "hr": "🔁 Ispravi"},
+    "correct_btn":        {"en": "Correct",          "hr": "Ispravi"},
     "correct_help":       {"en": "Re-check with the accurate model", "hr": "Provjeri ponovno točnijim modelom"},
-    "read_this_btn":      {"en": "🔊 Read this",     "hr": "🔊 Pročitaj ovo"},
-    "read_this_help":     {"en": "Send this transcript to the Talk tab", "hr": "Pošalji transkript na tab Čitanje"},
-    "read_this_toast":    {"en": "Sent to the Talk tab.", "hr": "Poslano na tab Čitanje."},
+    "read_this_btn":      {"en": "Read this",        "hr": "Pročitaj ovo"},
+    "read_this_help":     {"en": "Read this text aloud on the Talk tab", "hr": "Pročitaj ovaj tekst naglas na tabu Čitanje"},
     "voice_label":        {"en": "Voice",            "hr": "Glas"},
+    "group_hr":           {"en": "HR",               "hr": "HR"},
+    "group_en":           {"en": "ENG",              "hr": "ENG"},
     "talk_placeholder":   {"en": "Paste text here, or send it from Transcribe with Read this",
                             "hr": "Zalijepi tekst ovdje, ili ga pošalji s taba Transkripcija pomoću Pročitaj ovo"},
-    "read_btn":           {"en": "▶ Read",           "hr": "▶ Čitaj"},
-    "stop_btn":           {"en": "■ Stop",           "hr": "■ Zaustavi"},
+    "read_btn":           {"en": "Read",             "hr": "Čitaj"},
+    "stop_btn":           {"en": "Stop",             "hr": "Zaustavi"},
     "stop_help":          {"en": "Interrupts the reading in progress", "hr": "Prekida čitanje u tijeku"},
     "nothing_to_read":    {"en": "Nothing to read yet.", "hr": "Još nema teksta za čitanje."},
     "read_fail":          {"en": "Could not read sentence", "hr": "Nije uspjelo čitanje rečenice"},
     "password_label":     {"en": "Password",         "hr": "Lozinka"},
     "wrong_password":     {"en": "Wrong password.",  "hr": "Pogrešna lozinka."},
+    "remember_me":        {"en": "Remember me",      "hr": "Zapamti me"},
     "preparing_audio":    {"en": "Preparing audio…", "hr": "Priprema zvuka…"},
     "transcribing":       {"en": "Transcribing…",    "hr": "Transkribiranje…"},
-    "recorrecting":       {"en": "Re-transcribing with the accurate model…", "hr": "Ponovna transkripcija točnijim modelom…"},
     "settings_title":     {"en": "Settings",         "hr": "Postavke"},
-    "settings_ui_lang":   {"en": "Interface language", "hr": "Jezik sučelja"},
     "settings_speech":    {"en": "Default speech language", "hr": "Zadani jezik govora"},
     "settings_voice":     {"en": "Default voice",    "hr": "Zadani glas"},
-    "settings_saved":     {"en": "Saved.",           "hr": "Spremljeno."},
+    "help_title":         {"en": "Help",             "hr": "Pomoć"},
+    "forget_me":          {"en": "Forget me on this phone", "hr": "Zaboravi me na ovom telefonu"},
+    "forgotten":          {"en": "Forgotten.",       "hr": "Zaboravljeno."},
     "no_password_secret": {"en": "No password set in Secrets. Add APP_PASSWORDS (a list) in Streamlit Cloud → Settings → Secrets.",
                             "hr": "Lozinka nije postavljena u Secrets. Dodaj APP_PASSWORDS (listu) u Streamlit Cloud → Settings → Secrets."},
     "no_groq_secret":     {"en": "No Groq key in Secrets. Add GROQ_API_KEYS (a list) in Streamlit Cloud → Settings → Secrets.",
@@ -95,8 +107,7 @@ def t(key: str) -> str:
 
 
 # ----------------------------------------------------------------------
-# Password gate — as many passwords work as are listed in Secrets.
-# The matched password also names the settings profile ("which user").
+# Secrets
 # ----------------------------------------------------------------------
 def app_passwords() -> list:
     pw = list(st.secrets.get("APP_PASSWORDS", []))
@@ -106,42 +117,6 @@ def app_passwords() -> list:
     return [p for p in pw if p]
 
 
-def check_password() -> bool:
-    def _entered():
-        entered = st.session_state.get("_pw_input", "")
-        matched = next((p for p in PASSWORDS if hmac.compare_digest(entered, p)), None)
-        st.session_state["_authed"] = matched is not None
-        if matched is not None:
-            st.session_state["_user"] = matched
-        st.session_state["_pw_input"] = ""
-
-    if st.session_state.get("_authed"):
-        return True
-
-    # Pre-login screen is always Croatian by default — we don't know which
-    # user (and therefore which UI-language preference) it is yet.
-    st.session_state.setdefault("ui_lang", "hr")
-    st.text_input(t("password_label"), type="password", key="_pw_input", on_change=_entered)
-    if st.session_state.get("_authed") is False:
-        st.error(t("wrong_password"))
-    return False
-
-
-PASSWORDS = app_passwords()
-if not PASSWORDS:
-    st.session_state.setdefault("ui_lang", "hr")
-    st.error(t("no_password_secret"))
-    st.stop()
-
-if not check_password():
-    st.stop()
-
-USER = st.session_state.get("_user") or "shared"
-
-
-# ----------------------------------------------------------------------
-# Groq key ring — tries each key in turn, remembers the last one that worked
-# ----------------------------------------------------------------------
 def groq_keys() -> list:
     keys = list(st.secrets.get("GROQ_API_KEYS", []))
     single = st.secrets.get("GROQ_API_KEY")
@@ -150,12 +125,97 @@ def groq_keys() -> list:
     return [k for k in keys if k]
 
 
+PASSWORDS = app_passwords()
+st.session_state.setdefault("ui_lang", "hr")
+if not PASSWORDS:
+    st.error(t("no_password_secret"))
+    st.stop()
+
+
+def _digest(pw: str) -> str:
+    return hashlib.sha256(("maha|" + pw).encode("utf-8")).hexdigest()
+
+
+# ----------------------------------------------------------------------
+# Browser storage bridge — read once per run, before the password gate,
+# so "Remember me" can log someone in without them typing anything.
+# ----------------------------------------------------------------------
+AUTH_LS_KEY = "maha_auth"
+
+_pending = st.session_state.pop("_pending_ls", None)
+if _pending:
+    st.session_state["_ls_stamp"] = st.session_state.get("_ls_stamp", 0) + 1
+    _ls = ls_bridge(writes=_pending.get("writes"), removes=_pending.get("removes"),
+                    stamp=st.session_state["_ls_stamp"])
+else:
+    _ls = ls_bridge(stamp=st.session_state.get("_ls_stamp", 0))
+
+LS_DATA = (_ls or {}).get("data") or {}
+
+
+def queue_ls(writes=None, removes=None):
+    """Queue a localStorage change for the next run of the bridge."""
+    pend = st.session_state.get("_pending_ls") or {"writes": {}, "removes": []}
+    pend["writes"].update(writes or {})
+    pend["removes"].extend(removes or [])
+    st.session_state["_pending_ls"] = pend
+
+
+# ----------------------------------------------------------------------
+# Password gate. The matched password also names the settings profile.
+# ----------------------------------------------------------------------
+def _try_remembered():
+    token = LS_DATA.get(AUTH_LS_KEY)
+    if not token:
+        return
+    for p in PASSWORDS:
+        if hmac.compare_digest(token, _digest(p)):
+            st.session_state["_authed"] = True
+            st.session_state["_user"] = p
+            return
+
+
+if not st.session_state.get("_authed"):
+    _try_remembered()
+
+
+def check_password() -> bool:
+    def _entered():
+        entered = st.session_state.get("_pw_input", "")
+        matched = next((p for p in PASSWORDS if hmac.compare_digest(entered, p)), None)
+        st.session_state["_authed"] = matched is not None
+        if matched is not None:
+            st.session_state["_user"] = matched
+            if st.session_state.get("_remember_me"):
+                queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
+        st.session_state["_pw_input"] = ""
+
+    if st.session_state.get("_authed"):
+        return True
+
+    st.text_input(t("password_label"), type="password", key="_pw_input", on_change=_entered)
+    st.checkbox(t("remember_me"), key="_remember_me", value=True)
+    if st.session_state.get("_authed") is False:
+        st.error(t("wrong_password"))
+    st.markdown("---")
+    st.markdown(LOGIN_GUIDE[st.session_state.get("ui_lang", "hr")])
+    return False
+
+
+if not check_password():
+    st.stop()
+
+USER = st.session_state.get("_user") or "shared"
+
 KEYS = groq_keys()
 if not KEYS:
     st.error(t("no_groq_secret"))
     st.stop()
 
 
+# ----------------------------------------------------------------------
+# Groq
+# ----------------------------------------------------------------------
 def transcribe(path: str, model: str, language: str) -> str:
     start = st.session_state.get("_key_idx", 0) % len(KEYS)
     last_err = None
@@ -203,18 +263,13 @@ def to_flac16k(wav_bytes: bytes) -> str:
 
 
 # ----------------------------------------------------------------------
-# Per-user settings — three layers, in priority order:
-#   1. st.session_state (already loaded this session)
-#   2. browser localStorage, via ls_bridge (survives restarts, per browser)
-#   3. a small server-side JSON file (survives only within this container's
-#      current lifetime — Streamlit Community Cloud does not guarantee disk
-#      across restarts, so this is a same-instance convenience, not a
-#      durable store; it exists so a second browser hitting the same
-#      still-warm instance gets a reasonable starting point too)
-# Whenever a setting changes, all three are written.
+# Per-user settings — session_state, then browser localStorage, then a
+# server-side file. Streamlit Community Cloud doesn't guarantee disk across
+# restarts, so the file is a same-instance convenience, not a durable store;
+# localStorage is the one that really survives.
 # ----------------------------------------------------------------------
-DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "Croatian", "voice": "Gabrijela"}
-LS_KEY = f"maha_settings_{USER}"
+DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "hr", "voice": "Gabrijela"}
+SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
 def _settings_file(user: str) -> str:
@@ -241,89 +296,151 @@ def _save_server_settings(user: str, settings: dict) -> None:
 
 
 def _apply_settings(values: dict) -> None:
-    """Seed session_state with settings values. Must only be called before
-    any widget using these keys has been instantiated this run."""
+    """Seed session_state. Only safe before the matching widgets render."""
     for k in ("ui_lang", "speech_lang", "voice"):
-        if k in values and values[k]:
+        if values.get(k):
             st.session_state[k] = values[k]
-            st.session_state["set_" + k] = values[k]
 
 
 if "_settings_bootstrapped" not in st.session_state:
     _apply_settings(DEFAULT_SETTINGS)
-    _apply_settings(_load_server_settings(USER))   # best-effort instant guess
+    _apply_settings(_load_server_settings(USER))
     st.session_state["_settings_bootstrapped"] = True
 
-# Fire (or re-fire) the localStorage bridge every run so Streamlit's
-# component protocol can complete its round trip. If a write is pending
-# from the settings popover, send it; otherwise this is a read-only poll.
-_pending_write = st.session_state.pop("_pending_ls_write", None)
-if _pending_write is not None:
-    _ls_result = ls_bridge(write_key=LS_KEY, write_value=_pending_write, key="ls_sync")
-else:
-    _ls_result = ls_bridge(key="ls_sync")
-
-if _ls_result and _ls_result.get("ok") and not st.session_state.get("_ls_applied"):
-    raw = (_ls_result.get("data") or {}).get(LS_KEY)
-    if raw:
-        try:
-            _apply_settings(json.loads(raw))
-        except Exception:
-            pass
+if LS_DATA.get(SETTINGS_LS_KEY) and not st.session_state.get("_ls_applied"):
+    try:
+        _apply_settings(json.loads(LS_DATA[SETTINGS_LS_KEY]))
+    except Exception:
+        pass
     st.session_state["_ls_applied"] = True
 
 
-def _save_settings_callback():
-    values = {
-        "ui_lang": st.session_state["set_ui_lang"],
-        "speech_lang": st.session_state["set_speech_lang"],
-        "voice": st.session_state["set_voice"],
-    }
-    _apply_settings(values)
+def persist_settings():
+    values = {k: st.session_state.get(k) for k in ("ui_lang", "speech_lang", "voice")}
     _save_server_settings(USER, values)
-    st.session_state["_pending_ls_write"] = json.dumps(values)
-    st.session_state["_settings_just_saved"] = True
+    queue_ls(writes={SETTINGS_LS_KEY: json.dumps(values)})
+
+
+def set_ui_lang(lang: str):
+    st.session_state["ui_lang"] = lang
+    persist_settings()
+
+
+def set_speech_lang(lang: str):
+    st.session_state["speech_lang"] = lang
+    persist_settings()
+
+
+def pick_voice(name: str):
+    st.session_state["voice"] = name
+    persist_settings()
+
+
+def forget_me():
+    queue_ls(removes=[AUTH_LS_KEY])
+    st.session_state["_forgotten"] = True
+
+
+def voice_picker(prefix: str):
+    """Croatian group first, then English, each under its own label."""
+    current = st.session_state.get("voice", "Gabrijela")
+    for lang, label_key in (("hr", "group_hr"), ("en", "group_en")):
+        st.caption(t(label_key))
+        cols = st.columns(len(VOICES_BY_LANG[lang]))
+        for col, name in zip(cols, VOICES_BY_LANG[lang]):
+            col.button(
+                name, key=f"{prefix}_{name}", use_container_width=True,
+                type="primary" if name == current else "secondary",
+                on_click=pick_voice, args=(name,),
+            )
 
 
 # ----------------------------------------------------------------------
-# Top bar: caption + gear settings popover, upper right
+# Gear — settings + help, upper right. Nothing else in the top bar.
 # ----------------------------------------------------------------------
-top_l, top_r = st.columns([6, 1])
-with top_l:
-    st.caption(f"Maha Transcribe · {APP_VERSION}")
-with top_r:
+_, gear_col = st.columns([6, 1])
+with gear_col:
     with st.popover("⚙️", use_container_width=False):
-        st.caption(t("settings_title"))
-        st.radio(
-            t("settings_ui_lang"), ["hr", "en"],
-            format_func=lambda v: "Hrvatski" if v == "hr" else "English",
-            key="set_ui_lang", on_change=_save_settings_callback,
-        )
-        st.radio(
-            t("settings_speech"), ["Croatian", "English"],
-            format_func=lambda v: t("lang_hr") if v == "Croatian" else t("lang_en"),
-            key="set_speech_lang", on_change=_save_settings_callback,
-        )
-        st.radio(
-            t("settings_voice"), ["Sonia", "Ryan", "Gabrijela", "Srecko"],
-            key="set_voice", on_change=_save_settings_callback,
-        )
-        if st.session_state.pop("_settings_just_saved", False):
-            st.caption(t("settings_saved"))
+        lang_now = st.session_state.get("ui_lang", "hr")
+        lcol1, lcol2 = st.columns(2)
+        lcol1.button("[HR]", key="ui_hr", use_container_width=True,
+                     type="primary" if lang_now == "hr" else "secondary",
+                     on_click=set_ui_lang, args=("hr",))
+        lcol2.button("[ENG]", key="ui_en", use_container_width=True,
+                     type="primary" if lang_now == "en" else "secondary",
+                     on_click=set_ui_lang, args=("en",))
+
+        st.caption(t("settings_speech"))
+        scol1, scol2 = st.columns(2)
+        speech_now = st.session_state.get("speech_lang", "hr")
+        scol1.button(t("lang_hr"), key="sp_hr", use_container_width=True,
+                     type="primary" if speech_now == "hr" else "secondary",
+                     on_click=set_speech_lang, args=("hr",))
+        scol2.button(t("lang_en"), key="sp_en", use_container_width=True,
+                     type="primary" if speech_now == "en" else "secondary",
+                     on_click=set_speech_lang, args=("en",))
+
+        st.caption(t("settings_voice"))
+        voice_picker("setvoice")
+
+        with st.expander(t("help_title")):
+            st.markdown(HELP[st.session_state.get("ui_lang", "hr")])
+
+        st.button(t("forget_me"), key="forget_btn", use_container_width=True,
+                  on_click=forget_me)
+        if st.session_state.pop("_forgotten", False):
+            st.caption(t("forgotten"))
+        st.caption(APP_VERSION)
 
 
 # ----------------------------------------------------------------------
-# UI — two tabs. Transcribe: press, speak, press, copy. Talk: paste, read.
+# Tab bar. A segmented control rather than st.tabs, because st.tabs cannot
+# be switched from Python — its session_state updates but the visible
+# selection does not follow (verified in a browser), and Read this has to
+# be able to move the user to the Talk tab by itself.
 # ----------------------------------------------------------------------
-tab_transcribe, tab_talk = st.tabs([t("tab_transcribe"), t("tab_talk")])
+st.session_state.setdefault("active_tab", "transcribe")
+st.segmented_control(
+    "nav", ["transcribe", "talk"], format_func=lambda k: t("tab_" + k),
+    key="active_tab", required=True, label_visibility="collapsed",
+)
+active = st.session_state.get("active_tab") or "transcribe"
 
-with tab_transcribe:
-    lang_label = st.segmented_control(
-        t("speech_lang_label"), [t("lang_en"), t("lang_hr")],
-        default=t("lang_hr") if st.session_state.get("speech_lang", "Croatian") == "Croatian" else t("lang_en"),
-        required=True, key="transcribe_lang_display",
-    )
-    lang_code = "hr" if lang_label == t("lang_hr") else "en"
+
+def do_correct():
+    try:
+        corrected = transcribe(st.session_state["flac_path"], CORRECTION_MODEL,
+                               st.session_state.get("last_lang", "hr"))
+        st.session_state["transcript_box"] = corrected
+    except Exception as e:
+        st.session_state["_correct_error"] = str(e)
+
+
+def read_this():
+    """Move to the Talk tab, carry the text over, pick the voice that matches
+    the language just transcribed, and start reading — no popup, no extra tap."""
+    st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
+    lang = st.session_state.get("last_lang", "hr")
+    current = st.session_state.get("voice", "Gabrijela")
+    if VOICE_LANG.get(current) != lang:
+        st.session_state["voice"] = VOICES_BY_LANG[lang][0]
+    st.session_state["active_tab"] = "talk"
+    st.session_state["_auto_read"] = True
+
+
+# ----------------------------------------------------------------------
+# Transcribe
+# ----------------------------------------------------------------------
+if active == "transcribe":
+    speech_now = st.session_state.get("speech_lang", "hr")
+    lcol1, lcol2 = st.columns(2)
+    lcol1.button(t("lang_hr"), key="tr_hr", use_container_width=True,
+                 type="primary" if speech_now == "hr" else "secondary",
+                 on_click=set_speech_lang, args=("hr",))
+    lcol2.button(t("lang_en"), key="tr_en", use_container_width=True,
+                 type="primary" if speech_now == "en" else "secondary",
+                 on_click=set_speech_lang, args=("en",))
+    lang_code = speech_now
 
     audio = st.audio_input(t("tab_transcribe"), sample_rate=48000, label_visibility="collapsed")
 
@@ -334,7 +451,6 @@ with tab_transcribe:
             if old_flac and os.path.exists(old_flac):
                 os.remove(old_flac)
             st.session_state["_digest"] = digest
-            st.session_state["model_used"] = None
             try:
                 with st.spinner(t("preparing_audio")):
                     flac_path = to_flac16k(audio.getvalue())
@@ -342,62 +458,45 @@ with tab_transcribe:
                 with st.spinner(t("transcribing")):
                     text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
                 st.session_state["transcript_box"] = text
-                st.session_state["model_used"] = PRIMARY_MODEL
+                st.session_state["last_lang"] = lang_code
             except Exception as e:
                 st.error(str(e))
 
     if "transcript_box" in st.session_state:
-        st.text_area(t("transcript_label"), key="transcript_box", height=200, label_visibility="collapsed")
-
-        def _do_correct():
-            try:
-                corrected = transcribe(st.session_state["flac_path"], CORRECTION_MODEL, lang_code)
-                st.session_state["transcript_box"] = corrected
-                st.session_state["model_used"] = CORRECTION_MODEL
-            except Exception as e:
-                st.session_state["_correct_error"] = str(e)
-
-        def _do_bridge():
-            st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
-            st.session_state["_bridge_sent"] = True
+        st.text_area(t("transcript_label"), key="transcript_box", height=200,
+                     label_visibility="collapsed")
 
         bcol1, bcol2 = st.columns(2)
-        with bcol1:
-            st.button(t("correct_btn"), use_container_width=True, key="correct_btn",
-                      help=t("correct_help"), on_click=_do_correct)
-        with bcol2:
-            st.button(t("read_this_btn"), use_container_width=True, key="bridge_btn",
-                      help=t("read_this_help"), on_click=_do_bridge)
+        bcol1.button(t("correct_btn"), use_container_width=True, key="correct_btn",
+                     help=t("correct_help"), on_click=do_correct)
+        bcol2.button(t("read_this_btn"), use_container_width=True, key="bridge_btn",
+                     help=t("read_this_help"), on_click=read_this)
 
         if st.session_state.get("_correct_error"):
             st.error(st.session_state.pop("_correct_error"))
-        if st.session_state.pop("_bridge_sent", False):
-            st.toast(t("read_this_toast"))
 
-        if st.session_state.get("model_used"):
-            st.caption(st.session_state["model_used"])
+# ----------------------------------------------------------------------
+# Talk
+# ----------------------------------------------------------------------
+else:
+    voice_picker("talkvoice")
+    vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
 
-with tab_talk:
-    voice_label = st.segmented_control(
-        t("voice_label"), ["Sonia", "Ryan", "Gabrijela", "Srecko"],
-        default=st.session_state.get("voice", "Gabrijela"),
-        required=True, key="talk_voice",
-    )
-    vkey = {v: k for k, v in VOICE_LABELS.items()}[voice_label]
-
-    st.text_area(
-        t("tab_talk"), key="talk_text", height=150, label_visibility="collapsed",
-        placeholder=t("talk_placeholder"),
-    )
+    st.text_area(t("tab_talk"), key="talk_text", height=150,
+                 label_visibility="collapsed", placeholder=t("talk_placeholder"))
 
     rcol1, rcol2 = st.columns(2)
     read_clicked = rcol1.button(t("read_btn"), use_container_width=True, key="read_btn")
     rcol2.button(t("stop_btn"), use_container_width=True, key="stop_btn", help=t("stop_help"))
 
     doc_slot = st.empty()
+    sub_slot = st.empty()
     audio_slot = st.empty()
 
-    if read_clicked:
+    def _subtitle(text: str) -> str:
+        return f'<div class="subtitle-box">{html.escape(text)}</div>'
+
+    if read_clicked or st.session_state.pop("_auto_read", False):
         raw = (st.session_state.get("talk_text") or "").strip()
         sentences = tk.sentences_of(raw)
         if not sentences:
@@ -415,6 +514,7 @@ with tab_talk:
                     else:
                         parts.append(safe)
                 doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
+                sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
                 try:
                     audio_bytes, dur = tk.synth_sentence(sent, vkey)
                 except Exception as e:
@@ -423,3 +523,6 @@ with tab_talk:
                 audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
                 time.sleep(dur + 0.15)
             doc_slot.markdown(html.escape(raw))
+            sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+    else:
+        sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)

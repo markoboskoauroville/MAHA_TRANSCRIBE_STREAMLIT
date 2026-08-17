@@ -10,17 +10,23 @@ function setComponentValue(value) {
 }
 function handleRender(args) {
   try {
-    if (args && args.write_key) {
-      localStorage.setItem(args.write_key, args.write_value);
+    if (args && args.writes) {
+      const w = args.writes;
+      for (const k in w) {
+        if (Object.prototype.hasOwnProperty.call(w, k)) localStorage.setItem(k, w[k]);
+      }
+    }
+    if (args && args.removes && args.removes.length) {
+      args.removes.forEach(function (k) { localStorage.removeItem(k); });
     }
     const out = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k && k.indexOf("maha_") === 0) out[k] = localStorage.getItem(k);
     }
-    setComponentValue({ ok: true, data: out });
+    setComponentValue({ ok: true, data: out, stamp: (args && args.stamp) || 0 });
   } catch (e) {
-    setComponentValue({ ok: false, error: String(e) });
+    setComponentValue({ ok: false, error: String(e), data: {} });
   }
 }
 window.addEventListener("message", function (event) {
