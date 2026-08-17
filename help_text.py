@@ -259,3 +259,30 @@ LOGIN_LABELS = {
     "de": {"password": "Passwort", "remember": "Angemeldet bleiben", "wrong": "Falsches Passwort."},
     "fr": {"password": "Mot de passe", "remember": "Se souvenir de moi", "wrong": "Mot de passe incorrect."},
 }
+
+# Shown once, at the very top of the login screen, above everything else —
+# a warm first impression plus the name explained, before the practical
+# shortcut guide. Translated via the same model as LOGIN_GUIDE, then
+# proofread the same way (caught 'Bienvenue à' -> 'Bienvenue sur', a French
+# preposition mismatch, and a couple of German comma/redundancy fixes).
+WELCOME = {
+    "hr": """### Dobro došao u TTT-LLL
+
+TTT znači Talk To Type, "govori da bi se ispisalo". LLL znači Look, Listen, Learn, "gledaj, slušaj, uči". Prva polovica pretvara tvoj govor u tekst, druga čita tekst naglas dok ga u isto vrijeme gledaš i slušaš.""",
+
+    "en": """### Welcome to TTT-LLL
+
+TTT stands for Talk To Type. LLL stands for Look, Listen, Learn. The first half turns your speech into text, the second reads text aloud while you see and hear it at the same time.""",
+
+    "it": """### Benvenuti in TTT-LLL
+
+TTT sta per Talk To Type, cioè «parla per far scrivere il testo». LLL sta per Look, Listen, Learn, cioè «guarda, ascolta, impara». La prima metà converte il tuo discorso in testo; la seconda legge il testo ad alta voce, mentre lo guardi e ascolti la lettura.""",
+
+    "de": """### Willkommen bei TTT-LLL
+
+TTT bedeutet Talk To Type – „sprich, damit es geschrieben wird". LLL bedeutet Look, Listen, Learn – „schau, hör zu, lerne". Die erste Hälfte wandelt deine Sprache in Text um, der zweite Teil liest den Text laut vor, während du ihn siehst und hörst.""",
+
+    "fr": """### Bienvenue sur TTT-LLL
+
+TTT signifie Talk To Type, « parler pour que cela soit écrit ». LLL signifie Look, Listen, Learn, « regarde, écoute, apprends ». La première moitié transforme ta parole en texte, la seconde lit le texte à haute voix, tout en le regardant et en l'écoutant.""",
+}

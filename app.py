@@ -47,7 +47,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v6 (a)"
+APP_VERSION = "v7 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -270,6 +270,7 @@ def check_password() -> bool:
 
     ll = st.session_state["login_lang"]
     labels = help_text.LOGIN_LABELS.get(ll, help_text.LOGIN_LABELS["hr"])
+    st.markdown(help_text.WELCOME.get(ll, help_text.WELCOME["hr"]))
     st.text_input(labels["password"], type="password", key="_pw_input", on_change=_entered)
     st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
