@@ -48,7 +48,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v9 (a)"
+APP_VERSION = "v10 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -145,6 +145,9 @@ STRINGS = {
     "engine_groq":        {"en": "Groq (free)",         "hr": "Groq (besplatno)"},
     "engine_assemblyai":  {"en": "AssemblyAI",          "hr": "AssemblyAI"},
     "transcribe_engine":  {"en": "Transcription engine", "hr": "Pogon za transkripciju"},
+    "aai_stage_upload":   {"en": "Uploading to AssemblyAI…", "hr": "Šaljem na AssemblyAI…"},
+    "aai_stage_queue":    {"en": "Queued…",              "hr": "U redu čekanja…"},
+    "aai_stage_process":  {"en": "Transcribing…",        "hr": "Transkribiram…"},
 }
 
 
@@ -485,8 +488,10 @@ def transcribe_any_size(path: str, model: str, language: str, progress_cb=None):
 # localStorage is the one that really survives.
 # ----------------------------------------------------------------------
 DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "hr", "voice": "Gabrijela",
-                    "voice_engine": "edge", "sp_voice": "beatrice_32"}
-SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice")
+                    "voice_engine": "edge", "sp_voice": "beatrice_32",
+                    "transcribe_engine": "groq"}
+SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice",
+                 "transcribe_engine")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -822,6 +827,147 @@ def sp_synthesize(ring: dict, text: str, voice_id: str, model: str = "simba-3.2"
     return audio, total, marks
 
 
+# ---------- AssemblyAI ----------
+# No distinctive prefix (32-hex, per Key_Tester's KeyParser: "HEX32 ->
+# assemblyai") — an empty prefix tuple means ring_import's prefixed-pass
+# never matches anything, so every AssemblyAI key is found via the generic
+# fallback heuristic. Confirmed against 5 real keys, not assumed.
+ASSEMBLYAI_PREFIXES = ()
+AAI_BASE = "https://api.assemblyai.com"
+
+
+def aai_error_kind(status: int) -> str:
+    if status in (401, 403):
+        return "dead"
+    if status == 429:
+        return "cool"
+    return "soft"
+
+
+def aai_error_message(status: int, body: str) -> str:
+    msgs = {401: "AssemblyAI rejected the key (401).",
+            403: "AssemblyAI refused this request (403).",
+            429: "AssemblyAI rate limit reached (429)."}
+    if status in msgs:
+        return msgs[status]
+    if status >= 500:
+        return f"AssemblyAI had a server error ({status})."
+    return f"AssemblyAI refused the request ({status}) {(body or '')[:150]}"
+
+
+def aai_call(key: str, path: str, payload=None, method: str = "GET",
+            data: bytes = None, extra_headers: dict = None, timeout: int = 30):
+    headers = {"authorization": key}
+    body = None
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["content-type"] = "application/json"
+    elif data is not None:
+        body = data
+    if extra_headers:
+        headers.update(extra_headers)
+    req = _ureq.Request(AAI_BASE + path, data=body, headers=headers, method=method)
+    try:
+        with _ureq.urlopen(req, timeout=timeout) as r:
+            resp = r.read().decode("utf-8", "replace")
+        return (json.loads(resp) if resp.strip() else {}), None, None
+    except _uerr.HTTPError as e:
+        try:
+            resp = e.read().decode("utf-8", "replace")
+        except Exception:
+            resp = ""
+        return None, aai_error_message(e.code, resp), aai_error_kind(e.code)
+    except Exception as e:
+        return None, f"Could not reach AssemblyAI: {e}", "soft"
+
+
+def aai_test_one(key: str):
+    _, err, kind = aai_call(key, "/v2/transcript?limit=1")
+    return err, kind
+
+
+def aai_transcribe(ring: dict, path: str, language: str = "hr",
+                   model: str = "universal-3-pro", progress_cb=None) -> str:
+    """Full upload -> submit -> poll flow, rotating through the ring on a
+    dead or rate-limited key exactly like sp_request/the Groq ring. A key
+    that's simply unreachable (network) is NOT the key's fault and stops
+    the attempt rather than burning through the whole ring over it."""
+    keys = ring["keys"]
+    n = len(keys)
+    if not n:
+        raise RuntimeError("No AssemblyAI keys yet — add one in Settings.")
+    idx = ring.get("active", 0) % n
+    last_err = "no keys available"
+    for _ in range(n):
+        i = ring_pick(ring, idx)
+        if i is None:
+            break
+        k = keys[i]
+
+        if progress_cb:
+            progress_cb("upload")
+        with open(path, "rb") as f:
+            audio_bytes = f.read()
+        up, err, kind = aai_call(k["key"], "/v2/upload", method="POST",
+                                 data=audio_bytes,
+                                 extra_headers={"content-type": "application/octet-stream"},
+                                 timeout=1800)
+        if err:
+            last_err = err
+            if kind == "dead":
+                k["state"] = "dead"; k["last_error"] = err
+            elif kind == "cool":
+                k["state"] = "cool"; k["cool_until"] = time.time() + 120; k["last_error"] = err
+            else:
+                raise RuntimeError(err)
+            idx = (i + 1) % n
+            continue
+
+        cfg = {"audio_url": up["upload_url"], "speech_models": [model]}
+        if language == "auto":
+            cfg["language_detection"] = True
+        else:
+            cfg["language_code"] = language
+        if progress_cb:
+            progress_cb("queue")
+        data, err, kind = aai_call(k["key"], "/v2/transcript", payload=cfg, method="POST")
+        if err:
+            last_err = err
+            if kind == "dead":
+                k["state"] = "dead"; k["last_error"] = err
+            elif kind == "cool":
+                k["state"] = "cool"; k["cool_until"] = time.time() + 120; k["last_error"] = err
+            else:
+                raise RuntimeError(err)
+            idx = (i + 1) % n
+            continue
+
+        tid = data["id"]
+        t0 = time.time()
+        if progress_cb:
+            progress_cb("process")
+        while time.time() - t0 < 7200:
+            time.sleep(0.6 if time.time() - t0 < 4 else (1.2 if time.time() - t0 < 12 else 3.0))
+            data, err, kind = aai_call(k["key"], "/v2/transcript/" + tid)
+            if err:
+                last_err = err
+                break   # a poll error mid-job: try the next key from scratch
+            status = data.get("status")
+            if status == "completed":
+                k["state"] = "ok"
+                k["last_error"] = ""
+                k["calls"] = k.get("calls", 0) + 1
+                ring["active"] = i
+                return (data.get("text") or "").strip()
+            if status == "error":
+                last_err = data.get("error") or "AssemblyAI reported an error"
+                break
+        else:
+            last_err = "AssemblyAI took too long (over 2 hours)"
+        idx = (i + 1) % n
+    raise RuntimeError(f"All {n} AssemblyAI key(s) failed. Last: {last_err}")
+
+
 if "_settings_bootstrapped" not in st.session_state:
     _apply_settings(DEFAULT_SETTINGS)
     _apply_settings(_load_server_settings(USER))
@@ -951,6 +1097,48 @@ with gear_col:
                              type="primary" if engine_now == "speechify" else "secondary",
                              on_click=_set_engine, args=("speechify",))
 
+        with st.expander(t("assemblyai_title")):
+            aai_ring = rings.setdefault("assemblyai", new_ring())
+
+            st.file_uploader(t("key_file_label"), key="aai_key_file", label_visibility="collapsed")
+            st.text_area(t("key_paste_label"), key="aai_key_paste", height=70,
+                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
+
+            def _aai_import():
+                raw = ""
+                f = st.session_state.get("aai_key_file")
+                if f is not None:
+                    raw += f.getvalue().decode("utf-8", "replace")
+                raw += " " + (st.session_state.get("aai_key_paste") or "")
+                added = ring_import(aai_ring, raw, ASSEMBLYAI_PREFIXES)
+                persist_keys(rings)
+                st.session_state["_aai_msg"] = (
+                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
+
+            st.button(t("import_keys_btn"), key="aai_import_btn",
+                      use_container_width=True, on_click=_aai_import)
+
+            if aai_ring["keys"]:
+                render_key_list(aai_ring, rings, "aai", aai_test_one)
+
+            if st.session_state.get("_aai_msg"):
+                st.caption(st.session_state.pop("_aai_msg"))
+
+            if any(k["state"] != "dead" for k in aai_ring["keys"]):
+                st.caption(t("transcribe_engine"))
+                tcol1, tcol2 = st.columns(2)
+                tengine_now = st.session_state.get("transcribe_engine", "groq")
+
+                def _set_tengine(e):
+                    st.session_state["transcribe_engine"] = e
+
+                tcol1.button(t("engine_groq"), key="teng_groq", use_container_width=True,
+                             type="primary" if tengine_now == "groq" else "secondary",
+                             on_click=_set_tengine, args=("groq",))
+                tcol2.button(t("engine_assemblyai"), key="teng_aai", use_container_width=True,
+                             type="primary" if tengine_now == "assemblyai" else "secondary",
+                             on_click=_set_tengine, args=("assemblyai",))
+
         with st.expander(t("help_title")):
             st.markdown(safe_text("HELP"))
 
@@ -981,10 +1169,19 @@ def do_correct():
         lang = st.session_state.get("last_lang", "hr")
         if not path or not os.path.exists(path):
             raise RuntimeError("Original audio is no longer available.")
-        corrected, method, reusable = transcribe_any_size(path, CORRECTION_MODEL, lang)
-        st.session_state["transcript_box"] = corrected
-        st.session_state["flac_path"] = reusable
-        st.session_state["_transcribe_method"] = method
+        provider = st.session_state.get("_transcribe_provider", "groq")
+        if provider == "assemblyai":
+            aai_ring = load_keys().get("assemblyai") or new_ring()
+            corrected = aai_transcribe(aai_ring, path, lang)
+            persist_keys(load_keys())
+            st.session_state["transcript_box"] = corrected
+            st.session_state["flac_path"] = path
+            st.session_state["_transcribe_method"] = "direct"
+        else:
+            corrected, method, reusable = transcribe_any_size(path, CORRECTION_MODEL, lang)
+            st.session_state["transcript_box"] = corrected
+            st.session_state["flac_path"] = reusable
+            st.session_state["_transcribe_method"] = method
     except Exception as e:
         st.session_state["_correct_error"] = str(e)
 
@@ -1150,6 +1347,10 @@ def lang_pills(prefix: str, which: str, current: str):
 # Transcribe
 # ----------------------------------------------------------------------
 if active == "transcribe":
+    aai_ring_t = load_keys().get("assemblyai") or new_ring()
+    aai_usable = any(k["state"] != "dead" for k in aai_ring_t["keys"])
+    t_engine = st.session_state.get("transcribe_engine", "groq") if aai_usable else "groq"
+
     speech_now = st.session_state.get("speech_lang", "hr")
     lcol1, lcol2 = st.columns(2)
     lcol1.button(t("lang_hr"), key="tr_hr", use_container_width=True,
@@ -1173,11 +1374,16 @@ if active == "transcribe":
                 with st.spinner(t("preparing_audio")):
                     flac_path = to_flac16k(audio.getvalue())
                 with st.spinner(t("transcribing")):
-                    text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
+                    if t_engine == "assemblyai":
+                        text = aai_transcribe(aai_ring_t, flac_path, lang_code)
+                        persist_keys(load_keys())
+                    else:
+                        text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
                 st.session_state["transcript_box"] = text
                 st.session_state["flac_path"] = flac_path
                 st.session_state["last_lang"] = lang_code
                 st.session_state["_transcribe_method"] = "direct"
+                st.session_state["_transcribe_provider"] = t_engine
             except Exception as e:
                 st.error(str(e))
 
@@ -1202,14 +1408,30 @@ if active == "transcribe":
             tmp.close()
             progress_bar = st.progress(0.0, text=t("preparing_audio"))
             try:
-                def _cb(i, n):
-                    progress_bar.progress((i + 1) / n, text=f"{t('chunk_progress')} {i + 1}/{n}")
-                text, method, reusable = transcribe_any_size(tmp.name, PRIMARY_MODEL, lang_code, progress_cb=_cb)
+                if t_engine == "assemblyai":
+                    stage_map = {"upload": (0.2, "aai_stage_upload"),
+                                "queue": (0.5, "aai_stage_queue"),
+                                "process": (0.7, "aai_stage_process")}
+
+                    def _cb(stage):
+                        frac, key = stage_map.get(stage, (0.5, "aai_stage_process"))
+                        progress_bar.progress(frac, text=t(key))
+
+                    text = aai_transcribe(aai_ring_t, tmp.name, lang_code, progress_cb=_cb)
+                    persist_keys(load_keys())
+                    method, reusable = "direct", tmp.name
+                else:
+                    def _cb(i, n):
+                        progress_bar.progress((i + 1) / n, text=f"{t('chunk_progress')} {i + 1}/{n}")
+
+                    text, method, reusable = transcribe_any_size(
+                        tmp.name, PRIMARY_MODEL, lang_code, progress_cb=_cb)
                 progress_bar.empty()
                 st.session_state["transcript_box"] = text
                 st.session_state["last_lang"] = lang_code
                 st.session_state["flac_path"] = reusable
                 st.session_state["_transcribe_method"] = method
+                st.session_state["_transcribe_provider"] = t_engine
             except Exception as e:
                 progress_bar.empty()
                 st.error(str(e))
