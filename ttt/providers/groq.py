@@ -9,7 +9,7 @@ Transcription goes through the official groq SDK because it handles the
 multipart upload; the text side is a plain HTTP call.
 """
 
-from .base import Provider, http_json, classify_standard
+from .base import Model, Provider, http_json, classify_standard
 
 API = "https://api.groq.com/openai/v1"
 
@@ -35,6 +35,45 @@ class Groq(Provider):
                                   "User-Agent": "TTT-LLL/1.0"},
                                  timeout=30, classify=classify_standard)
         return err, kind
+
+    # ---- models ------------------------------------------------------
+    def models(self, task: str = "", fetch=None):
+        """Live from /openai/v1/models, classified by the API's OWN
+        modality fields rather than by matching "whisper" in the name —
+        a future audio model with a different name still lands in the
+        right list."""
+        last = "no keys"
+        for key in self.keys:
+            data, err, _ = http_json(
+                API + "/models",
+                {"Authorization": "Bearer " + key, "User-Agent": "TTT-LLL/1.0"},
+                timeout=30, classify=classify_standard)
+            if err:
+                last = err
+                continue
+            out = []
+            for m in data.get("data", []):
+                mid = m.get("id")
+                if not mid or m.get("active") is False:
+                    continue
+                ins = m.get("input_modalities") or []
+                outs = m.get("output_modalities") or []
+                if "transcription" in outs or "audio" in ins:
+                    kind = "stt"
+                elif "speech" in outs:
+                    kind = "tts"
+                elif "text" in outs:
+                    kind = "llm"
+                else:
+                    continue
+                if task and kind != task:
+                    continue
+                out.append(Model(mid, m.get("name") or mid, for_task=kind,
+                                 recommended=(mid == (FAST_STT if kind == "stt"
+                                                      else TEXT_MODEL))))
+            out.sort(key=lambda x: (not x.recommended, x.name.lower()))
+            return out, True, None
+        return _fallback(task), False, last
 
     # ---- speech to text ----------------------------------------------
     def transcribe(self, path: str, language: str = "hr", model: str = None):
@@ -81,3 +120,11 @@ class Groq(Provider):
                 return (data["choices"][0]["message"]["content"] or "").strip()
             last = err
         raise RuntimeError(f"All Groq keys failed. Last: {last}")
+
+
+def _fallback(task: str = ""):
+    """Only if the live list cannot be reached."""
+    known = [Model(FAST_STT, FAST_STT, for_task="stt", recommended=True),
+             Model(ACCURATE_STT, ACCURATE_STT, for_task="stt"),
+             Model(TEXT_MODEL, TEXT_MODEL, for_task="llm", recommended=True)]
+    return [m for m in known if not task or m.for_task == task]

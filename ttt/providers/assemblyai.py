@@ -7,7 +7,7 @@ limit and stays where the limit is.
 
 import time
 
-from .base import Provider, http_json
+from .base import Model, Provider, http_json
 
 API = "https://api.assemblyai.com"
 
@@ -36,6 +36,21 @@ class AssemblyAI(Provider):
             headers["content-type"] = "application/octet-stream"
         return http_json(API + path, headers, payload=payload, data=data,
                          method=method, timeout=timeout, classify=_classify)
+
+    def models(self, task: str = "", fetch=None):
+        """AssemblyAI has NO model-list endpoint — /v2/models,
+        /v2/transcript/models and /lemur/v3/models were all checked
+        against the live API and answer 404 or an unrelated error. So this
+        list is written down, and returns live=False so the picker says
+        so instead of implying it was fetched. If they add an endpoint,
+        this is the one method to change.
+        """
+        known = [
+            Model("universal-3-pro", "Universal 3 Pro", for_task="stt",
+                  recommended=True, note="most accurate"),
+            Model("universal", "Universal", for_task="stt", note="faster"),
+        ]
+        return known, False, None
 
     def test_key(self, key: str):
         _, err, kind = self._call(key, "/v2/transcript?limit=1", timeout=30)

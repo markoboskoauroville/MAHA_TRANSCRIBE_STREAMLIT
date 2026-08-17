@@ -29,6 +29,7 @@ from ttt import providers as PROVIDERS
 from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR
+from ttt import routing as RO
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -60,6 +61,64 @@ st.markdown(
     }
     div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] { gap: 0.4rem; }
 
+    /* --- PATCH BAY -------------------------------------------------
+       The pill rules above deliberately let columns size to their own
+       content, which is right everywhere else and WRONG here: a patch
+       bay whose columns do not line up between rows is not a grid, it is
+       jumbled text. Inside the bay, restore equal columns that never
+       wrap, so every crosspoint sits under its own heading. */
+    .st-key-patchbay div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.2rem !important;
+    }
+    /* Must out-specify the global pill rule above, which is
+       div[stHorizontalBlock] > div[stColumn] — a child combinator of two
+       attribute selectors. !important alone does NOT win that; the
+       selector has to be at least as specific, hence the full path. */
+    .st-key-patchbay div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 0 !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+    /* The jack itself. The stButton wrapper is auto-width by the pill
+       rule above, so widening only the <button> leaves it a sliver — both
+       have to be told. Round, centred, and sized like something you press
+       with a finger, not a sliver of a pill. */
+    .st-key-patchbay div[data-testid="stButton"] {
+        width: 100% !important;
+        display: flex;
+        justify-content: center;
+    }
+    .st-key-patchbay .stButton button {
+        width: 38px !important;
+        height: 38px !important;
+        min-width: 38px !important;
+        padding: 0 !important;
+        border-radius: 50% !important;
+        font-size: 0.95rem;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    /* Column headings and engine names centred over their own column so
+       the eye can run straight down a column and along a row. */
+    .st-key-patchbay div[data-testid="stCaptionContainer"] {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+    }
+    .st-key-patchbay div[data-testid="stColumn"]:first-child
+        div[data-testid="stCaptionContainer"] { justify-content: flex-start; }
+    .st-key-patchbay div[data-testid="stCaptionContainer"] p {
+        font-size: 0.72rem;
+        margin: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     .stButton button {
         border-radius: 999px;
         width: auto;
@@ -84,7 +143,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v16 (a)"
+APP_VERSION = "v17 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -166,6 +225,15 @@ STRINGS = {
     "ai_working":         {"en": "Working…",          "hr": "Radim…"},
     "ai_fail":            {"en": "The AI could not do that",
                             "hr": "AI to nije mogao napraviti"},
+    "routing_title":      {"en": "Which engine does what", "hr": "Koji pogon što radi"},
+    "model_label":        {"en": "Model",             "hr": "Model"},
+    "model_refresh":      {"en": "Refresh model list", "hr": "Osvježi popis modela"},
+    "model_live":         {"en": "from the provider",  "hr": "s poslužitelja"},
+    "model_static":       {"en": "built-in list (this provider has no model list)",
+                            "hr": "ugrađen popis (ovaj pogon nema popis modela)"},
+    "routing_nokey":      {"en": "No working key for this engine yet",
+                            "hr": "Još nema ispravnog ključa za ovaj pogon"},
+    "routing_none":       {"en": "no engine available", "hr": "nema dostupnog pogona"},
     "admin_title":        {"en": "Owner — usage logging", "hr": "Vlasnik — zapis korištenja"},
     "admin_on":           {"en": "Connected to the sheet", "hr": "Spojeno na tablicu"},
     "admin_off":          {"en": "Not connected. See apps_script/SETUP.md.",
@@ -255,9 +323,10 @@ def admin_user() -> str:
     """Who owns this deployment.
 
     ADMIN_USER in secrets if set; otherwise the FIRST entry in
-    APP_PASSWORDS. Deliberately not a hardcoded name — the app should not
-    contain "marko0612" any more than it should contain a password, and
-    an owner who renames themselves should not need a code change.
+    APP_PASSWORDS. Deliberately not a hardcoded name — the app should no
+    more contain a specific person's name than it should contain a
+    password, and an owner who renames themselves should not need a code
+    change.
     """
     named = str(st.secrets.get("ADMIN_USER", "") or "").strip().lower()
     if named:
@@ -596,7 +665,8 @@ DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "hr", "voice": "Gabrijela",
                     "voice_engine": "edge", "sp_voice": "beatrice_32",
                     "transcribe_engine": "groq"}
 SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice",
-                 "transcribe_engine")
+                 "transcribe_engine",
+                 "route_stt", "route_tts", "route_llm")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -770,6 +840,88 @@ def load_keys() -> dict:
         rings = _load_server_keys(USER)
     st.session_state["_rings"] = rings or {}
     return st.session_state["_rings"]
+
+
+def provider_models(provider, force: bool = False):
+    """(models, live, error) for a provider, asked from the provider itself.
+
+    Fetched fresh and then held for this session, with a refresh button
+    beside each engine. Streamlit re-runs the whole script on every click,
+    so literally re-fetching "on every interaction" would mean several
+    calls per second and a rate limit within a minute — the cache is what
+    makes an always-current list practical rather than what compromises it.
+    """
+    ck = f"_models_{provider.id}"
+    if force or ck not in st.session_state:
+        try:
+            if provider.id == "groq":
+                st.session_state[ck] = provider.models()
+            elif provider.needs_key:
+                ring = get_ring(provider.id)
+                if not kr.usable(ring):
+                    st.session_state[ck] = ([], False, "no key")
+                else:
+                    st.session_state[ck] = provider.models(
+                        fetch=lambda attempt: kr.rotate(ring, lambda k: attempt(k)))
+                    save_rings()
+            else:
+                st.session_state[ck] = provider.models()
+        except Exception as e:
+            st.session_state[ck] = ([], False, str(e)[:120])
+    return st.session_state[ck]
+
+
+def chosen_model(provider) -> str:
+    """The model id this provider should use, or "" for its own default."""
+    return st.session_state.get(f"model_{provider.id}", "")
+
+
+def provider_usable(provider) -> bool:
+    """Keyless providers are always usable; keyed ones only once a key
+    that has not been buried exists. This is the one place that knows how
+    'usable' is decided, so ttt/routing.py stays free of storage."""
+    if not getattr(provider, "needs_key", True):
+        return True
+    if provider.id == "groq":
+        return bool(KEYS)
+    return kr.usable(get_ring(provider.id))
+
+
+def current_routes() -> dict:
+    """task id -> the provider that should do it right now."""
+    return RO.all_routes(PROVIDERS, provider_usable, st.session_state)
+
+
+class LLMBridge:
+    """Whatever is patched to the AI job, behind one complete().
+
+    Providers differ underneath — Groq holds the app's own keys, Claude
+    rotates the person's key ring — so this adapts both to the single
+    shape ttt/transform.py and the translator expect. Neither of them
+    should know, or change, when the patch moves.
+    """
+
+    def __init__(self, provider):
+        self.provider = provider
+        self.id = provider.id
+
+    def complete(self, prompt, system=None, **kw):
+        model = chosen_model(self.provider) or None
+        if self.provider.needs_key and self.provider.id != "groq":
+            ring = get_ring(self.provider.id)
+            try:
+                return self.provider.complete(
+                    lambda attempt: kr.rotate(ring, lambda k: attempt(k)),
+                    prompt, system=system, model=model, **kw)
+            finally:
+                save_rings()
+        return self.provider.complete(prompt, system=system, model=model, **kw)
+
+
+def llm_bridge():
+    """The AI engine to use right now, or None if none is usable."""
+    prov = current_routes().get("llm")
+    return LLMBridge(prov) if prov else None
 
 
 def audio_seconds(path) -> float:
@@ -1229,20 +1381,6 @@ with gear_col:
             if st.session_state.get("_sp_msg"):
                 st.caption(st.session_state.pop("_sp_msg"))
 
-            if any(k["state"] != "dead" for k in sp_ring["keys"]):
-                st.caption(t("voice_engine"))
-                ecol1, ecol2 = st.columns(2)
-                engine_now = st.session_state.get("voice_engine", "edge")
-
-                def _set_engine(e):
-                    st.session_state["voice_engine"] = e
-
-                ecol1.button(t("engine_edge"), key="eng_edge",
-                             type="primary" if engine_now == "edge" else "secondary",
-                             on_click=_set_engine, args=("edge",))
-                ecol2.button(t("engine_speechify"), key="eng_sp",
-                             type="primary" if engine_now == "speechify" else "secondary",
-                             on_click=_set_engine, args=("speechify",))
 
         with st.expander(t("assemblyai_title")):
             aai_ring = get_ring("assemblyai")
@@ -1271,20 +1409,89 @@ with gear_col:
             if st.session_state.get("_aai_msg"):
                 st.caption(st.session_state.pop("_aai_msg"))
 
-            if any(k["state"] != "dead" for k in aai_ring["keys"]):
-                st.caption(t("transcribe_engine"))
-                tcol1, tcol2 = st.columns(2)
-                tengine_now = st.session_state.get("transcribe_engine", "groq")
 
-                def _set_tengine(e):
-                    st.session_state["transcribe_engine"] = e
+        with st.expander(t("routing_title")):
+            # A patch bay, the way a digital desk routes buses: engines
+            # down the side, functions across the top, and you press the
+            # crosspoint where they meet. Reading a row tells you what one
+            # engine is doing; reading a column tells you who does one job.
+            # Everything here is derived from the registry, so a new
+            # provider grows a new row on its own.
+            ui_lang = st.session_state.get("ui_lang", "hr")
+            rows, _routes = RO.matrix(PROVIDERS, provider_usable, st.session_state)
+            widths = [1] * (1 + len(RO.TASKS))   # equal, so columns align
 
-                tcol1.button(t("engine_groq"), key="teng_groq",
-                             type="primary" if tengine_now == "groq" else "secondary",
-                             on_click=_set_tengine, args=("groq",))
-                tcol2.button(t("engine_assemblyai"), key="teng_aai",
-                             type="primary" if tengine_now == "assemblyai" else "secondary",
-                             on_click=_set_tengine, args=("assemblyai",))
+            with st.container(key="patchbay"):
+                head = st.columns(widths)
+                head[0].caption("")
+                for i, task in enumerate(RO.TASKS):
+                    head[i + 1].caption(f"**{task.short}**")
+
+                for prov, cells in rows:
+                    rcols = st.columns(widths)
+                    rcols[0].caption(prov.label)
+                    for i, (task, state) in enumerate(cells):
+                        cell = rcols[i + 1]
+                        if state == RO.BLANK:
+                            # Not a gap — an engine that cannot do this
+                            # job. Shown, not hidden, so the grid keeps
+                            # its shape and every column stays readable.
+                            cell.caption("·")
+                        elif state == RO.NOKEY:
+                            cell.button("✕", key=f"pb_{task.id}_{prov.id}",
+                                        disabled=True)
+                        else:
+                            def _patch(k=task.setting_key, v=prov.id):
+                                st.session_state[k] = v
+                                persist_settings()
+                            # No help= here: a tooltip wraps the button in
+                            # inline spans with zero width, so width:100%
+                            # collapses and the grid loses its columns.
+                            # The legend under the bay carries the meaning.
+                            cell.button(
+                                "●" if state == RO.PATCHED else "○",
+                                key=f"pb_{task.id}_{prov.id}",
+                                type="primary" if state == RO.PATCHED else "secondary",
+                                on_click=_patch)
+
+            st.caption("  ·  ".join(f"**{tk.short}** {tk.label(ui_lang)}"
+                                    for tk in RO.TASKS))
+
+            # ---- model per engine ---------------------------------
+            # Asked from the provider itself, so a model released years
+            # from now appears here without this app being touched. An
+            # engine with nothing patched is skipped: choosing a model for
+            # a job nobody gave it is noise.
+            st.caption("")
+            for prov, cells in rows:
+                if not any(state == RO.PATCHED for _, state in cells):
+                    continue
+                if not provider_usable(prov):
+                    continue
+                models, live, merr = provider_models(prov)
+                if not models:
+                    continue
+                mcol, rcol = st.columns([5, 1])
+                ids = [m.id for m in models]
+                labels = {m.id: m.label() for m in models}
+                cur = chosen_model(prov)
+                idx = ids.index(cur) if cur in ids else 0
+
+                def _pick_model(pid=prov.id, key=f"msel_{prov.id}"):
+                    st.session_state[f"model_{pid}"] = st.session_state[key]
+                    persist_settings()
+
+                mcol.selectbox(
+                    f"{prov.label} — {t('model_label')}", ids, index=idx,
+                    key=f"msel_{prov.id}", format_func=lambda i: labels.get(i, i),
+                    on_change=_pick_model)
+                rcol.button("↻", key=f"mref_{prov.id}",
+                            help=t("model_refresh"),
+                            on_click=lambda pr=prov: provider_models(pr, force=True))
+                st.caption(("✓ " + t("model_live")) if live
+                           else ("· " + t("model_static")))
+                if merr:
+                    st.caption("⚠ " + str(merr)[:90])
 
         if is_admin():
             with st.expander(t("admin_title")):
@@ -1552,8 +1759,10 @@ def lang_pills(prefix: str, which: str, current: str):
 # ----------------------------------------------------------------------
 if active == "transcribe":
     aai_ring_t = get_ring("assemblyai")
-    aai_usable = any(k["state"] != "dead" for k in aai_ring_t["keys"])
-    t_engine = st.session_state.get("transcribe_engine", "groq") if aai_usable else "groq"
+    # Which engine transcribes is the switchboard's decision now, not this
+    # tab's. resolve() already falls back if the chosen one became unusable.
+    _stt = current_routes()["stt"]
+    t_engine = _stt.id if _stt else "groq"
 
     speech_now = st.session_state.get("speech_lang", "hr")
     lcol1, lcol2 = st.columns(2)
@@ -1681,7 +1890,9 @@ if active == "transcribe":
         def _apply_transform(preset="", instruction=""):
             source = (st.session_state.get("transcript_box") or "").strip()
             try:
-                llm = PROVIDERS.with_capability("llm")[0]
+                llm = llm_bridge()
+                if llm is None:
+                    raise RuntimeError(t("routing_none"))
                 out = TR.run(llm, source, instruction=instruction, preset=preset)
                 st.session_state["_transcript_prev"] = source
                 st.session_state["transcript_box"] = out
@@ -1717,8 +1928,8 @@ if active == "transcribe":
 # ----------------------------------------------------------------------
 elif active == "talk":
     sp_ring_talk = get_ring("speechify")
-    sp_usable = any(k["state"] != "dead" for k in sp_ring_talk["keys"])
-    engine = st.session_state.get("voice_engine", "edge") if sp_usable else "edge"
+    _tts = current_routes()["tts"]
+    engine = _tts.id if _tts else "edge"
 
     if engine == "speechify":
         st.caption(t("engine_speechify"))
@@ -1824,8 +2035,8 @@ elif active == "read":
     # Which engine speaks here follows the same setting the Talk tab uses,
     # so a voice chosen once is the voice everywhere.
     sp_ring_read = get_ring("speechify")
-    read_engine = (st.session_state.get("voice_engine", "edge")
-                   if kr.usable(sp_ring_read) else "edge")
+    _rtts = current_routes()["tts"]
+    read_engine = _rtts.id if _rtts else "edge"
 
     if read_engine == "speechify":
         sp_voice = st.session_state.get("sp_voice", "beatrice_32")

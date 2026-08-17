@@ -7,7 +7,7 @@ the fact that fixes them.
 
 import base64
 
-from .base import Provider, Voice, http_json, classify_standard
+from .base import Model, Provider, Voice, http_json, classify_standard
 
 API = "https://api.speechify.ai"
 
@@ -51,6 +51,32 @@ class Speechify(Provider):
                          {"Authorization": "Bearer " + key, "Accept": "application/json"},
                          payload=payload, method=method, timeout=timeout,
                          classify=classify_standard)
+
+    # ---- models ------------------------------------------------------
+    def models(self, task: str = "", fetch=None):
+        """Live from /v1/audio/models, which reports its own `recommended`
+        and `deprecated` flags — so the picker steers towards whatever
+        Speechify currently recommends rather than what was true the day
+        this was written."""
+        if fetch is None:
+            return [Model(m, m, for_task="tts") for m in ("simba-3.2", "simba-english")], False, "no key"
+        data, err = fetch(lambda k: self._call(k, "/v1/audio/models", timeout=30))
+        if err or not isinstance(data, dict):
+            return ([Model("simba-3.2", "Simba 3.2", for_task="tts", recommended=True),
+                     Model("simba-english", "Simba English", for_task="tts")],
+                    False, err or "unexpected response")
+        out = []
+        for m in data.get("models", []):
+            mid = m.get("id")
+            if not mid:
+                continue
+            out.append(Model(mid, m.get("name") or mid,
+                             note=(m.get("description") or "")[:80],
+                             recommended=bool(m.get("recommended")),
+                             deprecated=bool(m.get("deprecated")),
+                             for_task="tts"))
+        out.sort(key=lambda x: (not x.recommended, x.deprecated, x.name.lower()))
+        return out, bool(out), None
 
     # ---- voices ------------------------------------------------------
     def voices(self, lang: str = "en"):

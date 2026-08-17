@@ -27,6 +27,35 @@ import urllib.error
 import urllib.request
 
 
+class Model:
+    """One model a provider offers.
+
+    `live` on the returned list (not here) says whether it came from the
+    provider's own API or from a written-down fallback. `recommended` and
+    `deprecated` come straight from the provider where it reports them, so
+    the picker can steer without this app having an opinion that goes
+    stale.
+    """
+
+    __slots__ = ("id", "name", "note", "recommended", "deprecated", "for_task")
+
+    def __init__(self, id, name="", note="", recommended=False,
+                 deprecated=False, for_task=""):
+        self.id = id
+        self.name = name or id
+        self.note = note
+        self.recommended = recommended
+        self.deprecated = deprecated
+        self.for_task = for_task
+
+    def label(self) -> str:
+        mark = "★ " if self.recommended else ("· " if self.deprecated else "")
+        return f"{mark}{self.name}"
+
+    def __repr__(self):
+        return f"Model({self.id!r})"
+
+
 class Voice:
     __slots__ = ("id", "name", "lang", "gender", "model")
 
@@ -62,6 +91,19 @@ class Provider:
         """Return (error, kind) — (None, None) when the key is good.
         kind is "dead" | "cool" | "soft" so the ring knows what to do."""
         raise NotImplementedError
+
+    def models(self, task: str = "", fetch=None):
+        """Return (models, live, error).
+
+        Asked fresh from the provider whenever possible, so a model
+        released next year appears without anyone editing this app. A
+        provider with no model-list endpoint returns its written-down list
+        with live=False, and the picker says so rather than pretending.
+
+        `fetch(key) -> (data, err, kind)` is supplied by the caller for
+        keyed providers, so this module never touches a key ring.
+        """
+        return [], False, None
 
 
 def http_json(url: str, headers: dict, payload=None, data: bytes = None,

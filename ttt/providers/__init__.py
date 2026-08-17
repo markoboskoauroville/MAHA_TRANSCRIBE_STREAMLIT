@@ -10,6 +10,7 @@ the engine pickers list whatever offers the capability, and the reader
 takes whatever function it is handed.
 """
 
+from .anthropic import Anthropic
 from .assemblyai import AssemblyAI
 from .edge import Edge
 from .groq import Groq
@@ -20,6 +21,7 @@ REGISTRY = {
     Speechify.id: Speechify(),
     AssemblyAI.id: AssemblyAI(),
     Groq.id: Groq(),            # keys injected at startup by the entrypoint
+    Anthropic.id: Anthropic(),
 }
 
 
