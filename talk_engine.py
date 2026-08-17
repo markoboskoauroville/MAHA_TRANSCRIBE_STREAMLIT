@@ -24,6 +24,15 @@ VOICES = {
     "ukM": ("en-GB-RyanNeural",      "Ryan",      "en", "M"),
     "hrF": ("hr-HR-GabrijelaNeural", "Gabrijela", "hr", "F"),
     "hrM": ("hr-HR-SreckoNeural",    "Srecko",    "hr", "M"),
+    # Added for the Translate tab. Same voices Baba's own prior MA Reader
+    # app had already hand-picked for these languages (found in its LANGS
+    # table) — reused rather than guessed fresh, so the quality bar matches.
+    "itF": ("it-IT-ElsaNeural",      "Elsa",      "it", "F"),
+    "itM": ("it-IT-DiegoNeural",     "Diego",     "it", "M"),
+    "deF": ("de-DE-KatjaNeural",     "Katja",     "de", "F"),
+    "deM": ("de-DE-ConradNeural",    "Conrad",    "de", "M"),
+    "frF": ("fr-FR-DeniseNeural",    "Denise",    "fr", "F"),
+    "frM": ("fr-FR-HenriNeural",     "Henri",     "fr", "M"),
 }
 UNIT_CAP = 320
 
@@ -84,13 +93,12 @@ async def _synth(text, voice):
                 total = end
     return bytes(audio), total
 
-def synth_sentence(text, vkey):
-    """Speak one sentence right now. Returns (mp3_bytes, seconds). Nothing
-    touches disk — this is a live read, not a cache entry."""
-    voice = VOICES[vkey][0]
+def synth_sentence_voice(text, edge_voice):
+    """Speak one sentence with a raw edge-tts voice id. Returns (mp3_bytes,
+    seconds). Nothing touches disk — this is a live read, not a cache entry."""
     loop = asyncio.new_event_loop()
     try:
-        audio, total = loop.run_until_complete(_synth(text, voice))
+        audio, total = loop.run_until_complete(_synth(text, edge_voice))
     finally:
         loop.close()
     if not audio:
@@ -98,3 +106,10 @@ def synth_sentence(text, vkey):
     if total <= 0.05:
         total = max(1.0, len(text.split()) * 0.38)   # rough fallback estimate
     return audio, total
+
+
+def synth_sentence(text, vkey):
+    """Speak one sentence in one of the four Talk-tab voices."""
+    return synth_sentence_voice(text, VOICES[vkey][0])
+
+

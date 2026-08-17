@@ -93,6 +93,15 @@ transcribed, and starts reading.
 The sentence being spoken is highlighted in gold, and repeated alone in a
 large **subtitle box** below (the NaturalReader idea).
 
+**Translate.** A third tab, added for Emina and Marinko — they like
+languages. Two boxes and pill-button language switches, From and Croatian
+first / English / Italian / German / French, a swap (⇄) that exchanges both
+the languages and the text, and a **Translate** button that calls Groq
+(`openai/gpt-oss-120b`, see §3). Under the result, the same **Read** +
+subtitle-box mechanism as the Talk tab, reused via the shared
+`read_sentences_live()` — not a second copy of it — reading in a neural
+voice picked for whichever language was translated into.
+
 ---
 
 ## 3. DESIGN DECISIONS WORTH KNOWING
@@ -131,14 +140,59 @@ profile, so each person gets their own preferences. **Remember me** stores a
 salted SHA-256 of the password, never the password itself, per browser.
 **Forget me** in Settings undoes it (needed for a shared phone).
 
+**Translation model: `openai/gpt-oss-120b`, chosen by testing, not by
+reputation.** Compared against `llama-3.3-70b-versatile`, `gpt-oss-20b`, and
+`qwen/qwen3.6-27b` on real Croatian/English/Italian/German/French sentences
+with an idiom and a formal register in them. `gpt-oss-120b` handled both
+correctly (kept "Poštovani" as "Cher Monsieur", not just "Monsieur"; used
+the natural idiom, not a literal one). **`qwen3.6-27b` is disqualified**:
+despite an explicit "reply with ONLY the translation" instruction, it wrapped
+its answer in a full visible `<think>...</think>` block — sometimes several
+paragraphs — which is both wrong output and wasted latency. `gpt-oss-20b`'s
+smaller size showed: idioms translated literally instead of naturally
+("piove come da un tubo" instead of "piove a dirotto"). If Groq adds a
+stronger model later, retest with this same method before switching —
+parameter count alone is not the signal, output was.
+
+**Five languages, European only, this exact order:** Croatian, English,
+Italian, German, French. Baba's explicit instruction — not Indian, African,
+Chinese, or Philippine languages, on purpose. Croatian first everywhere,
+matching the rest of the app.
+
+**New neural voices, Translate tab only, one per language, no picker.**
+Italian/German/French use the exact same voices already hand-picked and
+vetted in Baba's own `ma-reader-thermux` app (its `LANGS` table) — reused
+rather than guessed fresh, so the quality bar matches Sonia/Ryan/Gabrijela/
+Srecko: `it-IT-ElsaNeural`, `de-DE-KatjaNeural`, `fr-FR-DeniseNeural`. These
+live in `talk_engine.VOICES` alongside the original four (now also holding
+Diego/Conrad/Henri as the unused male half of each pair, kept for
+completeness) but the **Talk tab's own picker is untouched** —
+`VOICES_BY_LANG` / `VOICE_TO_VKEY` in `app.py` still only ever show the
+original four. Don't let Talk's UI grow past that by pointing it at the
+fuller `VOICES` table.
+
+**The login screen's language pills are not decorative — the checkbox
+label moves with them.** `LOGIN_LABELS` in `help_text.py` gives Password /
+Remember me / Wrong password in all five languages, keyed by
+`session_state["login_lang"]`, and `check_password()` renders the actual
+widgets from that dict — never hardcode a label there again, or the guide
+text (which says e.g. "tick the box marked X") will describe a box that
+says something else. `LOGIN_GUIDE` itself was translated once via this same
+Groq model, then proofread by asking the model to critique its own output
+as a strict native speaker (caught a German word-order slip: "So die App
+steht" → "So steht die App"), then hand-verified against the actual UI
+layout before being baked in as static text — the login screen must never
+depend on a live API call to render.
+
 ---
 
 ## 4. FILES
 
 ```
-app.py                      entrypoint: gate, settings, both tabs, LS bridge
+app.py                      entrypoint: gate, settings, three tabs, LS bridge
 talk_engine.py              sentence splitting + live edge-tts synthesis
-help_text.py                HELP and LOGIN_GUIDE prose, hr + en
+                             (VOICES: 4 Talk voices + 6 Translate-tab extras)
+help_text.py                HELP (hr/en) + LOGIN_GUIDE + LOGIN_LABELS (all 5)
 ls_bridge_frontend/         one-file vanilla-JS custom component
 requirements.txt            streamlit, groq, edge-tts
 packages.txt                ffmpeg (apt, needed by Transcribe)

@@ -47,7 +47,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v4 (a)"
+APP_VERSION = "v5 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -56,6 +56,16 @@ CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by C
 VOICES_BY_LANG = {"hr": ["Gabrijela", "Srecko"], "en": ["Sonia", "Ryan"]}
 VOICE_TO_VKEY = {"Gabrijela": "hrF", "Srecko": "hrM", "Sonia": "ukF", "Ryan": "ukM"}
 VOICE_LANG = {"Gabrijela": "hr", "Srecko": "hr", "Sonia": "en", "Ryan": "en"}
+
+# Translate tab + the login screen's language pills. European only, on
+# purpose, in the order Baba asked for: Croatian first, English second.
+LANGS5 = ["hr", "en", "it", "de", "fr"]
+LANG_FULL = {"hr": "Croatian", "en": "English", "it": "Italian", "de": "German", "fr": "French"}
+# One voice per language for the Translate tab's Read button — automatic,
+# no picker, so this tab stays simple. Talk tab's own voice picker is
+# untouched and does not gain these three languages, on purpose.
+TRANSLATE_VKEY = {"hr": "hrF", "en": "ukF", "it": "itF", "de": "deF", "fr": "frF"}
+TRANSLATE_MODEL = "openai/gpt-oss-120b"
 
 
 # ----------------------------------------------------------------------
@@ -98,6 +108,11 @@ STRINGS = {
                             "hr": "Lozinka nije postavljena u Secrets. Dodaj APP_PASSWORDS (listu) u Streamlit Cloud → Settings → Secrets."},
     "no_groq_secret":     {"en": "No Groq key in Secrets. Add GROQ_API_KEYS (a list) in Streamlit Cloud → Settings → Secrets.",
                             "hr": "Nema Groq ključa u Secrets. Dodaj GROQ_API_KEYS (listu) u Streamlit Cloud → Settings → Secrets."},
+    "tab_translate":      {"en": "Translate",        "hr": "Prevedi"},
+    "translate_src_ph":   {"en": "Paste text to translate", "hr": "Zalijepi tekst za prijevod"},
+    "translate_btn":      {"en": "Translate",         "hr": "Prevedi"},
+    "translate_fail":     {"en": "Translation failed", "hr": "Prijevod nije uspio"},
+    "swap_help":          {"en": "Swap languages",    "hr": "Zamijeni jezike"},
 }
 
 
@@ -236,15 +251,29 @@ def check_password() -> bool:
                 queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
         st.session_state["_pw_input"] = ""
 
+    def _set_login_lang(code):
+        st.session_state["login_lang"] = code
+
     if st.session_state.get("_authed"):
         return True
 
-    st.text_input(t("password_label"), type="password", key="_pw_input", on_change=_entered)
-    st.checkbox(t("remember_me"), key="_remember_me", value=True)
+    st.session_state.setdefault("login_lang", "hr")
+    lcols = st.columns(len(LANGS5))
+    for col, code in zip(lcols, LANGS5):
+        col.button(
+            code.upper(), key="login_pill_" + code, use_container_width=True,
+            type="primary" if st.session_state["login_lang"] == code else "secondary",
+            on_click=_set_login_lang, args=(code,),
+        )
+
+    ll = st.session_state["login_lang"]
+    labels = help_text.LOGIN_LABELS.get(ll, help_text.LOGIN_LABELS["hr"])
+    st.text_input(labels["password"], type="password", key="_pw_input", on_change=_entered)
+    st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
-        st.error(t("wrong_password"))
+        st.error(labels["wrong"])
     st.markdown("---")
-    st.markdown(safe_text("LOGIN_GUIDE"))
+    st.markdown(help_text.LOGIN_GUIDE.get(ll, help_text.LOGIN_GUIDE["hr"]))
     return False
 
 
@@ -281,6 +310,34 @@ def transcribe(path: str, model: str, language: str) -> str:
             text = resp if isinstance(resp, str) else getattr(resp, "text", str(resp))
             return text.strip()
         except Exception as e:  # bad key, rate limit, network — try the next key
+            last_err = e
+            continue
+    raise RuntimeError(f"All Groq keys failed ({last_err})")
+
+
+def translate_text(text: str, source_lang: str, target_lang: str) -> str:
+    """openai/gpt-oss-120b, chosen by testing against qwen/qwen3.6-27b (the
+    other model Groq recommends for quality): gpt-oss-120b returned four
+    clean translations with correct grammar including French subjunctive.
+    qwen wrapped two of four in a visible multi-paragraph <think> block —
+    once so long the reply was cut off before any translation appeared at
+    all. See HANDOVER.md."""
+    start = st.session_state.get("_key_idx", 0) % len(KEYS)
+    last_err = None
+    for offset in range(len(KEYS)):
+        idx = (start + offset) % len(KEYS)
+        client = Groq(api_key=KEYS[idx])
+        try:
+            resp = client.chat.completions.create(
+                model=TRANSLATE_MODEL,
+                messages=[{"role": "user", "content":
+                    f"Translate the following {source_lang} text into {target_lang}. "
+                    f"Output ONLY the translation, nothing else, no quotes, no notes.\n\n{text}"}],
+                temperature=0.2,
+            )
+            st.session_state["_key_idx"] = idx
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as e:
             last_err = e
             continue
     raise RuntimeError(f"All Groq keys failed ({last_err})")
@@ -447,7 +504,7 @@ with gear_col:
 # ----------------------------------------------------------------------
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
-    "nav", ["transcribe", "talk"], format_func=lambda k: t("tab_" + k),
+    "nav", ["transcribe", "talk", "translate"], format_func=lambda k: t("tab_" + k),
     key="active_tab", required=True, label_visibility="collapsed",
 )
 active = st.session_state.get("active_tab") or "transcribe"
@@ -472,6 +529,84 @@ def read_this():
         st.session_state["voice"] = VOICES_BY_LANG[lang][0]
     st.session_state["active_tab"] = "talk"
     st.session_state["_auto_read"] = True
+
+
+def _subtitle(text: str) -> str:
+    return f'<div class="subtitle-box">{html.escape(text)}</div>'
+
+
+def read_sentences_live(raw: str, vkey: str, doc_slot, sub_slot, audio_slot):
+    """Shared by Talk and Translate: synthesize and play one sentence at a
+    time, highlighting the current one in doc_slot and mirroring it alone in
+    sub_slot (the NaturalReader-style subtitle box). No disk cache, no
+    word-level timing — see HANDOVER.md for why."""
+    try:
+        sentences = tk.sentences_of(raw)
+    except Exception as e:          # never let the engine take the page down
+        sentences = []
+        st.error(f"{t('read_fail')}: {e}")
+    if not sentences:
+        st.info(t("nothing_to_read"))
+        return
+    for i, sent in enumerate(sentences):
+        parts = []
+        for j, s in enumerate(sentences):
+            safe = html.escape(s)
+            if j == i:
+                parts.append(
+                    '<span style="background:#e0a340;color:#0d0d0d;'
+                    'border-radius:4px;padding:1px 4px;">' + safe + "</span>"
+                )
+            else:
+                parts.append(safe)
+        doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
+        sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
+        try:
+            audio_bytes, dur = tk.synth_sentence(sent, vkey)
+        except Exception as e:
+            st.error(f"{t('read_fail')} {i + 1}: {e}")
+            break
+        audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+        time.sleep(dur + 0.15)
+    doc_slot.markdown(html.escape(raw))
+    sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+
+def _set_translate_lang(which: str, code: str):
+    st.session_state["translate_" + which] = code
+
+
+def swap_translate_langs():
+    src = st.session_state.get("translate_src", "hr")
+    tgt = st.session_state.get("translate_tgt", "en")
+    st.session_state["translate_src"] = tgt
+    st.session_state["translate_tgt"] = src
+    src_text = st.session_state.get("translate_src_text", "")
+    out_text = st.session_state.get("translate_out", "")
+    st.session_state["translate_src_text"] = out_text
+    st.session_state["translate_out"] = src_text
+
+
+def do_translate():
+    text = (st.session_state.get("translate_src_text") or "").strip()
+    if not text:
+        return
+    src = st.session_state.get("translate_src", "hr")
+    tgt = st.session_state.get("translate_tgt", "en")
+    try:
+        st.session_state["translate_out"] = translate_text(text, LANG_FULL[src], LANG_FULL[tgt])
+    except Exception as e:
+        st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
+
+
+def lang_pills(prefix: str, which: str, current: str):
+    cols = st.columns(len(LANGS5))
+    for col, code in zip(cols, LANGS5):
+        col.button(
+            code.upper(), key=f"{prefix}_{code}", use_container_width=True,
+            type="primary" if code == current else "secondary",
+            on_click=_set_translate_lang, args=(which, code),
+        )
 
 
 # ----------------------------------------------------------------------
@@ -524,7 +659,7 @@ if active == "transcribe":
 # ----------------------------------------------------------------------
 # Talk
 # ----------------------------------------------------------------------
-else:
+elif active == "talk":
     voice_picker("talkvoice")
     vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
 
@@ -539,40 +674,50 @@ else:
     sub_slot = st.empty()
     audio_slot = st.empty()
 
-    def _subtitle(text: str) -> str:
-        return f'<div class="subtitle-box">{html.escape(text)}</div>'
-
     if read_clicked or st.session_state.pop("_auto_read", False):
         raw = (st.session_state.get("talk_text") or "").strip()
-        try:
-            sentences = tk.sentences_of(raw)
-        except Exception as e:      # never let the engine take the page down
-            sentences = []
-            st.error(f"{t('read_fail')}: {e}")
-        if not sentences:
-            st.info(t("nothing_to_read"))
-        else:
-            for i, sent in enumerate(sentences):
-                parts = []
-                for j, s in enumerate(sentences):
-                    safe = html.escape(s)
-                    if j == i:
-                        parts.append(
-                            '<span style="background:#e0a340;color:#0d0d0d;'
-                            'border-radius:4px;padding:1px 4px;">' + safe + "</span>"
-                        )
-                    else:
-                        parts.append(safe)
-                doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
-                sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
-                try:
-                    audio_bytes, dur = tk.synth_sentence(sent, vkey)
-                except Exception as e:
-                    st.error(f"{t('read_fail')} {i + 1}: {e}")
-                    break
-                audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
-                time.sleep(dur + 0.15)
-            doc_slot.markdown(html.escape(raw))
-            sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+        read_sentences_live(raw, vkey, doc_slot, sub_slot, audio_slot)
     else:
         sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+# ----------------------------------------------------------------------
+# Translate — Groq (openai/gpt-oss-120b) between five European languages,
+# then an optional Read in the target language's own neural voice.
+# ----------------------------------------------------------------------
+else:
+    st.session_state.setdefault("translate_src", "hr")
+    st.session_state.setdefault("translate_tgt", "en")
+
+    lang_pills("srcpill", "src", st.session_state["translate_src"])
+    st.text_area("src", key="translate_src_text", height=120,
+                 label_visibility="collapsed", placeholder=t("translate_src_ph"))
+
+    _, swap_col, _ = st.columns([2.5, 1, 2.5])
+    swap_col.button("⇄", key="swap_langs", use_container_width=True,
+                     help=t("swap_help"), on_click=swap_translate_langs)
+
+    lang_pills("tgtpill", "tgt", st.session_state["translate_tgt"])
+    st.button(t("translate_btn"), key="do_translate_btn", use_container_width=True,
+              on_click=do_translate)
+
+    if st.session_state.get("_translate_error"):
+        st.error(st.session_state.pop("_translate_error"))
+
+    if "translate_out" in st.session_state:
+        st.text_area("out", key="translate_out", height=150, label_visibility="collapsed")
+
+        tr_col1, tr_col2 = st.columns(2)
+        tread_clicked = tr_col1.button(t("read_btn"), use_container_width=True, key="tr_read_btn")
+        tr_col2.button(t("stop_btn"), use_container_width=True, key="tr_stop_btn", help=t("stop_help"))
+
+        tdoc_slot = st.empty()
+        tsub_slot = st.empty()
+        taudio_slot = st.empty()
+
+        if tread_clicked:
+            raw = (st.session_state.get("translate_out") or "").strip()
+            tgt = st.session_state.get("translate_tgt", "en")
+            vkey = TRANSLATE_VKEY.get(tgt, "ukF")
+            read_sentences_live(raw, vkey, tdoc_slot, tsub_slot, taudio_slot)
+        else:
+            tsub_slot.markdown(_subtitle(""), unsafe_allow_html=True)

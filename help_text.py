@@ -68,6 +68,18 @@ Ispod toga je poseban okvir koji pokazuje samo tu jednu rečenicu, veliko i
 - Za tipkanje e-maila: govori na tabu Transkripcija, kopiraj ispisani tekst,
   zalijepi u e-mail.
 - Za čitanje e-maila: kopiraj tekst e-maila, zalijepi na tab Čitanje, pritisni Čitaj.
+
+---
+
+**Tab Prevedi — prevodi između pet jezika**
+
+Odaberi jezik teksta koji imaš (hrvatski, engleski, talijanski, njemački ili
+francuski), zalijepi tekst u prvi okvir. Odaberi na koji jezik ga želiš
+prevesti, pritisni **Prevedi**. Strelica između dva reda jezika brzo zamijeni
+smjer prijevoda.
+
+Ispod prijevoda je gumb **Čitaj** koji prevedeni tekst pročita naglas, uvijek
+pravim glasom za taj jezik.
 """,
 
     "en": """
@@ -132,10 +144,26 @@ like a subtitle in a film. If small print is hard to follow, watch that box.
 - To write an email: speak on the Transcribe tab, copy the written text,
   paste it into your email.
 - To read an email: copy the email text, paste it into the Talk tab, press Read.
+
+---
+
+**Translate tab — translates between five languages**
+
+Choose the language of the text you have (Croatian, English, Italian,
+German, or French), paste the text into the first box. Choose which
+language to translate it into, press **Translate**. The arrow between the
+two language rows quickly swaps the direction.
+
+Below the translation is a **Read** button that reads the translated text
+aloud, always in the right voice for that language.
 """,
 }
 
-# Shown on the password screen, before anyone is logged in.
+# Shown on the password screen, before anyone is logged in. Five languages,
+# because a friend who doesn't read Croatian still needs to find the
+# shortcut instructions. Translated once via the app's own translate engine
+# (openai/gpt-oss-120b on Groq) and checked, then baked in as plain text —
+# the login screen must never depend on a live API call to render.
 LOGIN_GUIDE = {
     "hr": """
 **Savjet: napravi ikonu na ekranu telefona**
@@ -168,4 +196,66 @@ then confirm.
 Tick **Remember me** above and the app will stop asking for the password on
 this phone.
 """,
+
+    "it": """
+**Consiglio: crea un'icona sulla schermata del telefono**
+
+In questo modo l'applicazione si posiziona accanto alle altre app e si apre
+con un solo tocco, senza dover inserire l'indirizzo.
+
+**Chrome:** tocca i tre puntini in alto a destra, poi *Aggiungi alla
+schermata principale* (a volte dice *Installa l'applicazione*), poi
+conferma con *Aggiungi*.
+
+**Firefox:** tocca i tre puntini, poi *Installa* o *Aggiungi alla schermata
+principale*, poi conferma.
+
+Attiva la casella **Ricordami** sopra e l'applicazione non ti chiederà più
+la password su questo telefono.
+""",
+
+    "de": """
+**Tipp: Erstelle ein Symbol auf dem Telefonbildschirm**
+
+So steht die App neben den anderen Apps und lässt sich mit einem Fingertipp
+öffnen, ohne die Adresse einzugeben.
+
+**Chrome:** tippe auf die drei Punkte oben rechts, dann *Zum Startbildschirm
+hinzufügen* (manchmal steht *App installieren*), und bestätige mit
+*Hinzufügen*.
+
+**Firefox:** tippe auf die drei Punkte, dann *Installieren* oder *Zum
+Startbildschirm hinzufügen*, und bestätige.
+
+Aktiviere das Häkchen **Angemeldet bleiben** oben, und die App wird dich auf
+diesem Telefon nicht mehr nach dem Passwort fragen.
+""",
+
+    "fr": """
+**Conseil : créez une icône sur l'écran du téléphone**
+
+Ainsi, l'application se place parmi les autres applications et s'ouvre d'un
+seul toucher, sans saisir d'adresse.
+
+**Chrome :** touchez les trois points en haut à droite, puis *Ajouter à
+l'écran d'accueil* (parfois il est indiqué *Installer l'application*), puis
+confirmez avec *Ajouter*.
+
+**Firefox :** touchez les trois points, puis *Installer* ou *Ajouter à
+l'écran d'accueil*, puis confirmez.
+
+Cochez la case **Se souvenir de moi** ci-dessus et l'application ne vous
+demandera plus le mot de passe sur ce téléphone.
+""",
+}
+
+# Login-screen labels that must match whichever LOGIN_GUIDE language is
+# showing, so the guide's instructions point at words that actually appear
+# on screen.
+LOGIN_LABELS = {
+    "hr": {"password": "Lozinka", "remember": "Zapamti me", "wrong": "Pogrešna lozinka."},
+    "en": {"password": "Password", "remember": "Remember me", "wrong": "Wrong password."},
+    "it": {"password": "Password", "remember": "Ricordami", "wrong": "Password errata."},
+    "de": {"password": "Passwort", "remember": "Angemeldet bleiben", "wrong": "Falsches Passwort."},
+    "fr": {"password": "Mot de passe", "remember": "Se souvenir de moi", "wrong": "Mot de passe incorrect."},
 }
