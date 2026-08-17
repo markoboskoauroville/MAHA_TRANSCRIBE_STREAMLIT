@@ -241,3 +241,70 @@ subtitles) must be tested in a real headless browser; AppTest cannot see it.
 **Before shipping, deliberately break things and confirm graceful
 degradation:** delete `ls_bridge_frontend/`, plant a stale module, cut the
 network. The app must survive all three.
+
+---
+
+## 7. PROVIDER KEYS — Speechify (and the pattern for anything after it)
+
+Bring-your-own-key, ported from Baba's `MA_READER_SPEECHIFY` and
+`Key_Tester` repos, storage adapted since this app cannot rely on local
+disk (see §incident 1 above). Each provider's ring is its own blob under
+`maha_keys_{user}`, same session_state -> localStorage -> server-file path
+as `SETTINGS_LS_KEY`, parallel to it rather than merged in — keys are
+bigger and more sensitive than the small settings blob.
+
+**Generic ring** (`new_ring`, `ring_pick`, `ring_import`, `mask_key`,
+`persist_keys`/`load_keys`, `render_key_list`) is provider-agnostic and
+meant to be reused as-is for the next provider. State machine per key:
+`new -> ok -> dead` on 401/402/403 (buried, never retried), `-> cool` on
+429 (rests 120s, comes back on its own), network/5xx changes nothing.
+
+**`ring_import` is line-aware**, matching Key_Tester's KeyParser exactly:
+processes the raw text line by line, and whichever key-shaped tokens it
+finds get the file line *directly above* them (verbatim, blank/absent ->
+none) as a `label` — a username or account note, not the key. Prefixed
+tokens (`sk_`, `sws_`, etc. for Speechify) are taken first and exactly; if
+none carry a known prefix, falls back to any long mixed letter+digit run
+(AssemblyAI's 32-hex keys have no distinctive prefix, so they only ever
+hit the fallback path — expected, not a bug).
+
+**Settings UI**: each key gets its own row — icon + label + first 4
+characters + its own Test button, not one global test-all. This was a
+deliberate Baba correction mid-build; don't regress it to a single button.
+
+**Speechify specifics** (`sp_call`, `sp_request`, `sp_synthesize`): base
+URL `https://api.speechify.ai`, `Authorization: Bearer <key>` on every
+call. `sp_synthesize` returns `(audio_bytes, seconds, marks)` — marks is a
+flattened, time-sorted list of `{start, end, start_time, end_time}` from
+`speech_marks` (start/end are *character offsets into the text sent*,
+start_time/end_time in seconds). Confirmed against a real synthesis call,
+not just the docs: root is a `type: sentence` chunk, `chunks` holds
+`type: word` entries, punctuation-only entries are skipped.
+
+**Word-level highlight**: `read_sentences_live`'s `synth_fn(text)` may
+return a 2-tuple `(audio, seconds)` or a 3-tuple with marks. Marks present
+-> step the highlight through each word's own measured window, in both
+the main document view and the subtitle box (`_highlight_span`,
+`_render_page`, `_subtitle` all take optional `start`/`end` char bounds).
+Marks absent (Edge, or Speechify without marks for some reason) -> the
+original whole-sentence highlight. **Do not build this for Edge** — its
+own word-boundary events run on a separate clock and drift out of sync
+over the course of a sentence; that's specifically why sentence-level was
+the rule before Speechify's *exact, not inferred* offsets made word-level
+worth doing at all. The distinction is the data quality, not a preference.
+
+**Talk tab engine toggle**: Edge/Speechify, shown once any key isn't dead.
+Swaps the *entire* voice picker (4 named Edge voices, or the 8 curated
+Speechify voices) — never shows both at once. Persisted like every other
+setting (`voice_engine`, `sp_voice` are in `SETTINGS_KEYS` now).
+
+**Tested with real keys once, then shredded** (17.8.2026) — Baba supplied
+real Speechify and AssemblyAI keys explicitly for a one-time test, to be
+deleted after. Confirmed real API shapes match this document, confirmed
+`ring_import` on two genuinely messy real key files, confirmed the full
+browser flow (import -> per-key test -> engine switch -> word highlight
+visibly advancing in both views), then deleted every trace: the
+server-side settings file the browser test created, one scratch file.
+Nothing was committed, nothing added to deployed secrets. If real keys are
+needed again, ask — don't assume any are still lying around.
+
