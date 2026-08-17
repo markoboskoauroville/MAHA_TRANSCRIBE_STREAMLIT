@@ -27,9 +27,9 @@ to come from the native paste event instead. See HANDOVER §14.
 
 import json
 
-BG = "#0d0d0d"
-FG = "#e8dcc0"
-GOLD = "#e0a340"
+BG = "#0b0d10"
+FG = "#f2ddb4"
+GOLD = "#f59e0b"
 EDGE = "rgba(232,220,192,0.25)"
 
 # Enough for a 44px target plus breathing room; Streamlit reserves this

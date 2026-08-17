@@ -32,6 +32,7 @@ from ttt import transform as TR
 from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
+from ttt import theme
 from ttt import gate
 from ttt import copybtn
 
@@ -135,17 +136,23 @@ st.markdown(
     .stButton button[kind="primaryFormSubmit"],
     .stButton button[kind="secondaryFormSubmit"] { width: 100%; }
 
-    .st-key-correct_btn button { background-color: #4dd6e8; color: #0d0d0d; border-color: #4dd6e8; }
+    .st-key-correct_btn button { background-color: #fbbf24; color: #0b0d10; border-color: #fbbf24; }
     .st-key-correct_btn button:hover { background-color: #6fe0ee; border-color: #6fe0ee; }
     .subtitle-box {
-        border: 1px solid #3a3a3a; border-radius: 10px; padding: 16px 14px;
+        border: 1px solid #23303d; border-radius: 10px; padding: 16px 14px;
         min-height: 92px; font-size: 1.45rem; line-height: 1.45;
-        color: #e8dcc0; background: #141414;
+        color: #f2ddb4; background: #141a21;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+# The visual language first (colour, border, radius, spacing), then the
+# reading stylesheet on top (size, line height, targets). That order
+# matters: a11y must be able to override anything theme sets about text,
+# because the reader's chosen size outranks the design.
+st.markdown(theme.css(), unsafe_allow_html=True)
 
 # The reading stylesheet, regenerated from the person's own text size on
 # every run. Injected AFTER the base sheet so it wins, and kept separate
@@ -154,7 +161,7 @@ st.markdown(
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v29 (a)"
+APP_VERSION = "v30 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -1874,12 +1881,12 @@ def _highlight_span(text: str, start: int = None, end: int = None) -> str:
     Bounds are clamped defensively — a mark that's ever slightly out of
     range must never crash the read, just highlight nothing that run."""
     if start is None or end is None:
-        return ('<span style="background:#e0a340;color:#0d0d0d;'
+        return ('<span style="background:#f59e0b;color:#0b0d10;'
                 'border-radius:4px;padding:1px 4px;">' + html.escape(text) + "</span>")
     start = max(0, min(start, len(text)))
     end = max(start, min(end, len(text)))
     return (html.escape(text[:start]) +
-            '<span style="background:#e0a340;color:#0d0d0d;'
+            '<span style="background:#f59e0b;color:#0b0d10;'
             'border-radius:4px;padding:1px 4px;">' + html.escape(text[start:end]) + "</span>" +
             html.escape(text[end:]))
 

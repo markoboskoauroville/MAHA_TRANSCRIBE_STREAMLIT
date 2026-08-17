@@ -175,7 +175,7 @@ def css(scale) -> str:
        clearly without flashing. No colour change, because colour alone
        is exactly what a person with low vision may not perceive. */
     .stButton button:hover:not(:disabled) {{
-        border-color: #e0a340 !important;
+        border-color: #f59e0b !important;
         background-color: rgba(224, 163, 64, 0.10) !important;
         transform: scale(1.03);
         transition: transform 90ms ease-out, background-color 90ms ease-out,
@@ -200,7 +200,7 @@ def css(scale) -> str:
     .stButton button:focus-visible,
     .stTextArea textarea:focus-visible,
     .stTextInput input:focus-visible {{
-        outline: 3px solid #e0a340 !important;
+        outline: 3px solid #f59e0b !important;
         outline-offset: 2px !important;
     }}
 

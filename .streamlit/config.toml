@@ -1,9 +1,12 @@
+# Tokens taken from Baba's own maha_transcribe app — see ttt/theme.py.
+# Streamlit's own theme has to agree with the injected CSS, or its
+# built-in widgets fight the design.
 [theme]
 base = "dark"
-primaryColor = "#e0a340"
-backgroundColor = "#0d0d0d"
-secondaryBackgroundColor = "#1a1a1a"
-textColor = "#e8dcc0"
+primaryColor = "#f59e0b"
+backgroundColor = "#0b0d10"
+secondaryBackgroundColor = "#141a21"
+textColor = "#f2ddb4"
 font = "monospace"
 
 [server]

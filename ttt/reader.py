@@ -19,8 +19,8 @@ import html
 # several resumable pages instead of one unbroken session nobody can leave.
 PAGE_CHARS = 1500
 
-HL_BG = "#e0a340"
-HL_FG = "#0d0d0d"
+HL_BG = "#f59e0b"
+HL_FG = "#0b0d10"
 
 
 def split_sentences(text: str, splitter):
