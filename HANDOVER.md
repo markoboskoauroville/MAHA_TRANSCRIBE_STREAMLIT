@@ -142,7 +142,21 @@ accept. The CSS at the top of `app.py` overrides both; keep it. Main
 actions (Read, Translate, Correct) may stay wide; choosers (languages,
 voices, engines) must not.
 
-## 1. INCIDENT: stale-module crashes (TWICE — 17.8.2026)
+## 1. INCIDENT: stale-module crashes (THREE times — 17.8.2026) — NOW FIXED AT THE CAUSE
+
+**Fixed properly in v33.** app.py drops every `ttt.*` module (plus
+`talk_engine` and `help_text`) from `sys.modules` whenever the build stamp
+changes, BEFORE importing them. The stamp is `APP_VERSION`, which is
+bumped on every change anyway, so the two cannot drift. One re-import per
+deploy, nothing per rerun.
+
+Guarding individual call sites did NOT scale: the login screen was
+hardened after the second occurrence, and the third crash simply landed
+somewhere else (`copybtn.cp_html`). Remove the cause, not the symptom.
+
+Verified by simulating it: deleted a function from a loaded module, showed
+a plain re-import keeps the stale copy (the crash), then showed the guard
+produces a fresh one — and that an unchanged stamp does NOT reload.
 
 **It happened again, and that is the important part.** The first time was
 `ls_bridge` (below). The second was `help_text.MORE_LABEL`: the login

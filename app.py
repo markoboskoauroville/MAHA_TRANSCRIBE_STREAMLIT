@@ -7,6 +7,7 @@ Talk: paste text → read aloud live, sentence by sentence, with a subtitle line
 """
 
 import os
+import sys
 import json
 import glob
 import hmac
@@ -16,14 +17,46 @@ import hashlib
 import tempfile
 import subprocess
 
+# Bumped on every change. Also the stale-module stamp below, so the two
+# can never drift apart.
+APP_VERSION = "v33 (a)"
+
 import streamlit as st
 from groq import Groq
 
 import streamlit.components.v1 as components
 
+# ----------------------------------------------------------------------
+# STALE MODULE GUARD — read this before removing it.
+#
+# Streamlit re-executes app.py on every rerun but keeps imported modules
+# cached in sys.modules for the LIFE OF THE PROCESS. After a redeploy a
+# warm process therefore runs the NEW app.py against OLD ttt modules, and
+# the first call to anything newly added dies with AttributeError. That
+# has now taken this app down THREE times: ls_bridge, then
+# help_text.MORE_LABEL, then copybtn.cp_html. Each time the code on
+# GitHub was correct and every local test passed, because a local run is
+# always a cold start.
+#
+# Guarding individual call sites did not scale — the login screen was
+# hardened and the next new function broke somewhere else. So the cause
+# is removed instead: when the build stamp changes, every ttt module is
+# dropped from sys.modules BEFORE the imports below, so they are imported
+# fresh. Costs one re-import per deploy, nothing per rerun.
+#
+# The stamp is derived from APP_VERSION, which is already bumped on every
+# change, so the two cannot drift apart.
+# ----------------------------------------------------------------------
+_BUILD_STAMP = APP_VERSION
+if getattr(sys, "_ttt_build", None) != _BUILD_STAMP:
+    for _name in [n for n in list(sys.modules) if n == "ttt" or n.startswith("ttt.")]:
+        del sys.modules[_name]
+    for _name in ("talk_engine", "help_text"):
+        sys.modules.pop(_name, None)
+    sys._ttt_build = _BUILD_STAMP
+
 import talk_engine as tk
 import help_text
-
 from ttt import keyring as kr
 from ttt import providers as PROVIDERS
 from ttt.store import Store
@@ -162,7 +195,6 @@ st.markdown(theme.css(), unsafe_allow_html=True)
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v32 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -225,6 +257,7 @@ STRINGS = {
                             "hr": "Nema Groq ključa u Secrets. Dodaj GROQ_API_KEYS (listu) u Streamlit Cloud → Settings → Secrets."},
     "tab_translate":      {"en": "Translate",        "hr": "Prevedi"},
     "tab_read":           {"en": "Read",             "hr": "Čitaonica"},
+    "tab_settings":       {"en": "Settings",         "hr": "Postavke"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -299,6 +332,8 @@ STRINGS = {
                             "hr": "Pričekaj {s} prije novog pokušaja."},
     "gate_min":           {"en": "min",               "hr": "min"},
     "gate_sec":           {"en": "s",                 "hr": "s"},
+    "pick_label":         {"en": "Pick a sound file or a picture",
+                            "hr": "Odaberi zvučnu datoteku ili sliku"},
     "img_label":          {"en": "Or read a picture",  "hr": "Ili pročitaj sliku"},
     "img_working":        {"en": "Reading the picture…", "hr": "Čitam sliku…"},
     "img_none":           {"en": "No text found in that picture.",
@@ -1643,277 +1678,19 @@ def voice_picker(prefix: str):
 
 
 # ----------------------------------------------------------------------
-# Gear — settings + help, upper right. Nothing else in the top bar.
+# Settings — a TAB, not a gear popover.
+#
+# It was a small glyph in the corner opening a popover, which Baba found
+# strange, and he is right: a popover is a menu, and this is a place. It
+# holds the interface language, the voices, the patch bay, the keys and
+# the help — as much content as any other tab. It was also the hardest
+# thing in the app to find by accident, which is exactly backwards for
+# this audience.
+#
+# The body is unchanged and still indented one level, so the `if True:`
+# keeps it valid without reflowing several hundred lines. Deliberate: a
+# mass re-indent is the kind of edit that quietly loses a line.
 # ----------------------------------------------------------------------
-# Wrapped in a keyed container so the 6:1 ratio survives the pill CSS —
-# without it both columns shrink to their content and the gear lands on
-# the left, which is where it wrongly sat until this was found.
-with st.container(key="topbar"):
-    _, gear_col = st.columns([6, 1])
-with gear_col:
-    with st.popover("⚙", use_container_width=False):
-        lang_now = st.session_state.get("ui_lang", "hr")
-        lcol1, lcol2 = st.columns(2)
-        lcol1.button("[HR]", key="ui_hr",
-                     type="primary" if lang_now == "hr" else "secondary",
-                     on_click=set_ui_lang, args=("hr",))
-        lcol2.button("[ENG]", key="ui_en",
-                     type="primary" if lang_now == "en" else "secondary",
-                     on_click=set_ui_lang, args=("en",))
-
-        st.caption(t("settings_speech"))
-        scol1, scol2 = st.columns(2)
-        speech_now = st.session_state.get("speech_lang", "hr")
-        scol1.button(t("lang_hr"), key="sp_hr",
-                     type="primary" if speech_now == "hr" else "secondary",
-                     on_click=set_speech_lang, args=("hr",))
-        scol2.button(t("lang_en"), key="sp_en",
-                     type="primary" if speech_now == "en" else "secondary",
-                     on_click=set_speech_lang, args=("en",))
-
-        st.caption(t("settings_voice"))
-        voice_picker("setvoice")
-
-        with st.expander(t("speechify_title")):
-            rings = load_keys()
-            sp_ring = get_ring("speechify")
-
-            st.file_uploader(t("key_file_label"), key="sp_key_file", label_visibility="collapsed")
-            st.text_area(t("key_paste_label"), key="sp_key_paste", height=70,
-                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
-
-            def _sp_import():
-                raw = ""
-                f = st.session_state.get("sp_key_file")
-                if f is not None:
-                    raw += f.getvalue().decode("utf-8", "replace")
-                raw += " " + (st.session_state.get("sp_key_paste") or "")
-                added = ring_import(sp_ring, raw, SPEECHIFY_PREFIXES)
-                persist_keys(rings)
-                st.session_state["_sp_msg"] = (
-                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
-
-            st.button(t("import_keys_btn"), key="sp_import_btn",
-                      use_container_width=True, on_click=_sp_import)
-
-            if sp_ring["keys"]:
-                render_key_list(sp_ring, rings, "sp", sp_test_one)
-
-            if st.session_state.get("_sp_msg"):
-                st.caption(st.session_state.pop("_sp_msg"))
-
-            # ---- the whole catalogue --------------------------------
-            # 979 voices across 36 locales, not the curated eight. Loaded
-            # on request rather than on every settings open, because it is
-            # five paged calls. NOTHING filters by language on purpose:
-            # any Speechify voice may read any text, and Croatian in an
-            # English voice both sounds fine and keeps its word timings.
-            if kr.usable(sp_ring):
-                st.caption(t("vc_title"))
-                cat = st.session_state.get("_sp_catalogue")
-
-                def _load_catalogue():
-                    try:
-                        voices, err = PROVIDERS.get("speechify").catalogue(
-                            lambda a: kr.rotate(sp_ring, lambda k: a(k)))
-                        save_rings()
-                        st.session_state["_sp_catalogue"] = voices
-                        if err:
-                            st.session_state["_sp_msg"] = str(err)[:100]
-                    except Exception as e:
-                        st.session_state["_sp_msg"] = str(e)[:100]
-
-                if not cat:
-                    st.button(t("vc_load"), key="vc_load_btn", on_click=_load_catalogue)
-                else:
-                    locales = sorted({v.lang for v in cat if v.lang})
-                    fcol1, fcol2 = st.columns(2)
-                    loc = fcol1.selectbox(
-                        "loc", [t("vc_any")] + locales, key="vc_loc",
-                        label_visibility="collapsed")
-                    gen = fcol2.selectbox(
-                        "gen", [t("vc_any"), "F", "M"], key="vc_gen",
-                        label_visibility="collapsed")
-                    q = st.text_input(t("vc_search"), key="vc_q",
-                                      label_visibility="collapsed",
-                                      placeholder=t("vc_search"))
-
-                    shown = [v for v in cat
-                             if (loc == t("vc_any") or v.lang == loc)
-                             and (gen == t("vc_any") or v.gender == gen)
-                             and (not q or q.lower() in v.name.lower())]
-                    st.caption(f"{len(shown)} {t('vc_count')}")
-
-                    cur = st.session_state.get("sp_voice", "beatrice_32")
-                    names = {v.id: f"{v.name} · {v.lang} · {v.gender}" for v in shown}
-                    ids = [v.id for v in shown][:400]   # keep the widget sane
-                    if ids:
-                        idx = ids.index(cur) if cur in ids else 0
-
-                        def _use_voice():
-                            st.session_state["sp_voice"] = st.session_state["vc_sel"]
-                            persist_settings()
-
-                        st.selectbox("voice", ids, index=idx, key="vc_sel",
-                                     format_func=lambda i: names.get(i, i),
-                                     label_visibility="collapsed",
-                                     on_change=_use_voice)
-                    st.caption(f"{t('vc_current')}: {cur}")
-                    st.caption(t("vc_note"))
-
-
-        with st.expander(t("assemblyai_title")):
-            aai_ring = get_ring("assemblyai")
-
-            st.file_uploader(t("key_file_label"), key="aai_key_file", label_visibility="collapsed")
-            st.text_area(t("key_paste_label"), key="aai_key_paste", height=70,
-                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
-
-            def _aai_import():
-                raw = ""
-                f = st.session_state.get("aai_key_file")
-                if f is not None:
-                    raw += f.getvalue().decode("utf-8", "replace")
-                raw += " " + (st.session_state.get("aai_key_paste") or "")
-                added = ring_import(aai_ring, raw, ASSEMBLYAI_PREFIXES)
-                persist_keys(rings)
-                st.session_state["_aai_msg"] = (
-                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
-
-            st.button(t("import_keys_btn"), key="aai_import_btn",
-                      use_container_width=True, on_click=_aai_import)
-
-            if aai_ring["keys"]:
-                render_key_list(aai_ring, rings, "aai", aai_test_one)
-
-            if st.session_state.get("_aai_msg"):
-                st.caption(st.session_state.pop("_aai_msg"))
-
-
-        with st.expander(t("routing_title")):
-            # A patch bay, the way a digital desk routes buses: engines
-            # down the side, functions across the top, and you press the
-            # crosspoint where they meet. Reading a row tells you what one
-            # engine is doing; reading a column tells you who does one job.
-            # Everything here is derived from the registry, so a new
-            # provider grows a new row on its own.
-            ui_lang = st.session_state.get("ui_lang", "hr")
-            rows, _routes = RO.matrix(PROVIDERS, provider_usable, st.session_state)
-            widths = [1] * (1 + len(RO.TASKS))   # equal, so columns align
-
-            with st.container(key="patchbay"):
-                head = st.columns(widths)
-                head[0].caption("")
-                for i, task in enumerate(RO.TASKS):
-                    head[i + 1].caption(f"**{task.short}**")
-
-                for prov, cells in rows:
-                    rcols = st.columns(widths)
-                    rcols[0].caption(prov.label)
-                    for i, (task, state) in enumerate(cells):
-                        cell = rcols[i + 1]
-                        if state == RO.BLANK:
-                            # Not a gap — an engine that cannot do this
-                            # job. Shown, not hidden, so the grid keeps
-                            # its shape and every column stays readable.
-                            cell.caption("·")
-                        elif state == RO.NOKEY:
-                            cell.button("✕", key=f"pb_{task.id}_{prov.id}",
-                                        disabled=True)
-                        else:
-                            def _patch(k=task.setting_key, v=prov.id):
-                                st.session_state[k] = v
-                                persist_settings()
-                            # No help= here: a tooltip wraps the button in
-                            # inline spans with zero width, so width:100%
-                            # collapses and the grid loses its columns.
-                            # The legend under the bay carries the meaning.
-                            cell.button(
-                                "●" if state == RO.PATCHED else "○",
-                                key=f"pb_{task.id}_{prov.id}",
-                                type="primary" if state == RO.PATCHED else "secondary",
-                                on_click=_patch)
-
-            st.caption("  ·  ".join(f"**{tk.short}** {tk.label(ui_lang)}"
-                                    for tk in RO.TASKS))
-
-            # ---- model per engine ---------------------------------
-            # Asked from the provider itself, so a model released years
-            # from now appears here without this app being touched. An
-            # engine with nothing patched is skipped: choosing a model for
-            # a job nobody gave it is noise.
-            st.caption("")
-            for prov, cells in rows:
-                if not any(state == RO.PATCHED for _, state in cells):
-                    continue
-                if not provider_usable(prov):
-                    continue
-                models, live, merr = provider_models(prov)
-                if not models:
-                    continue
-                mcol, rcol = st.columns([5, 1])
-                ids = [m.id for m in models]
-                labels = {m.id: m.label() for m in models}
-                cur = chosen_model(prov)
-                idx = ids.index(cur) if cur in ids else 0
-
-                def _pick_model(pid=prov.id, key=f"msel_{prov.id}"):
-                    st.session_state[f"model_{pid}"] = st.session_state[key]
-                    persist_settings()
-
-                mcol.selectbox(
-                    f"{prov.label} — {t('model_label')}", ids, index=idx,
-                    key=f"msel_{prov.id}", format_func=lambda i: labels.get(i, i),
-                    on_change=_pick_model)
-                rcol.button("↻", key=f"mref_{prov.id}",
-                            help=t("model_refresh"),
-                            on_click=lambda pr=prov: provider_models(pr, force=True))
-                st.caption(("✓ " + t("model_live")) if live
-                           else ("· " + t("model_static")))
-                if merr:
-                    st.caption("⚠ " + str(merr)[:90])
-
-        if is_admin():
-            with st.expander(t("admin_title")):
-                st_ = USAGE.status()
-                st.caption(t("admin_on") if st_["enabled"] else t("admin_off"))
-                st.caption(f"{t('admin_sent')}: {st_['sent']}   ·   "
-                           f"{t('admin_failed')}: {st_['failed']}")
-                st.caption(f"{t('admin_session')}: {st_['session_minutes']}")
-                if st_["last_error"]:
-                    st.caption("⚠ " + st_["last_error"][:120])
-
-                # The people who can log in ARE the passwords in secrets,
-                # so this is the definitive list — and it is what the
-                # sheet will grow a tab for. Never show the passwords
-                # themselves; the owner already knows them, and anyone
-                # looking over a shoulder should not learn them here.
-                names = [p.strip().lower() for p in app_passwords() if p.strip()]
-                st.caption(f"{t('admin_users')}: {len(names)}")
-                st.caption("  ·  ".join(names))
-
-                def _test_signal():
-                    USAGE.log("test", 1, UNIT_CHARS, "admin")
-                    st.session_state["_admin_msg"] = t("admin_test_sent")
-                    st.session_state["_admin_msg_until"] = time.time() + 8
-
-                st.button(t("admin_test"), key="admin_test_btn", on_click=_test_signal)
-                _am, _au = st.session_state.get("_admin_msg"), st.session_state.get("_admin_msg_until", 0)
-                if _am and time.time() < _au:
-                    st.caption(_am)
-                elif _am:
-                    st.session_state.pop("_admin_msg", None)
-
-        with st.expander(t("help_title")):
-            st.markdown(safe_text("HELP"))
-
-        st.button(t("forget_me"), key="forget_btn", use_container_width=True,
-                  on_click=forget_me)
-        if st.session_state.pop("_forgotten", False):
-            st.caption(t("forgotten"))
-        st.caption(APP_VERSION)
-
-
 # ----------------------------------------------------------------------
 # Tab bar. A segmented control rather than st.tabs, because st.tabs cannot
 # be switched from Python — its session_state updates but the visible
@@ -1922,226 +1699,13 @@ with gear_col:
 # ----------------------------------------------------------------------
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
-    "nav", ["transcribe", "talk", "translate", "read"], format_func=lambda k: t("tab_" + k),
+    "nav", ["transcribe", "talk", "translate", "read", "settings"],
+    format_func=lambda k: t("tab_" + k),
     key="active_tab", required=True, label_visibility="collapsed",
 )
 active = st.session_state.get("active_tab") or "transcribe"
 
 
-def do_correct():
-    try:
-        path = st.session_state.get("flac_path")
-        lang = st.session_state.get("last_lang", "hr")
-        if not path or not os.path.exists(path):
-            raise RuntimeError("Original audio is no longer available.")
-        stt_now = stt_bridge()
-        if stt_now is None:
-            raise RuntimeError(t("routing_none"))
-        if stt_now.handles_big_files:
-            corrected = stt_now.transcribe(path, lang, model=stt_now.accurate_model())
-            st.session_state["transcript_box"] = corrected
-            st.session_state["flac_path"] = path
-            st.session_state["_transcribe_method"] = "direct"
-        else:
-            corrected, method, reusable = transcribe_any_size(
-                path, stt_now.accurate_model() or CORRECTION_MODEL, lang)
-            st.session_state["transcript_box"] = corrected
-            st.session_state["flac_path"] = reusable
-            st.session_state["_transcribe_method"] = method
-    except Exception as e:
-        st.session_state["_correct_error"] = str(e)
-
-
-def read_this():
-    """Move to the Talk tab, carry the text over, pick the voice that matches
-    the language just transcribed, and start reading — no popup, no extra tap."""
-    st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
-    lang = st.session_state.get("last_lang", "hr")
-    current = st.session_state.get("voice", "Gabrijela")
-    if VOICE_LANG.get(current) != lang:
-        st.session_state["voice"] = VOICES_BY_LANG[lang][0]
-    st.session_state["active_tab"] = "talk"
-    st.session_state["_auto_read"] = True
-
-
-def _highlight_span(text: str, start: int = None, end: int = None) -> str:
-    """HTML-escaped text with [start:end) wrapped in the gold highlight span.
-    With no range, the whole text is wrapped (sentence-level, the Edge case).
-    Bounds are clamped defensively — a mark that's ever slightly out of
-    range must never crash the read, just highlight nothing that run."""
-    if start is None or end is None:
-        return ('<span style="background:#f59e0b;color:#0b0d10;'
-                'border-radius:4px;padding:1px 4px;">' + html.escape(text) + "</span>")
-    start = max(0, min(start, len(text)))
-    end = max(start, min(end, len(text)))
-    return (html.escape(text[:start]) +
-            '<span style="background:#f59e0b;color:#0b0d10;'
-            'border-radius:4px;padding:1px 4px;">' + html.escape(text[start:end]) + "</span>" +
-            html.escape(text[end:]))
-
-
-def _subtitle(text: str, start: int = None, end: int = None) -> str:
-    inner = _highlight_span(text, start, end) if text else ""
-    return f'<div class="subtitle-box">{inner}</div>'
-
-
-def _render_page(page_sentences: list, current_idx: int, doc_slot,
-                 word_start: int = None, word_end: int = None) -> None:
-    parts = []
-    for j, s in enumerate(page_sentences):
-        if j == current_idx:
-            parts.append(_highlight_span(s, word_start, word_end))
-        else:
-            parts.append(html.escape(s))
-    doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
-
-
-def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
-                        page_key: str, page_slot, progress_slot=None,
-                        speed: float = 1.0, gap: float = 0.0):
-    """Shared by Talk and Translate: synthesize and play one sentence at a
-    time. Highlights word-by-word when the engine can back it with real
-    per-word timing (Speechify's speech_marks, measured from the audio it
-    just generated — precise, not inferred); falls back to sentence-level
-    otherwise (Edge — its word boundaries are on its own clock and drift,
-    see HANDOVER.md for why that was deliberately dropped everywhere else).
-
-    synth_fn(text) -> (audio_bytes, seconds) or (audio_bytes, seconds, marks).
-    marks is a list of {start, end, start_time, end_time} in the same shape
-    sp_synthesize returns, or falsy/absent for sentence-level.
-
-    Long text is split into pages (tk.paginate) so one document never becomes
-    one unbroken, uninterruptible reading session. A new page starts reading
-    the instant Next page is pressed — no message, no waiting, no sense of
-    having hit a limit."""
-    try:
-        sentences = tk.sentences_of(raw)
-    except Exception as e:          # never let the engine take the page down
-        sentences = []
-        st.error(f"{t('read_fail')}: {e}")
-    if not sentences:
-        st.info(t("nothing_to_read"))
-        return
-
-    pages = tk.paginate(sentences)
-    n_pages = len(pages)
-    digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
-    if st.session_state.get(page_key + "_digest") != digest:
-        st.session_state[page_key] = 0
-        st.session_state[page_key + "_digest"] = digest
-    page_idx = min(max(st.session_state.get(page_key, 0), 0), n_pages - 1)
-    page_sentences = pages[page_idx]
-
-    if n_pages > 1:
-        page_slot.caption(f"{t('page_label')} {page_idx + 1}/{n_pages}")
-
-    total_chars = sum(len(x) for x in page_sentences)
-    spoken_chars = 0
-
-    for i, sent in enumerate(page_sentences):
-        if progress_slot is not None:
-            from ttt import read_tab as _RT
-            progress_slot.caption(_RT.progress_line(
-                spoken_chars, total_chars, i + 1, len(page_sentences),
-                speed=speed, sentence_gap=gap))
-        try:
-            result = synth_fn(sent)
-        except Exception as e:
-            st.error(f"{t('read_fail')} {i + 1}: {e}")
-            break
-        audio_bytes, dur = result[0], result[1]
-        marks = result[2] if len(result) > 2 else None
-
-        if marks:
-            # Word-level: play once, then step the highlight through each
-            # mark's own measured window — never touches playback rate.
-            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
-            for wi, m in enumerate(marks):
-                _render_page(page_sentences, i, doc_slot, m["start"], m["end"])
-                sub_slot.markdown(_subtitle(sent, m["start"], m["end"]), unsafe_allow_html=True)
-                nxt = marks[wi + 1]["start_time"] if wi + 1 < len(marks) else dur
-                time.sleep(max(0.02, nxt - m["start_time"]))
-        else:
-            _render_page(page_sentences, i, doc_slot)
-            sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
-            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
-            time.sleep(dur + 0.15)
-
-        spoken_chars += len(sent)
-        if gap:
-            time.sleep(gap)
-
-    doc_slot.markdown(html.escape(" ".join(page_sentences)))
-    sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
-
-    # Log what was actually SPOKEN, not what was pasted — a page that was
-    # never reached should not count against anyone's usage.
-    if spoken_chars:
-        USAGE.log("read", spoken_chars, UNIT_CHARS,
-                  st.session_state.get("voice_engine", "edge"))
-
-    # A key can be discovered dead or rate-limited DURING a read, so the
-    # ring must be written back afterwards. Missing this was a real bug:
-    # a key buried mid-session came back on the next reload and wasted a
-    # request every single time. Cheap and idempotent; always do it.
-    save_rings()
-
-    if page_idx + 1 < n_pages:
-        def _next_page():
-            st.session_state[page_key] = page_idx + 1
-            st.session_state[page_key + "_auto"] = True
-        page_slot.button(
-            f"▶ {t('next_page')} ({page_idx + 2}/{n_pages})",
-            key=page_key + "_nextbtn", use_container_width=True,
-            on_click=_next_page,
-        )
-
-
-def _set_translate_lang(which: str, code: str):
-    st.session_state["translate_" + which] = code
-
-
-def swap_translate_langs():
-    src = st.session_state.get("translate_src", "hr")
-    tgt = st.session_state.get("translate_tgt", "en")
-    st.session_state["translate_src"] = tgt
-    st.session_state["translate_tgt"] = src
-    src_text = st.session_state.get("translate_src_text", "")
-    out_text = st.session_state.get("translate_out", "")
-    st.session_state["translate_src_text"] = out_text
-    st.session_state["translate_out"] = src_text
-
-
-def do_translate():
-    text = (st.session_state.get("translate_src_text") or "").strip()
-    if not text:
-        return
-    src = st.session_state.get("translate_src", "hr")
-    tgt = st.session_state.get("translate_tgt", "en")
-    try:
-        llm = llm_bridge()
-        if llm is None:
-            raise RuntimeError(t("routing_none"))
-        st.session_state["translate_out"] = translate_text(
-            llm, text, LANG_FULL[src], LANG_FULL[tgt])
-        USAGE.log("translate", len(text), UNIT_CHARS, llm.id)
-    except Exception as e:
-        st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
-
-
-def lang_pills(prefix: str, which: str, current: str):
-    cols = st.columns(len(LANGS5))
-    for col, code in zip(cols, LANGS5):
-        col.button(
-            code.upper(), key=f"{prefix}_{code}",
-            type="primary" if code == current else "secondary",
-            on_click=_set_translate_lang, args=(which, code),
-        )
-
-
-# ----------------------------------------------------------------------
-# Transcribe
-# ----------------------------------------------------------------------
 if active == "transcribe":
     # Which engine transcribes is the switchboard's decision, and which
     # model it uses is the dropdown's. The tab asks for neither by name.
@@ -2185,100 +1749,94 @@ if active == "transcribe":
             except Exception as e:
                 st.error(str(e))
 
-    uploaded = st.file_uploader(
-        t("upload_label"),
-        type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "wma", "mp4", "webm", "mpga", "mpeg", "opus"],
-        label_visibility="collapsed", key="audio_upload",
-    )
-    if uploaded is not None:
-        file_digest = hashlib.md5(uploaded.getvalue()).hexdigest()
-        if st.session_state.get("_file_digest") != file_digest:
-            old_flac = st.session_state.get("flac_path")
-            if old_flac and os.path.exists(old_flac):
+    # ---- ONE picker, audio or picture ------------------------------
+    # There were two uploaders side by side and people put the wrong file
+    # in the wrong one — Baba hit exactly that. There is only one now,
+    # and the file type decides what happens to it. Fewer targets, no
+    # wrong choice available.
+    picked = st.file_uploader(
+        t("pick_label"),
+        type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "wma", "mp4",
+              "webm", "mpga", "mpeg", "opus",
+              "png", "jpg", "jpeg", "webp", "gif"],
+        label_visibility="collapsed", key="any_upload")
+
+    if picked is not None:
+        raw = picked.getvalue()
+        digest = hashlib.md5(raw).hexdigest()
+        if st.session_state.get("_pick_digest") != digest:
+            st.session_state["_pick_digest"] = digest
+            is_image = (picked.name or "").lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp", ".gif"))
+            if is_image:
                 try:
-                    os.remove(old_flac)
-                except Exception:
-                    pass
-            st.session_state["_file_digest"] = file_digest
-            suffix = "_" + "".join(c for c in uploaded.name if c.isalnum() or c in "._-")
-            tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
-            tmp.write(uploaded.getvalue())
-            tmp.close()
-            progress_bar = st.progress(0.0, text=t("preparing_audio"))
-            try:
-                if stt.handles_big_files:
-                    stage_map = {"upload": (0.2, "aai_stage_upload"),
-                                "queue": (0.5, "aai_stage_queue"),
-                                "process": (0.7, "aai_stage_process")}
-
-                    def _cb(stage):
-                        frac, key = stage_map.get(stage, (0.5, "aai_stage_process"))
-                        progress_bar.progress(frac, text=t(key))
-
-                    text = stt.transcribe(tmp.name, lang_code, progress_cb=_cb)
-                    method, reusable = "direct", tmp.name
-                else:
-                    def _cb(i, n):
-                        progress_bar.progress((i + 1) / n, text=f"{t('chunk_progress')} {i + 1}/{n}")
-
-                    def _on_wait(idx, attempt, secs, err):
-                        # Say WHY nothing is happening. A silent pause of
-                        # up to two minutes looks like a hang; naming the
-                        # rest makes it obviously deliberate.
-                        progress_bar.progress(
-                            0.5, text=t("chunk_waiting").format(s=secs, i=idx + 1))
-
-                    text, method, reusable = transcribe_any_size(
-                        tmp.name, chosen_model(stt.provider) or PRIMARY_MODEL,
-                        lang_code, progress_cb=_cb, on_wait=_on_wait)
-                progress_bar.empty()
-                st.session_state["transcript_box"] = text
-                st.session_state["last_lang"] = lang_code
-                st.session_state["flac_path"] = reusable
-                st.session_state["_transcribe_method"] = method
-                st.session_state["_transcribe_provider"] = t_engine
-                USAGE.log("transcribe", audio_seconds(reusable),
-                          UNIT_SECONDS, t_engine)
-            except Exception as e:
-                progress_bar.empty()
-                st.error(str(e))
-                st.session_state["flac_path"] = None
-            finally:
-                # tmp.name itself is only still needed if tier 1 ('direct')
-                # kept it as the reusable path; anything else made its own
-                # transcoded/chunked files and the raw upload can go.
-                if st.session_state.get("flac_path") != tmp.name and os.path.exists(tmp.name):
+                    with st.spinner(t("img_working")):
+                        text = read_picture(raw, picked.name)
+                    save_rings()
+                    if text.strip():
+                        st.session_state["transcript_box"] = text
+                        st.session_state["_transcribe_method"] = "picture"
+                        st.session_state["flac_path"] = None
+                        USAGE.log("picture", len(text), UNIT_CHARS, "groq")
+                    else:
+                        st.info(t("img_none"))
+                except Exception as e:
+                    st.error(f"{t('img_fail')}: {e}")
+            else:
+                old_flac = st.session_state.get("flac_path")
+                if old_flac and os.path.exists(old_flac):
                     try:
-                        os.remove(tmp.name)
+                        os.remove(old_flac)
                     except Exception:
                         pass
+                suffix = "_" + "".join(c for c in picked.name
+                                       if c.isalnum() or c in "._-")
+                tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+                tmp.write(raw)
+                tmp.close()
+                progress_bar = st.progress(0.0, text=t("preparing_audio"))
+                try:
+                    if stt.handles_big_files:
+                        stage_map = {"upload": (0.2, "aai_stage_upload"),
+                                     "queue": (0.5, "aai_stage_queue"),
+                                     "process": (0.7, "aai_stage_process")}
 
-    # ---- read a picture -------------------------------------------
-    # Sits with the audio picker because it answers the same need: text
-    # the person cannot read, made readable. A photo of a letter, a
-    # screenshot of an email, a form. The result lands in the same box as
-    # a transcript, so everything downstream — enlarge, read aloud,
-    # translate, GRAMMAR — works on it unchanged.
-    picture = st.file_uploader(
-        t("img_label"), type=["png", "jpg", "jpeg", "webp", "gif"],
-        label_visibility="collapsed", key="picture_upload")
-    if picture is not None:
-        pic_digest = hashlib.md5(picture.getvalue()).hexdigest()
-        if st.session_state.get("_pic_digest") != pic_digest:
-            st.session_state["_pic_digest"] = pic_digest
-            try:
-                with st.spinner(t("img_working")):
-                    text = read_picture(picture.getvalue(), picture.name)
-                save_rings()
-                if text.strip():
+                        def _cb(stage):
+                            frac, key = stage_map.get(stage, (0.5, "aai_stage_process"))
+                            progress_bar.progress(frac, text=t(key))
+
+                        text = stt.transcribe(tmp.name, lang_code, progress_cb=_cb)
+                        method, reusable = "direct", tmp.name
+                    else:
+                        def _cb(i, n):
+                            progress_bar.progress((i + 1) / n,
+                                                  text=f"{t('chunk_progress')} {i + 1}/{n}")
+
+                        def _on_wait(idx, attempt, secs, err):
+                            progress_bar.progress(
+                                0.5, text=t("chunk_waiting").format(s=secs, i=idx + 1))
+
+                        text, method, reusable = transcribe_any_size(
+                            tmp.name, chosen_model(stt.provider) or PRIMARY_MODEL,
+                            lang_code, progress_cb=_cb, on_wait=_on_wait)
+                    progress_bar.empty()
                     st.session_state["transcript_box"] = text
-                    st.session_state["_transcribe_method"] = "picture"
+                    st.session_state["last_lang"] = lang_code
+                    st.session_state["flac_path"] = reusable
+                    st.session_state["_transcribe_method"] = method
+                    st.session_state["_transcribe_provider"] = t_engine
+                    USAGE.log("transcribe", audio_seconds(reusable),
+                              UNIT_SECONDS, t_engine)
+                except Exception as e:
+                    progress_bar.empty()
+                    st.error(str(e))
                     st.session_state["flac_path"] = None
-                    USAGE.log("picture", len(text), UNIT_CHARS, "groq")
-                else:
-                    st.info(t("img_none"))
-            except Exception as e:
-                st.error(f"{t('img_fail')}: {e}")
+                finally:
+                    if st.session_state.get("flac_path") != tmp.name and os.path.exists(tmp.name):
+                        try:
+                            os.remove(tmp.name)
+                        except Exception:
+                            pass
 
     if "transcript_box" in st.session_state:
         text_size_pills("transcript")
@@ -2577,3 +2135,485 @@ elif active == "read":
             acol3.button(t("read_delete"), key="rdel_" + piece["digest"][:8],
                          on_click=_delete)
         st.caption(t("read_storage_note"))
+
+
+elif active == "settings":
+    if True:
+        lang_now = st.session_state.get("ui_lang", "hr")
+        lcol1, lcol2 = st.columns(2)
+        lcol1.button("[HR]", key="ui_hr",
+                     type="primary" if lang_now == "hr" else "secondary",
+                     on_click=set_ui_lang, args=("hr",))
+        lcol2.button("[ENG]", key="ui_en",
+                     type="primary" if lang_now == "en" else "secondary",
+                     on_click=set_ui_lang, args=("en",))
+
+        st.caption(t("settings_speech"))
+        scol1, scol2 = st.columns(2)
+        speech_now = st.session_state.get("speech_lang", "hr")
+        scol1.button(t("lang_hr"), key="sp_hr",
+                     type="primary" if speech_now == "hr" else "secondary",
+                     on_click=set_speech_lang, args=("hr",))
+        scol2.button(t("lang_en"), key="sp_en",
+                     type="primary" if speech_now == "en" else "secondary",
+                     on_click=set_speech_lang, args=("en",))
+
+        st.caption(t("settings_voice"))
+        voice_picker("setvoice")
+
+        with st.expander(t("speechify_title")):
+            rings = load_keys()
+            sp_ring = get_ring("speechify")
+
+            st.file_uploader(t("key_file_label"), key="sp_key_file", label_visibility="collapsed")
+            st.text_area(t("key_paste_label"), key="sp_key_paste", height=70,
+                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
+
+            def _sp_import():
+                raw = ""
+                f = st.session_state.get("sp_key_file")
+                if f is not None:
+                    raw += f.getvalue().decode("utf-8", "replace")
+                raw += " " + (st.session_state.get("sp_key_paste") or "")
+                added = ring_import(sp_ring, raw, SPEECHIFY_PREFIXES)
+                persist_keys(rings)
+                st.session_state["_sp_msg"] = (
+                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
+
+            st.button(t("import_keys_btn"), key="sp_import_btn",
+                      use_container_width=True, on_click=_sp_import)
+
+            if sp_ring["keys"]:
+                render_key_list(sp_ring, rings, "sp", sp_test_one)
+
+            if st.session_state.get("_sp_msg"):
+                st.caption(st.session_state.pop("_sp_msg"))
+
+            # ---- the whole catalogue --------------------------------
+            # 979 voices across 36 locales, not the curated eight. Loaded
+            # on request rather than on every settings open, because it is
+            # five paged calls. NOTHING filters by language on purpose:
+            # any Speechify voice may read any text, and Croatian in an
+            # English voice both sounds fine and keeps its word timings.
+            if kr.usable(sp_ring):
+                st.caption(t("vc_title"))
+                cat = st.session_state.get("_sp_catalogue")
+
+                def _load_catalogue():
+                    try:
+                        voices, err = PROVIDERS.get("speechify").catalogue(
+                            lambda a: kr.rotate(sp_ring, lambda k: a(k)))
+                        save_rings()
+                        st.session_state["_sp_catalogue"] = voices
+                        if err:
+                            st.session_state["_sp_msg"] = str(err)[:100]
+                    except Exception as e:
+                        st.session_state["_sp_msg"] = str(e)[:100]
+
+                if not cat:
+                    st.button(t("vc_load"), key="vc_load_btn", on_click=_load_catalogue)
+                else:
+                    locales = sorted({v.lang for v in cat if v.lang})
+                    fcol1, fcol2 = st.columns(2)
+                    loc = fcol1.selectbox(
+                        "loc", [t("vc_any")] + locales, key="vc_loc",
+                        label_visibility="collapsed")
+                    gen = fcol2.selectbox(
+                        "gen", [t("vc_any"), "F", "M"], key="vc_gen",
+                        label_visibility="collapsed")
+                    q = st.text_input(t("vc_search"), key="vc_q",
+                                      label_visibility="collapsed",
+                                      placeholder=t("vc_search"))
+
+                    shown = [v for v in cat
+                             if (loc == t("vc_any") or v.lang == loc)
+                             and (gen == t("vc_any") or v.gender == gen)
+                             and (not q or q.lower() in v.name.lower())]
+                    st.caption(f"{len(shown)} {t('vc_count')}")
+
+                    cur = st.session_state.get("sp_voice", "beatrice_32")
+                    names = {v.id: f"{v.name} · {v.lang} · {v.gender}" for v in shown}
+                    ids = [v.id for v in shown][:400]   # keep the widget sane
+                    if ids:
+                        idx = ids.index(cur) if cur in ids else 0
+
+                        def _use_voice():
+                            st.session_state["sp_voice"] = st.session_state["vc_sel"]
+                            persist_settings()
+
+                        st.selectbox("voice", ids, index=idx, key="vc_sel",
+                                     format_func=lambda i: names.get(i, i),
+                                     label_visibility="collapsed",
+                                     on_change=_use_voice)
+                    st.caption(f"{t('vc_current')}: {cur}")
+                    st.caption(t("vc_note"))
+
+
+        with st.expander(t("assemblyai_title")):
+            aai_ring = get_ring("assemblyai")
+
+            st.file_uploader(t("key_file_label"), key="aai_key_file", label_visibility="collapsed")
+            st.text_area(t("key_paste_label"), key="aai_key_paste", height=70,
+                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
+
+            def _aai_import():
+                raw = ""
+                f = st.session_state.get("aai_key_file")
+                if f is not None:
+                    raw += f.getvalue().decode("utf-8", "replace")
+                raw += " " + (st.session_state.get("aai_key_paste") or "")
+                added = ring_import(aai_ring, raw, ASSEMBLYAI_PREFIXES)
+                persist_keys(rings)
+                st.session_state["_aai_msg"] = (
+                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
+
+            st.button(t("import_keys_btn"), key="aai_import_btn",
+                      use_container_width=True, on_click=_aai_import)
+
+            if aai_ring["keys"]:
+                render_key_list(aai_ring, rings, "aai", aai_test_one)
+
+            if st.session_state.get("_aai_msg"):
+                st.caption(st.session_state.pop("_aai_msg"))
+
+
+        with st.expander(t("routing_title")):
+            # A patch bay, the way a digital desk routes buses: engines
+            # down the side, functions across the top, and you press the
+            # crosspoint where they meet. Reading a row tells you what one
+            # engine is doing; reading a column tells you who does one job.
+            # Everything here is derived from the registry, so a new
+            # provider grows a new row on its own.
+            ui_lang = st.session_state.get("ui_lang", "hr")
+            rows, _routes = RO.matrix(PROVIDERS, provider_usable, st.session_state)
+            widths = [1] * (1 + len(RO.TASKS))   # equal, so columns align
+
+            with st.container(key="patchbay"):
+                head = st.columns(widths)
+                head[0].caption("")
+                for i, task in enumerate(RO.TASKS):
+                    head[i + 1].caption(f"**{task.short}**")
+
+                for prov, cells in rows:
+                    rcols = st.columns(widths)
+                    rcols[0].caption(prov.label)
+                    for i, (task, state) in enumerate(cells):
+                        cell = rcols[i + 1]
+                        if state == RO.BLANK:
+                            # Not a gap — an engine that cannot do this
+                            # job. Shown, not hidden, so the grid keeps
+                            # its shape and every column stays readable.
+                            cell.caption("·")
+                        elif state == RO.NOKEY:
+                            cell.button("✕", key=f"pb_{task.id}_{prov.id}",
+                                        disabled=True)
+                        else:
+                            def _patch(k=task.setting_key, v=prov.id):
+                                st.session_state[k] = v
+                                persist_settings()
+                            # No help= here: a tooltip wraps the button in
+                            # inline spans with zero width, so width:100%
+                            # collapses and the grid loses its columns.
+                            # The legend under the bay carries the meaning.
+                            cell.button(
+                                "●" if state == RO.PATCHED else "○",
+                                key=f"pb_{task.id}_{prov.id}",
+                                type="primary" if state == RO.PATCHED else "secondary",
+                                on_click=_patch)
+
+            st.caption("  ·  ".join(f"**{tk.short}** {tk.label(ui_lang)}"
+                                    for tk in RO.TASKS))
+
+            # ---- model per engine ---------------------------------
+            # Asked from the provider itself, so a model released years
+            # from now appears here without this app being touched. An
+            # engine with nothing patched is skipped: choosing a model for
+            # a job nobody gave it is noise.
+            st.caption("")
+            for prov, cells in rows:
+                if not any(state == RO.PATCHED for _, state in cells):
+                    continue
+                if not provider_usable(prov):
+                    continue
+                models, live, merr = provider_models(prov)
+                if not models:
+                    continue
+                mcol, rcol = st.columns([5, 1])
+                ids = [m.id for m in models]
+                labels = {m.id: m.label() for m in models}
+                cur = chosen_model(prov)
+                idx = ids.index(cur) if cur in ids else 0
+
+                def _pick_model(pid=prov.id, key=f"msel_{prov.id}"):
+                    st.session_state[f"model_{pid}"] = st.session_state[key]
+                    persist_settings()
+
+                mcol.selectbox(
+                    f"{prov.label} — {t('model_label')}", ids, index=idx,
+                    key=f"msel_{prov.id}", format_func=lambda i: labels.get(i, i),
+                    on_change=_pick_model)
+                rcol.button("↻", key=f"mref_{prov.id}",
+                            help=t("model_refresh"),
+                            on_click=lambda pr=prov: provider_models(pr, force=True))
+                st.caption(("✓ " + t("model_live")) if live
+                           else ("· " + t("model_static")))
+                if merr:
+                    st.caption("⚠ " + str(merr)[:90])
+
+        if is_admin():
+            with st.expander(t("admin_title")):
+                st_ = USAGE.status()
+                st.caption(t("admin_on") if st_["enabled"] else t("admin_off"))
+                st.caption(f"{t('admin_sent')}: {st_['sent']}   ·   "
+                           f"{t('admin_failed')}: {st_['failed']}")
+                st.caption(f"{t('admin_session')}: {st_['session_minutes']}")
+                if st_["last_error"]:
+                    st.caption("⚠ " + st_["last_error"][:120])
+
+                # The people who can log in ARE the passwords in secrets,
+                # so this is the definitive list — and it is what the
+                # sheet will grow a tab for. Never show the passwords
+                # themselves; the owner already knows them, and anyone
+                # looking over a shoulder should not learn them here.
+                names = [p.strip().lower() for p in app_passwords() if p.strip()]
+                st.caption(f"{t('admin_users')}: {len(names)}")
+                st.caption("  ·  ".join(names))
+
+                def _test_signal():
+                    USAGE.log("test", 1, UNIT_CHARS, "admin")
+                    st.session_state["_admin_msg"] = t("admin_test_sent")
+                    st.session_state["_admin_msg_until"] = time.time() + 8
+
+                st.button(t("admin_test"), key="admin_test_btn", on_click=_test_signal)
+                _am, _au = st.session_state.get("_admin_msg"), st.session_state.get("_admin_msg_until", 0)
+                if _am and time.time() < _au:
+                    st.caption(_am)
+                elif _am:
+                    st.session_state.pop("_admin_msg", None)
+
+        with st.expander(t("help_title")):
+            st.markdown(safe_text("HELP"))
+
+        st.button(t("forget_me"), key="forget_btn", use_container_width=True,
+                  on_click=forget_me)
+        if st.session_state.pop("_forgotten", False):
+            st.caption(t("forgotten"))
+        st.caption(APP_VERSION)
+
+
+
+
+def do_correct():
+    try:
+        path = st.session_state.get("flac_path")
+        lang = st.session_state.get("last_lang", "hr")
+        if not path or not os.path.exists(path):
+            raise RuntimeError("Original audio is no longer available.")
+        stt_now = stt_bridge()
+        if stt_now is None:
+            raise RuntimeError(t("routing_none"))
+        if stt_now.handles_big_files:
+            corrected = stt_now.transcribe(path, lang, model=stt_now.accurate_model())
+            st.session_state["transcript_box"] = corrected
+            st.session_state["flac_path"] = path
+            st.session_state["_transcribe_method"] = "direct"
+        else:
+            corrected, method, reusable = transcribe_any_size(
+                path, stt_now.accurate_model() or CORRECTION_MODEL, lang)
+            st.session_state["transcript_box"] = corrected
+            st.session_state["flac_path"] = reusable
+            st.session_state["_transcribe_method"] = method
+    except Exception as e:
+        st.session_state["_correct_error"] = str(e)
+
+
+def read_this():
+    """Move to the Talk tab, carry the text over, pick the voice that matches
+    the language just transcribed, and start reading — no popup, no extra tap."""
+    st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
+    lang = st.session_state.get("last_lang", "hr")
+    current = st.session_state.get("voice", "Gabrijela")
+    if VOICE_LANG.get(current) != lang:
+        st.session_state["voice"] = VOICES_BY_LANG[lang][0]
+    st.session_state["active_tab"] = "talk"
+    st.session_state["_auto_read"] = True
+
+
+def _highlight_span(text: str, start: int = None, end: int = None) -> str:
+    """HTML-escaped text with [start:end) wrapped in the gold highlight span.
+    With no range, the whole text is wrapped (sentence-level, the Edge case).
+    Bounds are clamped defensively — a mark that's ever slightly out of
+    range must never crash the read, just highlight nothing that run."""
+    if start is None or end is None:
+        return ('<span style="background:#f59e0b;color:#0b0d10;'
+                'border-radius:4px;padding:1px 4px;">' + html.escape(text) + "</span>")
+    start = max(0, min(start, len(text)))
+    end = max(start, min(end, len(text)))
+    return (html.escape(text[:start]) +
+            '<span style="background:#f59e0b;color:#0b0d10;'
+            'border-radius:4px;padding:1px 4px;">' + html.escape(text[start:end]) + "</span>" +
+            html.escape(text[end:]))
+
+
+def _subtitle(text: str, start: int = None, end: int = None) -> str:
+    inner = _highlight_span(text, start, end) if text else ""
+    return f'<div class="subtitle-box">{inner}</div>'
+
+
+def _render_page(page_sentences: list, current_idx: int, doc_slot,
+                 word_start: int = None, word_end: int = None) -> None:
+    parts = []
+    for j, s in enumerate(page_sentences):
+        if j == current_idx:
+            parts.append(_highlight_span(s, word_start, word_end))
+        else:
+            parts.append(html.escape(s))
+    doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
+
+
+def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
+                        page_key: str, page_slot, progress_slot=None,
+                        speed: float = 1.0, gap: float = 0.0):
+    """Shared by Talk and Translate: synthesize and play one sentence at a
+    time. Highlights word-by-word when the engine can back it with real
+    per-word timing (Speechify's speech_marks, measured from the audio it
+    just generated — precise, not inferred); falls back to sentence-level
+    otherwise (Edge — its word boundaries are on its own clock and drift,
+    see HANDOVER.md for why that was deliberately dropped everywhere else).
+
+    synth_fn(text) -> (audio_bytes, seconds) or (audio_bytes, seconds, marks).
+    marks is a list of {start, end, start_time, end_time} in the same shape
+    sp_synthesize returns, or falsy/absent for sentence-level.
+
+    Long text is split into pages (tk.paginate) so one document never becomes
+    one unbroken, uninterruptible reading session. A new page starts reading
+    the instant Next page is pressed — no message, no waiting, no sense of
+    having hit a limit."""
+    try:
+        sentences = tk.sentences_of(raw)
+    except Exception as e:          # never let the engine take the page down
+        sentences = []
+        st.error(f"{t('read_fail')}: {e}")
+    if not sentences:
+        st.info(t("nothing_to_read"))
+        return
+
+    pages = tk.paginate(sentences)
+    n_pages = len(pages)
+    digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
+    if st.session_state.get(page_key + "_digest") != digest:
+        st.session_state[page_key] = 0
+        st.session_state[page_key + "_digest"] = digest
+    page_idx = min(max(st.session_state.get(page_key, 0), 0), n_pages - 1)
+    page_sentences = pages[page_idx]
+
+    if n_pages > 1:
+        page_slot.caption(f"{t('page_label')} {page_idx + 1}/{n_pages}")
+
+    total_chars = sum(len(x) for x in page_sentences)
+    spoken_chars = 0
+
+    for i, sent in enumerate(page_sentences):
+        if progress_slot is not None:
+            from ttt import read_tab as _RT
+            progress_slot.caption(_RT.progress_line(
+                spoken_chars, total_chars, i + 1, len(page_sentences),
+                speed=speed, sentence_gap=gap))
+        try:
+            result = synth_fn(sent)
+        except Exception as e:
+            st.error(f"{t('read_fail')} {i + 1}: {e}")
+            break
+        audio_bytes, dur = result[0], result[1]
+        marks = result[2] if len(result) > 2 else None
+
+        if marks:
+            # Word-level: play once, then step the highlight through each
+            # mark's own measured window — never touches playback rate.
+            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            for wi, m in enumerate(marks):
+                _render_page(page_sentences, i, doc_slot, m["start"], m["end"])
+                sub_slot.markdown(_subtitle(sent, m["start"], m["end"]), unsafe_allow_html=True)
+                nxt = marks[wi + 1]["start_time"] if wi + 1 < len(marks) else dur
+                time.sleep(max(0.02, nxt - m["start_time"]))
+        else:
+            _render_page(page_sentences, i, doc_slot)
+            sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
+            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            time.sleep(dur + 0.15)
+
+        spoken_chars += len(sent)
+        if gap:
+            time.sleep(gap)
+
+    doc_slot.markdown(html.escape(" ".join(page_sentences)))
+    sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+    # Log what was actually SPOKEN, not what was pasted — a page that was
+    # never reached should not count against anyone's usage.
+    if spoken_chars:
+        USAGE.log("read", spoken_chars, UNIT_CHARS,
+                  st.session_state.get("voice_engine", "edge"))
+
+    # A key can be discovered dead or rate-limited DURING a read, so the
+    # ring must be written back afterwards. Missing this was a real bug:
+    # a key buried mid-session came back on the next reload and wasted a
+    # request every single time. Cheap and idempotent; always do it.
+    save_rings()
+
+    if page_idx + 1 < n_pages:
+        def _next_page():
+            st.session_state[page_key] = page_idx + 1
+            st.session_state[page_key + "_auto"] = True
+        page_slot.button(
+            f"▶ {t('next_page')} ({page_idx + 2}/{n_pages})",
+            key=page_key + "_nextbtn", use_container_width=True,
+            on_click=_next_page,
+        )
+
+
+def _set_translate_lang(which: str, code: str):
+    st.session_state["translate_" + which] = code
+
+
+def swap_translate_langs():
+    src = st.session_state.get("translate_src", "hr")
+    tgt = st.session_state.get("translate_tgt", "en")
+    st.session_state["translate_src"] = tgt
+    st.session_state["translate_tgt"] = src
+    src_text = st.session_state.get("translate_src_text", "")
+    out_text = st.session_state.get("translate_out", "")
+    st.session_state["translate_src_text"] = out_text
+    st.session_state["translate_out"] = src_text
+
+
+def do_translate():
+    text = (st.session_state.get("translate_src_text") or "").strip()
+    if not text:
+        return
+    src = st.session_state.get("translate_src", "hr")
+    tgt = st.session_state.get("translate_tgt", "en")
+    try:
+        llm = llm_bridge()
+        if llm is None:
+            raise RuntimeError(t("routing_none"))
+        st.session_state["translate_out"] = translate_text(
+            llm, text, LANG_FULL[src], LANG_FULL[tgt])
+        USAGE.log("translate", len(text), UNIT_CHARS, llm.id)
+    except Exception as e:
+        st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
+
+
+def lang_pills(prefix: str, which: str, current: str):
+    cols = st.columns(len(LANGS5))
+    for col, code in zip(cols, LANGS5):
+        col.button(
+            code.upper(), key=f"{prefix}_{code}",
+            type="primary" if code == current else "secondary",
+            on_click=_set_translate_lang, args=(which, code),
+        )
+
+
+# ----------------------------------------------------------------------
+# Transcribe
+# ----------------------------------------------------------------------
