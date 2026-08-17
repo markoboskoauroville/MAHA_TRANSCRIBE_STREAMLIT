@@ -84,7 +84,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v15 (a)"
+APP_VERSION = "v16 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -166,6 +166,17 @@ STRINGS = {
     "ai_working":         {"en": "Working…",          "hr": "Radim…"},
     "ai_fail":            {"en": "The AI could not do that",
                             "hr": "AI to nije mogao napraviti"},
+    "admin_title":        {"en": "Owner — usage logging", "hr": "Vlasnik — zapis korištenja"},
+    "admin_on":           {"en": "Connected to the sheet", "hr": "Spojeno na tablicu"},
+    "admin_off":          {"en": "Not connected. See apps_script/SETUP.md.",
+                            "hr": "Nije spojeno. Vidi apps_script/SETUP.md."},
+    "admin_sent":         {"en": "Signals sent this session", "hr": "Poslano ovu sesiju"},
+    "admin_failed":       {"en": "Failed",              "hr": "Neuspjelo"},
+    "admin_session":      {"en": "Session length (min)", "hr": "Trajanje sesije (min)"},
+    "admin_users":        {"en": "Users who can log in", "hr": "Korisnici koji se mogu prijaviti"},
+    "admin_test":         {"en": "Send a test signal",  "hr": "Pošalji probni signal"},
+    "admin_test_sent":    {"en": "Test signal sent — check the sheet.",
+                            "hr": "Probni signal poslan — provjeri tablicu."},
     "read_storage_note":  {"en": "Texts are kept in this browser only, never the audio. Clearing browser data removes them.",
                             "hr": "Tekstovi se čuvaju samo u ovom pregledniku, nikad zvuk. Brisanje podataka preglednika ih uklanja."},
     "translate_src_ph":   {"en": "Paste text to translate", "hr": "Zalijepi tekst za prijevod"},
@@ -238,6 +249,25 @@ def app_passwords() -> list:
     if single and single not in pw:
         pw.append(single)
     return [p for p in pw if p]
+
+
+def admin_user() -> str:
+    """Who owns this deployment.
+
+    ADMIN_USER in secrets if set; otherwise the FIRST entry in
+    APP_PASSWORDS. Deliberately not a hardcoded name — the app should not
+    contain "marko0612" any more than it should contain a password, and
+    an owner who renames themselves should not need a code change.
+    """
+    named = str(st.secrets.get("ADMIN_USER", "") or "").strip().lower()
+    if named:
+        return named
+    pw = app_passwords()
+    return pw[0].strip().lower() if pw else ""
+
+
+def is_admin() -> bool:
+    return bool(USER) and USER.strip().lower() == admin_user()
 
 
 def groq_keys() -> list:
@@ -1255,6 +1285,37 @@ with gear_col:
                 tcol2.button(t("engine_assemblyai"), key="teng_aai",
                              type="primary" if tengine_now == "assemblyai" else "secondary",
                              on_click=_set_tengine, args=("assemblyai",))
+
+        if is_admin():
+            with st.expander(t("admin_title")):
+                st_ = USAGE.status()
+                st.caption(t("admin_on") if st_["enabled"] else t("admin_off"))
+                st.caption(f"{t('admin_sent')}: {st_['sent']}   ·   "
+                           f"{t('admin_failed')}: {st_['failed']}")
+                st.caption(f"{t('admin_session')}: {st_['session_minutes']}")
+                if st_["last_error"]:
+                    st.caption("⚠ " + st_["last_error"][:120])
+
+                # The people who can log in ARE the passwords in secrets,
+                # so this is the definitive list — and it is what the
+                # sheet will grow a tab for. Never show the passwords
+                # themselves; the owner already knows them, and anyone
+                # looking over a shoulder should not learn them here.
+                names = [p.strip().lower() for p in app_passwords() if p.strip()]
+                st.caption(f"{t('admin_users')}: {len(names)}")
+                st.caption("  ·  ".join(names))
+
+                def _test_signal():
+                    USAGE.log("test", 1, UNIT_CHARS, "admin")
+                    st.session_state["_admin_msg"] = t("admin_test_sent")
+                    st.session_state["_admin_msg_until"] = time.time() + 8
+
+                st.button(t("admin_test"), key="admin_test_btn", on_click=_test_signal)
+                _am, _au = st.session_state.get("_admin_msg"), st.session_state.get("_admin_msg_until", 0)
+                if _am and time.time() < _au:
+                    st.caption(_am)
+                elif _am:
+                    st.session_state.pop("_admin_msg", None)
 
         with st.expander(t("help_title")):
             st.markdown(safe_text("HELP"))
