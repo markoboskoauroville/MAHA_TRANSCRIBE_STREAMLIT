@@ -675,3 +675,56 @@ from inside a running app. So:
     Store it beside the app's own settings, not in a user's localStorage.
   * An ignored key stays visible and un-ignorable with one press, or it
     becomes a key nobody can find again.
+
+---
+
+## 13. THE SPOON LIST (agreed with Baba, eat one at a time)
+
+Each is built alone, tested three ways, pushed, then the handover is
+updated. Nothing is started before the one before it is finished.
+
+### Unlimited transcription (the elephant, §11)
+    1. Groq keys through the ring                    DONE v20
+    2. Per-chunk retry before any gap                DONE v21
+    3. Silence-aware cut points                      NEXT
+    4. Portions land visibly, with a countdown
+    5. Resume after a reload
+    6. Slice while still recording
+
+### Accessibility (hard rule 6)
+    A1. Text size control on every surface           DONE v22
+    A2. Copy and paste pills everywhere, with live
+        state: Copy -> Copying -> Copied. Round,
+        like Baba's original app. Pressed with a
+        finger, never with a keyboard shortcut.
+    A3. Hover and focus: every control comes
+        subtly alive so a partially-sighted person
+        knows where they are. SUBTLE — "they are
+        not too blind, they are little bit blind."
+        A quiet outline, not a light show.
+
+### Vision (read what is in a picture)
+    V1. Groq vision model: pick an image file, get
+        its text into the transcript box. Groq's
+        own model list already reports which models
+        take images — qwen/qwen3.6-27b advertises
+        input_modalities ['text','image'] — so the
+        vision-capable model must be DISCOVERED
+        from the live list, never hardcoded, the
+        same as every other model.
+    V2. Paste a screenshot straight into the app,
+        if the browser allows it. MUST be checked
+        against a real browser before promising
+        anything: Streamlit components run in a
+        sandboxed iframe and clipboard READ is
+        commonly blocked there. If it cannot be
+        done honestly, say so and keep the file
+        picker rather than shipping a button that
+        silently fails.
+
+### Keys (§12)
+    K1. Merge the two key sources into one ring
+        entry by fingerprint.
+    K2. Delete a key: real removal for added keys,
+        suppression for secrets keys, and the UI
+        says which happened.
