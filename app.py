@@ -31,6 +31,7 @@ from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR
 from ttt import routing as RO
 from ttt import audio as ttt_audio
+from ttt import a11y
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -144,7 +145,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v21 (a)"
+# The reading stylesheet, regenerated from the person's own text size on
+# every run. Injected AFTER the base sheet so it wins, and kept separate
+# so the base sheet stays about layout while this one is only about
+# readability. See ttt/a11y.py for which WCAG criteria each rule serves.
+st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
+            unsafe_allow_html=True)
+
+APP_VERSION = "v22 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -276,6 +284,9 @@ STRINGS = {
     "keys_added":         {"en": "New keys added",      "hr": "Novih ključeva dodano"},
     "keys_good":          {"en": "working",             "hr": "rade"},
     "keys_bad":           {"en": "rejected",            "hr": "odbijeno"},
+    "text_smaller":       {"en": "Smaller text",      "hr": "Manje slovo"},
+    "text_bigger":        {"en": "Bigger text",       "hr": "Veće slovo"},
+    "text_size":          {"en": "Text size",         "hr": "Veličina slova"},
     "vc_title":           {"en": "All Speechify voices", "hr": "Svi Speechify glasovi"},
     "vc_load":            {"en": "Load voice list",   "hr": "Učitaj popis glasova"},
     "vc_loading":         {"en": "Loading…",          "hr": "Učitavam…"},
@@ -669,10 +680,10 @@ def transcribe_any_size(path: str, model: str, language: str, progress_cb=None,
 # ----------------------------------------------------------------------
 DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "hr", "voice": "Gabrijela",
                     "voice_engine": "edge", "sp_voice": "beatrice_32",
-                    "transcribe_engine": "groq"}
+                    "transcribe_engine": "groq", "text_scale": a11y.DEFAULT_SCALE}
 SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice",
                  "transcribe_engine",
-                 "route_stt", "route_tts", "route_llm")
+                 "route_stt", "route_tts", "route_llm", "text_scale")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -976,6 +987,32 @@ def llm_bridge():
     """The AI engine to use right now, or None if none is usable."""
     prov = current_routes().get("llm")
     return LLMBridge(prov) if prov else None
+
+
+def text_size_pills(where: str):
+    """A - / size / + row placed directly above the text it changes.
+
+    Above, not buried in Settings: someone who cannot read the screen must
+    not have to navigate a menu they cannot read in order to make it
+    readable. Every reading surface gets its own row, all driving the one
+    shared setting, so the size is consistent everywhere and adjustable
+    from wherever the person happens to be.
+    """
+    scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+
+    def _set(delta_fn):
+        st.session_state["text_scale"] = delta_fn(
+            st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+        persist_settings()
+
+    c1, c2, c3 = st.columns([1, 2, 1])
+    c1.button("A−", key=f"tsz_minus_{where}", help=t("text_smaller"),
+              disabled=a11y.at_min(scale),
+              on_click=_set, args=(a11y.smaller,))
+    c2.caption(f"{t('text_size')} {a11y.percent(scale)}%")
+    c3.button("A+", key=f"tsz_plus_{where}", help=t("text_bigger"),
+              disabled=a11y.at_max(scale),
+              on_click=_set, args=(a11y.bigger,))
 
 
 def audio_seconds(path) -> float:
@@ -1987,6 +2024,7 @@ if active == "transcribe":
                         pass
 
     if "transcript_box" in st.session_state:
+        text_size_pills("transcript")
         st.text_area(t("transcript_label"), key="transcript_box", height=200,
                      label_visibility="collapsed")
 
@@ -2083,6 +2121,7 @@ elif active == "talk":
             audio, dur = tk.synth_sentence(s, vkey)
             return audio, dur, None
 
+    text_size_pills("talk")
     st.text_area(t("tab_talk"), key="talk_text", height=150,
                  label_visibility="collapsed", placeholder=t("talk_placeholder"))
 
@@ -2125,6 +2164,7 @@ elif active == "translate":
         st.error(st.session_state.pop("_translate_error"))
 
     if "translate_out" in st.session_state:
+        text_size_pills("translate")
         st.text_area("out", key="translate_out", height=150, label_visibility="collapsed")
 
         tr_col1, tr_col2 = st.columns(2)
@@ -2182,6 +2222,7 @@ elif active == "read":
         def read_synth(s):
             return tk.synth_sentence(s, rvkey) + (None,)
 
+    text_size_pills("read")
     st.text_area(t("tab_read"), key="read_text", height=170,
                  label_visibility="collapsed", placeholder=t("read_paste_ph"))
 

@@ -88,7 +88,51 @@ them into fire."*
   * Assume no key is still lying around from a previous turn. If one is
     needed again, ask again.
 
-**6. Aesthetics are a requirement, not a finishing touch.**
+**6. THIS IS AN ACCESSIBILITY APP. Build like it.**
+Baba: *"this app will be used by old people who don't see well... it is
+actually accessibility app for people who cannot see, who cannot read.
+App is doing the service to this planet."*
+
+That makes accessibility the product, not a setting. Anything that breaks
+at a large text size is a bug of the same seriousness as losing someone's
+recording. The standards, not taste, decide what counts as done —
+`ttt/a11y.py` implements and names each one:
+
+  1.4.4  Resize text        usable at 200%. We go to 250%, because 200 is
+                            a floor, not a target.
+  1.4.10 Reflow             no two-direction scrolling at 320 CSS px.
+                            Nothing goes in a fixed-width box, ever.
+  1.4.12 Text spacing       line height, letter and paragraph spacing
+                            scale WITH the text. Enlarged text on cramped
+                            leading is harder to read than small text —
+                            the usual failure of a naive zoom.
+  2.5.5  Target size        44x44 CSS px for anything pressable. WCAG
+                            2.2's AA floor of 24px is NOT enough for a
+                            shaking hand; use the AAA figure.
+  1.4.6  Contrast           7:1. Near-black and gold already clear it.
+
+Rules that follow from this and must not be undone:
+  * `rem`, never `px`, for anything textual. A fixed pixel size ignores
+    the reader's own OS and browser font setting — the first thing a
+    person with low vision will already have turned up.
+  * The text-size control sits ABOVE each reading surface, never only in
+    Settings. Someone who cannot read the screen must not have to
+    navigate a menu they cannot read in order to make it readable.
+  * Wrapping uses `overflow-wrap: break-word`, not `word-break`, so
+    ordinary prose keeps its shape and only genuinely oversized words are
+    broken.
+  * Respect `prefers-reduced-motion`, and keep a visible focus ring.
+
+KNOWN LIMITATION, measured not guessed: `hyphens: auto` does nothing
+useful here because Streamlit sets `<html lang="en">` and the browser
+therefore applies English hyphenation to Croatian words and declines to
+break them. Word wrapping falls back to `overflow-wrap: break-word`,
+which still prevents overflow — a very long word breaks without a hyphen
+rather than pushing the layout sideways. Fixing it properly needs the
+document's `lang` to follow the interface language, which Streamlit does
+not expose. Revisit if it ever does.
+
+**7. Aesthetics are a requirement, not a finishing touch.**
 Think like a visual designer, every time. Concretely and permanently: a
 button is the size of its text, never the width of the page. Small pills,
 arranged in tidy rows that wrap. Streamlit's default (`use_container_width`
