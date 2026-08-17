@@ -41,13 +41,22 @@ CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by C
 
 
 # ----------------------------------------------------------------------
-# Password gate
+# Password gate — as many passwords work as are listed in Secrets
 # ----------------------------------------------------------------------
+def app_passwords() -> list:
+    pw = list(st.secrets.get("APP_PASSWORDS", []))
+    single = st.secrets.get("APP_PASSWORD")   # older single-password secrets still work
+    if single and single not in pw:
+        pw.append(single)
+    return [p for p in pw if p]
+
+
 def check_password() -> bool:
     def _entered():
         entered = st.session_state.get("_pw_input", "")
-        correct = st.secrets.get("APP_PASSWORD", "")
-        st.session_state["_authed"] = bool(correct) and hmac.compare_digest(entered, correct)
+        st.session_state["_authed"] = any(
+            hmac.compare_digest(entered, p) for p in PASSWORDS
+        )
         st.session_state["_pw_input"] = ""
 
     if st.session_state.get("_authed"):
@@ -59,8 +68,9 @@ def check_password() -> bool:
     return False
 
 
-if "APP_PASSWORD" not in st.secrets:
-    st.error("APP_PASSWORD is missing from Secrets. Streamlit Cloud → Settings → Secrets.")
+PASSWORDS = app_passwords()
+if not PASSWORDS:
+    st.error("No password set in Secrets. Add APP_PASSWORDS (a list) in Streamlit Cloud → Settings → Secrets.")
     st.stop()
 
 if not check_password():

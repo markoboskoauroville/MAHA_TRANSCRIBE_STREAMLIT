@@ -27,7 +27,7 @@ same audio through `whisper-large-v3` (slower, more accurate).
 1. Push this repo (already public) — Streamlit Cloud reads it directly.
 2. New app → pick this repo → main file `app.py`.
 3. Advanced settings → Secrets → paste your `secrets.toml` content
-   (`APP_PASSWORD`, `GROQ_API_KEYS`). **Never commit that file** —
+   (`APP_PASSWORDS`, `GROQ_API_KEYS`). **Never commit that file** —
    `.streamlit/secrets.toml` is gitignored on purpose.
 4. Deploy. `packages.txt` installs `ffmpeg` automatically on Streamlit
    Cloud's Debian build; `requirements.txt` installs `streamlit` and `groq`.
@@ -42,7 +42,9 @@ streamlit run app.py
 
 ## Notes
 
-- Password gate uses a constant-time comparison against `APP_PASSWORD`.
+- Password gate accepts any password listed in `APP_PASSWORDS` (a list — share
+  the app with as many people as you like, one password each), checked with
+  a constant-time comparison.
 - No key is ever sent to the browser — Groq calls happen server-side only.
 - `whisper-large-v3-turbo` vs `whisper-large-v3`: per Groq's guidance, turbo
   is the fast/cheap default, and large-v3 is the pick for error-sensitive
