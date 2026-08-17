@@ -106,6 +106,19 @@ class Provider:
         return [], False, None
 
 
+# Every request identifies itself. This is not cosmetic: Groq sits behind
+# Cloudflare, which answers a request with NO User-Agent with "403, error
+# code: 1010" for every endpoint and every model — a bot block, nothing to
+# do with the key. Verified directly: no UA -> 403, any UA -> 200.
+#
+# A descriptive string works exactly as well as a browser one (also
+# verified, side by side), so there is no reason to impersonate Chrome —
+# and pretending to be a browser to an API we authenticate to honestly is
+# both unnecessary and the sort of thing that ages badly. Setting it here,
+# once, means no provider can forget it.
+USER_AGENT = "TTT-LLL/1.0 (+https://ttt-lll.streamlit.app)"
+
+
 def http_json(url: str, headers: dict, payload=None, data: bytes = None,
               method: str = "GET", timeout: int = 60, classify=None):
     """One HTTP call, returning (parsed_json, error, kind).
@@ -116,6 +129,7 @@ def http_json(url: str, headers: dict, payload=None, data: bytes = None,
     """
     body = None
     h = dict(headers)
+    h.setdefault("User-Agent", USER_AGENT)
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
         h.setdefault("Content-Type", "application/json")
@@ -137,7 +151,33 @@ def http_json(url: str, headers: dict, payload=None, data: bytes = None,
         return None, f"Could not reach the service: {e}", "soft"
 
 
+def _detail(body: str) -> str:
+    """The provider's own explanation, if it sent one.
+
+    Almost every provider answers errors with {"error": {"message": ...}}
+    or {"error": "..."} or {"message": ...}. Their message names the actual
+    problem ("The model `x` does not exist or you do not have access to
+    it") where a generic status line cannot, so prefer theirs over ours.
+    """
+    try:
+        data = json.loads(body or "")
+    except Exception:
+        return ""
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, dict):
+            msg = err.get("message") or err.get("code")
+        elif isinstance(err, str):
+            msg = err
+        else:
+            msg = data.get("message") or data.get("detail")
+        if msg:
+            return str(msg)[:200]
+    return ""
+
+
 def _message(status: int, body: str) -> str:
+    detail = _detail(body)
     common = {
         401: "The key was rejected (401).",
         402: "This account has no credit left (402).",
@@ -145,11 +185,14 @@ def _message(status: int, body: str) -> str:
         404: "Not found (404).",
         429: "Rate limit reached (429).",
     }
-    if status in common:
-        return common[status]
+    base = common.get(status)
+    if base:
+        # 401/403 detail can echo key material back; the others are safe
+        # and usually far more useful than the generic line.
+        return base if status in (401, 403) or not detail else f"{base} {detail}"
     if status >= 500:
         return f"The service had an error ({status})."
-    return f"Refused ({status}) {(body or '')[:150]}"
+    return f"Refused ({status}) {detail or (body or '')[:150]}"
 
 
 def classify_standard(status: int) -> str:

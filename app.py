@@ -143,7 +143,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v17 (a)"
+APP_VERSION = "v18 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -525,32 +525,25 @@ def transcribe(path: str, model: str, language: str) -> str:
     raise RuntimeError(f"All Groq keys failed ({last_err})")
 
 
-def translate_text(text: str, source_lang: str, target_lang: str) -> str:
-    """openai/gpt-oss-120b, chosen by testing against qwen/qwen3.6-27b (the
-    other model Groq recommends for quality): gpt-oss-120b returned four
-    clean translations with correct grammar including French subjunctive.
-    qwen wrapped two of four in a visible multi-paragraph <think> block —
-    once so long the reply was cut off before any translation appeared at
-    all. See HANDOVER.md."""
-    start = st.session_state.get("_key_idx", 0) % len(KEYS)
-    last_err = None
-    for offset in range(len(KEYS)):
-        idx = (start + offset) % len(KEYS)
-        client = Groq(api_key=KEYS[idx])
-        try:
-            resp = client.chat.completions.create(
-                model=TRANSLATE_MODEL,
-                messages=[{"role": "user", "content":
-                    f"Translate the following {source_lang} text into {target_lang}. "
-                    f"Output ONLY the translation, nothing else, no quotes, no notes.\n\n{text}"}],
-                temperature=0.2,
-            )
-            st.session_state["_key_idx"] = idx
-            return (resp.choices[0].message.content or "").strip()
-        except Exception as e:
-            last_err = e
-            continue
-    raise RuntimeError(f"All Groq keys failed ({last_err})")
+def translate_text(llm, text: str, source_lang: str, target_lang: str) -> str:
+    """Translate through whatever is patched to AI, with whatever model is
+    selected for it. Was hardwired to Groq's gpt-oss-120b; that is now
+    merely the default, and Claude or a different Groq model is a patch
+    away.
+
+    The model note that earned the original choice, kept because it is
+    still the reason gpt-oss-120b is the Groq default: it returned four
+    clean translations with correct grammar including French subjunctive,
+    while qwen/qwen3.6-27b wrapped two of four in a visible multi-paragraph
+    <think> block — once so long the reply was cut off before any
+    translation appeared. See HANDOVER.md.
+    """
+    return llm.complete(
+        f"Translate the following {source_lang} text into {target_lang}. "
+        f"Output ONLY the translation, nothing else, no quotes, no notes.\n\n{text}",
+        system=("You are a translator. Return only the translation, with no "
+                "preamble, no commentary and no quotation marks around it."),
+    ).strip()
 
 
 def transcode_to_flac(in_path: str) -> str:
@@ -890,6 +883,54 @@ def provider_usable(provider) -> bool:
 def current_routes() -> dict:
     """task id -> the provider that should do it right now."""
     return RO.all_routes(PROVIDERS, provider_usable, st.session_state)
+
+
+class STTBridge:
+    """Whatever is patched to REC, behind one transcribe().
+
+    Same idea as LLMBridge: the tab should not know whether Groq or
+    AssemblyAI answered, nor how each one is keyed. `model=None` means the
+    engine's own default, so the model dropdown is honoured when set and
+    ignored gracefully when not.
+    """
+
+    def __init__(self, provider):
+        self.provider = provider
+        self.id = provider.id
+
+    @property
+    def handles_big_files(self) -> bool:
+        """AssemblyAI takes a file of any size itself; Groq needs the
+        tiered split. This is the one place that difference lives."""
+        return self.id == "assemblyai"
+
+    def transcribe(self, path, language, model=None, progress_cb=None) -> str:
+        chosen = model or chosen_model(self.provider) or None
+        if self.id == "assemblyai":
+            ring = get_ring("assemblyai")
+            try:
+                return self.provider.transcribe(
+                    lambda attempt: kr.rotate(ring, lambda k: attempt(k)),
+                    path, language=language,
+                    **({"model": chosen} if chosen else {}),
+                    progress_cb=progress_cb)
+            finally:
+                save_rings()
+        # Groq: the app's own keys, and the existing tiered path.
+        return transcribe(path, chosen or PRIMARY_MODEL, language)
+
+    def accurate_model(self):
+        """What Correct should re-run with: the most accurate model this
+        engine has, regardless of what is selected for everyday use —
+        that is the entire point of the button."""
+        if self.id == "groq":
+            return CORRECTION_MODEL
+        return None      # AssemblyAI's default already is its best
+
+
+def stt_bridge():
+    prov = current_routes().get("stt")
+    return STTBridge(prov) if prov else None
 
 
 class LLMBridge:
@@ -1554,16 +1595,17 @@ def do_correct():
         lang = st.session_state.get("last_lang", "hr")
         if not path or not os.path.exists(path):
             raise RuntimeError("Original audio is no longer available.")
-        provider = st.session_state.get("_transcribe_provider", "groq")
-        if provider == "assemblyai":
-            aai_ring = get_ring("assemblyai")
-            corrected = aai_transcribe(aai_ring, path, lang)
-            save_rings()
+        stt_now = stt_bridge()
+        if stt_now is None:
+            raise RuntimeError(t("routing_none"))
+        if stt_now.handles_big_files:
+            corrected = stt_now.transcribe(path, lang, model=stt_now.accurate_model())
             st.session_state["transcript_box"] = corrected
             st.session_state["flac_path"] = path
             st.session_state["_transcribe_method"] = "direct"
         else:
-            corrected, method, reusable = transcribe_any_size(path, CORRECTION_MODEL, lang)
+            corrected, method, reusable = transcribe_any_size(
+                path, stt_now.accurate_model() or CORRECTION_MODEL, lang)
             st.session_state["transcript_box"] = corrected
             st.session_state["flac_path"] = reusable
             st.session_state["_transcribe_method"] = method
@@ -1738,8 +1780,12 @@ def do_translate():
     src = st.session_state.get("translate_src", "hr")
     tgt = st.session_state.get("translate_tgt", "en")
     try:
-        st.session_state["translate_out"] = translate_text(text, LANG_FULL[src], LANG_FULL[tgt])
-        USAGE.log("translate", len(text), UNIT_CHARS, "groq")
+        llm = llm_bridge()
+        if llm is None:
+            raise RuntimeError(t("routing_none"))
+        st.session_state["translate_out"] = translate_text(
+            llm, text, LANG_FULL[src], LANG_FULL[tgt])
+        USAGE.log("translate", len(text), UNIT_CHARS, llm.id)
     except Exception as e:
         st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
 
@@ -1758,11 +1804,13 @@ def lang_pills(prefix: str, which: str, current: str):
 # Transcribe
 # ----------------------------------------------------------------------
 if active == "transcribe":
-    aai_ring_t = get_ring("assemblyai")
-    # Which engine transcribes is the switchboard's decision now, not this
-    # tab's. resolve() already falls back if the chosen one became unusable.
-    _stt = current_routes()["stt"]
-    t_engine = _stt.id if _stt else "groq"
+    # Which engine transcribes is the switchboard's decision, and which
+    # model it uses is the dropdown's. The tab asks for neither by name.
+    stt = stt_bridge()
+    if stt is None:
+        st.error(t("routing_none"))
+        st.stop()
+    t_engine = stt.id
 
     speech_now = st.session_state.get("speech_lang", "hr")
     lcol1, lcol2 = st.columns(2)
@@ -1787,11 +1835,7 @@ if active == "transcribe":
                 with st.spinner(t("preparing_audio")):
                     flac_path = to_flac16k(audio.getvalue())
                 with st.spinner(t("transcribing")):
-                    if t_engine == "assemblyai":
-                        text = aai_transcribe(aai_ring_t, flac_path, lang_code)
-                        save_rings()
-                    else:
-                        text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
+                    text = stt.transcribe(flac_path, lang_code)
                 st.session_state["transcript_box"] = text
                 st.session_state["flac_path"] = flac_path
                 st.session_state["last_lang"] = lang_code
@@ -1823,7 +1867,7 @@ if active == "transcribe":
             tmp.close()
             progress_bar = st.progress(0.0, text=t("preparing_audio"))
             try:
-                if t_engine == "assemblyai":
+                if stt.handles_big_files:
                     stage_map = {"upload": (0.2, "aai_stage_upload"),
                                 "queue": (0.5, "aai_stage_queue"),
                                 "process": (0.7, "aai_stage_process")}
@@ -1832,15 +1876,15 @@ if active == "transcribe":
                         frac, key = stage_map.get(stage, (0.5, "aai_stage_process"))
                         progress_bar.progress(frac, text=t(key))
 
-                    text = aai_transcribe(aai_ring_t, tmp.name, lang_code, progress_cb=_cb)
-                    save_rings()
+                    text = stt.transcribe(tmp.name, lang_code, progress_cb=_cb)
                     method, reusable = "direct", tmp.name
                 else:
                     def _cb(i, n):
                         progress_bar.progress((i + 1) / n, text=f"{t('chunk_progress')} {i + 1}/{n}")
 
                     text, method, reusable = transcribe_any_size(
-                        tmp.name, PRIMARY_MODEL, lang_code, progress_cb=_cb)
+                        tmp.name, chosen_model(stt.provider) or PRIMARY_MODEL,
+                        lang_code, progress_cb=_cb)
                 progress_bar.empty()
                 st.session_state["transcript_box"] = text
                 st.session_state["last_lang"] = lang_code

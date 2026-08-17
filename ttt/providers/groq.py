@@ -9,7 +9,7 @@ Transcription goes through the official groq SDK because it handles the
 multipart upload; the text side is a plain HTTP call.
 """
 
-from .base import Model, Provider, http_json, classify_standard
+from .base import Model, Provider, http_json, classify_standard, USER_AGENT
 
 API = "https://api.groq.com/openai/v1"
 
@@ -86,7 +86,11 @@ class Groq(Provider):
         last = "unknown error"
         for key in self.keys:
             try:
-                client = GroqSDK(api_key=key)
+                # The SDK builds its own requests, so the UA has to be
+                # given to it explicitly — the http_json default cannot
+                # reach here. Same Cloudflare rule applies.
+                client = GroqSDK(api_key=key,
+                                 default_headers={"User-Agent": USER_AGENT})
                 with open(path, "rb") as f:
                     return client.audio.transcriptions.create(
                         file=(path, f.read()),
@@ -97,6 +101,12 @@ class Groq(Provider):
                     ).strip()
             except Exception as e:
                 last = str(e)
+                low = last.lower()
+                if "model_not_found" in low or "does not exist" in low \
+                        or "invalid_request" in low:
+                    # Same rule as complete(): a request problem is not a
+                    # key problem, so stop and say what is actually wrong.
+                    raise RuntimeError(last)
                 continue
         raise RuntimeError(f"All Groq keys failed. Last: {last}")
 
@@ -111,7 +121,7 @@ class Groq(Provider):
                    "temperature": temperature, "max_tokens": max_tokens}
         last = "no keys"
         for key in self.keys:
-            data, err, _ = http_json(
+            data, err, kind = http_json(
                 API + "/chat/completions",
                 {"Authorization": "Bearer " + key, "User-Agent": "TTT-LLL/1.0"},
                 payload=payload, method="POST", timeout=120,
@@ -119,6 +129,13 @@ class Groq(Provider):
             if not err:
                 return (data["choices"][0]["message"]["content"] or "").strip()
             last = err
+            if kind not in ("dead", "cool"):
+                # Not the key's fault — a missing model, a malformed
+                # request. Trying nine more keys cannot help, and doing so
+                # hides the real reason behind whatever the LAST key said.
+                # This exact case reported "key rejected (401)" for what
+                # was really "that model does not exist on this account".
+                raise RuntimeError(err)
         raise RuntimeError(f"All Groq keys failed. Last: {last}")
 
 
