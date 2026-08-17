@@ -26,10 +26,15 @@ st.markdown(
     .stTextArea textarea { font-size: 1.15rem; line-height: 1.55; }
     .block-container { padding-top: 3rem; max-width: 640px; }
     div[data-testid="stAudioInput"] { margin-bottom: 0.6rem; }
+    .stButton button { border-radius: 999px; }
+    .st-key-correct_btn button { background-color: #4dd6e8; color: #0d0d0d; border-color: #4dd6e8; }
+    .st-key-correct_btn button:hover { background-color: #6fe0ee; border-color: #6fe0ee; }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+APP_VERSION = "v1 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -128,7 +133,7 @@ def to_flac16k(wav_bytes: bytes) -> str:
 # ----------------------------------------------------------------------
 # UI — record, transcribe, correct. That's the whole workflow.
 # ----------------------------------------------------------------------
-st.caption("Maha Transcribe")
+st.caption(f"Maha Transcribe · {APP_VERSION}")
 
 lang_label = st.segmented_control(
     "Language", ["English", "Croatian"], default="English", required=True
@@ -159,7 +164,7 @@ if audio is not None:
 if "transcript_box" in st.session_state:
     st.text_area("Transcript", key="transcript_box", height=200, label_visibility="collapsed")
 
-    if st.button("🔁 Correct — re-check with the accurate model", use_container_width=True):
+    if st.button("🔁 Correct — re-check with the accurate model", use_container_width=True, key="correct_btn"):
         try:
             with st.spinner("Re-transcribing with whisper-large-v3…"):
                 corrected = transcribe(st.session_state["flac_path"], CORRECTION_MODEL, lang_code)
