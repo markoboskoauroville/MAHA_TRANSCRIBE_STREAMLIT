@@ -78,7 +78,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v11 (a)"
+APP_VERSION = "v12 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -813,7 +813,19 @@ def render_key_list(ring: dict, rings_all: dict, provider: str, test_one_fn):
                      on_click=_test_this)
 
 
-def sp_synthesize(ring: dict, text: str, voice_id: str, model: str = "simba-3.2"):
+def sp_model_for(voice_id: str) -> str:
+    """Which Speechify model a given voice can actually use.
+
+    The older SPEECHIFY_API_GUIDE recommends simba-3.2 and says not to
+    hardcode a model; MA Reader v3's handover goes further and records what
+    was measured against the live API: simba-3.2 answers HTTP 400 for any
+    voice whose id does not end in _32, which is almost the whole catalogue.
+    The curated eight all end in _32 so they take 3.2; anything swapped in
+    from the wider catalogue falls back to simba-english."""
+    return "simba-3.2" if voice_id.endswith("_32") else "simba-english"
+
+
+def sp_synthesize(ring: dict, text: str, voice_id: str, model: str = None):
     """Returns (audio_bytes, seconds, marks). marks is a list of
     {start, end, start_time, end_time} — start/end are character offsets
     into `text` itself (exact, not inferred), start_time/end_time are
@@ -822,7 +834,7 @@ def sp_synthesize(ring: dict, text: str, voice_id: str, model: str = "simba-3.2"
     as None — falls back to sentence-level highlight)."""
     data, err = sp_request(ring, "/v1/audio/speech", {
         "input": text[:2000], "voice_id": voice_id,
-        "audio_format": "mp3", "model": model,
+        "audio_format": "mp3", "model": model or sp_model_for(voice_id),
     }, method="POST", timeout=90)
     if err:
         raise RuntimeError(err)

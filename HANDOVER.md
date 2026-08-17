@@ -303,6 +303,16 @@ hit the fallback path — expected, not a bug).
 characters + its own Test button, not one global test-all. This was a
 deliberate Baba correction mid-build; don't regress it to a single button.
 
+**Speechify model, corrected 17.8.2026** — `sp_model_for(voice_id)` picks
+`simba-3.2` for the curated `_32` voices and `simba-english` for everything
+else. The older `SPEECHIFY_API_GUIDE.md` recommends 3.2 generally; MA
+Reader v3's handover records that 3.2 answers HTTP 400 for any voice whose
+id does not end `_32`, which is almost the whole catalogue. Re-verified
+live against the API here: voice `alec` + `simba-3.2` -> 400 "the selected
+voice is not available for simba-3.2", the same voice + `simba-english` ->
+success. Baba's newer notes beat the older guide; when two of his documents
+disagree, check the dates and trust the newer, then verify against the API.
+
 **Speechify specifics** (`sp_call`, `sp_request`, `sp_synthesize`): base
 URL `https://api.speechify.ai`, `Authorization: Bearer <key>` on every
 call. `sp_synthesize` returns `(audio_bytes, seconds, marks)` — marks is a
