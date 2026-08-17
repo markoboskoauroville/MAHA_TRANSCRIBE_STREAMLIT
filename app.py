@@ -83,7 +83,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v13 (a)"
+APP_VERSION = "v14 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -756,7 +756,7 @@ def save_rings() -> None:
     call it after anything that could have changed a key's state — the
     cost of forgetting is a dead key resurrecting and wasting a request on
     every reload."""
-    save_rings()
+    persist_keys(load_keys())
 
 
 # ---------- Speechify ----------
