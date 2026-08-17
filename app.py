@@ -19,7 +19,7 @@ import subprocess
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v34 (a)"
+APP_VERSION = "v35 (a)"
 
 import streamlit as st
 from groq import Groq
@@ -66,6 +66,8 @@ from ttt import vision
 from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
+from ttt import speech as SPEECH
+from ttt import player as PLAYER
 from ttt import theme
 from ttt import gate
 from ttt import copybtn
@@ -368,6 +370,10 @@ STRINGS = {
     "img_no_model":       {"en": "No engine here can read pictures.",
                             "hr": "Nijedan pogon ovdje ne može čitati slike."},
     "img_done":           {"en": "Read from a picture.", "hr": "Pročitano iz slike."},
+    "gen_audio":          {"en": "Making the audio…",  "hr": "Pripremam zvuk…"},
+    "new_text":           {"en": "New text",           "hr": "Novi tekst"},
+    "prev_sentence":      {"en": "Previous sentence",  "hr": "Prethodna rečenica"},
+    "next_sentence":      {"en": "Next sentence",      "hr": "Sljedeća rečenica"},
     "paste_btn":          {"en": "paste",             "hr": "zalijepi"},
     "paste_hint":         {"en": "tap, then paste",   "hr": "dodirni, pa zalijepi"},
     "paste_done":         {"en": "pasted ✓",          "hr": "zalijepljeno ✓"},
@@ -2253,63 +2259,86 @@ if active == "transcribe":
 # Talk
 # ----------------------------------------------------------------------
 elif active == "talk":
+    # ONE PLAYER FOR THE WHOLE TEXT.
+    #
+    # Baba's design, and the right one: paste, the box goes away, the
+    # audio is made, and then there is only a player and the sentence
+    # being spoken. No audio bar per sentence, no gap at every full stop,
+    # and the elapsed and remaining time come free from the audio itself.
+    #
+    # Two states, never both: WRITING (paste + box + go) and PLAYING
+    # (player + subtitle + new text).
     sp_ring_talk = get_ring("speechify")
     _tts = current_routes()["tts"]
     engine = _tts.id if _tts else "edge"
 
-    if engine == "speechify":
-        # The curated eight are quick picks, NOT a limit — any of the 979
-        # voices chosen in Settings shows up here too, and any voice may
-        # read any language. If the chosen voice is not one of the eight,
-        # it gets its own lit pill so the picker always shows the truth.
-        st.caption(t("engine_speechify"))
-        current_sp = st.session_state.get("sp_voice", "beatrice_32")
-        quick = list(SP_CURATED)
-        if current_sp not in quick:
-            quick.insert(0, current_sp)
-        cols = st.columns(4)
-        for i, vid in enumerate(quick[:8]):
-            cols[i % 4].button(
-                vid.split("_")[0].replace("-", " ").title(), key=f"talksp_{vid}",
-                type="primary" if vid == current_sp else "secondary",
-                on_click=pick_sp_voice, args=(vid,),
-            )
-        chosen_sp_voice = current_sp
+    built = st.session_state.get("_talk_audio")
 
-        def synth_fn(s):
-            return sp_synthesize(sp_ring_talk, s, chosen_sp_voice)
+    if built:
+        # ---- PLAYING -------------------------------------------------
+        components.html(
+            PLAYER.html(built["audio"], built["marks"],
+                        scale=a11y.clamp(st.session_state.get("text_scale",
+                                                              a11y.DEFAULT_SCALE)),
+                        labels={"prev": t("prev_sentence"),
+                                "next": t("next_sentence")}),
+            height=PLAYER.height_for(st.session_state.get("text_scale", 1.0)))
+
+        def _new_text():
+            st.session_state.pop("_talk_audio", None)
+
+        st.button(t("new_text"), key="talk_new", on_click=_new_text)
+
     else:
-        voice_picker("talkvoice")
-        vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
+        # ---- WRITING -------------------------------------------------
+        if engine == "speechify":
+            current_sp = st.session_state.get("sp_voice", "beatrice_32")
+            quick = list(SP_CURATED)
+            if current_sp not in quick:
+                quick.insert(0, current_sp)
+            cols = st.columns(4)
+            for i, vid in enumerate(quick[:8]):
+                cols[i % 4].button(
+                    vid.split("_")[0].replace("-", " ").title(), key=f"talksp_{vid}",
+                    type="primary" if vid == current_sp else "secondary",
+                    on_click=pick_sp_voice, args=(vid,))
 
-        def synth_fn(s):
-            audio, dur = tk.synth_sentence(s, vkey)
-            return audio, dur, None
+            def synth_fn(text):
+                return sp_synthesize(sp_ring_talk, text, current_sp)
+        else:
+            voice_picker("talkvoice")
+            vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
 
-    text_size_pills("talk")
-    cp_row(st.session_state.get("talk_text", ""), "talk", state_key="talk_text")
-    st.text_area(t("tab_talk"), key="talk_text", height=150,
-                 label_visibility="collapsed", placeholder=t("talk_placeholder"))
+            def synth_fn(text):
+                return tk.synth_sentence(text, vkey) + (None,)
 
-    rcol1, rcol2 = st.columns(2)
-    read_clicked = rcol1.button(SYM["read"], key="read_btn", help=t("read_btn"))
-    rcol2.button(SYM["stop"], key="stop_btn", help=t("stop_btn"))
+        text_size_pills("talk")
+        cp_row(st.session_state.get("talk_text", ""), "talk", state_key="talk_text")
+        st.text_area(t("tab_talk"), key="talk_text", height=150,
+                     label_visibility="collapsed", placeholder=t("talk_placeholder"))
 
-    doc_slot = st.empty()
-    sub_slot = st.empty()
-    audio_slot = st.empty()
-    page_slot = st.empty()
+        go = st.button(SYM["read"], key="read_btn", help=t("read_btn"))
+        if go or st.session_state.pop("_auto_read", False):
+            raw = (st.session_state.get("talk_text") or "").strip()
+            if raw:
+                try:
+                    with st.spinner(t("gen_audio")):
+                        sentences = tk.sentences_of(raw)
+                        path, marks, total, temps = SPEECH.build(sentences, synth_fn)
+                        with open(path, "rb") as f:
+                            audio = f.read()
+                        ttt_audio.cleanup(*temps)
+                    save_rings()
+                    st.session_state["_talk_audio"] = {
+                        "audio": audio, "marks": marks, "total": total}
+                    USAGE.log("read", len(raw), UNIT_CHARS, engine)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"{t('read_fail')}: {e}")
+            else:
+                st.info(t("nothing_to_read"))
 
-    if read_clicked or st.session_state.pop("_auto_read", False) or st.session_state.pop("talk_page_auto", False):
-        raw = (st.session_state.get("talk_text") or "").strip()
-        read_sentences_live(raw, synth_fn, doc_slot, sub_slot, audio_slot, "talk_page", page_slot)
-    else:
-        sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
 
-# ----------------------------------------------------------------------
-# Translate — Groq (openai/gpt-oss-120b) between five European languages,
-# then an optional Read in the target language's own neural voice.
-# ----------------------------------------------------------------------
 elif active == "translate":
     st.session_state.setdefault("translate_src", "hr")
     st.session_state.setdefault("translate_tgt", "en")
