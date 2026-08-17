@@ -48,7 +48,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v8 (a)"
+APP_VERSION = "v9 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -125,6 +125,26 @@ STRINGS = {
                             "hr": "Datoteka je velika — podijeljena na dijelove, transkribirana, pa spojena natrag."},
     "method_gap":         {"en": "Note: one or more parts could not be transcribed (marked […] in the text).",
                             "hr": "Napomena: jedan ili više dijelova nije transkribiran (označeno […] u tekstu)."},
+    "speechify_title":    {"en": "Speechify (premium voices)", "hr": "Speechify (premium glasovi)"},
+    "key_file_label":     {"en": "Or pick a key file",  "hr": "Ili odaberi datoteku s ključem"},
+    "key_paste_label":    {"en": "Paste key(s)",        "hr": "Zalijepi ključ(eve)"},
+    "key_paste_ph":       {"en": "Paste one or more keys, any messy text is fine",
+                            "hr": "Zalijepi jedan ili više ključeva, može i neuredan tekst"},
+    "import_keys_btn":    {"en": "Import keys",         "hr": "Uvezi ključeve"},
+    "test_keys_btn":      {"en": "Test keys",           "hr": "Testiraj ključeve"},
+    "no_keys_found":      {"en": "No key found in that.", "hr": "Nije pronađen nijedan ključ."},
+    "keys_added":         {"en": "New keys added",      "hr": "Novih ključeva dodano"},
+    "keys_good":          {"en": "working",             "hr": "rade"},
+    "keys_bad":           {"en": "rejected",            "hr": "odbijeno"},
+    "voice_engine":       {"en": "Voice engine",        "hr": "Glasovni pogon"},
+    "engine_edge":        {"en": "Standard",            "hr": "Standardni"},
+    "engine_speechify":   {"en": "Speechify",           "hr": "Speechify"},
+    "no_label":           {"en": "(no label)",          "hr": "(bez oznake)"},
+    "test_btn":           {"en": "Test",                "hr": "Testiraj"},
+    "assemblyai_title":   {"en": "AssemblyAI (accurate transcription)", "hr": "AssemblyAI (točnija transkripcija)"},
+    "engine_groq":        {"en": "Groq (free)",         "hr": "Groq (besplatno)"},
+    "engine_assemblyai":  {"en": "AssemblyAI",          "hr": "AssemblyAI"},
+    "transcribe_engine":  {"en": "Transcription engine", "hr": "Pogon za transkripciju"},
 }
 
 
@@ -464,7 +484,9 @@ def transcribe_any_size(path: str, model: str, language: str, progress_cb=None):
 # restarts, so the file is a same-instance convenience, not a durable store;
 # localStorage is the one that really survives.
 # ----------------------------------------------------------------------
-DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "hr", "voice": "Gabrijela"}
+DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "hr", "voice": "Gabrijela",
+                    "voice_engine": "edge", "sp_voice": "beatrice_32"}
+SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -493,9 +515,311 @@ def _save_server_settings(user: str, settings: dict) -> None:
 
 def _apply_settings(values: dict) -> None:
     """Seed session_state. Only safe before the matching widgets render."""
-    for k in ("ui_lang", "speech_lang", "voice"):
+    for k in SETTINGS_KEYS:
         if values.get(k):
             st.session_state[k] = values[k]
+
+
+# ----------------------------------------------------------------------
+# Provider keys — Speechify and (next) AssemblyAI, bring-your-own-key.
+# Ported from Baba's own MA_READER_SPEECHIFY (speechify_keyring.py) and the
+# testing philosophy in Key_Tester's handoff — never reject a key by shape,
+# rank/guess only; a rejected key is buried, a rate-limited one rests and
+# comes back, a network hiccup changes nothing. Storage is adapted: the
+# original kept one JSON file on local disk, which Streamlit Cloud does not
+# reliably keep (see HANDOVER.md, incident 1) — so each provider's ring
+# lives in the same session_state + localStorage + server-file mechanism
+# already built for settings, under its own key.
+# ----------------------------------------------------------------------
+import re as _re
+import base64 as _b64
+import urllib.request as _ureq
+import urllib.error as _uerr
+
+PROVIDER_KEYS_LS_KEY = f"maha_keys_{USER}"
+
+
+def _keys_file(user: str) -> str:
+    d = os.path.join(tempfile.gettempdir(), "maha_keys")
+    os.makedirs(d, exist_ok=True)
+    safe = "".join(c for c in user if c.isalnum()) or "user"
+    return os.path.join(d, safe + ".json")
+
+
+def _load_server_keys(user: str) -> dict:
+    try:
+        with open(_keys_file(user), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_server_keys(user: str, rings: dict) -> None:
+    try:
+        with open(_keys_file(user), "w", encoding="utf-8") as f:
+            json.dump(rings, f)
+    except Exception:
+        pass
+
+
+def _fp(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+
+
+def mask_key(key: str) -> str:
+    k = (key or "").strip()
+    if len(k) <= 10:
+        return (k[:2] + "…") if k else ""
+    return k[:5] + "…" + k[-4:]
+
+
+def new_ring() -> dict:
+    return {"keys": [], "active": 0}
+
+
+def ring_pick(ring: dict, start: int = 0):
+    keys = ring["keys"]
+    n = len(keys)
+    if not n:
+        return None
+    now = time.time()
+    for j in range(n):
+        i = (start + j) % n
+        k = keys[i]
+        if k["state"] == "dead":
+            continue
+        if k["state"] == "cool":
+            if k.get("cool_until", 0) > now:
+                continue
+            k["state"] = "new"
+        return i
+    return None
+
+
+def ring_import(ring: dict, raw: str, prefixes: tuple, min_len: int = 16,
+                generic_min: int = 24) -> int:
+    """Find keys in messy pasted/uploaded text. Prefixed keys are taken
+    exactly; if nothing carries a known prefix, fall back to long mixed
+    letter+digit runs — never dropped for 'wrong shape', only ranked.
+
+    Line-aware, same as Key_Tester's KeyParser: each found key carries the
+    file line directly above it (verbatim) as a label — usually a username
+    or account note, not the key itself. Blank or absent -> no label."""
+    lines = (raw or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    url_re = _re.compile(r"https?://\S+")
+    token_re = _re.compile(r"[A-Za-z0-9][A-Za-z0-9_.\-]{11,}")
+
+    def tokens_on(line):
+        cleaned = url_re.sub(
+            lambda m: m.group(0) if any(p in m.group(0).lower() for p in prefixes) else " ", line)
+        return [m.group(0).strip(".-_") for m in token_re.finditer(cleaned)
+               if len(m.group(0)) >= 12]
+
+    def is_prefixed(t):
+        low = t.lower()
+        return any(low.startswith(p) for p in prefixes) and len(t) >= min_len
+
+    per_line = [tokens_on(ln) for ln in lines]
+    found = [(tok, i) for i, cands in enumerate(per_line) for tok in cands if is_prefixed(tok)]
+    if not found:
+        found = [(tok, i) for i, cands in enumerate(per_line) for tok in cands
+                 if len(tok) >= generic_min and any(ch.isdigit() for ch in tok)
+                 and any(ch.isalpha() for ch in tok)]
+
+    have = {k["key"] for k in ring["keys"]}
+    seen, added = set(), 0
+    for key, line_idx in found:
+        if key in seen or key in have:
+            continue
+        seen.add(key)
+        label = lines[line_idx - 1].strip() if line_idx > 0 else ""
+        ring["keys"].append({"key": key, "fp": _fp(key), "state": "new",
+                             "last_error": "", "calls": 0, "cool_until": 0,
+                             "label": label})
+        added += 1
+    return added
+
+
+def persist_keys(rings: dict) -> None:
+    _save_server_keys(USER, rings)
+    queue_ls(writes={PROVIDER_KEYS_LS_KEY: json.dumps(rings)})
+
+
+def load_keys() -> dict:
+    """session_state, else localStorage, else server file, else empty."""
+    if "_rings" in st.session_state:
+        return st.session_state["_rings"]
+    raw = LS_DATA.get(PROVIDER_KEYS_LS_KEY)
+    rings = None
+    if raw:
+        try:
+            rings = json.loads(raw)
+        except Exception:
+            rings = None
+    if rings is None:
+        rings = _load_server_keys(USER)
+    st.session_state["_rings"] = rings or {}
+    return st.session_state["_rings"]
+
+
+# ---------- Speechify ----------
+SPEECHIFY_PREFIXES = ("sk_", "sws_", "sa_", "spk_")
+SP_CURATED = ["beatrice_32", "dominic_32", "edmund_32", "geffen_32",
+              "harper_32", "hugh_32", "imogen_32", "wyatt_32"]
+
+
+def sp_error_kind(status: int) -> str:
+    if status in (401, 402, 403):
+        return "dead"
+    if status == 429:
+        return "cool"
+    return "soft"
+
+
+def sp_error_message(status: int, body: str) -> str:
+    msgs = {401: "Speechify rejected the key (401).",
+            402: "No Speechify credit left on this account (402).",
+            403: "This key cannot use that voice (403) — celebrity voices need a licensing plan.",
+            404: "Speechify does not know that voice id (404).",
+            429: "Speechify rate limit reached (429)."}
+    if status in msgs:
+        return msgs[status]
+    if status >= 500:
+        return f"Speechify had a server error ({status})."
+    return f"Speechify refused the request ({status}) {(body or '')[:150]}"
+
+
+def sp_call(key: str, path: str, payload=None, method: str = "GET", timeout: int = 60):
+    headers = {"Authorization": "Bearer " + key, "Accept": "application/json"}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = _ureq.Request("https://api.speechify.ai" + path, data=data,
+                        headers=headers, method=method)
+    try:
+        with _ureq.urlopen(req, timeout=timeout) as r:
+            body = r.read().decode("utf-8", "replace")
+        return (json.loads(body) if body.strip() else {}), None, None
+    except _uerr.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        return None, sp_error_message(e.code, body), sp_error_kind(e.code)
+    except Exception as e:
+        return None, f"Could not reach Speechify: {e}", "soft"
+
+
+def sp_request(ring: dict, path: str, payload=None, method: str = "GET", timeout: int = 60):
+    keys = ring["keys"]
+    n = len(keys)
+    if not n:
+        return None, "No Speechify keys yet — add one in Settings."
+    idx = ring.get("active", 0) % n
+    for _ in range(n):
+        i = ring_pick(ring, idx)
+        if i is None:
+            break
+        k = keys[i]
+        data, err, kind = sp_call(k["key"], path, payload, method, timeout)
+        if not err:
+            k["state"] = "ok"
+            k["last_error"] = ""
+            k["calls"] = k.get("calls", 0) + 1
+            ring["active"] = i
+            return data, None
+        if kind == "dead":
+            k["state"] = "dead"
+            k["last_error"] = err
+            idx = (i + 1) % n
+            continue
+        if kind == "cool":
+            k["state"] = "cool"
+            k["cool_until"] = time.time() + 120
+            k["last_error"] = err
+            idx = (i + 1) % n
+            continue
+        return None, err   # not the key's fault — stop, don't burn the ring
+    return None, f"All {n} Speechify key(s) are unavailable right now."
+
+
+def sp_test_one(key: str):
+    _, err, kind = sp_call(key, "/v1/voices?locale=en&limit=1")
+    return err, kind
+
+
+def render_key_list(ring: dict, rings_all: dict, provider: str, test_one_fn):
+    """label · first 4 chars · state, with its own Test button per key —
+    not a single test-all, so one key can be checked without re-testing
+    the whole ring. test_one_fn(key_str) -> (err, kind)."""
+    for idx, k in enumerate(ring["keys"]):
+        icon = {"ok": "🟢", "new": "⚪", "cool": "🟡", "dead": "🔴"}.get(k["state"], "⚪")
+        label = k.get("label") or t("no_label")
+        kcol1, kcol2 = st.columns([3, 1])
+        with kcol1:
+            st.caption(f"{icon} **{label}**  ·  {k['key'][:4]}…")
+            if k.get("last_error"):
+                st.caption(f"　{k['last_error'][:60]}")
+        with kcol2:
+            def _test_this(i=idx):
+                kk = ring["keys"][i]
+                err, kind = test_one_fn(kk["key"])
+                if not err:
+                    kk["state"] = "ok"
+                    kk["last_error"] = ""
+                elif kind == "dead":
+                    kk["state"] = "dead"
+                    kk["last_error"] = err
+                else:
+                    kk["last_error"] = err
+                persist_keys(rings_all)
+            st.button(t("test_btn"), key=f"{provider}_test_{idx}",
+                     use_container_width=True, on_click=_test_this)
+
+
+def sp_synthesize(ring: dict, text: str, voice_id: str, model: str = "simba-3.2"):
+    """Returns (audio_bytes, seconds, marks). marks is a list of
+    {start, end, start_time, end_time} — start/end are character offsets
+    into `text` itself (exact, not inferred), start_time/end_time are
+    seconds into the audio. Punctuation-only marks are dropped. Empty list
+    if the response carried no usable marks (caller treats that the same
+    as None — falls back to sentence-level highlight)."""
+    data, err = sp_request(ring, "/v1/audio/speech", {
+        "input": text[:2000], "voice_id": voice_id,
+        "audio_format": "mp3", "model": model,
+    }, method="POST", timeout=90)
+    if err:
+        raise RuntimeError(err)
+    audio = _b64.b64decode(data["audio_data"])
+
+    marks = []
+
+    def _walk(node):
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "word":
+            val = node.get("value", "") or ""
+            if any(c.isalnum() for c in val):   # skip punctuation-only marks
+                st_ = node.get("start_time")
+                en_ = node.get("end_time")
+                if st_ is not None and en_ is not None:
+                    marks.append({
+                        "start": int(node.get("start", 0)),
+                        "end": int(node.get("end", 0)),
+                        "start_time": st_ / 1000.0,
+                        "end_time": en_ / 1000.0,
+                    })
+        for child in (node.get("chunks") or []):
+            _walk(child)
+
+    _walk(data.get("speech_marks") or {})
+    marks.sort(key=lambda m: m["start_time"])
+
+    total = max((m["end_time"] for m in marks), default=0.0)
+    if total <= 0:
+        total = max(1.0, len(text.split()) * 0.38)
+    return audio, total, marks
 
 
 if "_settings_bootstrapped" not in st.session_state:
@@ -512,7 +836,7 @@ if LS_DATA.get(SETTINGS_LS_KEY) and not st.session_state.get("_ls_applied"):
 
 
 def persist_settings():
-    values = {k: st.session_state.get(k) for k in ("ui_lang", "speech_lang", "voice")}
+    values = {k: st.session_state.get(k) for k in SETTINGS_KEYS}
     _save_server_settings(USER, values)
     queue_ls(writes={SETTINGS_LS_KEY: json.dumps(values)})
 
@@ -529,6 +853,11 @@ def set_speech_lang(lang: str):
 
 def pick_voice(name: str):
     st.session_state["voice"] = name
+    persist_settings()
+
+
+def pick_sp_voice(voice_id: str):
+    st.session_state["sp_voice"] = voice_id
     persist_settings()
 
 
@@ -578,6 +907,49 @@ with gear_col:
 
         st.caption(t("settings_voice"))
         voice_picker("setvoice")
+
+        with st.expander(t("speechify_title")):
+            rings = load_keys()
+            sp_ring = rings.setdefault("speechify", new_ring())
+
+            st.file_uploader(t("key_file_label"), key="sp_key_file", label_visibility="collapsed")
+            st.text_area(t("key_paste_label"), key="sp_key_paste", height=70,
+                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
+
+            def _sp_import():
+                raw = ""
+                f = st.session_state.get("sp_key_file")
+                if f is not None:
+                    raw += f.getvalue().decode("utf-8", "replace")
+                raw += " " + (st.session_state.get("sp_key_paste") or "")
+                added = ring_import(sp_ring, raw, SPEECHIFY_PREFIXES)
+                persist_keys(rings)
+                st.session_state["_sp_msg"] = (
+                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
+
+            st.button(t("import_keys_btn"), key="sp_import_btn",
+                      use_container_width=True, on_click=_sp_import)
+
+            if sp_ring["keys"]:
+                render_key_list(sp_ring, rings, "sp", sp_test_one)
+
+            if st.session_state.get("_sp_msg"):
+                st.caption(st.session_state.pop("_sp_msg"))
+
+            if any(k["state"] != "dead" for k in sp_ring["keys"]):
+                st.caption(t("voice_engine"))
+                ecol1, ecol2 = st.columns(2)
+                engine_now = st.session_state.get("voice_engine", "edge")
+
+                def _set_engine(e):
+                    st.session_state["voice_engine"] = e
+
+                ecol1.button(t("engine_edge"), key="eng_edge", use_container_width=True,
+                             type="primary" if engine_now == "edge" else "secondary",
+                             on_click=_set_engine, args=("edge",))
+                ecol2.button(t("engine_speechify"), key="eng_sp", use_container_width=True,
+                             type="primary" if engine_now == "speechify" else "secondary",
+                             on_click=_set_engine, args=("speechify",))
 
         with st.expander(t("help_title")):
             st.markdown(safe_text("HELP"))
@@ -629,16 +1001,50 @@ def read_this():
     st.session_state["_auto_read"] = True
 
 
-def _subtitle(text: str) -> str:
-    return f'<div class="subtitle-box">{html.escape(text)}</div>'
+def _highlight_span(text: str, start: int = None, end: int = None) -> str:
+    """HTML-escaped text with [start:end) wrapped in the gold highlight span.
+    With no range, the whole text is wrapped (sentence-level, the Edge case).
+    Bounds are clamped defensively — a mark that's ever slightly out of
+    range must never crash the read, just highlight nothing that run."""
+    if start is None or end is None:
+        return ('<span style="background:#e0a340;color:#0d0d0d;'
+                'border-radius:4px;padding:1px 4px;">' + html.escape(text) + "</span>")
+    start = max(0, min(start, len(text)))
+    end = max(start, min(end, len(text)))
+    return (html.escape(text[:start]) +
+            '<span style="background:#e0a340;color:#0d0d0d;'
+            'border-radius:4px;padding:1px 4px;">' + html.escape(text[start:end]) + "</span>" +
+            html.escape(text[end:]))
 
 
-def read_sentences_live(raw: str, vkey: str, doc_slot, sub_slot, audio_slot,
-                        page_key: str, page_slot, force_page=False):
+def _subtitle(text: str, start: int = None, end: int = None) -> str:
+    inner = _highlight_span(text, start, end) if text else ""
+    return f'<div class="subtitle-box">{inner}</div>'
+
+
+def _render_page(page_sentences: list, current_idx: int, doc_slot,
+                 word_start: int = None, word_end: int = None) -> None:
+    parts = []
+    for j, s in enumerate(page_sentences):
+        if j == current_idx:
+            parts.append(_highlight_span(s, word_start, word_end))
+        else:
+            parts.append(html.escape(s))
+    doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
+
+
+def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
+                        page_key: str, page_slot):
     """Shared by Talk and Translate: synthesize and play one sentence at a
-    time, highlighting the current one in doc_slot and mirroring it alone in
-    sub_slot (the NaturalReader-style subtitle box). No disk cache, no
-    word-level timing — see HANDOVER.md for why.
+    time. Highlights word-by-word when the engine can back it with real
+    per-word timing (Speechify's speech_marks, measured from the audio it
+    just generated — precise, not inferred); falls back to sentence-level
+    otherwise (Edge — its word boundaries are on its own clock and drift,
+    see HANDOVER.md for why that was deliberately dropped everywhere else).
+
+    synth_fn(text) -> (audio_bytes, seconds) or (audio_bytes, seconds, marks).
+    marks is a list of {start, end, start_time, end_time} in the same shape
+    sp_synthesize returns, or falsy/absent for sentence-level.
 
     Long text is split into pages (tk.paginate) so one document never becomes
     one unbroken, uninterruptible reading session. A new page starts reading
@@ -666,25 +1072,28 @@ def read_sentences_live(raw: str, vkey: str, doc_slot, sub_slot, audio_slot,
         page_slot.caption(f"{t('page_label')} {page_idx + 1}/{n_pages}")
 
     for i, sent in enumerate(page_sentences):
-        parts = []
-        for j, s in enumerate(page_sentences):
-            safe = html.escape(s)
-            if j == i:
-                parts.append(
-                    '<span style="background:#e0a340;color:#0d0d0d;'
-                    'border-radius:4px;padding:1px 4px;">' + safe + "</span>"
-                )
-            else:
-                parts.append(safe)
-        doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
-        sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
         try:
-            audio_bytes, dur = tk.synth_sentence(sent, vkey)
+            result = synth_fn(sent)
         except Exception as e:
             st.error(f"{t('read_fail')} {i + 1}: {e}")
             break
-        audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
-        time.sleep(dur + 0.15)
+        audio_bytes, dur = result[0], result[1]
+        marks = result[2] if len(result) > 2 else None
+
+        if marks:
+            # Word-level: play once, then step the highlight through each
+            # mark's own measured window — never touches playback rate.
+            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            for wi, m in enumerate(marks):
+                _render_page(page_sentences, i, doc_slot, m["start"], m["end"])
+                sub_slot.markdown(_subtitle(sent, m["start"], m["end"]), unsafe_allow_html=True)
+                nxt = marks[wi + 1]["start_time"] if wi + 1 < len(marks) else dur
+                time.sleep(max(0.02, nxt - m["start_time"]))
+        else:
+            _render_page(page_sentences, i, doc_slot)
+            sub_slot.markdown(_subtitle(sent), unsafe_allow_html=True)
+            audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            time.sleep(dur + 0.15)
 
     doc_slot.markdown(html.escape(" ".join(page_sentences)))
     sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
@@ -838,8 +1247,31 @@ if active == "transcribe":
 # Talk
 # ----------------------------------------------------------------------
 elif active == "talk":
-    voice_picker("talkvoice")
-    vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
+    sp_ring_talk = load_keys().get("speechify") or new_ring()
+    sp_usable = any(k["state"] != "dead" for k in sp_ring_talk["keys"])
+    engine = st.session_state.get("voice_engine", "edge") if sp_usable else "edge"
+
+    if engine == "speechify":
+        st.caption(t("engine_speechify"))
+        cols = st.columns(4)
+        current_sp = st.session_state.get("sp_voice", "beatrice_32")
+        for i, vid in enumerate(SP_CURATED):
+            cols[i % 4].button(
+                vid.split("_")[0].title(), key=f"talksp_{vid}", use_container_width=True,
+                type="primary" if vid == current_sp else "secondary",
+                on_click=pick_sp_voice, args=(vid,),
+            )
+        chosen_sp_voice = st.session_state.get("sp_voice", "beatrice_32")
+
+        def synth_fn(s):
+            return sp_synthesize(sp_ring_talk, s, chosen_sp_voice)
+    else:
+        voice_picker("talkvoice")
+        vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
+
+        def synth_fn(s):
+            audio, dur = tk.synth_sentence(s, vkey)
+            return audio, dur, None
 
     st.text_area(t("tab_talk"), key="talk_text", height=150,
                  label_visibility="collapsed", placeholder=t("talk_placeholder"))
@@ -855,7 +1287,7 @@ elif active == "talk":
 
     if read_clicked or st.session_state.pop("_auto_read", False) or st.session_state.pop("talk_page_auto", False):
         raw = (st.session_state.get("talk_text") or "").strip()
-        read_sentences_live(raw, vkey, doc_slot, sub_slot, audio_slot, "talk_page", page_slot)
+        read_sentences_live(raw, synth_fn, doc_slot, sub_slot, audio_slot, "talk_page", page_slot)
     else:
         sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
 
@@ -897,7 +1329,8 @@ else:
         if tread_clicked or st.session_state.pop("translate_page_auto", False):
             raw = (st.session_state.get("translate_out") or "").strip()
             tgt = st.session_state.get("translate_tgt", "en")
-            vkey = TRANSLATE_VKEY.get(tgt, "ukF")
-            read_sentences_live(raw, vkey, tdoc_slot, tsub_slot, taudio_slot, "translate_page", tpage_slot)
+            tvkey = TRANSLATE_VKEY.get(tgt, "ukF")
+            read_sentences_live(raw, lambda s: tk.synth_sentence(s, tvkey) + (None,),
+                               tdoc_slot, tsub_slot, taudio_slot, "translate_page", tpage_slot)
         else:
             tsub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
