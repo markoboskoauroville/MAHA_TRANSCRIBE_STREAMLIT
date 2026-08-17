@@ -32,6 +32,7 @@ from ttt import transform as TR
 from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
+from ttt import copybtn
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -152,7 +153,7 @@ st.markdown(
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v23 (a)"
+APP_VERSION = "v24 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -284,6 +285,10 @@ STRINGS = {
     "keys_added":         {"en": "New keys added",      "hr": "Novih ključeva dodano"},
     "keys_good":          {"en": "working",             "hr": "rade"},
     "keys_bad":           {"en": "rejected",            "hr": "odbijeno"},
+    "copy_idle":          {"en": "Copy",              "hr": "Kopiraj"},
+    "copy_busy":          {"en": "Copying…",          "hr": "Kopiram…"},
+    "copy_done":          {"en": "Copied ✓",          "hr": "Kopirano ✓"},
+    "copy_failed":        {"en": "Could not copy",    "hr": "Nije uspjelo"},
     "text_smaller":       {"en": "Smaller text",      "hr": "Manje slovo"},
     "text_bigger":        {"en": "Bigger text",       "hr": "Veće slovo"},
     "text_size":          {"en": "Text size",         "hr": "Veličina slova"},
@@ -987,6 +992,26 @@ def llm_bridge():
     """The AI engine to use right now, or None if none is usable."""
     prov = current_routes().get("llm")
     return LLMBridge(prov) if prov else None
+
+
+def copy_pill(text: str, where: str):
+    """A copy button under a reading surface.
+
+    Nothing is rendered for empty text: a button that would copy nothing
+    is a target that wastes a press, and presses are expensive for the
+    people this app is for.
+    """
+    if not (text or "").strip():
+        return
+    components.html(
+        copybtn.html(
+            text,
+            label=t("copy_idle"), busy=t("copy_busy"),
+            done=t("copy_done"), failed=t("copy_failed"),
+            scale=a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
+        ),
+        height=copybtn.HEIGHT,
+    )
 
 
 def text_size_pills(where: str):
@@ -2034,6 +2059,8 @@ if active == "transcribe":
         bcol2.button(t("read_this_btn"), use_container_width=True, key="bridge_btn",
                      help=t("read_this_help"), on_click=read_this)
 
+        copy_pill(st.session_state.get("transcript_box", ""), "transcript")
+
         if st.session_state.get("_correct_error"):
             st.error(st.session_state.pop("_correct_error"))
 
@@ -2125,6 +2152,8 @@ elif active == "talk":
     st.text_area(t("tab_talk"), key="talk_text", height=150,
                  label_visibility="collapsed", placeholder=t("talk_placeholder"))
 
+    copy_pill(st.session_state.get("talk_text", ""), "talk")
+
     rcol1, rcol2 = st.columns(2)
     read_clicked = rcol1.button(t("read_btn"), use_container_width=True, key="read_btn")
     rcol2.button(t("stop_btn"), use_container_width=True, key="stop_btn", help=t("stop_help"))
@@ -2166,6 +2195,8 @@ elif active == "translate":
     if "translate_out" in st.session_state:
         text_size_pills("translate")
         st.text_area("out", key="translate_out", height=150, label_visibility="collapsed")
+
+        copy_pill(st.session_state.get("translate_out", ""), "translate")
 
         tr_col1, tr_col2 = st.columns(2)
         tread_clicked = tr_col1.button(t("read_btn"), use_container_width=True, key="tr_read_btn")
@@ -2233,6 +2264,8 @@ elif active == "read":
     gap = gcol.slider(t("read_gap"), 0.0, 2.0,
                       float(st.session_state.get("read_gap", 0.0)), 0.1,
                       key="read_gap")
+
+    copy_pill(st.session_state.get("read_text", ""), "read")
 
     bcol1, bcol2 = st.columns(2)
     read_go = bcol1.button(t("read_start"), key="read_go_btn")

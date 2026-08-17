@@ -693,10 +693,9 @@ updated. Nothing is started before the one before it is finished.
 
 ### Accessibility (hard rule 6)
     A1. Text size control on every surface           DONE v22
-    A2. Copy and paste pills everywhere, with live
-        state: Copy -> Copying -> Copied. Round,
-        like Baba's original app. Pressed with a
-        finger, never with a keyboard shortcut.
+    A2. Copy pills with live state                DONE v24
+        (paste is V2 — a different mechanism,
+         see §14; it is NOT the same button)
     A3. Hover, press and disabled states          DONE v23
 
 ### Vision (read what is in a picture)
