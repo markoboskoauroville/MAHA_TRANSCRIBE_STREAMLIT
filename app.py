@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v38 (a)"
+APP_VERSION = "v39 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -257,8 +257,8 @@ STRINGS = {
     "tab_transcribe":     {"en": "Transcribe",       "hr": "Transkripcija"},
     "tab_talk":           {"en": "Talk",             "hr": "Čitanje"},
     "speech_lang_label":  {"en": "Speech language",  "hr": "Jezik govora"},
-    "lang_en":            {"en": "English",          "hr": "Engleski"},
-    "lang_hr":            {"en": "Croatian",         "hr": "Hrvatski"},
+    "lang_en":            {"en": "ENG",              "hr": "ENG"},
+    "lang_hr":            {"en": "HR",               "hr": "HR"},
     "transcript_label":   {"en": "Transcript",       "hr": "Transkript"},
     "correct_btn":        {"en": "Correct",          "hr": "Ispravi"},
     "correct_help":       {"en": "Re-check with the accurate model", "hr": "Provjeri ponovno točnijim modelom"},
@@ -291,7 +291,9 @@ STRINGS = {
                             "hr": "Nema Groq ključa u Secrets. Dodaj GROQ_API_KEYS (listu) u Streamlit Cloud → Settings → Secrets."},
     "tab_translate":      {"en": "Translate",        "hr": "Prevedi"},
     "tab_read":           {"en": "Read",             "hr": "Čitaonica"},
-    "tab_settings":       {"en": "Settings",         "hr": "Postavke"},
+    # The gear is the tab label itself — a symbol everyone already
+    # knows, and one less word in a row of words.
+    "tab_settings":       {"en": "\u2699",            "hr": "\u2699"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -425,7 +427,7 @@ STRINGS = {
 
 
 def t(key: str) -> str:
-    lang = st.session_state.get("ui_lang", "hr")
+    lang = st.session_state.get("ui_lang", "en")
     entry = STRINGS.get(key, {})
     return entry.get(lang, entry.get("en", key))
 
@@ -438,7 +440,7 @@ def safe_text(name: str) -> str:
     """
     try:
         block = getattr(help_text, name, {}) or {}
-        lang = st.session_state.get("ui_lang", "hr")
+        lang = st.session_state.get("ui_lang", "en")
         return block.get(lang) or block.get("en") or ""
     except Exception:
         return ""
@@ -922,7 +924,7 @@ def transcribe_any_size(path: str, model: str, language: str, progress_cb=None,
 # restarts, so the file is a same-instance convenience, not a durable store;
 # localStorage is the one that really survives.
 # ----------------------------------------------------------------------
-DEFAULT_SETTINGS = {"ui_lang": "hr", "speech_lang": "hr", "voice": "Gabrijela",
+DEFAULT_SETTINGS = {"ui_lang": "en", "speech_lang": "hr", "voice": "Gabrijela",
                     "voice_engine": "edge", "sp_voice": "beatrice_32",
                     "transcribe_engine": "groq", "text_scale": a11y.DEFAULT_SCALE}
 SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice",
@@ -2049,25 +2051,19 @@ name_the_symbols()
 
 
 if active == "transcribe":
-    # Which engine transcribes is the switchboard's decision, and which
-    # model it uses is the dropdown's. The tab asks for neither by name.
+    # Recorder, then Sound, then Picture, then the language switch at the
+    # bottom. Baba's order, and the right one: the thing people came to do
+    # is first, and the setting they rarely change is last.
     stt = stt_bridge()
     if stt is None:
         st.error(t("routing_none"))
         st.stop()
     t_engine = stt.id
+    lang_code = st.session_state.get("speech_lang", "hr")
 
-    speech_now = st.session_state.get("speech_lang", "hr")
-    lcol1, lcol2 = st.columns(2)
-    lcol1.button(t("lang_hr"), key="tr_hr",
-                 type="primary" if speech_now == "hr" else "secondary",
-                 on_click=set_speech_lang, args=("hr",))
-    lcol2.button(t("lang_en"), key="tr_en",
-                 type="primary" if speech_now == "en" else "secondary",
-                 on_click=set_speech_lang, args=("en",))
-    lang_code = speech_now
-
-    audio = st.audio_input(t("tab_transcribe"), sample_rate=48000, label_visibility="collapsed")
+    st.audio_input(t("tab_transcribe"), sample_rate=48000,
+                   label_visibility="collapsed", key="mic")
+    audio = st.session_state.get("mic")
 
     if audio is not None:
         digest = hashlib.md5(audio.getvalue()).hexdigest()
@@ -2091,16 +2087,10 @@ if active == "transcribe":
             except Exception as e:
                 st.error(str(e))
 
-    # ---- ONE picker, audio or picture ------------------------------
-    # There were two uploaders side by side and people put the wrong file
-    # in the wrong one — Baba hit exactly that. There is only one now,
-    # and the file type decides what happens to it. Fewer targets, no
-    # wrong choice available.
-    # TWO pickers again, and labelled. One combined picker looked tidier
-    # but Android's file chooser filters by the accept list, and with
-    # audio types in it the picture files were greyed out — Baba could
-    # not select an image at all. Two clearly-named pickers beat one that
-    # cannot reach half its file types.
+    # Two pickers, named and nothing else. Streamlit's own "Limit 500MB
+    # per file • MP3, WAV, …" line is hidden in CSS: it is noise for
+    # someone who just wants to hand over a file, and it is the longest
+    # text on the tab.
     ucol1, ucol2 = st.columns(2)
     with ucol1:
         st.caption(t("pick_sound"))
@@ -2251,7 +2241,7 @@ if active == "transcribe":
         pcols = st.columns(len(rest))
         for i, pid in enumerate(rest):
             pcols[i].button(
-                TR.preset_label(pid, st.session_state.get("ui_lang", "hr")),
+                TR.preset_label(pid, st.session_state.get("ui_lang", "en")),
                 key="tr_preset_" + pid, on_click=_apply_transform, args=(pid, ""))
 
         st.text_input(t("ai_ask"), key="ai_instruction",
@@ -2274,6 +2264,20 @@ if active == "transcribe":
 # ----------------------------------------------------------------------
 # Talk
 # ----------------------------------------------------------------------
+    # The spoken language, at the very bottom: it is set once and then
+    # left alone, so it does not belong above the thing people came for.
+    st.caption("")
+    with st.container(key="langrow"):
+        lcol1, lcol2, _ = st.columns([1, 1, 4])
+        speech_now = st.session_state.get("speech_lang", "hr")
+        lcol1.button(t("lang_hr"), key="tr_hr",
+                     type="primary" if speech_now == "hr" else "secondary",
+                     on_click=set_speech_lang, args=("hr",))
+        lcol2.button(t("lang_en"), key="tr_en",
+                     type="primary" if speech_now == "en" else "secondary",
+                     on_click=set_speech_lang, args=("en",))
+
+
 elif active == "talk":
     # ONE PLAYER FOR THE WHOLE TEXT.
     #
@@ -2514,7 +2518,7 @@ elif active == "translate":
 # ----------------------------------------------------------------------
 elif active == "settings":
     if True:
-        lang_now = st.session_state.get("ui_lang", "hr")
+        lang_now = st.session_state.get("ui_lang", "en")
         lcol1, lcol2 = st.columns(2)
         lcol1.button("[HR]", key="ui_hr",
                      type="primary" if lang_now == "hr" else "secondary",
@@ -2659,7 +2663,7 @@ elif active == "settings":
             # engine is doing; reading a column tells you who does one job.
             # Everything here is derived from the registry, so a new
             # provider grows a new row on its own.
-            ui_lang = st.session_state.get("ui_lang", "hr")
+            ui_lang = st.session_state.get("ui_lang", "en")
             rows, _routes = RO.matrix(PROVIDERS, provider_usable, st.session_state)
             widths = [1] * (1 + len(RO.TASKS))   # equal, so columns align
 

@@ -214,7 +214,24 @@ def css() -> str:
     .stSlider [data-baseweb="slider"] div[role="slider"] {{ background: var(--amber); }}
     .stCheckbox [data-baseweb="checkbox"] span {{ border-color: var(--line); }}
 
-    /* ---- FILE UPLOADER -------------------------------------------- */
+    /* ---- FILE UPLOADER --------------------------------------------
+       Streamlit prints "Drag and drop file here / Limit 500MB per file •
+       MP3, WAV, M4A, …" inside every uploader. On a phone that is the
+       longest text on the screen, it is technical, and it tells someone
+       who just wants to hand over a file nothing they can act on. The
+       Browse button stays; the essay goes. */
+    [data-testid="stFileUploaderDropzoneInstructions"] {{ display: none !important; }}
+    [data-testid="stFileUploaderDropzone"] {{
+      padding: 0.4rem 0.5rem !important;
+      min-height: 0 !important;
+    }}
+    /* The caption above each uploader was landing ON the dashed border,
+       because the caption rule pulls its margin in tight and the
+       shrunken dropzone left nothing between them. */
+    [data-testid="stFileUploader"] {{ margin-top: 0.25rem; }}
+    [data-testid="stFileUploaderDropzone"] button {{ margin: 0 auto; }}
+
+
     [data-testid="stFileUploader"] section,
     [data-testid="stFileUploaderDropzone"] {{
       background: var(--surface-2);
@@ -275,6 +292,13 @@ def css() -> str:
       padding: 4px 6px !important;
     }}
     .st-key-topbar .stPopover button:hover {{ color: var(--amber) !important; }}
+
+    /* Language switch: short labels, so nearly round. */
+    .st-key-langrow .stButton button {{
+      border-radius: 999px;
+      min-width: 56px;
+      padding: 0.45rem 0.6rem !important;
+    }}
 
     /* ---- RHYTHM ---------------------------------------------------
        His spacing is tight: 4px inside a row, 6px between rows. Streamlit
