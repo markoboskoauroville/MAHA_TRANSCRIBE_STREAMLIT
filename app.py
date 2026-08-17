@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v43 (a)"
+APP_VERSION = "v44 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -402,6 +402,11 @@ STRINGS = {
     "copy_done_word":     {"en": "copied",            "hr": "kopirano"},
     "translate_out_ph":   {"en": "The translation will appear here",
                             "hr": "Ovdje će se pojaviti prijevod"},
+    "settings_owner_only": {"en": "Settings are managed by the owner.",
+                            "hr": "Postavkama upravlja vlasnik."},
+    "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
+    "admin_off":          {"en": "Usage log not connected.",
+                            "hr": "Zapis korištenja nije spojen."},
     "sig_transcribe":     {"en": "transcribe",        "hr": "transkripcija"},
     "sig_read":           {"en": "read",              "hr": "čitanje"},
     "sig_translate":      {"en": "translate",         "hr": "prijevod"},
@@ -1329,6 +1334,68 @@ def copy_pill(text: str, where: str):
         ),
         height=copybtn.HEIGHT,
     )
+
+
+FLASH_SECONDS = 0.9
+
+
+def flash(name: str):
+    """Mark a command as just-pressed, so it can light up briefly.
+
+    Streamlit reruns after a click, so the press itself is invisible by
+    the time the page redraws — :active never gets a chance to show. A
+    short-lived stamp in session_state gives the next render something to
+    colour, which is what makes the row feel like it responded.
+    """
+    st.session_state[f"_flash_{name}"] = time.time()
+
+
+def flashing(name: str) -> bool:
+    at = st.session_state.get(f"_flash_{name}", 0)
+    return bool(at) and (time.time() - at) < FLASH_SECONDS
+
+
+def cmd_row(where: str, items, target_key: str = None, copy_text: str = ""):
+    """One terminal-style line of commands, hard against the box below.
+
+    `items` is [(label, key, on_click)]. A label of "paste" or "copy"
+    becomes the matching component instead of a button, because those two
+    have to live in an iframe. Separated by dim pipes so the row reads as
+    a command line rather than as loose words.
+    """
+    with st.container(key=f"cmdrow_{where}"):
+        widths, parts = [], []
+        for label, key, cb in items:
+            widths.append(1.5 if label in ("paste", "copy") else 1.1)
+            widths.append(0.25)
+        widths.append(3)
+        cols = st.columns(widths)
+
+        for i, (label, key, cb) in enumerate(items):
+            col = cols[i * 2]
+            with col:
+                if label == "paste":
+                    got = paste_target(where)
+                    if got and target_key:
+                        st.session_state[target_key] = got
+                        flash(f"{where}_paste")
+                        st.rerun()
+                elif label == "copy":
+                    if (copy_text or "").strip():
+                        components.html(
+                            copybtn.cp_html(copy_text, label=t("copy_word"),
+                                            done_label=t("copy_done_word"),
+                                            failed_label="—", size=0),
+                            height=44)
+                    else:
+                        st.caption(t("copy_word"))
+                else:
+                    st.button(label, key=key,
+                              type="primary" if flashing(key or label) else "secondary",
+                              on_click=cb)
+            if i < len(items) - 1:
+                cols[i * 2 + 1].markdown('<div class="cmdpipe">|</div>',
+                                         unsafe_allow_html=True)
 
 
 def tab_signature(name: str):
@@ -2508,70 +2575,54 @@ elif active == "talk":
 
 
 elif active == "translate":
-    # WORDS, NOT GLYPHS, ABOVE A TEXT BOX.
+    # THE LANGUAGE MATRIX SITS BETWEEN THE BOXES.
     #
-    # Baba: "Every command above the text box is a command. We need to
-    # see what is it." He is right, and it is not a contradiction of the
-    # symbols elsewhere: ▶ and ■ on a player are universal, but no glyph
-    # says "translate". A command whose meaning has to be guessed is a
-    # command that will not be pressed by the people this app is for.
+    # Baba's arrow: both language rows belong in the gap between the two
+    # text boxes — from on top, to underneath — so the pair reads as one
+    # matrix pointing from the box above into the box below. Before, the
+    # "from" row was stranded at the top of the tab with nothing near it
+    # to be "from" of.
     #
-    # Order is the instruction, left to right:  paste → translate → clear
-    #
-    # BOTH BOXES ARE ALWAYS THERE. The result box used to appear only
-    # once a translation existed, so the screen changed shape under the
-    # person and there was nothing to tell them where the answer would
-    # land. An empty box waiting is an explanation; a box that materialises
-    # is a surprise.
+    # COMMANDS TOUCH THE BOX THEY ACT ON, in one left-aligned terminal
+    # row separated by pipes:  paste | translate | clear
+    # Same size, same colour, evenly spaced, hard against the box, so the
+    # row reads as a line of commands rather than as scattered buttons.
     st.session_state.setdefault("translate_src", "hr")
     st.session_state.setdefault("translate_tgt", "en")
     st.session_state.setdefault("translate_out", "")
 
-    lang_pills("srcpill", "src", st.session_state["translate_src"])
+    def _clear_src():
+        st.session_state["translate_src_text"] = ""
+        st.session_state["translate_out"] = ""
+        flash("tr_src")
 
-    with st.container(key="cmdrow_src"):
-        # paste needs a wider column than the plain word buttons: it is
-        # an iframe, so it cannot shrink to its text the way a button can.
-        c1, c2, c3, _ = st.columns([1.4, 1.1, 1, 1])
-        with c1:
-            got = paste_target("trsrc")
-            if got:
-                st.session_state["translate_src_text"] = got
-                st.rerun()
-        c2.button(t("translate_btn_word"), key="do_translate_btn",
-                  on_click=do_translate)
+    def _do_translate():
+        do_translate()
+        flash("tr_go")
 
-        def _clear_src():
-            st.session_state["translate_src_text"] = ""
-            st.session_state["translate_out"] = ""
-
-        c3.button(t("clear_word"), key="tr_clear_src", on_click=_clear_src)
+    cmd_row("trsrc", [
+        ("paste", None, None),
+        (t("translate_btn_word"), "do_translate_btn", _do_translate),
+        (t("clear_word"), "tr_clear_src", _clear_src),
+    ], target_key="translate_src_text")
 
     st.text_area("src", key="translate_src_text", height=120,
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
 
+    lang_pills("srcpill", "src", st.session_state["translate_src"])
     lang_pills("tgtpill", "tgt", st.session_state["translate_tgt"])
 
     if st.session_state.get("_translate_error"):
         st.error(st.session_state.pop("_translate_error"))
 
-    with st.container(key="cmdrow_out"):
-        o1, o2, _ = st.columns([1.4, 1.1, 1.5])
-        with o1:
-            out_now = (st.session_state.get("translate_out") or "").strip()
-            if out_now:
-                components.html(
-                    copybtn.cp_html(out_now, label=t("copy_word"),
-                                    done_label=t("copy_done_word"),
-                                    failed_label="—", size=0),
-                    height=52)
-            else:
-                st.caption(t("copy_word"))
+    def _clear_out():
+        st.session_state["translate_out"] = ""
+        flash("tr_out")
 
-        def _clear_out():
-            st.session_state["translate_out"] = ""
-
-        o2.button(t("clear_word"), key="tr_clear_out", on_click=_clear_out)
+    cmd_row("trout", [
+        ("copy", None, None),
+        (t("clear_word"), "tr_clear_out", _clear_out),
+    ], copy_text=st.session_state.get("translate_out", ""))
 
     st.text_area("out", key="translate_out", height=150,
                  label_visibility="collapsed", placeholder=t("translate_out_ph"))
@@ -2580,264 +2631,72 @@ elif active == "translate":
 
 
 elif active == "settings":
-    if True:
+    # THE SIMPLEST THING THAT WORKS, AND ONLY FOR THE OWNER.
+    #
+    # Baba: "I don't like this patch bay and other things. Make it as
+    # simple as possible... settings are hidden from other users."
+    #
+    # So: keys, language, help. Nothing else. The patch bay, the model
+    # pickers and the voice catalogue still EXIST and still work — they
+    # are just not shown, because choosing an engine is a decision the
+    # owner makes once for everyone, not something a reader should meet.
+    # Routing falls back to the defaults, which is what it already did
+    # whenever nothing was chosen.
+    if not is_admin():
+        st.caption(t("settings_owner_only"))
+    else:
+        # ---- who the app talks to ---------------------------------
+        rings = load_keys()
+        for prov in PROVIDERS.keyed_providers():
+            ring = get_ring(prov.id)
+            n = len(ring["keys"])
+            live = sum(1 for k in ring["keys"] if k["state"] != "dead")
+            with st.expander(f"{prov.label}  ·  {live}/{n}" if n else prov.label):
+                st.file_uploader(t("key_file_label"), key=f"{prov.id}_key_file",
+                                 label_visibility="collapsed")
+                st.text_area(t("key_paste_label"), key=f"{prov.id}_key_paste",
+                             height=68, label_visibility="collapsed",
+                             placeholder=t("key_paste_ph"))
+
+                def _import(pid=prov.id, pr=prov):
+                    raw = ""
+                    f = st.session_state.get(f"{pid}_key_file")
+                    if f is not None:
+                        raw += f.getvalue().decode("utf-8", "replace")
+                    raw += " " + (st.session_state.get(f"{pid}_key_paste") or "")
+                    added = kr.import_keys(get_ring(pid), raw,
+                                           prefixes=pr.key_prefixes)
+                    save_rings()
+                    st.session_state["_key_msg"] = (
+                        f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
+
+                st.button(t("import_keys_btn"), key=f"{prov.id}_import",
+                          on_click=_import)
+
+                if ring["keys"]:
+                    render_key_list(ring, rings, prov.id,
+                                    (lambda pr: (lambda key: pr.test_key(key)))(prov))
+
+        if st.session_state.get("_key_msg"):
+            st.caption(st.session_state.pop("_key_msg"))
+
+        # ---- interface language -----------------------------------
+        st.caption(t("settings_lang"))
+        lcol1, lcol2, _ = st.columns([1, 1, 4])
         lang_now = st.session_state.get("ui_lang", "en")
-        lcol1, lcol2 = st.columns(2)
-        lcol1.button("[HR]", key="ui_hr",
-                     type="primary" if lang_now == "hr" else "secondary",
-                     on_click=set_ui_lang, args=("hr",))
-        lcol2.button("[ENG]", key="ui_en",
+        lcol1.button("ENG", key="ui_en",
                      type="primary" if lang_now == "en" else "secondary",
                      on_click=set_ui_lang, args=("en",))
+        lcol2.button("HR", key="ui_hr",
+                     type="primary" if lang_now == "hr" else "secondary",
+                     on_click=set_ui_lang, args=("hr",))
 
-        st.caption(t("settings_speech"))
-        scol1, scol2 = st.columns(2)
-        speech_now = st.session_state.get("speech_lang", "hr")
-        scol1.button(t("lang_hr"), key="sp_hr",
-                     type="primary" if speech_now == "hr" else "secondary",
-                     on_click=set_speech_lang, args=("hr",))
-        scol2.button(t("lang_en"), key="sp_en",
-                     type="primary" if speech_now == "en" else "secondary",
-                     on_click=set_speech_lang, args=("en",))
-
-        st.caption(t("settings_voice"))
-        voice_picker("setvoice")
-
-        with st.expander(t("speechify_title")):
-            rings = load_keys()
-            sp_ring = get_ring("speechify")
-
-            st.file_uploader(t("key_file_label"), key="sp_key_file", label_visibility="collapsed")
-            st.text_area(t("key_paste_label"), key="sp_key_paste", height=70,
-                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
-
-            def _sp_import():
-                raw = ""
-                f = st.session_state.get("sp_key_file")
-                if f is not None:
-                    raw += f.getvalue().decode("utf-8", "replace")
-                raw += " " + (st.session_state.get("sp_key_paste") or "")
-                added = ring_import(sp_ring, raw, SPEECHIFY_PREFIXES)
-                persist_keys(rings)
-                st.session_state["_sp_msg"] = (
-                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
-
-            st.button(t("import_keys_btn"), key="sp_import_btn",
-                      use_container_width=True, on_click=_sp_import)
-
-            if sp_ring["keys"]:
-                render_key_list(sp_ring, rings, "sp", sp_test_one)
-
-            if st.session_state.get("_sp_msg"):
-                st.caption(st.session_state.pop("_sp_msg"))
-
-            # ---- the whole catalogue --------------------------------
-            # 979 voices across 36 locales, not the curated eight. Loaded
-            # on request rather than on every settings open, because it is
-            # five paged calls. NOTHING filters by language on purpose:
-            # any Speechify voice may read any text, and Croatian in an
-            # English voice both sounds fine and keeps its word timings.
-            if kr.usable(sp_ring):
-                st.caption(t("vc_title"))
-                cat = st.session_state.get("_sp_catalogue")
-
-                def _load_catalogue():
-                    try:
-                        voices, err = PROVIDERS.get("speechify").catalogue(
-                            lambda a: kr.rotate(sp_ring, lambda k: a(k)))
-                        save_rings()
-                        st.session_state["_sp_catalogue"] = voices
-                        if err:
-                            st.session_state["_sp_msg"] = str(err)[:100]
-                    except Exception as e:
-                        st.session_state["_sp_msg"] = str(e)[:100]
-
-                if not cat:
-                    st.button(t("vc_load"), key="vc_load_btn", on_click=_load_catalogue)
-                else:
-                    locales = sorted({v.lang for v in cat if v.lang})
-                    fcol1, fcol2 = st.columns(2)
-                    loc = fcol1.selectbox(
-                        "loc", [t("vc_any")] + locales, key="vc_loc",
-                        label_visibility="collapsed")
-                    gen = fcol2.selectbox(
-                        "gen", [t("vc_any"), "F", "M"], key="vc_gen",
-                        label_visibility="collapsed")
-                    q = st.text_input(t("vc_search"), key="vc_q",
-                                      label_visibility="collapsed",
-                                      placeholder=t("vc_search"))
-
-                    shown = [v for v in cat
-                             if (loc == t("vc_any") or v.lang == loc)
-                             and (gen == t("vc_any") or v.gender == gen)
-                             and (not q or q.lower() in v.name.lower())]
-                    st.caption(f"{len(shown)} {t('vc_count')}")
-
-                    cur = st.session_state.get("sp_voice", "beatrice_32")
-                    names = {v.id: f"{v.name} · {v.lang} · {v.gender}" for v in shown}
-                    ids = [v.id for v in shown][:400]   # keep the widget sane
-                    if ids:
-                        idx = ids.index(cur) if cur in ids else 0
-
-                        def _use_voice():
-                            st.session_state["sp_voice"] = st.session_state["vc_sel"]
-                            persist_settings()
-
-                        st.selectbox("voice", ids, index=idx, key="vc_sel",
-                                     format_func=lambda i: names.get(i, i),
-                                     label_visibility="collapsed",
-                                     on_change=_use_voice)
-                    st.caption(f"{t('vc_current')}: {cur}")
-                    st.caption(t("vc_note"))
-
-
-        with st.expander(t("assemblyai_title")):
-            aai_ring = get_ring("assemblyai")
-
-            st.file_uploader(t("key_file_label"), key="aai_key_file", label_visibility="collapsed")
-            st.text_area(t("key_paste_label"), key="aai_key_paste", height=70,
-                         label_visibility="collapsed", placeholder=t("key_paste_ph"))
-
-            def _aai_import():
-                raw = ""
-                f = st.session_state.get("aai_key_file")
-                if f is not None:
-                    raw += f.getvalue().decode("utf-8", "replace")
-                raw += " " + (st.session_state.get("aai_key_paste") or "")
-                added = ring_import(aai_ring, raw, ASSEMBLYAI_PREFIXES)
-                persist_keys(rings)
-                st.session_state["_aai_msg"] = (
-                    f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
-
-            st.button(t("import_keys_btn"), key="aai_import_btn",
-                      use_container_width=True, on_click=_aai_import)
-
-            if aai_ring["keys"]:
-                render_key_list(aai_ring, rings, "aai", aai_test_one)
-
-            if st.session_state.get("_aai_msg"):
-                st.caption(st.session_state.pop("_aai_msg"))
-
-
-        with st.expander(t("routing_title")):
-            # A patch bay, the way a digital desk routes buses: engines
-            # down the side, functions across the top, and you press the
-            # crosspoint where they meet. Reading a row tells you what one
-            # engine is doing; reading a column tells you who does one job.
-            # Everything here is derived from the registry, so a new
-            # provider grows a new row on its own.
-            ui_lang = st.session_state.get("ui_lang", "en")
-            rows, _routes = RO.matrix(PROVIDERS, provider_usable, st.session_state)
-            widths = [1] * (1 + len(RO.TASKS))   # equal, so columns align
-
-            with st.container(key="patchbay"):
-                head = st.columns(widths)
-                head[0].caption("")
-                for i, task in enumerate(RO.TASKS):
-                    head[i + 1].caption(f"**{task.short}**")
-
-                for prov, cells in rows:
-                    rcols = st.columns(widths)
-                    rcols[0].caption(prov.label)
-                    for i, (task, state) in enumerate(cells):
-                        cell = rcols[i + 1]
-                        if state == RO.BLANK:
-                            # Not a gap — an engine that cannot do this
-                            # job. Shown, not hidden, so the grid keeps
-                            # its shape and every column stays readable.
-                            cell.caption("·")
-                        elif state == RO.NOKEY:
-                            cell.button("✕", key=f"pb_{task.id}_{prov.id}",
-                                        disabled=True)
-                        else:
-                            def _patch(k=task.setting_key, v=prov.id):
-                                st.session_state[k] = v
-                                persist_settings()
-                            # No help= here: a tooltip wraps the button in
-                            # inline spans with zero width, so width:100%
-                            # collapses and the grid loses its columns.
-                            # The legend under the bay carries the meaning.
-                            cell.button(
-                                "●" if state == RO.PATCHED else "○",
-                                key=f"pb_{task.id}_{prov.id}",
-                                type="primary" if state == RO.PATCHED else "secondary",
-                                on_click=_patch)
-
-            st.caption("  ·  ".join(f"**{tk.short}** {tk.label(ui_lang)}"
-                                    for tk in RO.TASKS))
-
-            # ---- model per engine ---------------------------------
-            # Asked from the provider itself, so a model released years
-            # from now appears here without this app being touched. An
-            # engine with nothing patched is skipped: choosing a model for
-            # a job nobody gave it is noise.
-            st.caption("")
-            for prov, cells in rows:
-                if not any(state == RO.PATCHED for _, state in cells):
-                    continue
-                if not provider_usable(prov):
-                    continue
-                models, live, merr = provider_models(prov)
-                if not models:
-                    continue
-                mcol, rcol = st.columns([5, 1])
-                ids = [m.id for m in models]
-                labels = {m.id: m.label() for m in models}
-                cur = chosen_model(prov)
-                idx = ids.index(cur) if cur in ids else 0
-
-                def _pick_model(pid=prov.id, key=f"msel_{prov.id}"):
-                    st.session_state[f"model_{pid}"] = st.session_state[key]
-                    persist_settings()
-
-                mcol.selectbox(
-                    f"{prov.label} — {t('model_label')}", ids, index=idx,
-                    key=f"msel_{prov.id}", format_func=lambda i: labels.get(i, i),
-                    on_change=_pick_model)
-                rcol.button("↻", key=f"mref_{prov.id}",
-                            help=t("model_refresh"),
-                            on_click=lambda pr=prov: provider_models(pr, force=True))
-                st.caption(("✓ " + t("model_live")) if live
-                           else ("· " + t("model_static")))
-                if merr:
-                    st.caption("⚠ " + str(merr)[:90])
-
-        if is_admin():
-            with st.expander(t("admin_title")):
-                st_ = USAGE.status()
-                st.caption(t("admin_on") if st_["enabled"] else t("admin_off"))
-                st.caption(f"{t('admin_sent')}: {st_['sent']}   ·   "
-                           f"{t('admin_failed')}: {st_['failed']}")
-                st.caption(f"{t('admin_session')}: {st_['session_minutes']}")
-                if st_["last_error"]:
-                    st.caption("⚠ " + st_["last_error"][:120])
-
-                # The people who can log in ARE the passwords in secrets,
-                # so this is the definitive list — and it is what the
-                # sheet will grow a tab for. Never show the passwords
-                # themselves; the owner already knows them, and anyone
-                # looking over a shoulder should not learn them here.
-                names = [p.strip().lower() for p in app_passwords() if p.strip()]
-                st.caption(f"{t('admin_users')}: {len(names)}")
-                st.caption("  ·  ".join(names))
-
-                def _test_signal():
-                    USAGE.log("test", 1, UNIT_CHARS, "admin")
-                    st.session_state["_admin_msg"] = t("admin_test_sent")
-                    st.session_state["_admin_msg_until"] = time.time() + 8
-
-                st.button(t("admin_test"), key="admin_test_btn", on_click=_test_signal)
-                _am, _au = st.session_state.get("_admin_msg"), st.session_state.get("_admin_msg_until", 0)
-                if _am and time.time() < _au:
-                    st.caption(_am)
-                elif _am:
-                    st.session_state.pop("_admin_msg", None)
+        # ---- usage log --------------------------------------------
+        u = USAGE.status()
+        st.caption(f"{t('admin_sent')}: {u['sent']} · {t('admin_failed')}: {u['failed']}"
+                   if u["enabled"] else t("admin_off"))
 
         with st.expander(t("help_title")):
             st.markdown(safe_text("HELP"))
 
-        st.button(t("forget_me"), key="forget_btn", use_container_width=True,
-                  on_click=forget_me)
-        if st.session_state.pop("_forgotten", False):
-            st.caption(t("forgotten"))
-        st.caption(APP_VERSION)
+    tab_signature("")

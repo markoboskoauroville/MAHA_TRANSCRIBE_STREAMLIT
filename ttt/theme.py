@@ -293,6 +293,37 @@ def css() -> str:
     }}
     .st-key-topbar .stPopover button:hover {{ color: var(--amber) !important; }}
 
+    /* ---- COMMAND ROWS ---------------------------------------------
+       A terminal line, not a toolbar: same size, same colour, evenly
+       spaced, left-aligned, and pressed hard against the box it acts on.
+       The pipes do the work borders would otherwise have to. */
+    [class*="st-key-cmdrow_"] {{ margin-bottom: -0.55rem; }}
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"] {{
+      gap: 0 !important;
+      align-items: center;
+      flex-wrap: nowrap !important;
+    }}
+    [class*="st-key-cmdrow_"] div[data-testid="stVerticalBlock"] {{ gap: 0; }}
+    .cmdpipe {{
+      color: var(--line);
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 0.95rem;
+      line-height: 2.3;
+      user-select: none;
+    }}
+    /* The pressed state. Streamlit re-renders after a click, so :active
+       is gone before the eye sees it — the flash is driven from Python
+       instead and lands here as the primary style. */
+    [class*="st-key-cmdrow_"] .stButton button[kind="primary"] {{
+      background: transparent !important;
+      color: var(--amber) !important;
+      border: none !important;
+    }}
+    [class*="st-key-cmdrow_"] .stButton button[kind="primary"] p {{
+      color: var(--amber) !important;
+    }}
+
     /* The row above the transcript: text links, not buttons. Baba asked
        for "text links" so the row costs almost nothing — the text is what
        matters on that screen, not the furniture around it. */
@@ -328,10 +359,10 @@ def css() -> str:
        which clipped "paste" down to "as". They are always first in the
        row, so the first column keeps a real width. */
     [class*="st-key-cmdrow_"] div[data-testid="stColumn"]:first-child {{
-      flex: 0 0 96px !important;
-      min-width: 96px !important;
+      flex: 0 0 90px !important;
+      min-width: 90px !important;
     }}
-    [class*="st-key-cmdrow_"] iframe {{ width: 96px !important; }}
+    [class*="st-key-cmdrow_"] iframe {{ width: 90px !important; }}
 
     /* Language switch: short labels, so nearly round. */
     .st-key-langrow .stButton button {{
