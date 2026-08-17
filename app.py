@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v44 (a)"
+APP_VERSION = "v45 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -397,6 +397,10 @@ STRINGS = {
     "paste_hint":         {"en": "tap, then paste",   "hr": "dodirni, pa zalijepi"},
     "paste_done":         {"en": "pasted ✓",          "hr": "zalijepljeno ✓"},
     "translate_btn_word": {"en": "translate",         "hr": "prevedi"},
+    "grammar_word":       {"en": "grammar",           "hr": "gramatika"},
+    "reshape_word":       {"en": "reshape",           "hr": "preoblikuj"},
+    "transcript_ph":      {"en": "Your words will appear here",
+                            "hr": "Ovdje će se pojaviti tvoje riječi"},
     "clear_word":         {"en": "clear",             "hr": "obriši"},
     "copy_word":          {"en": "copy",              "hr": "kopiraj"},
     "copy_done_word":     {"en": "copied",            "hr": "kopirano"},
@@ -1356,46 +1360,49 @@ def flashing(name: str) -> bool:
 
 
 def cmd_row(where: str, items, target_key: str = None, copy_text: str = ""):
-    """One terminal-style line of commands, hard against the box below.
+    """One terminal line:  | paste | translate | clear |
 
-    `items` is [(label, key, on_click)]. A label of "paste" or "copy"
-    becomes the matching component instead of a button, because those two
-    have to live in an iframe. Separated by dim pipes so the row reads as
-    a command line rather than as loose words.
+    Every item is the same width and the same style, with a pipe before
+    the first, between each, and after the last — Baba's correction, and
+    it is what makes the row read as one line of commands instead of
+    words scattered across the screen. paste and copy are components
+    rather than buttons, but they are styled to be indistinguishable.
     """
     with st.container(key=f"cmdrow_{where}"):
-        widths, parts = [], []
-        for label, key, cb in items:
-            widths.append(1.5 if label in ("paste", "copy") else 1.1)
-            widths.append(0.25)
-        widths.append(3)
+        n = len(items)
+        # pipe, item, pipe, item ... pipe, then empty space to the right
+        # Equal item columns and narrow pipe columns, so every command is
+        # the same width whatever its word length — a terminal line, not
+        # a ransom note.
+        widths = [0.14]
+        for _ in items:
+            widths += [1.0, 0.14]
+        widths += [max(0.3, 4.0 - n * 1.14)]
         cols = st.columns(widths)
 
+        def pipe(col):
+            col.markdown('<div class="cmdpipe">|</div>', unsafe_allow_html=True)
+
+        pipe(cols[0])
         for i, (label, key, cb) in enumerate(items):
-            col = cols[i * 2]
+            col = cols[1 + i * 2]
             with col:
                 if label == "paste":
                     got = paste_target(where)
                     if got and target_key:
                         st.session_state[target_key] = got
-                        flash(f"{where}_paste")
                         st.rerun()
                 elif label == "copy":
-                    if (copy_text or "").strip():
-                        components.html(
-                            copybtn.cp_html(copy_text, label=t("copy_word"),
-                                            done_label=t("copy_done_word"),
-                                            failed_label="—", size=0),
-                            height=44)
-                    else:
-                        st.caption(t("copy_word"))
+                    components.html(
+                        copybtn.cp_html(copy_text or "", label=t("copy_word"),
+                                        done_label=t("copy_done_word"),
+                                        failed_label="—", size=0),
+                        height=38)
                 else:
-                    st.button(label, key=key,
+                    st.button(label, key=key, use_container_width=True,
                               type="primary" if flashing(key or label) else "secondary",
                               on_click=cb)
-            if i < len(items) - 1:
-                cols[i * 2 + 1].markdown('<div class="cmdpipe">|</div>',
-                                         unsafe_allow_html=True)
+            pipe(cols[2 + i * 2])
 
 
 def tab_signature(name: str):
@@ -1450,80 +1457,27 @@ def name_the_symbols():
         "})();</script>", height=0)
 
 
-def text_size_pills(where: str):
-    """A - / size / + row placed directly above the text it changes.
+def size_row(where: str):
+    """A bare − and + against the right edge, hard above the box.
 
-    Above, not buried in Settings: someone who cannot read the screen must
-    not have to navigate a menu they cannot read in order to make it
-    readable. Every reading surface gets its own row, all driving the one
-    shared setting, so the size is consistent everywhere and adjustable
-    from wherever the person happens to be.
+    No background, no label, no percentage: the same terminal language as
+    the command rows, but pushed right so it does not compete with the
+    commands on the left. Baba: "small plus and minuses, right aligned,
+    almost touching the edge of the code box."
     """
     scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
 
-    def _set(delta_fn):
-        st.session_state["text_scale"] = delta_fn(
+    def _set(fn):
+        st.session_state["text_scale"] = fn(
             st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
         persist_settings()
 
-    # Just the two buttons. The sentence "Veličina slova 130%" spelled out
-    # what A− and A+ already show, and cost a whole row on a phone. The
-    # percentage lives in the tooltip for anyone who wants it.
-    c1, c2, _ = st.columns([1, 1, 4])
-    c1.button("A−", key=f"tsz_minus_{where}",
-              help=f"{t('text_smaller')} · {a11y.percent(scale)}%",
-              disabled=a11y.at_min(scale), on_click=_set, args=(a11y.smaller,))
-    c2.button("A+", key=f"tsz_plus_{where}",
-              help=f"{t('text_bigger')} · {a11y.percent(scale)}%",
-              disabled=a11y.at_max(scale), on_click=_set, args=(a11y.bigger,))
-
-
-def vision_model() -> str:
-    """Which model can read a picture, asked from the provider.
-
-    Cached for the session because it is a model-list call, and refreshed
-    by the same ↻ that refreshes the model pickers.
-    """
-    if "_vision_model" not in st.session_state:
-        chosen = ""
-        try:
-            groq = PROVIDERS.get("groq")
-            for key in (groq.keys or []):
-                data, err, _ = http_json_groq_models(key)
-                if err:
-                    continue
-                found = vision.find_vision_models(data.get("data", []))
-                if found:
-                    chosen = found[0]
-                break
-        except Exception:
-            chosen = ""
-        st.session_state["_vision_model"] = chosen
-    return st.session_state["_vision_model"]
-
-
-def http_json_groq_models(key: str):
-    from ttt.providers.base import http_json, classify_standard
-    return http_json("https://api.groq.com/openai/v1/models",
-                     {"Authorization": "Bearer " + key},
-                     timeout=30, classify=classify_standard)
-
-
-def read_picture(raw: bytes, filename: str) -> str:
-    """Text out of an image, through the Groq ring."""
-    model = vision_model()
-    if not model:
-        raise RuntimeError(t("img_no_model"))
-    ring = st.session_state.get("_groq_ring")
-
-    def _call(payload):
-        from ttt.providers.base import http_json, classify_standard
-        return kr.rotate(ring, lambda k: http_json(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {"Authorization": "Bearer " + k}, payload=payload,
-            method="POST", timeout=120, classify=classify_standard))
-
-    return vision.read_image(_call, model, raw, filename)
+    with st.container(key=f"sizerow_{where}"):
+        _, c1, c2 = st.columns([6, 1, 1])
+        c1.button("−", key=f"sz_minus_{where}", help=t("text_smaller"),
+                  disabled=a11y.at_min(scale), on_click=_set, args=(a11y.smaller,))
+        c2.button("+", key=f"sz_plus_{where}", help=t("text_bigger"),
+                  disabled=a11y.at_max(scale), on_click=_set, args=(a11y.bigger,))
 
 
 def audio_seconds(path) -> float:
@@ -2280,92 +2234,53 @@ if active == "transcribe":
                         except Exception:
                             pass
 
-    if "transcript_box" in st.session_state:
-        # THE RESULT, AND ALMOST NOTHING ELSE.
-        #
-        # One quiet row above the box — smaller, bigger, copy, clear —
-        # then the text. Reading lives on its own tab and is not offered
-        # here; a screen that shows you your words should not also be a
-        # menu. GRAMMAR and RE-SHAPE stay because they act ON this text
-        # and are two presses from Baba's own app; the extra presets and
-        # the free-form AI box were removed as clutter.
-        with st.container(key="txttools"):
-            tcol1, tcol2, tcol3, tcol4, _ = st.columns([1, 1, 1, 1, 3])
-            scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+    # THE BOX IS ALWAYS HERE. Baba: "I don't want the parts of user
+    # interface are appearing and disappearing." A screen that grows new
+    # sections as you use it is a screen you have to re-learn each time;
+    # a box that is simply empty tells you where the words will land.
+    st.session_state.setdefault("transcript_box", "")
 
-            def _smaller():
-                st.session_state["text_scale"] = a11y.smaller(
-                    st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-                persist_settings()
+    def _clear_all():
+        st.session_state["transcript_box"] = ""
+        for k in ("_transcript_prev", "flac_path", "_digest", "_pick_digest",
+                  "_transcribe_method"):
+            st.session_state.pop(k, None)
+        flash("tx_clear")
 
-            def _bigger():
-                st.session_state["text_scale"] = a11y.bigger(
-                    st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-                persist_settings()
+    def _apply_transform(preset="", instruction=""):
+        source = (st.session_state.get("transcript_box") or "").strip()
+        try:
+            llm = llm_bridge()
+            if llm is None:
+                raise RuntimeError(t("routing_none"))
+            out = TR_.run(llm, source, instruction=instruction, preset=preset)
+            st.session_state["_transcript_prev"] = source
+            st.session_state["transcript_box"] = out
+            USAGE.log("transform", len(source), UNIT_CHARS, llm.id)
+        except Exception as e:
+            st.session_state["_ai_error"] = f"{t('ai_fail')}: {e}"
 
-            tcol1.button("−", key="tx_minus", help=t("text_smaller"),
-                         disabled=a11y.at_min(scale), on_click=_smaller)
-            tcol2.button("+", key="tx_plus", help=t("text_bigger"),
-                         disabled=a11y.at_max(scale), on_click=_bigger)
-            with tcol3:
-                if (st.session_state.get("transcript_box") or "").strip():
-                    # A small CP for this row: the 86px circle belongs
-                    # above a reading box, not in a line of text links,
-                    # where it overflowed onto the text below.
-                    components.html(
-                        copybtn.cp_html(st.session_state["transcript_box"],
-                                        done_label="OK", failed_label="X",
-                                        size=40),
-                        height=48)
+    def _grammar():
+        _apply_transform("fix", "")
+        flash("tx_grammar")
 
-            def _clear_all():
-                for k in ("transcript_box", "_transcript_prev", "flac_path",
-                          "_digest", "_pick_digest", "_transcribe_method"):
-                    st.session_state.pop(k, None)
+    def _reshape():
+        _apply_transform("tidy", "")
+        flash("tx_reshape")
 
-            tcol4.button(SYM["clear"], key="tx_clear", help=t("clear_btn"),
-                         on_click=_clear_all)
+    cmd_row("tx", [
+        ("copy", None, None),
+        (t("grammar_word"), "tx_grammar", _grammar),
+        (t("reshape_word"), "tx_reshape", _reshape),
+        (t("clear_word"), "tx_clear", _clear_all),
+    ], copy_text=st.session_state.get("transcript_box", ""))
+    size_row("tx")
 
-        st.text_area(t("transcript_label"), key="transcript_box", height=220,
-                     label_visibility="collapsed")
+    st.text_area(t("transcript_label"), key="transcript_box", height=200,
+                 label_visibility="collapsed", placeholder=t("transcript_ph"))
 
-        def _apply_transform(preset="", instruction=""):
-            source = (st.session_state.get("transcript_box") or "").strip()
-            try:
-                llm = llm_bridge()
-                if llm is None:
-                    raise RuntimeError(t("routing_none"))
-                out = TR_.run(llm, source, instruction=instruction, preset=preset)
-                st.session_state["_transcript_prev"] = source
-                st.session_state["transcript_box"] = out
-                USAGE.log("transform", len(source), UNIT_CHARS, llm.id)
-            except Exception as e:
-                st.session_state["_ai_error"] = f"{t('ai_fail')}: {e}"
-
-        gcol1, gcol2 = st.columns(2)
-        gcol1.button(t("grammar_btn"), key="tr_grammar", type="primary",
-                     use_container_width=True,
-                     on_click=_apply_transform, args=("fix", ""))
-        gcol2.button(t("reshape_btn"), key="tr_reshape", type="primary",
-                     use_container_width=True,
-                     on_click=_apply_transform, args=("tidy", ""))
-
-        if st.session_state.get("_transcript_prev"):
-            def _undo():
-                prev = st.session_state.pop("_transcript_prev", None)
-                if prev is not None:
-                    st.session_state["transcript_box"] = prev
-            st.button(SYM["undo"], key="ai_undo_btn", help=t("ai_undo"),
-                      on_click=_undo)
-
-        if st.session_state.get("_ai_error"):
-            st.error(st.session_state.pop("_ai_error"))
-        if st.session_state.get("_correct_error"):
-            st.error(st.session_state.pop("_correct_error"))
-
-        method = st.session_state.get("_transcribe_method")
-        if method and method != "direct":
-            st.caption(t("method_" + method))
+    if st.session_state.get("_ai_error"):
+        st.error(st.session_state.pop("_ai_error"))
 
     # The spoken language, at the very bottom: it is set once and then
     # left alone, so it does not belong above the thing people came for.
@@ -2507,8 +2422,16 @@ elif active == "talk":
             def synth_fn(text):
                 return tk.synth_sentence(text, vkey) + (None,)
 
-        text_size_pills("talk")
-        cp_row(st.session_state.get("talk_text", ""), "talk", state_key="talk_text")
+        def _clear_talk():
+            st.session_state["talk_text"] = ""
+            flash("rd_clear")
+
+        cmd_row("rd", [
+            ("paste", None, None),
+            (t("clear_word"), "rd_clear", _clear_talk),
+        ], target_key="talk_text")
+        size_row("rd")
+
         st.text_area(t("tab_talk"), key="talk_text", height=150,
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
 

@@ -22,18 +22,20 @@
   /* The word must fit: this pill lives in a narrow command column, and
      when it was 0.9rem with generous padding the label was clipped to
      "as". Sized to the text instead of forced to fill. */
+  /* A COMMAND, NOT A BUTTON. It has to be indistinguishable from the
+     text commands beside it: same font, same size, same colour, no
+     border, no background. The only difference anyone should see is the
+     word itself. */
   #pad {
-    width:100%; min-width:0; min-height:40px; box-sizing:border-box;
-    display:flex; align-items:center; justify-content:center;
-    background:#0b0d10; color:#f2ddb4;
-    border:1px dashed #23303d; border-radius:999px;
-    padding:0.45rem 0.5rem; cursor:pointer; font-size:0.85rem;
-    letter-spacing:0.02em; white-space:nowrap;
-    transition: border-color 90ms ease-out, background-color 90ms ease-out;
+    width:100%; min-width:0; height:38px; box-sizing:border-box;
+    display:flex; align-items:center; justify-content:flex-start;
+    background:transparent; color:#f2ddb4;
+    border:none; padding:0 0.35rem; cursor:pointer;
+    font-size:0.95rem; letter-spacing:0.05em; font-weight:600;
+    white-space:nowrap;
   }
-  #pad:hover, #pad.focus { border-color:#f59e0b; background:rgba(245,158,11,0.10); }
-  #pad.done { border-style:solid; border-color:#f59e0b; background:#f59e0b; color:#0b0d10; }
-  #pad:focus-visible { outline:3px solid #f59e0b; outline-offset:2px; }
+  #pad.focus, #pad.done { color:#f59e0b; }
+  #pad:focus-visible { outline:2px solid #f59e0b; outline-offset:2px; }
   #sink { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
   @media (prefers-reduced-motion: reduce) { #pad { transition:none; } }
 </style>
@@ -103,11 +105,11 @@ window.addEventListener("message", function (event) {
     if (L.word) { pad.setAttribute('aria-label', L.word); pad.title = L.word; }
     set('idle');
   }
-  post("streamlit:setFrameHeight", { height: 60 });
+  post("streamlit:setFrameHeight", { height: 38 });
 });
 
 set('idle');
 post("streamlit:componentReady", { apiVersion: 1 });
-post("streamlit:setFrameHeight", { height: 60 });
+post("streamlit:setFrameHeight", { height: 38 });
 </script>
 </body></html>

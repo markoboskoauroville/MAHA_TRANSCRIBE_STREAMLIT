@@ -221,9 +221,14 @@ def css() -> str:
        who just wants to hand over a file nothing they can act on. The
        Browse button stays; the essay goes. */
     [data-testid="stFileUploaderDropzoneInstructions"] {{ display: none !important; }}
+    /* Just the button. The dashed box was a large empty rectangle that
+       said nothing — on a phone it was the biggest thing on the tab. */
     [data-testid="stFileUploaderDropzone"] {{
-      padding: 0.4rem 0.5rem !important;
+      padding: 0 !important;
       min-height: 0 !important;
+      background: transparent !important;
+      border: none !important;
+      justify-content: flex-start;
     }}
     /* The caption above each uploader was landing ON the dashed border,
        because the caption rule pulls its margin in tight and the
@@ -316,13 +321,35 @@ def css() -> str:
        is gone before the eye sees it — the flash is driven from Python
        instead and lands here as the primary style. */
     [class*="st-key-cmdrow_"] .stButton button[kind="primary"] {{
-      background: transparent !important;
       color: var(--amber) !important;
-      border: none !important;
     }}
     [class*="st-key-cmdrow_"] .stButton button[kind="primary"] p {{
       color: var(--amber) !important;
     }}
+
+    /* The bare − and + above a box: same terminal language, pushed to
+       the right so it does not compete with the commands on the left. */
+    [class*="st-key-sizerow_"] {{ margin-bottom: -0.6rem; margin-top: -0.35rem; }}
+    [class*="st-key-sizerow_"] div[data-testid="stHorizontalBlock"] {{
+      gap: 0 !important; flex-wrap: nowrap !important;
+    }}
+    [class*="st-key-sizerow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"] {{
+      flex: 0 0 auto !important; width: auto !important;
+    }}
+    [class*="st-key-sizerow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"]:first-child {{ flex: 1 1 auto !important; }}
+    [class*="st-key-sizerow_"] .stButton button {{
+      background: transparent !important;
+      border: none !important;
+      color: var(--dim) !important;
+      font-size: 1.05rem !important;
+      height: 30px !important;
+      min-height: 30px !important;
+      padding: 0 !important;
+      width: 100% !important;
+    }}
+    [class*="st-key-sizerow_"] .stButton button:disabled {{ opacity: 0.3 !important; }}
 
     /* The row above the transcript: text links, not buttons. Baba asked
        for "text links" so the row costs almost nothing — the text is what
@@ -351,18 +378,52 @@ def css() -> str:
     }}
     .st-key-txttools div[data-testid="stColumn"],
     [class*="st-key-txttools_"] div[data-testid="stColumn"],
-    [class*="st-key-cmdrow_"] div[data-testid="stColumn"] {{
-      width: auto !important; flex: 0 0 auto !important; min-width: 0 !important;
+    /* Columns here must keep the RATIO they were given, not shrink to
+       their content. An iframe has an intrinsic 300px width, so a
+       content-sized column made the copy command four times wider than
+       the buttons beside it. This is the third time the same global rule
+       has broken a layout that asked for proportions — the pattern is
+       always: anything that is not a plain button needs the exemption. */
+    /* MUST use the full child-combinator path. The global pill rule is
+       div[stHorizontalBlock] > div[stColumn], which out-specifies a
+       plain descendant selector — !important does not settle that, the
+       selector has to be at least as specific. This is the FOURTH time
+       that rule has silently won: the gear, the patch bay, the paste
+       column, and now this. */
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"] {{
+      flex: 1 1 0 !important;
+      width: auto !important;
+      min-width: 0 !important;
     }}
+    /* The pipe columns stay narrow. */
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"]:nth-child(odd) {{
+      flex: 0 0 12px !important;
+    }}
+    [class*="st-key-cmdrow_"] div[data-testid="stElementContainer"] {{ width: 100%; }}
     /* The paste and copy controls are IFRAMES, not buttons. Shrinking a
        column to its content works for text but collapses an iframe,
        which clipped "paste" down to "as". They are always first in the
        row, so the first column keeps a real width. */
-    [class*="st-key-cmdrow_"] div[data-testid="stColumn"]:first-child {{
-      flex: 0 0 90px !important;
-      min-width: 90px !important;
+    [class*="st-key-cmdrow_"] iframe {{ width: 100% !important; height: 38px !important; }}
+    [class*="st-key-cmdrow_"] .stButton button {{
+      width: 100% !important;
+      height: 38px !important;
+      min-height: 38px !important;
+      padding: 0 0.35rem !important;
+      justify-content: flex-start;
+      font-size: 0.95rem !important;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      border: none !important;
+      background: transparent !important;
+      color: var(--prose) !important;
     }}
-    [class*="st-key-cmdrow_"] iframe {{ width: 90px !important; }}
+    [class*="st-key-cmdrow_"] .stButton button p {{
+      color: inherit !important; font-weight: 600; letter-spacing: 0.05em;
+    }}
+    [class*="st-key-cmdrow_"] .cmdpipe {{ line-height: 38px; }}
 
     /* Language switch: short labels, so nearly round. */
     .st-key-langrow .stButton button {{
@@ -376,7 +437,9 @@ def css() -> str:
        rather than as another control competing for attention. */
     .tabsig {{
       text-align: right;
-      color: var(--dim);
+      /* Gold, on Baba's instruction: it should catch the eye enough to
+         answer "where am I?" without being read on purpose. */
+      color: var(--amber);
       font-family: var(--mono);
       /* 20% down from 0.95rem, on Baba's eye. It is a mark on the
          frame, not a label that needs reading. */

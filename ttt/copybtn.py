@@ -91,7 +91,7 @@ def html(text: str, label: str, busy: str, done: str, failed: str,
   }}
   button:active:not(:disabled) {{ transform: scale(0.97); }}
   button:focus-visible {{ outline: 3px solid {GOLD}; outline-offset: 2px; }}
-  button.done {{ border-color: {GOLD}; background: {GOLD}; color: {BG}; }}
+  button.done {{ color: {GOLD}; }}
   button.failed {{ border-color: #d9534f; color: #ffb3b0; }}
   @media (prefers-reduced-motion: reduce) {{
     button {{ transition: none; }}
@@ -165,20 +165,22 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
                 display:flex; align-items:center;
                 justify-content:{"flex-start" if not size else "center"}; }}
   button {{
-    {"width:auto; min-width:64px; height:38px; border-radius:999px; padding:0 0.9rem;"
+    {"width:100%; height:38px; border:none; background:transparent;"
+     " justify-content:flex-start; padding:0 0.35rem; font-weight:600;"
+     " letter-spacing:0.05em;"
      if not size else
      f"width:{size}px; height:{size}px; border-radius:50%;"}
-    border:1px solid {GOLD}; background:{GOLD}; color:{BG};
+    {"color:" + FG + ";" if not size else
+     "border:1px solid " + GOLD + "; background:" + GOLD + "; color:" + BG + ";"}
     font-family: ui-monospace, monospace; font-weight:800;
     font-size:{13 if not size else max(13, int(size * 0.30))}px;
     letter-spacing:0.06em; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
     transition: transform 90ms ease-out, filter 90ms ease-out;
   }}
-  button:hover:not(:disabled) {{ filter: brightness(1.08); }}
-  button:active:not(:disabled) {{ transform: scale(0.93); }}
+  button:active:not(:disabled) {{ color:{GOLD}; }}
   button:focus-visible {{ outline:3px solid {GOLD}; outline-offset:3px; }}
-  button.failed {{ background:{BG}; color:#f48383; border-color:#f48383; }}
+  button.failed {{ color:#f48383; }}
   @media (prefers-reduced-motion: reduce) {{
     button {{ transition:none; }}
     button:active:not(:disabled) {{ transform:none; }}
