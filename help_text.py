@@ -25,7 +25,7 @@ Zajedno: govor pretvaraš u tekst, i tekst pretvaraš u govor.
 **Što je ovo?**
 
 Aplikacija radi dvije stvari. Pretvara tvoj govor u tekst, i čita tekst naglas
-ljudskim glasom. Ima dva taba na vrhu.
+ljudskim glasom. Ima četiri taba na vrhu.
 
 ---
 
@@ -80,6 +80,47 @@ smjer prijevoda.
 
 Ispod prijevoda je gumb **Čitaj** koji prevedeni tekst pročita naglas, uvijek
 pravim glasom za taj jezik.
+---
+
+**Veličina slova — iznad svakog okvira s tekstom**
+
+Iznad svakog okvira stoje dva mala gumba, **A−** i **A+**, i postotak između
+njih. Pritisni **A+** da slova postanu veća, **A−** da postanu manja. Radi u
+cijeloj aplikaciji odjednom i pamti se za tebe. Slobodno povećaj koliko god
+trebaš — tekst se uvijek prelomi da stane na ekran, nikad ne moraš pomicati
+ekran lijevo-desno.
+
+---
+
+**Gumb Kopiraj**
+
+Ispod svakog okvira s tekstom je okrugli gumb **Kopiraj**. Pritisni ga i cijeli
+tekst je kopiran — ne moraš ga označavati prstom. Gumb ti sam kaže što radi:
+najprije piše *Kopiram…*, pa *Kopirano ✓*. Onda ga zalijepi gdje želiš, u
+e-mail ili poruku.
+
+---
+
+**Tab Čitaonica — tvoja knjižnica tekstova**
+
+Isto kao Čitanje, ali pamti tekstove.
+
+1. Zalijepi tekst i pritisni **Čitaj**.
+2. **Sačuvaj** ga stavi u **Arhivu**, pa ga možeš kasnije opet otvoriti bez
+   ponovnog lijepljenja.
+3. **Brzina** i **Pauza između rečenica** namjeste čitanje kako tebi odgovara.
+4. Broj sa strane pokazuje dokle si stigao i koliko još ima čitanja.
+
+Tekstovi se čuvaju samo u ovom pregledniku, i samo tekst, nikad zvuk.
+
+---
+
+**Duge snimke i datoteke**
+
+Na tabu Transkripcija, ispod mikrofona, možeš odabrati i gotovu zvučnu
+datoteku s telefona. Ako je duga, aplikacija je sama razreže na dijelove,
+prepiše svaki i spoji natrag. Ako piše da čeka, ne radi se o kvaru — samo
+strpljivo čeka svoj red i nastavi sama.
 """,
 
     "en": """
@@ -101,7 +142,7 @@ Together: speech becomes text, and text becomes speech.
 **What is this?**
 
 The app does two things. It turns your speech into text, and it reads text
-aloud in a human voice. There are two tabs at the top.
+aloud in a human voice. There are four tabs at the top.
 
 ---
 
@@ -156,6 +197,36 @@ two language rows quickly swaps the direction.
 
 Below the translation is a **Read** button that reads the translated text
 aloud, always in the right voice for that language.
+---
+
+**Font size — above each text box**
+
+Above every box you’ll see two small buttons, **A−** and **A+**, with a percentage between them. Press **A+** to make the letters larger, **A−** to make them smaller. It works for the whole app at once and remembers your choice. Feel free to increase it as much as you need — the text will always wrap to fit the screen, so you never have to scroll left‑right.
+
+---
+
+**Button Kopiraj**
+
+Below each text box there is a round button **Kopiraj**. Tap it and the whole text is copied — you don’t have to select it with your finger. The button tells you what it’s doing: first it shows *Kopiram…*, then *Kopirano ✓*. Then paste it wherever you like, in an e‑mail or a message.
+
+---
+
+**Tab Čitaonica — your text library**
+
+Works just like Reading, but it remembers the texts.
+
+1. Paste the text and press **Čitaj**.  
+2. **Sačuvaj** it to put it in **Arhiva**, so you can open it later without pasting again.  
+3. Adjust **Brzina** and the **Pause between sentences** so reading feels right for you.  
+4. The number at the side shows how far you’ve gotten and how much is left to read.
+
+The texts are saved only in this browser, and only as text, never as sound.
+
+---
+
+**Long recordings and files**
+
+On the **Transkripcija** tab, below the microphone, you can choose a finished audio file from your phone. If it’s long, the app will automatically split it into parts, transcribe each one, and put them back together. If it says “waiting”, it’s not an error — it’s just patiently waiting its turn and will continue on its own.
 """,
 }
 
