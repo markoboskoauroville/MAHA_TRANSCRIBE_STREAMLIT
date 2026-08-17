@@ -60,7 +60,35 @@ Workflow on every change, in order: build -> test -> push -> THEN update
 this file. It must always describe the newest feature. If this file
 disagrees with the code, the code is right and this file is a bug.
 
-**4. Aesthetics are a requirement, not a finishing touch.**
+**4. TEST EVERY FEATURE THREE TIMES.**
+Not once, not "it compiled". Three real passes, and prefer three
+*different kinds* of pass over the same check run three times, because
+repeating one check only proves it is repeatable:
+  1. the logic alone, in plain Python, no Streamlit, no network
+  2. the running app in a real browser at phone width
+  3. the awkward case — reload, empty input, a dead key, a second user
+A test that has never failed has not been shown to work. When something
+passes on the first try, assume the test is wrong before assuming the code
+is right; several "bugs" in this project turned out to be broken
+assertions (a hex colour that the browser serialises as rgb(), an expander
+whose contents are not in the DOM until it is opened, a timeout shorter
+than the audio it was waiting for).
+
+**5. API KEYS: Marko lends, Claude shreds. Every time.**
+The working agreement, stated by Baba and to be honoured exactly:
+*"Marko is giving you the keys when you need it for testing and you throw
+them into fire."*
+  * Ask when a real key would genuinely prove something a fake one cannot.
+  * Use it only for that test.
+  * Never write a key into a file, a commit, a log, or the deployed
+    secrets. Never print one in full — mask to first 4 characters.
+  * Shred immediately afterwards: delete every artifact the test created
+    (server-side key stores under the temp dir, scratch files), then grep
+    the working tree and the staged diff to prove it is clean, and say so.
+  * Assume no key is still lying around from a previous turn. If one is
+    needed again, ask again.
+
+**6. Aesthetics are a requirement, not a finishing touch.**
 Think like a visual designer, every time. Concretely and permanently: a
 button is the size of its text, never the width of the page. Small pills,
 arranged in tidy rows that wrap. Streamlit's default (`use_container_width`
@@ -464,3 +492,72 @@ Recorded so nobody re-litigates it from scratch. See the top of
                                   Until that is ported, Edge returns no
                                   marks and highlights by sentence, which
                                   is honest and never wrong.
+
+---
+
+## 11. PLANNED: bulletproof transcription (spec, not yet built)
+
+Baba's requirement, recorded 17.8.2026 to be built when its turn comes.
+**Nothing is ever lost, and no limit is ever hit.** Not the 25MB request
+limit, not a rate limit, not a five-hour sitting, not a twenty-two hour
+upload. Groq is free, so the answer is never "too big" — it is *feed it
+spoon by spoon*.
+
+### The two cases
+
+**Live recording, hours long.** Someone sits and talks. The app must slice
+continuously while they are still speaking, transcribe each slice in the
+background, and keep recording throughout. Slices are cut well below the
+limit, never at it. The transcript grows in front of them as they talk.
+Stopping is just the last slice — there is no big upload at the end and
+nothing to wait for.
+
+**Uploads, arbitrarily long.** A 22-hour file is fine. Same machinery:
+split, feed, stitch. The existing `ttt/audio.py` tiers already do the
+splitting; what is missing is doing it *incrementally and visibly* rather
+than as one blocking job.
+
+### Key rotation is the engine
+
+Five Groq keys. When one says "you talk too much" (429), it goes to sleep
+and the next one takes over immediately — the rested key rejoins later on
+its own. `ttt/keyring.py` already implements exactly this policy
+(`rotate()`, `cool` for 120s, `dead` only for auth failures); the work is
+routing Groq's own app-owned keys through that ring instead of the simple
+loop in `ttt/providers/groq.py`, so a rate limit becomes a hand-off rather
+than an error.
+
+Chunks must be retried across keys, not abandoned: a chunk that fails on
+key 3 tries key 4 before it is allowed to leave a gap. Today the gap marker
+appears too eagerly for that reason.
+
+### What the person sees — this part matters as much as the engine
+
+Not a spinner. The work, happening:
+
+- how much audio is still waiting ("14 min left to transcribe"), counting
+  down as portions complete
+- each portion appearing in the transcript the moment it lands, in order
+- which portion is in flight, and that another key took over when it did
+- an estimate of time remaining, honest, based on how fast portions have
+  actually been coming back
+
+Baba's words: *"everything happening in front of their eyes automatically,
+and they are watching the miracle."* The visible progress is a feature, not
+instrumentation.
+
+### Rules for whoever builds it
+
+- **Never drop audio.** A failed chunk retries on other keys first; only
+  after every live key has refused does it leave a marked gap, and the gap
+  must say which minutes are missing so it can be re-run.
+- **Never block the recorder.** Transcription runs behind the recording;
+  slicing must not pause capture.
+- **Order is sacred.** Portions land out of order; the transcript must
+  still read in sequence.
+- **Cut on silence where possible.** Splitting mid-word costs accuracy at
+  every seam. ffmpeg can find a quiet moment near the target boundary.
+- **Resume after a reload.** A long session must survive the browser
+  reloading; completed portions belong in storage, not only in memory.
+- **Test with genuinely long audio**, not a 75-second clip. The bugs live
+  in hour three.

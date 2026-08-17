@@ -27,6 +27,7 @@ import help_text
 from ttt import keyring as kr
 from ttt import providers as PROVIDERS
 from ttt.store import Store
+from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -366,6 +367,18 @@ if not check_password():
     st.stop()
 
 USER = st.session_state.get("_user") or "shared"
+
+# Usage logging to the Google Sheet. Created once per session so the
+# session timer is meaningful, and inert unless both secrets are present —
+# the app behaves identically with the sheet disconnected.
+if "_usage" not in st.session_state:
+    st.session_state["_usage"] = UsageLog(
+        url=st.secrets.get("SHEETS_URL", ""),
+        token=st.secrets.get("SHEETS_TOKEN", ""),
+        user=USER,
+    )
+    st.session_state["_usage"].log("login")
+USAGE = st.session_state["_usage"]
 
 KEYS = groq_keys()
 if not KEYS:
@@ -714,6 +727,16 @@ def load_keys() -> dict:
         rings = _load_server_keys(USER)
     st.session_state["_rings"] = rings or {}
     return st.session_state["_rings"]
+
+
+def audio_seconds(path) -> float:
+    """Length of an audio file for the usage log. Any failure returns 0 —
+    a statistic is never worth interrupting a person's work for."""
+    try:
+        from ttt import audio as _audio
+        return _audio.duration_seconds(path) if path else 0.0
+    except Exception:
+        return 0.0
 
 
 def get_ring(provider_id: str) -> dict:
@@ -1389,6 +1412,12 @@ def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
     doc_slot.markdown(html.escape(" ".join(page_sentences)))
     sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
 
+    # Log what was actually SPOKEN, not what was pasted — a page that was
+    # never reached should not count against anyone's usage.
+    if spoken_chars:
+        USAGE.log("read", spoken_chars, UNIT_CHARS,
+                  st.session_state.get("voice_engine", "edge"))
+
     # A key can be discovered dead or rate-limited DURING a read, so the
     # ring must be written back afterwards. Missing this was a real bug:
     # a key buried mid-session came back on the next reload and wasted a
@@ -1429,6 +1458,7 @@ def do_translate():
     tgt = st.session_state.get("translate_tgt", "en")
     try:
         st.session_state["translate_out"] = translate_text(text, LANG_FULL[src], LANG_FULL[tgt])
+        USAGE.log("translate", len(text), UNIT_CHARS, "groq")
     except Exception as e:
         st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
 
@@ -1484,6 +1514,8 @@ if active == "transcribe":
                 st.session_state["last_lang"] = lang_code
                 st.session_state["_transcribe_method"] = "direct"
                 st.session_state["_transcribe_provider"] = t_engine
+                USAGE.log("transcribe", audio_seconds(flac_path),
+                          UNIT_SECONDS, t_engine)
             except Exception as e:
                 st.error(str(e))
 
@@ -1532,6 +1564,8 @@ if active == "transcribe":
                 st.session_state["flac_path"] = reusable
                 st.session_state["_transcribe_method"] = method
                 st.session_state["_transcribe_provider"] = t_engine
+                USAGE.log("transcribe", audio_seconds(reusable),
+                          UNIT_SECONDS, t_engine)
             except Exception as e:
                 progress_bar.empty()
                 st.error(str(e))
@@ -1715,10 +1749,18 @@ elif active == "read":
                 st.session_state.get("_archive", []), txt)
             RT.save_archive(archive_store, st.session_state["_archive"])
             st.session_state["_read_msg"] = t("read_saved")
+            st.session_state["_read_msg_until"] = time.time() + 6
 
     bcol2.button(t("read_save"), key="read_keep_btn", on_click=_keep_text)
-    if st.session_state.get("_read_msg"):
-        st.caption(st.session_state.pop("_read_msg"))
+    # Hold the confirmation for a few seconds of wall clock rather than
+    # popping it on the next rerun — Streamlit reruns for many reasons
+    # (a slider nudge, an expander opening), and a message that vanishes
+    # before it is read is the same as no message at all.
+    _msg, _until = st.session_state.get("_read_msg"), st.session_state.get("_read_msg_until", 0)
+    if _msg and time.time() < _until:
+        st.caption(_msg)
+    elif _msg:
+        st.session_state.pop("_read_msg", None)
 
     prog_slot = st.empty()
     rdoc_slot = st.empty()
