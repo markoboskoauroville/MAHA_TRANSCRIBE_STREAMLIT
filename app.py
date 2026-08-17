@@ -152,7 +152,7 @@ st.markdown(
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v22 (a)"
+APP_VERSION = "v23 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct

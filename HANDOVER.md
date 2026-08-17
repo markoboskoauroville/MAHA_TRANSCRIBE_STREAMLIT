@@ -697,11 +697,7 @@ updated. Nothing is started before the one before it is finished.
         state: Copy -> Copying -> Copied. Round,
         like Baba's original app. Pressed with a
         finger, never with a keyboard shortcut.
-    A3. Hover and focus: every control comes
-        subtly alive so a partially-sighted person
-        knows where they are. SUBTLE — "they are
-        not too blind, they are little bit blind."
-        A quiet outline, not a light show.
+    A3. Hover, press and disabled states          DONE v23
 
 ### Vision (read what is in a picture)
     V1. Groq vision model: pick an image file, get
@@ -712,15 +708,9 @@ updated. Nothing is started before the one before it is finished.
         vision-capable model must be DISCOVERED
         from the live list, never hardcoded, the
         same as every other model.
-    V2. Paste a screenshot straight into the app,
-        if the browser allows it. MUST be checked
-        against a real browser before promising
-        anything: Streamlit components run in a
-        sandboxed iframe and clipboard READ is
-        commonly blocked there. If it cannot be
-        done honestly, say so and keep the file
-        picker rather than shipping a button that
-        silently fails.
+    V2. Paste a screenshot straight into the app.
+        RESEARCH DONE, see §14 — the route is the
+        native paste EVENT, not the clipboard API.
 
 ### Keys (§12)
     K1. Merge the two key sources into one ring
@@ -728,3 +718,38 @@ updated. Nothing is started before the one before it is finished.
     K2. Delete a key: real removal for added keys,
         suppression for secrets keys, and the UI
         says which happened.
+
+
+---
+
+## 14. CLIPBOARD: what is actually possible, measured
+
+Probed against a real Streamlit component iframe rather than assumed,
+because this decides whether a button can exist at all.
+
+**The component iframe's Permissions Policy** (read off the live
+`allow` attribute) includes `clipboard-write` and does NOT include
+`clipboard-read`.
+
+    COPY   navigator.clipboard.writeText  -> WORKS.
+           clipboard-write is granted to the iframe, so a copy button
+           driven by a user's press is fine.
+
+    PASTE  navigator.clipboard.readText   -> BLOCKED in a real browser.
+           clipboard-read is absent from the allow list, so Permissions
+           Policy refuses it however the user answers a prompt. Headless
+           Chromium CAN be told to grant it, and it then succeeds — that
+           is an automation artifact and must not be mistaken for proof.
+           Do not ship a paste button built on readText.
+
+    PASTE  the native `paste` EVENT       -> WORKS, with NO permission.
+           Verified with permissions explicitly withheld: the event
+           fires, `clipboardData` carries `text/plain`, AND a pasted
+           screenshot arrives as a real image File (`file:image/png`,
+           correct byte length). This is the route for V2 — the person
+           presses Ctrl+V (or long-press → Paste), the browser hands the
+           data over because THEY initiated it, and no permission is
+           involved.
+
+So: copy via the clipboard API, paste via the paste event. Anything else
+is a button that looks like it works and does not.
