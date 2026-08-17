@@ -24,6 +24,10 @@ import streamlit.components.v1 as components
 import talk_engine as tk
 import help_text
 
+from ttt import keyring as kr
+from ttt import providers as PROVIDERS
+from ttt.store import Store
+
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
 # ----------------------------------------------------------------------
@@ -78,7 +82,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v12 (a)"
+APP_VERSION = "v13 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -140,6 +144,21 @@ STRINGS = {
     "no_groq_secret":     {"en": "No Groq key in Secrets. Add GROQ_API_KEYS (a list) in Streamlit Cloud → Settings → Secrets.",
                             "hr": "Nema Groq ključa u Secrets. Dodaj GROQ_API_KEYS (listu) u Streamlit Cloud → Settings → Secrets."},
     "tab_translate":      {"en": "Translate",        "hr": "Prevedi"},
+    "tab_read":           {"en": "Read",             "hr": "Čitaonica"},
+    "read_paste_ph":      {"en": "Paste a text here and press Read",
+                            "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
+    "read_start":         {"en": "Read",             "hr": "Čitaj"},
+    "read_save":          {"en": "Keep",             "hr": "Sačuvaj"},
+    "read_archive":       {"en": "Archive",          "hr": "Arhiva"},
+    "read_open":          {"en": "Open",             "hr": "Otvori"},
+    "read_delete":        {"en": "Delete",           "hr": "Obriši"},
+    "read_empty":         {"en": "Nothing kept yet.", "hr": "Još ništa nije sačuvano."},
+    "read_saved":         {"en": "Kept.",            "hr": "Sačuvano."},
+    "read_speed":         {"en": "Speed",            "hr": "Brzina"},
+    "read_gap":           {"en": "Pause between sentences", "hr": "Pauza između rečenica"},
+    "read_autosave":      {"en": "Keep texts automatically", "hr": "Automatski čuvaj tekstove"},
+    "read_storage_note":  {"en": "Texts are kept in this browser only, never the audio. Clearing browser data removes them.",
+                            "hr": "Tekstovi se čuvaju samo u ovom pregledniku, nikad zvuk. Brisanje podataka preglednika ih uklanja."},
     "translate_src_ph":   {"en": "Paste text to translate", "hr": "Zalijepi tekst za prijevod"},
     "translate_btn":      {"en": "Translate",         "hr": "Prevedi"},
     "translate_fail":     {"en": "Translation failed", "hr": "Prijevod nije uspio"},
@@ -697,6 +716,26 @@ def load_keys() -> dict:
     return st.session_state["_rings"]
 
 
+def get_ring(provider_id: str) -> dict:
+    """The ONE way to get a provider's ring. Always attached to the stored
+    rings dict, so every state change (a key found dead, the rotation
+    position, call counts) lands somewhere real.
+
+    This replaces `load_keys().get(x) or new_ring()`, which silently
+    detached the ring whenever that provider had no keys yet and threw away
+    everything written to it. See HANDOVER: audit, 17.8.2026.
+    """
+    return load_keys().setdefault(provider_id, kr.new_ring())
+
+
+def save_rings() -> None:
+    """Persist whatever the rings currently say. Cheap and idempotent, so
+    call it after anything that could have changed a key's state — the
+    cost of forgetting is a dead key resurrecting and wasting a request on
+    every reload."""
+    save_rings()
+
+
 # ---------- Speechify ----------
 SPEECHIFY_PREFIXES = ("sk_", "sws_", "sa_", "spk_")
 SP_CURATED = ["beatrice_32", "dominic_32", "edmund_32", "geffen_32",
@@ -1098,7 +1137,7 @@ with gear_col:
 
         with st.expander(t("speechify_title")):
             rings = load_keys()
-            sp_ring = rings.setdefault("speechify", new_ring())
+            sp_ring = get_ring("speechify")
 
             st.file_uploader(t("key_file_label"), key="sp_key_file", label_visibility="collapsed")
             st.text_area(t("key_paste_label"), key="sp_key_paste", height=70,
@@ -1140,7 +1179,7 @@ with gear_col:
                              on_click=_set_engine, args=("speechify",))
 
         with st.expander(t("assemblyai_title")):
-            aai_ring = rings.setdefault("assemblyai", new_ring())
+            aai_ring = get_ring("assemblyai")
 
             st.file_uploader(t("key_file_label"), key="aai_key_file", label_visibility="collapsed")
             st.text_area(t("key_paste_label"), key="aai_key_paste", height=70,
@@ -1199,7 +1238,7 @@ with gear_col:
 # ----------------------------------------------------------------------
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
-    "nav", ["transcribe", "talk", "translate"], format_func=lambda k: t("tab_" + k),
+    "nav", ["transcribe", "talk", "translate", "read"], format_func=lambda k: t("tab_" + k),
     key="active_tab", required=True, label_visibility="collapsed",
 )
 active = st.session_state.get("active_tab") or "transcribe"
@@ -1213,9 +1252,9 @@ def do_correct():
             raise RuntimeError("Original audio is no longer available.")
         provider = st.session_state.get("_transcribe_provider", "groq")
         if provider == "assemblyai":
-            aai_ring = load_keys().get("assemblyai") or new_ring()
+            aai_ring = get_ring("assemblyai")
             corrected = aai_transcribe(aai_ring, path, lang)
-            persist_keys(load_keys())
+            save_rings()
             st.session_state["transcript_box"] = corrected
             st.session_state["flac_path"] = path
             st.session_state["_transcribe_method"] = "direct"
@@ -1273,7 +1312,8 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
 
 
 def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
-                        page_key: str, page_slot):
+                        page_key: str, page_slot, progress_slot=None,
+                        speed: float = 1.0, gap: float = 0.0):
     """Shared by Talk and Translate: synthesize and play one sentence at a
     time. Highlights word-by-word when the engine can back it with real
     per-word timing (Speechify's speech_marks, measured from the audio it
@@ -1310,7 +1350,15 @@ def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
     if n_pages > 1:
         page_slot.caption(f"{t('page_label')} {page_idx + 1}/{n_pages}")
 
+    total_chars = sum(len(x) for x in page_sentences)
+    spoken_chars = 0
+
     for i, sent in enumerate(page_sentences):
+        if progress_slot is not None:
+            from ttt import read_tab as _RT
+            progress_slot.caption(_RT.progress_line(
+                spoken_chars, total_chars, i + 1, len(page_sentences),
+                speed=speed, sentence_gap=gap))
         try:
             result = synth_fn(sent)
         except Exception as e:
@@ -1334,8 +1382,18 @@ def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
             audio_slot.audio(audio_bytes, format="audio/mp3", autoplay=True)
             time.sleep(dur + 0.15)
 
+        spoken_chars += len(sent)
+        if gap:
+            time.sleep(gap)
+
     doc_slot.markdown(html.escape(" ".join(page_sentences)))
     sub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+    # A key can be discovered dead or rate-limited DURING a read, so the
+    # ring must be written back afterwards. Missing this was a real bug:
+    # a key buried mid-session came back on the next reload and wasted a
+    # request every single time. Cheap and idempotent; always do it.
+    save_rings()
 
     if page_idx + 1 < n_pages:
         def _next_page():
@@ -1389,7 +1447,7 @@ def lang_pills(prefix: str, which: str, current: str):
 # Transcribe
 # ----------------------------------------------------------------------
 if active == "transcribe":
-    aai_ring_t = load_keys().get("assemblyai") or new_ring()
+    aai_ring_t = get_ring("assemblyai")
     aai_usable = any(k["state"] != "dead" for k in aai_ring_t["keys"])
     t_engine = st.session_state.get("transcribe_engine", "groq") if aai_usable else "groq"
 
@@ -1418,7 +1476,7 @@ if active == "transcribe":
                 with st.spinner(t("transcribing")):
                     if t_engine == "assemblyai":
                         text = aai_transcribe(aai_ring_t, flac_path, lang_code)
-                        persist_keys(load_keys())
+                        save_rings()
                     else:
                         text = transcribe(flac_path, PRIMARY_MODEL, lang_code)
                 st.session_state["transcript_box"] = text
@@ -1460,7 +1518,7 @@ if active == "transcribe":
                         progress_bar.progress(frac, text=t(key))
 
                     text = aai_transcribe(aai_ring_t, tmp.name, lang_code, progress_cb=_cb)
-                    persist_keys(load_keys())
+                    save_rings()
                     method, reusable = "direct", tmp.name
                 else:
                     def _cb(i, n):
@@ -1511,7 +1569,7 @@ if active == "transcribe":
 # Talk
 # ----------------------------------------------------------------------
 elif active == "talk":
-    sp_ring_talk = load_keys().get("speechify") or new_ring()
+    sp_ring_talk = get_ring("speechify")
     sp_usable = any(k["state"] != "dead" for k in sp_ring_talk["keys"])
     engine = st.session_state.get("voice_engine", "edge") if sp_usable else "edge"
 
@@ -1559,7 +1617,7 @@ elif active == "talk":
 # Translate — Groq (openai/gpt-oss-120b) between five European languages,
 # then an optional Read in the target language's own neural voice.
 # ----------------------------------------------------------------------
-else:
+elif active == "translate":
     st.session_state.setdefault("translate_src", "hr")
     st.session_state.setdefault("translate_tgt", "en")
 
@@ -1598,3 +1656,104 @@ else:
                                tdoc_slot, tsub_slot, taudio_slot, "translate_page", tpage_slot)
         else:
             tsub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+# ----------------------------------------------------------------------
+# Read — MA Reader's workflow, adapted to Streamlit and no permanent
+# storage. The tab is thin on purpose: everything that could be a module
+# is one (ttt.read_tab for the archive, ttt.reader for the loop), so this
+# block is only wiring. See ttt/read_tab.py for what ported and what did
+# not, and why.
+# ----------------------------------------------------------------------
+elif active == "read":
+    from ttt import read_tab as RT
+
+    archive_store = Store(RT.ARCHIVE_NS, USER, ls_read=LS_DATA,
+                          ls_write=lambda k, v: queue_ls(writes={k: v}) if v is not None
+                          else queue_ls(removes=[k]))
+    if "_archive" not in st.session_state:
+        st.session_state["_archive"] = RT.load_archive(archive_store)
+    archive = st.session_state["_archive"]
+
+    # Which engine speaks here follows the same setting the Talk tab uses,
+    # so a voice chosen once is the voice everywhere.
+    sp_ring_read = get_ring("speechify")
+    read_engine = (st.session_state.get("voice_engine", "edge")
+                   if kr.usable(sp_ring_read) else "edge")
+
+    if read_engine == "speechify":
+        sp_voice = st.session_state.get("sp_voice", "beatrice_32")
+
+        def read_synth(s):
+            return PROVIDERS.get("speechify").synth(
+                lambda attempt: kr.rotate(sp_ring_read, lambda k: attempt(k)),
+                s, sp_voice)
+    else:
+        voice_picker("readvoice")
+        rvkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
+
+        def read_synth(s):
+            return tk.synth_sentence(s, rvkey) + (None,)
+
+    st.text_area(t("tab_read"), key="read_text", height=170,
+                 label_visibility="collapsed", placeholder=t("read_paste_ph"))
+
+    scol, gcol = st.columns(2)
+    speed = scol.slider(t("read_speed"), 0.5, 2.0,
+                        float(st.session_state.get("read_speed", 1.0)), 0.1,
+                        key="read_speed")
+    gap = gcol.slider(t("read_gap"), 0.0, 2.0,
+                      float(st.session_state.get("read_gap", 0.0)), 0.1,
+                      key="read_gap")
+
+    bcol1, bcol2 = st.columns(2)
+    read_go = bcol1.button(t("read_start"), key="read_go_btn")
+
+    def _keep_text():
+        txt = (st.session_state.get("read_text") or "").strip()
+        if txt:
+            st.session_state["_archive"] = RT.add_piece(
+                st.session_state.get("_archive", []), txt)
+            RT.save_archive(archive_store, st.session_state["_archive"])
+            st.session_state["_read_msg"] = t("read_saved")
+
+    bcol2.button(t("read_save"), key="read_keep_btn", on_click=_keep_text)
+    if st.session_state.get("_read_msg"):
+        st.caption(st.session_state.pop("_read_msg"))
+
+    prog_slot = st.empty()
+    rdoc_slot = st.empty()
+    rsub_slot = st.empty()
+    raudio_slot = st.empty()
+    rpage_slot = st.empty()
+
+    if read_go or st.session_state.pop("read_page_auto", False):
+        raw = (st.session_state.get("read_text") or "").strip()
+        read_sentences_live(raw, read_synth, rdoc_slot, rsub_slot, raudio_slot,
+                            "read_page", rpage_slot, progress_slot=prog_slot,
+                            speed=speed, gap=gap)
+    else:
+        rsub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+
+    with st.expander(f"{t('read_archive')} ({len(archive)})"):
+        if not archive:
+            st.caption(t("read_empty"))
+        for piece in archive:
+            acol1, acol2, acol3 = st.columns([4, 1, 1])
+            acol1.caption(piece["title"])
+
+            def _open(d=piece["digest"]):
+                for p in st.session_state.get("_archive", []):
+                    if p["digest"] == d:
+                        st.session_state["read_text"] = p["text"]
+                        break
+
+            def _delete(d=piece["digest"]):
+                st.session_state["_archive"] = RT.remove_piece(
+                    st.session_state.get("_archive", []), d)
+                RT.save_archive(archive_store, st.session_state["_archive"])
+
+            acol2.button(t("read_open"), key="ropen_" + piece["digest"][:8],
+                         on_click=_open)
+            acol3.button(t("read_delete"), key="rdel_" + piece["digest"][:8],
+                         on_click=_delete)
+        st.caption(t("read_storage_note"))
