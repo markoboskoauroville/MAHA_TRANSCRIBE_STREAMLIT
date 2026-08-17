@@ -379,3 +379,88 @@ server-side settings file the browser test created, one scratch file.
 Nothing was committed, nothing added to deployed secrets. If real keys are
 needed again, ask — don't assume any are still lying around.
 
+
+
+---
+
+## 8. THE MODULE MAP (read this before adding anything)
+
+`app.py` is the entrypoint and should stay thin: page setup, the auth
+gate, the tab chain, and wiring. Everything reusable lives in `ttt/`.
+
+    ttt/keyring.py     multi-key ring, vendor-agnostic. rotate(ring,
+                       attempt) is the ONE place rotation policy lives:
+                       dead buries permanently, cool rests 120s and
+                       revives itself, soft blames nobody and stops rather
+                       than burning the ring. import_keys() is line-aware —
+                       the file line above a key becomes its label — and
+                       NEVER drops a key for its shape.
+    ttt/store.py       per-user storage over a namespace: session ->
+                       localStorage -> server file. Imports no Streamlit,
+                       so it is testable without it. Cloud disk is not
+                       durable; localStorage is the real layer.
+    ttt/audio.py       ffmpeg + the 3-tier big-file strategy. Takes a
+                       transcribe_fn, so it serves any STT. Returns its
+                       temp paths; call cleanup() with them.
+    ttt/reader.py      the reading loop. Takes synth(text) and a frame
+                       callback, draws nothing, touches no session_state.
+    ttt/read_tab.py    archive + progress line for the Read tab.
+    ttt/providers/     base.py = the three capability shapes and one HTTP
+                       helper; one file per vendor; __init__.py = registry.
+
+### Adding a provider
+
+One file in `ttt/providers/`, one line in `REGISTRY`. Nothing else. The
+Settings screen renders key sections from `keyed_providers()`, engine
+pickers list `with_capability("tts")` / `("stt")`, and the reader takes
+whatever `synth` it is handed. If you find yourself editing a tab to add a
+vendor, stop — the registry is not being used properly.
+
+**Never** import a vendor module outside `ttt/providers/`, and never
+branch on `if provider == "groq"` in calling code.
+
+### Ring access
+
+`get_ring(provider_id)` is the only way to obtain a ring. It always
+attaches to the stored dict. The old pattern
+`load_keys().get(x) or new_ring()` silently detached and lost every state
+change; do not reintroduce it. Call `save_rings()` after anything that
+could change a key's state — including after a read, since keys die
+mid-read.
+
+## 9. AUDIT, 17.8.2026
+
+Bugs found by reading rather than by anything failing visibly:
+
+  * **Detached rings** (5 sites) — state changes thrown away whenever a
+    provider had no keys yet. Fixed structurally via `get_ring()`.
+  * **Dead keys resurrecting** — the read loop never persisted the ring,
+    so a key buried mid-session returned on reload and wasted a request
+    every time. Fixed with `save_rings()` at the end of every read.
+  * **Temp file leak** — a transcoded FLAC and a chunk directory per large
+    upload, never removed, on long-lived shared containers. `ttt/audio.py`
+    now returns its temps and `cleanup()` takes them.
+  * **Translate was a bare `else:`** — which is why no tab could follow it.
+    Now an explicit `elif`.
+  * **Speechify model hardcoded** to simba-3.2, which 400s for any voice
+    not ending `_32`. Now per-voice via `model_for()`.
+
+## 10. WHAT MA READER HAS THAT THIS DOES NOT
+
+Recorded so nobody re-litigates it from scratch. See the top of
+`ttt/read_tab.py` for the full reasoning.
+
+    media / lock-screen keys      needs an Android privileged shell
+    true full screen              Streamlit owns its own chrome; a
+                                  half-hidden UI would break the rule
+                                  rather than meet it
+    clipboard auto-read           the API can hang forever; a textarea is
+                                  the honest equivalent
+    word pause inside silence     needs a per-clip ffmpeg silence map;
+                                  possible later, not faked now
+    per-sentence offline export   possible (zip of mp3 + json), not built
+    waveform re-pinning for Edge  MA Reader decodes every Edge clip and
+                                  re-pins each word to the real waveform.
+                                  Until that is ported, Edge returns no
+                                  marks and highlights by sentence, which
+                                  is honest and never wrong.
