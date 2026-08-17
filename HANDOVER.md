@@ -727,14 +727,7 @@ updated. Nothing is started before the one before it is finished.
     A3. Hover, press and disabled states          DONE v23
 
 ### Vision (read what is in a picture)
-    V1. Groq vision model: pick an image file, get
-        its text into the transcript box. Groq's
-        own model list already reports which models
-        take images — qwen/qwen3.6-27b advertises
-        input_modalities ['text','image'] — so the
-        vision-capable model must be DISCOVERED
-        from the live list, never hardcoded, the
-        same as every other model.
+    V1. Groq vision: picture -> text             DONE v32
     V2. Paste a screenshot straight into the app.
         RESEARCH DONE, see §14 — the route is the
         native paste EVENT, not the clipboard API.

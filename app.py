@@ -29,6 +29,7 @@ from ttt import providers as PROVIDERS
 from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR
+from ttt import vision
 from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
@@ -161,7 +162,7 @@ st.markdown(theme.css(), unsafe_allow_html=True)
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v31 (a)"
+APP_VERSION = "v32 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -280,6 +281,7 @@ STRINGS = {
                             "hr": "Sažeto da stane, pa transkribirano."},
     "method_chunked":     {"en": "File was large — split into parts, transcribed, and stitched back together.",
                             "hr": "Datoteka je velika — podijeljena na dijelove, transkribirana, pa spojena natrag."},
+    "method_picture":     {"en": "Read from a picture.", "hr": "Pročitano iz slike."},
     "method_gap":         {"en": "Note: one or more parts could not be transcribed (marked […] in the text).",
                             "hr": "Napomena: jedan ili više dijelova nije transkribiran (označeno […] u tekstu)."},
     "speechify_title":    {"en": "Speechify (premium voices)", "hr": "Speechify (premium glasovi)"},
@@ -297,6 +299,15 @@ STRINGS = {
                             "hr": "Pričekaj {s} prije novog pokušaja."},
     "gate_min":           {"en": "min",               "hr": "min"},
     "gate_sec":           {"en": "s",                 "hr": "s"},
+    "img_label":          {"en": "Or read a picture",  "hr": "Ili pročitaj sliku"},
+    "img_working":        {"en": "Reading the picture…", "hr": "Čitam sliku…"},
+    "img_none":           {"en": "No text found in that picture.",
+                            "hr": "U toj slici nije pronađen tekst."},
+    "img_fail":           {"en": "Could not read the picture",
+                            "hr": "Nije uspjelo čitanje slike"},
+    "img_no_model":       {"en": "No engine here can read pictures.",
+                            "hr": "Nijedan pogon ovdje ne može čitati slike."},
+    "img_done":           {"en": "Read from a picture.", "hr": "Pročitano iz slike."},
     "clear_btn":          {"en": "clear",             "hr": "obriši"},
     "grammar_btn":        {"en": "GRAMMAR",           "hr": "GRAMATIKA"},
     "reshape_btn":        {"en": "RE-SHAPE",          "hr": "PREOBLIKUJ"},
@@ -1180,6 +1191,54 @@ def text_size_pills(where: str):
     c3.button("A+", key=f"tsz_plus_{where}", help=t("text_bigger"),
               disabled=a11y.at_max(scale),
               on_click=_set, args=(a11y.bigger,))
+
+
+def vision_model() -> str:
+    """Which model can read a picture, asked from the provider.
+
+    Cached for the session because it is a model-list call, and refreshed
+    by the same ↻ that refreshes the model pickers.
+    """
+    if "_vision_model" not in st.session_state:
+        chosen = ""
+        try:
+            groq = PROVIDERS.get("groq")
+            for key in (groq.keys or []):
+                data, err, _ = http_json_groq_models(key)
+                if err:
+                    continue
+                found = vision.find_vision_models(data.get("data", []))
+                if found:
+                    chosen = found[0]
+                break
+        except Exception:
+            chosen = ""
+        st.session_state["_vision_model"] = chosen
+    return st.session_state["_vision_model"]
+
+
+def http_json_groq_models(key: str):
+    from ttt.providers.base import http_json, classify_standard
+    return http_json("https://api.groq.com/openai/v1/models",
+                     {"Authorization": "Bearer " + key},
+                     timeout=30, classify=classify_standard)
+
+
+def read_picture(raw: bytes, filename: str) -> str:
+    """Text out of an image, through the Groq ring."""
+    model = vision_model()
+    if not model:
+        raise RuntimeError(t("img_no_model"))
+    ring = st.session_state.get("_groq_ring")
+
+    def _call(payload):
+        from ttt.providers.base import http_json, classify_standard
+        return kr.rotate(ring, lambda k: http_json(
+            "https://api.groq.com/openai/v1/chat/completions",
+            {"Authorization": "Bearer " + k}, payload=payload,
+            method="POST", timeout=120, classify=classify_standard))
+
+    return vision.read_image(_call, model, raw, filename)
 
 
 def audio_seconds(path) -> float:
@@ -2193,6 +2252,33 @@ if active == "transcribe":
                         os.remove(tmp.name)
                     except Exception:
                         pass
+
+    # ---- read a picture -------------------------------------------
+    # Sits with the audio picker because it answers the same need: text
+    # the person cannot read, made readable. A photo of a letter, a
+    # screenshot of an email, a form. The result lands in the same box as
+    # a transcript, so everything downstream — enlarge, read aloud,
+    # translate, GRAMMAR — works on it unchanged.
+    picture = st.file_uploader(
+        t("img_label"), type=["png", "jpg", "jpeg", "webp", "gif"],
+        label_visibility="collapsed", key="picture_upload")
+    if picture is not None:
+        pic_digest = hashlib.md5(picture.getvalue()).hexdigest()
+        if st.session_state.get("_pic_digest") != pic_digest:
+            st.session_state["_pic_digest"] = pic_digest
+            try:
+                with st.spinner(t("img_working")):
+                    text = read_picture(picture.getvalue(), picture.name)
+                save_rings()
+                if text.strip():
+                    st.session_state["transcript_box"] = text
+                    st.session_state["_transcribe_method"] = "picture"
+                    st.session_state["flac_path"] = None
+                    USAGE.log("picture", len(text), UNIT_CHARS, "groq")
+                else:
+                    st.info(t("img_none"))
+            except Exception as e:
+                st.error(f"{t('img_fail')}: {e}")
 
     if "transcript_box" in st.session_state:
         text_size_pills("transcript")
