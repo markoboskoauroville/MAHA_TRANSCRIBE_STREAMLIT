@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 
 # Groq's hard limit is 25MB. Baba's own margin, kept.
 SAFE_BYTES = 20 * 1024 * 1024
@@ -93,9 +94,80 @@ def cleanup(*paths) -> None:
             pass
 
 
+
+# ---------------------------------------------------------------------
+# Never lose a portion of audio
+# ---------------------------------------------------------------------
+# A chunk that fails is not automatically lost. Most failures at this
+# layer are TEMPORARY — every key resting off a rate limit at the same
+# moment, a timeout, a gateway hiccup — and all of them cure themselves
+# if you wait. Giving up on the first exception threw away real audio
+# for a condition that lasts two minutes.
+#
+# So: retry with a widening wait, and only leave a gap once the waiting
+# is genuinely exhausted. A gap then NAMES THE MINUTES it covers, so the
+# missing stretch can be found and re-run instead of silently vanishing
+# in the middle of a transcript.
+
+TRANSIENT_HINTS = (
+    "unavailable", "rate limit", "429", "too many requests",
+    "timeout", "timed out", "temporarily", "try again",
+    "connection", "reset", "broken pipe",
+    "502", "503", "504", "server error",
+)
+
+# 5s catches a blip, 30s a short queue, 125s outlasts a full 120s rest of
+# every key at once. Worst case per chunk is about 160 seconds of waiting
+# before a gap is allowed — cheap next to losing ten minutes of someone's
+# voice.
+WAIT_SCHEDULE = (5, 30, 125)
+
+
+def is_transient(err) -> bool:
+    """Will waiting plausibly help? Unknown errors are treated as
+    transient ON PURPOSE: retrying something permanent costs a little
+    time, while giving up on something temporary costs the audio."""
+    text = str(err).lower()
+    permanent = ("does not exist", "model_not_found", "invalid_request",
+                 "no keys", "not found (404)", "unsupported")
+    if any(h in text for h in permanent):
+        return False
+    return any(h in text for h in TRANSIENT_HINTS) or True
+
+
+def clock(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def transcribe_one_chunk(transcribe_fn, path, waits=WAIT_SCHEDULE,
+                         sleep=time.sleep, on_wait=None):
+    """One chunk, with patience. Returns (text, error).
+
+    `transcribe_fn` already rotates across every key once per call — this
+    adds the waiting that lets keys come back from a rest before the chunk
+    is written off.
+    """
+    last = ""
+    for attempt in range(len(waits) + 1):
+        try:
+            return transcribe_fn(path), None
+        except Exception as e:
+            last = str(e)
+            if not is_transient(e) or attempt >= len(waits):
+                return None, last
+            pause = waits[attempt]
+            if on_wait:
+                on_wait(attempt + 1, pause, last)
+            sleep(pause)
+    return None, last
+
+
 def transcribe_any_size(path: str, transcribe_fn, progress_cb=None,
                         safe_bytes: int = SAFE_BYTES,
-                        gap_marker: str = "[…]"):
+                        gap_marker: str = "[…]",
+                        chunk_seconds: int = CHUNK_SECONDS,
+                        waits=WAIT_SCHEDULE, sleep=time.sleep, on_wait=None):
     """Get a transcript out of a file of any size.
 
     `transcribe_fn(path) -> text` is any provider. Three tiers, each tried
@@ -129,17 +201,25 @@ def transcribe_any_size(path: str, transcribe_fn, progress_cb=None,
         except Exception:
             pass                      # fall through to chunking, don't give up
 
-    chunk_paths, chunk_dir = split_into_chunks(flac_path)
+    chunk_paths, chunk_dir = split_into_chunks(flac_path, chunk_seconds)
     temps.append(chunk_dir)
-    parts, ok = [], 0
+    parts, ok, gaps = [], 0, []
     for i, cp in enumerate(chunk_paths):
         if progress_cb:
             progress_cb(i, len(chunk_paths))
-        try:
-            parts.append(transcribe_fn(cp))
+        text, err = transcribe_one_chunk(
+            transcribe_fn, cp, waits=waits, sleep=sleep,
+            on_wait=(lambda n, secs, e, idx=i: on_wait(idx, n, secs, e)) if on_wait else None)
+        if err is None:
+            parts.append(text)
             ok += 1
-        except Exception:
-            parts.append(gap_marker)
+        else:
+            # Name the minutes so the hole can be found and re-run.
+            start, end = i * chunk_seconds, (i + 1) * chunk_seconds
+            gaps.append((start, end, err))
+            parts.append(f"{gap_marker}[{clock(start)}-{clock(end)}]")
     if not ok:
-        raise RuntimeError("Every chunk failed to transcribe — check the keys.")
+        raise RuntimeError(
+            "Every part failed to transcribe. Last reason: "
+            + (gaps[-1][2][:200] if gaps else "unknown"))
     return " ".join(p for p in parts if p), "chunked", flac_path, temps

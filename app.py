@@ -30,6 +30,7 @@ from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR
 from ttt import routing as RO
+from ttt import audio as ttt_audio
 
 # ----------------------------------------------------------------------
 # Page setup — near-black + gold, no blur, no clutter
@@ -143,7 +144,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v20 (a)"
+APP_VERSION = "v21 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -254,6 +255,8 @@ STRINGS = {
     "page_label":         {"en": "Page",             "hr": "Stranica"},
     "next_page":          {"en": "Next page",         "hr": "Sljedeća stranica"},
     "upload_label":       {"en": "Or pick an audio file", "hr": "Ili odaberi audio datoteku"},
+    "chunk_waiting":      {"en": "Keys are resting — waiting {s}s and trying part {i} again",
+                            "hr": "Ključevi se odmaraju — čekam {s}s i ponovno pokušavam dio {i}"},
     "chunk_progress":     {"en": "Transcribing part", "hr": "Transkribiram dio"},
     "method_direct":      {"en": "Uploaded as-is.",   "hr": "Poslano izravno."},
     "method_transcoded":  {"en": "Compressed to fit, then transcribed.",
@@ -635,44 +638,27 @@ def split_into_chunks(flac_path: str, chunk_seconds: int = CHUNK_SECONDS) -> lis
     return sorted(glob.glob(os.path.join(out_dir, "chunk_*.flac")))
 
 
-def transcribe_any_size(path: str, model: str, language: str, progress_cb=None):
-    """Returns (text, method, reusable_path). reusable_path is whichever file
-    actually got transcribed — the original for 'direct', the transcoded
-    FLAC for 'transcoded' or 'chunked' — so a later Correct pass (a different
-    model, not a different file) always has something valid to work from."""
-    size = os.path.getsize(path)
+def transcribe_any_size(path: str, model: str, language: str, progress_cb=None,
+                        on_wait=None):
+    """Thin wrapper over ttt.audio.transcribe_any_size.
 
-    # Tier 1: small enough already.
-    if size <= SAFE_BYTES:
-        try:
-            return transcribe(path, model, language), "direct", path
-        except Exception:
-            pass   # even a small file can fail to upload; fall through
+    This used to be a SECOND copy of the tiering logic living in app.py,
+    which meant the patient per-chunk retry built in the module never
+    reached the app at all — a long job still lost audio the moment every
+    key was resting. One implementation, in the module, used from here.
 
-    # Tier 2: transcode, then re-check.
-    flac_path = transcode_to_flac(path)
-    flac_size = os.path.getsize(flac_path)
-    if flac_size <= SAFE_BYTES:
-        try:
-            return transcribe(flac_path, model, language), "transcoded", flac_path
-        except Exception:
-            pass   # fall through to chunking rather than give up
-
-    # Tier 3: chunk and stitch. A chunk that fails leaves a gap marker
-    # instead of aborting everything already transcribed successfully.
-    chunk_paths = split_into_chunks(flac_path)
-    parts, ok_count = [], 0
-    for i, cp in enumerate(chunk_paths):
-        if progress_cb:
-            progress_cb(i, len(chunk_paths))
-        try:
-            parts.append(transcribe(cp, model, language))
-            ok_count += 1
-        except Exception:
-            parts.append("[…]")
-    if not ok_count:
-        raise RuntimeError("Every chunk failed to transcribe — check the Groq keys.")
-    return " ".join(p for p in parts if p), "chunked", flac_path
+    Returns (text, method, reusable_path) as before; the module also hands
+    back the temp files it made, and they are cleaned up unless the caller
+    still needs the reusable one for a later Correct pass.
+    """
+    text, method, reusable, temps = ttt_audio.transcribe_any_size(
+        path,
+        lambda p: transcribe(p, model, language),
+        progress_cb=progress_cb,
+        on_wait=on_wait,
+    )
+    ttt_audio.cleanup(*[x for x in temps if x != reusable])
+    return text, method, reusable
 
 
 # ----------------------------------------------------------------------
@@ -1968,9 +1954,16 @@ if active == "transcribe":
                     def _cb(i, n):
                         progress_bar.progress((i + 1) / n, text=f"{t('chunk_progress')} {i + 1}/{n}")
 
+                    def _on_wait(idx, attempt, secs, err):
+                        # Say WHY nothing is happening. A silent pause of
+                        # up to two minutes looks like a hang; naming the
+                        # rest makes it obviously deliberate.
+                        progress_bar.progress(
+                            0.5, text=t("chunk_waiting").format(s=secs, i=idx + 1))
+
                     text, method, reusable = transcribe_any_size(
                         tmp.name, chosen_model(stt.provider) or PRIMARY_MODEL,
-                        lang_code, progress_cb=_cb)
+                        lang_code, progress_cb=_cb, on_wait=_on_wait)
                 progress_bar.empty()
                 st.session_state["transcript_box"] = text
                 st.session_state["last_lang"] = lang_code

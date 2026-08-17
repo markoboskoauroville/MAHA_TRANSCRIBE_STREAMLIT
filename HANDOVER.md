@@ -550,8 +550,8 @@ instrumentation.
 
     1. Groq's own keys through the key ring          DONE (v20)
        so a 429 is a hand-off, not an error
-    2. Per-chunk retry across keys before any gap    <- IN PROGRESS
-    3. Silence-aware cut points
+    2. Per-chunk retry across keys before any gap    DONE (v21)
+    3. Silence-aware cut points                      <- NEXT
     4. Portions land visibly, with a countdown
     5. Resume after a reload
     6. Slice while still recording
