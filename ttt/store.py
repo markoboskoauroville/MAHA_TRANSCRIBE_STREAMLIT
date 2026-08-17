@@ -33,12 +33,20 @@ class Store:
     """
 
     def __init__(self, namespace: str, user: str, ls_read: dict = None,
-                 ls_write=None, defaults: dict = None):
+                 ls_write=None, defaults: dict = None, local_only: bool = False):
         self.namespace = namespace
         self.user = user
         self.ls_read = ls_read or {}
         self._ls_write = ls_write
         self.defaults = dict(defaults or {})
+        # local_only: never touch the server-side file, browser storage
+        # only. For anything holding a person's own CONTENT rather than
+        # their preferences. The server file is shared-container state on
+        # Streamlit Cloud, keyed by username — so somebody who guessed a
+        # password could read the previous holder's saved text out of it.
+        # Preferences are not worth that risk either, but saved documents
+        # certainly are not.
+        self.local_only = local_only
 
     # ---- addressing -------------------------------------------------
     @property
@@ -63,27 +71,29 @@ class Store:
                     return {**self.defaults, **data}
             except Exception:
                 pass
-        try:
-            with open(self._file(), encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                return {**self.defaults, **data}
-        except Exception:
-            pass
+        if not self.local_only:
+            try:
+                with open(self._file(), encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return {**self.defaults, **data}
+            except Exception:
+                pass
         return dict(self.defaults)
 
     def save(self, values: dict) -> None:
         """Write to both durable layers. Never raises — persistence is a
         convenience and must never be able to take the app down."""
-        try:
-            with open(self._file(), "w", encoding="utf-8") as f:
-                json.dump(values, f, ensure_ascii=False)
+        if not self.local_only:
             try:
-                os.chmod(self._file(), 0o600)
+                with open(self._file(), "w", encoding="utf-8") as f:
+                    json.dump(values, f, ensure_ascii=False)
+                try:
+                    os.chmod(self._file(), 0o600)
+                except Exception:
+                    pass
             except Exception:
                 pass
-        except Exception:
-            pass
         if self._ls_write:
             try:
                 self._ls_write(self.ls_key, json.dumps(values, ensure_ascii=False))

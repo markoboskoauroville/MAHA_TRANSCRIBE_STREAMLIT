@@ -32,6 +32,7 @@ from ttt import transform as TR
 from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
+from ttt import gate
 from ttt import copybtn
 
 # ----------------------------------------------------------------------
@@ -153,7 +154,7 @@ st.markdown(
 st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
             unsafe_allow_html=True)
 
-APP_VERSION = "v26 (a)"
+APP_VERSION = "v27 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -285,6 +286,8 @@ STRINGS = {
     "keys_added":         {"en": "New keys added",      "hr": "Novih ključeva dodano"},
     "keys_good":          {"en": "working",             "hr": "rade"},
     "keys_bad":           {"en": "rejected",            "hr": "odbijeno"},
+    "gate_wait":          {"en": "Please wait {s} seconds before trying again.",
+                            "hr": "Pričekaj {s} sekundi prije novog pokušaja."},
     "copy_idle":          {"en": "Copy",              "hr": "Kopiraj"},
     "copy_busy":          {"en": "Copying…",          "hr": "Kopiram…"},
     "copy_done":          {"en": "Copied ✓",          "hr": "Kopirano ✓"},
@@ -464,13 +467,30 @@ if not st.session_state.get("_authed"):
 def check_password() -> bool:
     def _entered():
         entered = st.session_state.get("_pw_input", "")
+        st.session_state["_pw_input"] = ""
+
+        # Refuse to even compare while the throttle is running, so a
+        # guesser gains nothing by hammering. See ttt/gate.py for what
+        # this does and does not protect against.
+        tstate = st.session_state.setdefault("_gate", {})
+        allowed, wait = gate.check(tstate, time.time())
+        if not allowed:
+            st.session_state["_authed"] = False
+            st.session_state["_gate_wait"] = wait
+            return
+
         matched = next((p for p in PASSWORDS if hmac.compare_digest(entered, p)), None)
         st.session_state["_authed"] = matched is not None
         if matched is not None:
+            gate.record_success(tstate)
+            st.session_state.pop("_gate_wait", None)
             st.session_state["_user"] = matched
             if st.session_state.get("_remember_me"):
                 queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
-        st.session_state["_pw_input"] = ""
+        else:
+            gate.record_failure(tstate, time.time())
+            _, wait = gate.check(tstate, time.time())
+            st.session_state["_gate_wait"] = wait
 
     def _set_login_lang(code):
         st.session_state["login_lang"] = code
@@ -503,7 +523,11 @@ def check_password() -> bool:
     st.text_input(labels["password"], type="password", key="_pw_input", on_change=_entered)
     st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
-        st.error(labels["wrong"])
+        wait = st.session_state.get("_gate_wait", 0)
+        if wait and wait > 0:
+            st.error(f"{labels['wrong']} {t('gate_wait').format(s=int(wait) + 1)}")
+        else:
+            st.error(labels["wrong"])
 
     # st.expander gives a real disclosure widget: a proper button with the
     # right ARIA state, keyboard reachable, and the content stays in the
@@ -867,7 +891,18 @@ def ring_import(ring: dict, raw: str, prefixes: tuple, min_len: int = 16,
 
 
 def persist_keys(rings: dict) -> None:
-    _save_server_keys(USER, rings)
+    # BROWSER ONLY. A user's API keys are the most sensitive thing this
+    # app holds, and the server-side file was shared container state keyed
+    # by username — so anyone who guessed a password could have read the
+    # real holder's keys straight off disk. The same reasoning that moved
+    # the archive off the server applies here with more force: keys cost
+    # money and outlive the session. Nothing is written to disk; the
+    # browser is the only store.
+    #
+    # Cost of this: keys do not survive a cleared browser and must be
+    # re-imported. That is the correct trade — the file was never durable
+    # on Streamlit Cloud anyway, so it bought almost nothing and risked a
+    # great deal.
     queue_ls(writes={PROVIDER_KEYS_LS_KEY: json.dumps(rings)})
 
 
@@ -882,8 +917,9 @@ def load_keys() -> dict:
             rings = json.loads(raw)
         except Exception:
             rings = None
-    if rings is None:
-        rings = _load_server_keys(USER)
+    # Deliberately NOT falling back to the server file: see persist_keys.
+    # Reading from it would reintroduce exactly the leak that writing to
+    # it created.
     st.session_state["_rings"] = rings or {}
     return st.session_state["_rings"]
 
@@ -2250,9 +2286,15 @@ elif active == "translate":
 elif active == "read":
     from ttt import read_tab as RT
 
+    # local_only: saved texts are the person's own documents and never
+    # touch the server. The temp-file layer is shared container state
+    # keyed by username, so anyone who guessed a password could have read
+    # the previous holder's saved text out of it. Preferences still use
+    # both layers; content does not.
     archive_store = Store(RT.ARCHIVE_NS, USER, ls_read=LS_DATA,
                           ls_write=lambda k, v: queue_ls(writes={k: v}) if v is not None
-                          else queue_ls(removes=[k]))
+                          else queue_ls(removes=[k]),
+                          local_only=True)
     if "_archive" not in st.session_state:
         st.session_state["_archive"] = RT.load_archive(archive_store)
     archive = st.session_state["_archive"]
