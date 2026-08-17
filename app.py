@@ -143,7 +143,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v18 (a)"
+APP_VERSION = "v19 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -273,6 +273,16 @@ STRINGS = {
     "keys_added":         {"en": "New keys added",      "hr": "Novih ključeva dodano"},
     "keys_good":          {"en": "working",             "hr": "rade"},
     "keys_bad":           {"en": "rejected",            "hr": "odbijeno"},
+    "vc_title":           {"en": "All Speechify voices", "hr": "Svi Speechify glasovi"},
+    "vc_load":            {"en": "Load voice list",   "hr": "Učitaj popis glasova"},
+    "vc_loading":         {"en": "Loading…",          "hr": "Učitavam…"},
+    "vc_search":          {"en": "Search by name",    "hr": "Traži po imenu"},
+    "vc_any":             {"en": "Any",               "hr": "Sve"},
+    "vc_count":           {"en": "voices",            "hr": "glasova"},
+    "vc_current":         {"en": "Current voice",     "hr": "Trenutni glas"},
+    "vc_pick":            {"en": "Use",               "hr": "Koristi"},
+    "vc_note":            {"en": "Any voice can read any language. Croatian in an English voice works and stays in time.",
+                            "hr": "Svaki glas može čitati bilo koji jezik. Hrvatski engleskim glasom radi i ostaje u ritmu."},
     "voice_engine":       {"en": "Voice engine",        "hr": "Glasovni pogon"},
     "engine_edge":        {"en": "Standard",            "hr": "Standardni"},
     "engine_speechify":   {"en": "Speechify",           "hr": "Speechify"},
@@ -1422,6 +1432,65 @@ with gear_col:
             if st.session_state.get("_sp_msg"):
                 st.caption(st.session_state.pop("_sp_msg"))
 
+            # ---- the whole catalogue --------------------------------
+            # 979 voices across 36 locales, not the curated eight. Loaded
+            # on request rather than on every settings open, because it is
+            # five paged calls. NOTHING filters by language on purpose:
+            # any Speechify voice may read any text, and Croatian in an
+            # English voice both sounds fine and keeps its word timings.
+            if kr.usable(sp_ring):
+                st.caption(t("vc_title"))
+                cat = st.session_state.get("_sp_catalogue")
+
+                def _load_catalogue():
+                    try:
+                        voices, err = PROVIDERS.get("speechify").catalogue(
+                            lambda a: kr.rotate(sp_ring, lambda k: a(k)))
+                        save_rings()
+                        st.session_state["_sp_catalogue"] = voices
+                        if err:
+                            st.session_state["_sp_msg"] = str(err)[:100]
+                    except Exception as e:
+                        st.session_state["_sp_msg"] = str(e)[:100]
+
+                if not cat:
+                    st.button(t("vc_load"), key="vc_load_btn", on_click=_load_catalogue)
+                else:
+                    locales = sorted({v.lang for v in cat if v.lang})
+                    fcol1, fcol2 = st.columns(2)
+                    loc = fcol1.selectbox(
+                        "loc", [t("vc_any")] + locales, key="vc_loc",
+                        label_visibility="collapsed")
+                    gen = fcol2.selectbox(
+                        "gen", [t("vc_any"), "F", "M"], key="vc_gen",
+                        label_visibility="collapsed")
+                    q = st.text_input(t("vc_search"), key="vc_q",
+                                      label_visibility="collapsed",
+                                      placeholder=t("vc_search"))
+
+                    shown = [v for v in cat
+                             if (loc == t("vc_any") or v.lang == loc)
+                             and (gen == t("vc_any") or v.gender == gen)
+                             and (not q or q.lower() in v.name.lower())]
+                    st.caption(f"{len(shown)} {t('vc_count')}")
+
+                    cur = st.session_state.get("sp_voice", "beatrice_32")
+                    names = {v.id: f"{v.name} · {v.lang} · {v.gender}" for v in shown}
+                    ids = [v.id for v in shown][:400]   # keep the widget sane
+                    if ids:
+                        idx = ids.index(cur) if cur in ids else 0
+
+                        def _use_voice():
+                            st.session_state["sp_voice"] = st.session_state["vc_sel"]
+                            persist_settings()
+
+                        st.selectbox("voice", ids, index=idx, key="vc_sel",
+                                     format_func=lambda i: names.get(i, i),
+                                     label_visibility="collapsed",
+                                     on_change=_use_voice)
+                    st.caption(f"{t('vc_current')}: {cur}")
+                    st.caption(t("vc_note"))
+
 
         with st.expander(t("assemblyai_title")):
             aai_ring = get_ring("assemblyai")
@@ -1976,16 +2045,23 @@ elif active == "talk":
     engine = _tts.id if _tts else "edge"
 
     if engine == "speechify":
+        # The curated eight are quick picks, NOT a limit — any of the 979
+        # voices chosen in Settings shows up here too, and any voice may
+        # read any language. If the chosen voice is not one of the eight,
+        # it gets its own lit pill so the picker always shows the truth.
         st.caption(t("engine_speechify"))
-        cols = st.columns(4)
         current_sp = st.session_state.get("sp_voice", "beatrice_32")
-        for i, vid in enumerate(SP_CURATED):
+        quick = list(SP_CURATED)
+        if current_sp not in quick:
+            quick.insert(0, current_sp)
+        cols = st.columns(4)
+        for i, vid in enumerate(quick[:8]):
             cols[i % 4].button(
-                vid.split("_")[0].title(), key=f"talksp_{vid}",
+                vid.split("_")[0].replace("-", " ").title(), key=f"talksp_{vid}",
                 type="primary" if vid == current_sp else "secondary",
                 on_click=pick_sp_voice, args=(vid,),
             )
-        chosen_sp_voice = st.session_state.get("sp_voice", "beatrice_32")
+        chosen_sp_voice = current_sp
 
         def synth_fn(s):
             return sp_synthesize(sp_ring_talk, s, chosen_sp_voice)

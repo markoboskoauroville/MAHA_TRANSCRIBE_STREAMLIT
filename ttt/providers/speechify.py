@@ -82,19 +82,31 @@ class Speechify(Provider):
     def voices(self, lang: str = "en"):
         return [v for v in CURATED if not lang or v.lang == lang]
 
-    def catalogue(self, rotate, locale="en"):
-        """The whole account catalogue, paged properly.
+    def catalogue(self, rotate, locale: str = ""):
+        """Every voice on the account, paginated properly.
 
-        TRAP: /v1/voices defaults to 50 and 50 alphabetically is all
-        A-names — one British voice out of the thirty-odd that really
-        exist. Walk the cursor to the end or the list is a lie.
+        THE TRAP, verified live: /v1/voices defaults to a limit of 50 and
+        returns alphabetically, so an unpaginated call yields 50 names all
+        starting with A and looks like the whole catalogue. Walking the
+        cursor gives 979 voices across 36 locales. Always follow
+        next_cursor to the end.
+
+        `locale` is optional and deliberately unused by the app: a
+        Speechify voice may read ANY text, whatever language it was made
+        for. Croatian read in an English voice is a legitimate choice
+        here, and the word timings come back correct for it (tested with
+        diacritics), so nothing filters voices by language. Only Edge,
+        whose voices are language-specific by construction, is matched to
+        a language.
         """
-        out, cursor = [], None
+        out, cursor, pages = [], None, 0
         while True:
-            path = f"/v1/voices?locale={locale}&limit=200"
+            path = "/v1/voices?limit=200"
+            if locale:
+                path += f"&locale={locale}"
             if cursor:
                 path += f"&cursor={cursor}"
-            data, err = rotate(lambda k, p=path: self._call(k, p))
+            data, err = rotate(lambda k, p=path: self._call(k, p, timeout=45))
             if err:
                 return out, err
             items = (data if isinstance(data, list)
@@ -105,11 +117,13 @@ class Speechify(Provider):
                     continue
                 out.append(Voice(
                     vid,
-                    v.get("display_name") or v.get("name") or v.get("title") or vid,
-                    (v.get("locale") or v.get("language") or "")[:2],
+                    v.get("display_name") or v.get("name") or vid,
+                    v.get("locale") or "",
                     (v.get("gender") or "")[:1].upper(),
                     model_for(vid)))
-            if not isinstance(data, dict) or not data.get("has_more") or not data.get("next_cursor"):
+            pages += 1
+            if not isinstance(data, dict) or not data.get("has_more") \
+                    or not data.get("next_cursor") or pages > 20:
                 return out, None
             cursor = data["next_cursor"]
 
