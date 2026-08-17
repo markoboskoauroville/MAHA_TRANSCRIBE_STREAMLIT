@@ -548,9 +548,9 @@ instrumentation.
 
 ### THE STEPS (one at a time, each build-then-test-three-times)
 
-    1. Groq's own keys through the key ring          <- IN PROGRESS
+    1. Groq's own keys through the key ring          DONE (v20)
        so a 429 is a hand-off, not an error
-    2. Per-chunk retry across keys before any gap
+    2. Per-chunk retry across keys before any gap    <- IN PROGRESS
     3. Silence-aware cut points
     4. Portions land visibly, with a countdown
     5. Resume after a reload

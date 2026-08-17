@@ -9,6 +9,7 @@ Transcription goes through the official groq SDK because it handles the
 multipart upload; the text side is a plain HTTP call.
 """
 
+from .. import keyring
 from .base import Model, Provider, http_json, classify_standard, USER_AGENT
 
 API = "https://api.groq.com/openai/v1"
@@ -25,8 +26,29 @@ class Groq(Provider):
     needs_key = True
     key_prefixes = ("gsk_",)
 
-    def __init__(self, keys=None):
+    def __init__(self, keys=None, ring=None):
         self.keys = list(keys or [])
+        # The ring is optional so this provider still works standalone in a
+        # test with a plain key list. When the app supplies one, every call
+        # rotates through it and a 429 becomes a hand-off instead of a
+        # failure — which is what makes hours of audio possible.
+        self.ring = ring
+
+    def _rotate(self, attempt):
+        """Run `attempt(key) -> (result, err, kind)` through the ring if
+        there is one, else straight down the key list with the same rules
+        (a non-key error stops immediately rather than burning keys)."""
+        if self.ring is not None:
+            return keyring.rotate(self.ring, attempt)
+        last = "no keys"
+        for key in self.keys:
+            result, err, kind = attempt(key)
+            if not err:
+                return result, None
+            last = err
+            if kind not in ("dead", "cool"):
+                return None, err
+        return None, f"All Groq keys failed. Last: {last}"
 
     # ---- key testing -------------------------------------------------
     def test_key(self, key: str):
@@ -77,38 +99,36 @@ class Groq(Provider):
 
     # ---- speech to text ----------------------------------------------
     def transcribe(self, path: str, language: str = "hr", model: str = None):
-        """Rotates over the app's own keys. Raises if all of them fail, so
-        the caller can decide what to tell the person."""
-        from groq import Groq as GroqSDK      # imported late: heavy, optional
+        """Rotates over the ring (or the key list) exactly like everything
+        else. The SDK raises instead of returning a status, so its errors
+        are translated back into the ring's verdicts by
+        classify_exception() below — otherwise a rate limit would look
+        like a dead key and the ring would bury a perfectly good one.
+        """
+        from groq import Groq as GroqSDK      # imported late: heavy
 
-        if not self.keys:
-            raise RuntimeError("No Groq keys configured.")
-        last = "unknown error"
-        for key in self.keys:
+        with open(path, "rb") as f:
+            audio = f.read()
+
+        def attempt(key):
             try:
-                # The SDK builds its own requests, so the UA has to be
-                # given to it explicitly — the http_json default cannot
-                # reach here. Same Cloudflare rule applies.
                 client = GroqSDK(api_key=key,
                                  default_headers={"User-Agent": USER_AGENT})
-                with open(path, "rb") as f:
-                    return client.audio.transcriptions.create(
-                        file=(path, f.read()),
-                        model=model or FAST_STT,
-                        language=language,
-                        response_format="text",
-                        temperature=0.0,
-                    ).strip()
+                text = client.audio.transcriptions.create(
+                    file=(path, audio),
+                    model=model or FAST_STT,
+                    language=language,
+                    response_format="text",
+                    temperature=0.0,
+                ).strip()
+                return text, None, None
             except Exception as e:
-                last = str(e)
-                low = last.lower()
-                if "model_not_found" in low or "does not exist" in low \
-                        or "invalid_request" in low:
-                    # Same rule as complete(): a request problem is not a
-                    # key problem, so stop and say what is actually wrong.
-                    raise RuntimeError(last)
-                continue
-        raise RuntimeError(f"All Groq keys failed. Last: {last}")
+                return None, str(e)[:250], classify_exception(e)
+
+        text, err = self._rotate(attempt)
+        if err:
+            raise RuntimeError(err)
+        return text
 
     # ---- text --------------------------------------------------------
     def complete(self, prompt: str, system: str = None, model: str = None,
@@ -119,24 +139,14 @@ class Groq(Provider):
         messages.append({"role": "user", "content": prompt})
         payload = {"model": model or TEXT_MODEL, "messages": messages,
                    "temperature": temperature, "max_tokens": max_tokens}
-        last = "no keys"
-        for key in self.keys:
-            data, err, kind = http_json(
-                API + "/chat/completions",
-                {"Authorization": "Bearer " + key, "User-Agent": "TTT-LLL/1.0"},
-                payload=payload, method="POST", timeout=120,
-                classify=classify_standard)
-            if not err:
-                return (data["choices"][0]["message"]["content"] or "").strip()
-            last = err
-            if kind not in ("dead", "cool"):
-                # Not the key's fault — a missing model, a malformed
-                # request. Trying nine more keys cannot help, and doing so
-                # hides the real reason behind whatever the LAST key said.
-                # This exact case reported "key rejected (401)" for what
-                # was really "that model does not exist on this account".
-                raise RuntimeError(err)
-        raise RuntimeError(f"All Groq keys failed. Last: {last}")
+        data, err = self._rotate(lambda key: http_json(
+            API + "/chat/completions",
+            {"Authorization": "Bearer " + key},
+            payload=payload, method="POST", timeout=120,
+            classify=classify_standard))
+        if err:
+            raise RuntimeError(err)
+        return (data["choices"][0]["message"]["content"] or "").strip()
 
 
 def _fallback(task: str = ""):
@@ -145,3 +155,28 @@ def _fallback(task: str = ""):
              Model(ACCURATE_STT, ACCURATE_STT, for_task="stt"),
              Model(TEXT_MODEL, TEXT_MODEL, for_task="llm", recommended=True)]
     return [m for m in known if not task or m.for_task == task]
+
+
+def classify_exception(exc) -> str:
+    """Turn an SDK exception into a ring verdict.
+
+    The SDK raises rather than returning a status, so without this a 429
+    would be indistinguishable from a bad key and the ring would bury a
+    key that was merely tired — exactly the failure that makes long
+    transcriptions impossible. Status code first, message text only as a
+    fallback for wrappers that do not carry one.
+    """
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if isinstance(status, int):
+        return classify_standard(status)
+    text = str(exc).lower()
+    if "429" in text or "rate limit" in text or "too many requests" in text:
+        return "cool"
+    if "401" in text or "invalid api key" in text or "unauthorized" in text:
+        return "dead"
+    if "402" in text or "403" in text or "insufficient" in text or "quota" in text:
+        return "dead"
+    if "model_not_found" in text or "does not exist" in text \
+            or "invalid_request" in text or "400" in text:
+        return "soft"      # a request problem; no key can fix it
+    return "soft"

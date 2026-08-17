@@ -143,7 +143,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_VERSION = "v19 (a)"
+APP_VERSION = "v20 (a)"
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
@@ -506,6 +506,23 @@ if not KEYS:
 # them, so hand them over now. Anything asking the registry for the "llm"
 # or "stt" capability depends on this line having run.
 PROVIDERS.set_groq_keys(KEYS)
+
+# Groq's keys also get a ring, so a rate limit hands off to the next key
+# and the tired one rests instead of failing the job. This is what lets a
+# long transcription keep going instead of dying at the first 429.
+#
+# SECURITY: this ring lives in session_state ONLY. It must never go
+# through persist_keys()/localStorage like the user-supplied rings do —
+# these are the APP's keys from secrets, and writing them into a user's
+# browser would hand them out. get_ring() is deliberately not used here.
+if "_groq_ring" not in st.session_state:
+    _gr = kr.new_ring()
+    for k in KEYS:
+        _gr["keys"].append({"key": k, "fp": kr.fingerprint(k), "state": "new",
+                            "label": "app key", "last_error": "", "calls": 0,
+                            "chars": 0, "cool_until": 0})
+    st.session_state["_groq_ring"] = _gr
+PROVIDERS.get("groq").ring = st.session_state["_groq_ring"]
 
 
 # ----------------------------------------------------------------------
