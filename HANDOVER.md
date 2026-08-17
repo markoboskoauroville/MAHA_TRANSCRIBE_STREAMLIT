@@ -25,12 +25,42 @@ one was `ma-reader-thermux`. Known case, settled: **MA Reader means
 `markoboskoauroville/ma-reader-thermux`, and nothing else.** Its
 `1md_ma_reader_handover_[ENG].md` is the source of truth; read that first.
 
-**2. The handover is part of the work, not paperwork after it.**
+**2. MODULARITY IS THE ARCHITECTURE — everything, always.**
+Baba's standing philosophy for every app built in this line of work:
+*modularity, flexibility, adaptability. Anything can go anywhere.* Build
+modules, then wire them together; never a monolith with features welded
+into it.
+
+What this means concretely here:
+- Anything that talks to an outside service is a **provider** behind a
+  common interface, registered in `ttt/providers/`. Adding Anthropic,
+  Deepgram, ElevenLabs later is dropping in one file and registering it —
+  never editing the tabs, the reader, or the settings screen.
+- A capability (speech-to-text, text-to-speech, translation) is asked for
+  by name from the registry. Calling code must never import a specific
+  vendor or branch on `if provider == "groq"`. If a tab knows a vendor's
+  name, that's a bug.
+- Shared machinery lives in its own module and is used by everyone: the
+  key ring, the storage layer, the audio/ffmpeg helpers, the reading loop,
+  the UI atoms. None of them may import a specific provider.
+- The reading loop takes a *function* that makes audio, not an engine
+  name. That's why word-level highlighting worked the moment Speechify
+  arrived without touching the loop.
+- Every module must be liftable into another app with its imports and
+  nothing else. If a module needs `app.py` to work, it isn't a module.
+
+Caveat that has already bitten once (see incident 1): Streamlit keeps
+imported modules in `sys.modules` while re-running the entrypoint, so a
+warm process can hold an old module against new calling code. Changing a
+module's function signature therefore needs a full restart, not a rerun.
+Keep signatures additive with defaults wherever possible.
+
+**3. The handover is part of the work, not paperwork after it.**
 Workflow on every change, in order: build -> test -> push -> THEN update
 this file. It must always describe the newest feature. If this file
 disagrees with the code, the code is right and this file is a bug.
 
-**3. Aesthetics are a requirement, not a finishing touch.**
+**4. Aesthetics are a requirement, not a finishing touch.**
 Think like a visual designer, every time. Concretely and permanently: a
 button is the size of its text, never the width of the page. Small pills,
 arranged in tidy rows that wrap. Streamlit's default (`use_container_width`

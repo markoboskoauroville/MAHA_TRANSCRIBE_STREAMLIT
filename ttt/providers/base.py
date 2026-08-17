@@ -1,0 +1,120 @@
+"""What every provider must look like.
+
+Three capabilities, three shapes. Calling code asks the registry for a
+capability and gets something with these methods — it never learns which
+vendor answered.
+
+    STT   transcribe(path, language) -> str
+    TTS   voices(lang) -> [Voice]
+          synth(text, voice_id) -> (audio_bytes, seconds, marks|None)
+    LLM   complete(prompt, system) -> str
+
+`marks` is the one interesting piece of the contract. A TTS provider that
+can report exactly when each word is spoken returns a list of
+`{start, end, start_time, end_time}` — character offsets into the text
+*sent*, and seconds into the audio. A provider that cannot returns None,
+and the reader falls back to highlighting whole sentences. Nothing else in
+the app needs to know the difference.
+
+Do not return guessed marks. Edge can emit word boundaries from its own
+model and they drift out of sync over a sentence; MA Reader re-pins them to
+the real waveform to fix that. Until that work is ported, Edge returns None
+and highlights by sentence, which is honest and never wrong.
+"""
+
+import json
+import urllib.error
+import urllib.request
+
+
+class Voice:
+    __slots__ = ("id", "name", "lang", "gender", "model")
+
+    def __init__(self, id, name, lang="", gender="", model=""):
+        self.id = id
+        self.name = name
+        self.lang = lang
+        self.gender = gender
+        self.model = model
+
+    def __repr__(self):
+        return f"Voice({self.name!r}, {self.lang!r})"
+
+
+class Provider:
+    """Base for every provider.
+
+    `id`           short stable string, used in settings and the registry
+    `label`        what a person sees
+    `capabilities` any of "stt", "tts", "llm"
+    `needs_key`    False for keyless providers like Edge
+    `key_prefixes` shape hint for the key ring; empty tuple = no distinctive
+                   prefix, so the ring's generic fallback finds them
+    """
+
+    id = ""
+    label = ""
+    capabilities = ()
+    needs_key = True
+    key_prefixes = ()
+
+    def test_key(self, key: str):
+        """Return (error, kind) — (None, None) when the key is good.
+        kind is "dead" | "cool" | "soft" so the ring knows what to do."""
+        raise NotImplementedError
+
+
+def http_json(url: str, headers: dict, payload=None, data: bytes = None,
+              method: str = "GET", timeout: int = 60, classify=None):
+    """One HTTP call, returning (parsed_json, error, kind).
+
+    `classify(status) -> "dead"|"cool"|"soft"` maps a provider's status
+    codes onto the ring's verdicts. A transport failure is always "soft" —
+    the network being down is never a key's fault.
+    """
+    body = None
+    h = dict(headers)
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        h.setdefault("Content-Type", "application/json")
+    elif data is not None:
+        body = data
+    req = urllib.request.Request(url, data=body, headers=h, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            text = r.read().decode("utf-8", "replace")
+        return (json.loads(text) if text.strip() else {}), None, None
+    except urllib.error.HTTPError as e:
+        try:
+            text = e.read().decode("utf-8", "replace")
+        except Exception:
+            text = ""
+        kind = classify(e.code) if classify else "soft"
+        return None, _message(e.code, text), kind
+    except Exception as e:
+        return None, f"Could not reach the service: {e}", "soft"
+
+
+def _message(status: int, body: str) -> str:
+    common = {
+        401: "The key was rejected (401).",
+        402: "This account has no credit left (402).",
+        403: "This key is not allowed to do that (403).",
+        404: "Not found (404).",
+        429: "Rate limit reached (429).",
+    }
+    if status in common:
+        return common[status]
+    if status >= 500:
+        return f"The service had an error ({status})."
+    return f"Refused ({status}) {(body or '')[:150]}"
+
+
+def classify_standard(status: int) -> str:
+    """The verdict map almost every provider wants: auth/credit problems
+    bury the key, 429 rests it, everything else blames nobody."""
+    if status in (401, 402, 403):
+        return "dead"
+    if status == 429:
+        return "cool"
+    return "soft"
