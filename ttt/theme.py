@@ -296,7 +296,9 @@ def css() -> str:
     /* The row above the transcript: text links, not buttons. Baba asked
        for "text links" so the row costs almost nothing — the text is what
        matters on that screen, not the furniture around it. */
-    .st-key-txttools .stButton button {{
+    .st-key-txttools .stButton button,
+    [class*="st-key-txttools_"] .stButton button,
+    [class*="st-key-cprow_trsrc"] .stButton button {{
       background: transparent !important;
       border: none !important;
       color: var(--dim) !important;
@@ -304,15 +306,21 @@ def css() -> str:
       padding: 0 0.4rem !important;
       min-width: 44px;
     }}
-    .st-key-txttools .stButton button:hover:not(:disabled) {{
+    .st-key-txttools .stButton button:hover:not(:disabled),
+    [class*="st-key-txttools_"] .stButton button:hover:not(:disabled),
+    [class*="st-key-cprow_trsrc"] .stButton button:hover:not(:disabled) {{
       color: var(--amber) !important;
       background: transparent !important;
       transform: none;
     }}
-    .st-key-txttools div[data-testid="stHorizontalBlock"] {{
+    .st-key-txttools div[data-testid="stHorizontalBlock"],
+    [class*="st-key-txttools_"] div[data-testid="stHorizontalBlock"],
+    [class*="st-key-cprow_trsrc"] div[data-testid="stHorizontalBlock"] {{
       align-items: center; flex-wrap: nowrap !important;
     }}
-    .st-key-txttools div[data-testid="stColumn"] {{
+    .st-key-txttools div[data-testid="stColumn"],
+    [class*="st-key-txttools_"] div[data-testid="stColumn"],
+    [class*="st-key-cprow_trsrc"] div[data-testid="stColumn"] {{
       width: auto !important; flex: 0 0 auto !important; min-width: 0 !important;
     }}
 
@@ -330,7 +338,9 @@ def css() -> str:
       text-align: right;
       color: var(--dim);
       font-family: var(--mono);
-      font-size: 0.95rem;
+      /* 20% down from 0.95rem, on Baba's eye. It is a mark on the
+         frame, not a label that needs reading. */
+      font-size: 0.76rem;
       letter-spacing: 0.10em;
       opacity: 0.75;
       margin: 0.5rem 0 0.1rem;

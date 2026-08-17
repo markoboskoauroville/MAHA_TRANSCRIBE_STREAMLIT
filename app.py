@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v41 (a)"
+APP_VERSION = "v42 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -231,6 +231,12 @@ SYM = {
     "undo":   "\u21ba",   # anticlockwise
     "save":   "\u2605",   # star
     "next":   "\u25b8",   # small play, for the next page
+    # Translate needs its OWN glyph. It used ▶ and the aria injector maps
+    # ▶ to "Read" for every button on the page, so a screen reader
+    # announced the translate button as "Read" — the injector cannot tell
+    # two identical glyphs apart. An arrow also reads better here: it is
+    # "into", not "play".
+    "go":     "\u2192",   # right arrow: translate INTO
 }
 
 VOICE_SHORT = {"Gabrijela": "Gabby", "Srecko": "Srećko"}
@@ -341,7 +347,6 @@ STRINGS = {
     "translate_src_ph":   {"en": "Paste text to translate", "hr": "Zalijepi tekst za prijevod"},
     "translate_btn":      {"en": "Translate",         "hr": "Prevedi"},
     "translate_fail":     {"en": "Translation failed", "hr": "Prijevod nije uspio"},
-    "swap_help":          {"en": "Swap languages",    "hr": "Zamijeni jezike"},
     "page_label":         {"en": "Page",             "hr": "Stranica"},
     "next_page":          {"en": "Next page",         "hr": "Sljedeća stranica"},
     "upload_label":       {"en": "Or pick an audio file", "hr": "Ili odaberi audio datoteku"},
@@ -1353,6 +1358,7 @@ def name_the_symbols():
         SYM["clear"]: t("clear_btn"), SYM["undo"]: t("ai_undo"),
         SYM["save"]: t("read_save"), SYM["paste"]: t("paste_btn"),
         SYM["next"]: t("next_page"),
+        SYM["go"]: t("translate_btn"),
     }
     components.html(
         "<script>(function(){"
@@ -2025,15 +2031,6 @@ def _set_translate_lang(which: str, code: str):
     st.session_state["translate_" + which] = code
 
 
-def swap_translate_langs():
-    src = st.session_state.get("translate_src", "hr")
-    tgt = st.session_state.get("translate_tgt", "en")
-    st.session_state["translate_src"] = tgt
-    st.session_state["translate_tgt"] = src
-    src_text = st.session_state.get("translate_src_text", "")
-    out_text = st.session_state.get("translate_out", "")
-    st.session_state["translate_src_text"] = out_text
-    st.session_state["translate_out"] = src_text
 
 
 def do_translate():
@@ -2503,54 +2500,69 @@ elif active == "talk":
 
 
 elif active == "translate":
+    # LEFT TO RIGHT IS THE INSTRUCTION.
+    #
+    # Baba's principle, and it should hold everywhere in this app: the
+    # buttons in a row are the steps in order, so someone works across
+    # the screen without deciding anything. Here that is
+    #
+    #     ⇩ paste   →   ▶ translate   →   ✕ clear
+    #
+    # above the box they act on. The old layout had translate BELOW the
+    # box and a swap button in the middle of nothing, so the eye had to
+    # hunt for what to press next.
     st.session_state.setdefault("translate_src", "hr")
     st.session_state.setdefault("translate_tgt", "en")
 
     lang_pills("srcpill", "src", st.session_state["translate_src"])
+
+    with st.container(key="cprow_trsrc"):
+        wcol1, wcol2, wcol3, _ = st.columns([1, 1, 1, 2])
+        with wcol1:
+            got = paste_target("trsrc")
+            if got:
+                st.session_state["translate_src_text"] = got
+                st.rerun()
+        wcol2.button(SYM["go"], key="do_translate_btn",
+                     help=t("translate_btn"), on_click=do_translate)
+
+        def _clear_src():
+            st.session_state["translate_src_text"] = ""
+            st.session_state.pop("translate_out", None)
+
+        wcol3.button(SYM["clear"], key="tr_clear_src", help=t("clear_btn"),
+                     on_click=_clear_src)
+
     st.text_area("src", key="translate_src_text", height=120,
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
 
-    _, swap_col, _ = st.columns([2.5, 1, 2.5])
-    swap_col.button("⇄", key="swap_langs",
-                     help=t("swap_help"), on_click=swap_translate_langs)
-
     lang_pills("tgtpill", "tgt", st.session_state["translate_tgt"])
-    st.button(t("translate_btn"), key="do_translate_btn", use_container_width=True,
-              on_click=do_translate)
 
     if st.session_state.get("_translate_error"):
         st.error(st.session_state.pop("_translate_error"))
 
     if "translate_out" in st.session_state:
-        text_size_pills("translate")
-        cp_row(st.session_state.get("translate_out", ""), "translate")
-        st.text_area("out", key="translate_out", height=150, label_visibility="collapsed")
+        # The result, and the same left-to-right row over it: copy first,
+        # because that is what people do with a translation.
+        with st.container(key="txttools_tr"):
+            ocol1, ocol2, _ = st.columns([1, 1, 4])
+            with ocol1:
+                if (st.session_state.get("translate_out") or "").strip():
+                    components.html(
+                        copybtn.cp_html(st.session_state["translate_out"],
+                                        done_label="OK", failed_label="X",
+                                        size=40),
+                        height=48)
 
-        tr_col1, tr_col2 = st.columns(2)
-        tread_clicked = tr_col1.button(SYM["read"], key="tr_read_btn", help=t("read_btn"))
-        tr_col2.button(t("stop_btn"), use_container_width=True, key="tr_stop_btn", help=t("stop_help"))
+            def _clear_out():
+                st.session_state.pop("translate_out", None)
 
-        tdoc_slot = st.empty()
-        tsub_slot = st.empty()
-        taudio_slot = st.empty()
-        tpage_slot = st.empty()
+            ocol2.button(SYM["clear"], key="tr_clear_out", help=t("clear_btn"),
+                         on_click=_clear_out)
 
-        if tread_clicked or st.session_state.pop("translate_page_auto", False):
-            raw = (st.session_state.get("translate_out") or "").strip()
-            tgt = st.session_state.get("translate_tgt", "en")
-            tvkey = TRANSLATE_VKEY.get(tgt, "ukF")
-            read_sentences_live(raw, lambda s: tk.synth_sentence(s, tvkey) + (None,),
-                               tdoc_slot, tsub_slot, taudio_slot, "translate_page", tpage_slot)
-        else:
-            tsub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
+        st.text_area("out", key="translate_out", height=150,
+                     label_visibility="collapsed")
 
-# ----------------------------------------------------------------------
-# Read — MA Reader's workflow, adapted to Streamlit and no permanent
-# storage. The tab is thin on purpose: everything that could be a module
-# is one (ttt.read_tab for the archive, ttt.reader for the loop), so this
-# block is only wiring. See ttt/read_tab.py for what ported and what did
-# not, and why.
-# ----------------------------------------------------------------------
     tab_signature(t("sig_translate"))
 
 
