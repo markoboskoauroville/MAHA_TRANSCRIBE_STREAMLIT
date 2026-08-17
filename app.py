@@ -20,7 +20,7 @@ import base64
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v36 (a)"
+APP_VERSION = "v37 (a)"
 
 import streamlit as st
 from groq import Groq
@@ -68,6 +68,7 @@ from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
+from ttt import read_tab as RT
 from ttt import theme
 from ttt import gate
 from ttt import copybtn
@@ -2033,7 +2034,7 @@ def lang_pills(prefix: str, which: str, current: str):
 # ----------------------------------------------------------------------
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
-    "nav", ["transcribe", "talk", "translate", "read", "settings"],
+    "nav", ["transcribe", "talk", "translate", "settings"],
     format_func=lambda k: t("tab_" + k),
     key="active_tab", required=True, label_visibility="collapsed",
 )
@@ -2293,16 +2294,22 @@ elif active == "talk":
         parts = job["parts"]
         cached = job["cache"].get(idx)
 
+        def _make(i):
+            """Build block i into the cache. Returns it."""
+            if i in job["cache"] or i >= len(parts):
+                return job["cache"].get(i)
+            ss, char_off = parts[i]
+            path, marks, total, temps = SPEECH.build_part(
+                ss, job["synth"], char_off, job["full_text"])
+            with open(path, "rb") as f:
+                audio = f.read()
+            ttt_audio.cleanup(*temps)
+            job["cache"][i] = {"audio": audio, "marks": marks}
+            return job["cache"][i]
+
         if cached is None:
             with st.spinner(t("gen_part").format(i=idx + 1, n=len(parts))):
-                sentences, char_off = parts[idx]
-                path, marks, total, temps = SPEECH.build_part(
-                    sentences, job["synth"], char_off, job["full_text"])
-                with open(path, "rb") as f:
-                    audio = f.read()
-                ttt_audio.cleanup(*temps)
-                job["cache"][idx] = {"audio": audio, "marks": marks}
-                cached = job["cache"][idx]
+                cached = _make(idx)
             save_rings()
 
         scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
@@ -2325,6 +2332,18 @@ elif active == "talk":
             st.session_state.pop("_talk_player_seen", None)
 
         st.button(t("new_text"), key="talk_new", on_click=_new_text)
+
+        # ONE BLOCK IN ADVANCE, exactly as Baba asked. This runs AFTER the
+        # player is on the page, and the player is a client-side iframe
+        # that is already playing — so Python carrying on here does not
+        # interrupt the sound. By the time this block's audio ends, the
+        # next one is already in the cache and the swap is instant.
+        if idx + 1 < len(parts) and (idx + 1) not in job["cache"]:
+            try:
+                _make(idx + 1)
+                save_rings()
+            except Exception:
+                pass          # a failed prefetch just means a short wait later
 
     else:
         # ---- WRITING -------------------------------------------------
@@ -2354,13 +2373,56 @@ elif active == "talk":
         st.text_area(t("tab_talk"), key="talk_text", height=150,
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
 
-        go = st.button(SYM["read"], key="read_btn", help=t("read_btn"))
+        bcol1, bcol2 = st.columns(2)
+        go = bcol1.button(SYM["read"], key="read_btn", help=t("read_btn"))
+
+        # The archive, brought over from the tab that was merged away.
+        archive_store = Store(RT.ARCHIVE_NS, USER, ls_read=LS_DATA,
+                              ls_write=lambda k, v: queue_ls(writes={k: v}) if v is not None
+                              else queue_ls(removes=[k]),
+                              local_only=True)
+        if "_archive" not in st.session_state:
+            st.session_state["_archive"] = RT.load_archive(archive_store)
+
+        def _keep_text():
+            txt = (st.session_state.get("talk_text") or "").strip()
+            if txt:
+                st.session_state["_archive"] = RT.add_piece(
+                    st.session_state.get("_archive", []), txt)
+                RT.save_archive(archive_store, st.session_state["_archive"])
+
+        bcol2.button(SYM["save"], key="talk_keep", help=t("read_save"),
+                     on_click=_keep_text)
+
+        archive = st.session_state.get("_archive", [])
+        if archive:
+            with st.expander(f"{t('read_archive')} ({len(archive)})"):
+                for piece in archive:
+                    acol1, acol2, acol3 = st.columns([4, 1, 1])
+                    acol1.caption(piece["title"])
+
+                    def _open(d=piece["digest"]):
+                        for pc in st.session_state.get("_archive", []):
+                            if pc["digest"] == d:
+                                st.session_state["talk_text"] = pc["text"]
+                                break
+
+                    def _delete(d=piece["digest"]):
+                        st.session_state["_archive"] = RT.remove_piece(
+                            st.session_state.get("_archive", []), d)
+                        RT.save_archive(archive_store, st.session_state["_archive"])
+
+                    acol2.button(t("read_open"), key="ropen_" + piece["digest"][:8],
+                                 on_click=_open)
+                    acol3.button(SYM["clear"], key="rdel_" + piece["digest"][:8],
+                                 help=t("read_delete"), on_click=_delete)
+                st.caption(t("read_storage_note"))
         if go or st.session_state.pop("_auto_read", False):
             raw = (st.session_state.get("talk_text") or "").strip()
             if raw:
                 sentences = tk.sentences_of(raw)
                 st.session_state["_talk_job"] = {
-                    "parts": SPEECH.plan_parts(sentences),
+                    "parts": SPEECH.plan_blocks(sentences),
                     "full_text": " ".join(sentences),
                     "index": 0, "cache": {}, "synth": synth_fn,
                 }
@@ -2419,119 +2481,6 @@ elif active == "translate":
 # block is only wiring. See ttt/read_tab.py for what ported and what did
 # not, and why.
 # ----------------------------------------------------------------------
-elif active == "read":
-    from ttt import read_tab as RT
-
-    # local_only: saved texts are the person's own documents and never
-    # touch the server. The temp-file layer is shared container state
-    # keyed by username, so anyone who guessed a password could have read
-    # the previous holder's saved text out of it. Preferences still use
-    # both layers; content does not.
-    archive_store = Store(RT.ARCHIVE_NS, USER, ls_read=LS_DATA,
-                          ls_write=lambda k, v: queue_ls(writes={k: v}) if v is not None
-                          else queue_ls(removes=[k]),
-                          local_only=True)
-    if "_archive" not in st.session_state:
-        st.session_state["_archive"] = RT.load_archive(archive_store)
-    archive = st.session_state["_archive"]
-
-    # Which engine speaks here follows the same setting the Talk tab uses,
-    # so a voice chosen once is the voice everywhere.
-    sp_ring_read = get_ring("speechify")
-    _rtts = current_routes()["tts"]
-    read_engine = _rtts.id if _rtts else "edge"
-
-    if read_engine == "speechify":
-        sp_voice = st.session_state.get("sp_voice", "beatrice_32")
-
-        def read_synth(s):
-            return PROVIDERS.get("speechify").synth(
-                lambda attempt: kr.rotate(sp_ring_read, lambda k: attempt(k)),
-                s, sp_voice)
-    else:
-        voice_picker("readvoice")
-        rvkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
-
-        def read_synth(s):
-            return tk.synth_sentence(s, rvkey) + (None,)
-
-    text_size_pills("read")
-    cp_row(st.session_state.get("read_text", ""), "read", state_key="read_text")
-    st.text_area(t("tab_read"), key="read_text", height=170,
-                 label_visibility="collapsed", placeholder=t("read_paste_ph"))
-
-    scol, gcol = st.columns(2)
-    speed = scol.slider(t("read_speed"), 0.5, 2.0,
-                        float(st.session_state.get("read_speed", 1.0)), 0.1,
-                        key="read_speed")
-    gap = gcol.slider(t("read_gap"), 0.0, 2.0,
-                      float(st.session_state.get("read_gap", 0.0)), 0.1,
-                      key="read_gap")
-
-    bcol1, bcol2 = st.columns(2)
-    read_go = bcol1.button(SYM["read"], key="read_go_btn", help=t("read_start"))
-
-    def _keep_text():
-        txt = (st.session_state.get("read_text") or "").strip()
-        if txt:
-            st.session_state["_archive"] = RT.add_piece(
-                st.session_state.get("_archive", []), txt)
-            RT.save_archive(archive_store, st.session_state["_archive"])
-            st.session_state["_read_msg"] = t("read_saved")
-            st.session_state["_read_msg_until"] = time.time() + 6
-
-    bcol2.button(SYM["save"], key="read_keep_btn", help=t("read_save"), on_click=_keep_text)
-    # Hold the confirmation for a few seconds of wall clock rather than
-    # popping it on the next rerun — Streamlit reruns for many reasons
-    # (a slider nudge, an expander opening), and a message that vanishes
-    # before it is read is the same as no message at all.
-    _msg, _until = st.session_state.get("_read_msg"), st.session_state.get("_read_msg_until", 0)
-    if _msg and time.time() < _until:
-        st.caption(_msg)
-    elif _msg:
-        st.session_state.pop("_read_msg", None)
-
-    prog_slot = st.empty()
-    rdoc_slot = st.empty()
-    rsub_slot = st.empty()
-    raudio_slot = st.empty()
-    rpage_slot = st.empty()
-
-    if read_go or st.session_state.pop("read_page_auto", False):
-        raw = (st.session_state.get("read_text") or "").strip()
-        read_sentences_live(raw, read_synth, rdoc_slot, rsub_slot, raudio_slot,
-                            "read_page", rpage_slot, progress_slot=prog_slot,
-                            speed=speed, gap=gap)
-    else:
-        rsub_slot.markdown(_subtitle(""), unsafe_allow_html=True)
-
-    with st.expander(f"{t('read_archive')} ({len(archive)})"):
-        if not archive:
-            st.caption(t("read_empty"))
-        for piece in archive:
-            acol1, acol2, acol3 = st.columns([4, 1, 1])
-            acol1.caption(piece["title"])
-
-            def _open(d=piece["digest"]):
-                for p in st.session_state.get("_archive", []):
-                    if p["digest"] == d:
-                        st.session_state["read_text"] = p["text"]
-                        break
-
-            def _delete(d=piece["digest"]):
-                st.session_state["_archive"] = RT.remove_piece(
-                    st.session_state.get("_archive", []), d)
-                RT.save_archive(archive_store, st.session_state["_archive"])
-
-            acol2.button(t("read_open"), key="ropen_" + piece["digest"][:8],
-                         on_click=_open)
-            acol3.button(t("read_delete"), key="rdel_" + piece["digest"][:8],
-                         on_click=_delete)
-        st.caption(t("read_storage_note"))
-
-
-
-
 elif active == "settings":
     if True:
         lang_now = st.session_state.get("ui_lang", "hr")

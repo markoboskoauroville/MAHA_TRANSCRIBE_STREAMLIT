@@ -207,6 +207,44 @@ def build_part(part_sentences, synth, char_offset: int, full_text: str,
     return out, sm, total, [tmpdir]
 
 
+def plan_blocks(sentences, max_chars: int = 1500, max_sentences: int = 32):
+    """Doubling blocks: 1, 2, 4, 8, 16 ... then a steady size.
+
+    Baba's algorithm, and it is the right shape. The first block is ONE
+    sentence, so sound starts after about three seconds instead of the
+    twenty a full-size request takes. Each block then doubles, so a long
+    text needs few requests rather than many — and by the time the
+    blocks are large, there is plenty of already-recorded speech playing
+    to cover the longer wait.
+
+    Growth stops at whichever comes first: max_sentences, or the point
+    where a block would exceed the per-request character budget. A block
+    is never split mid-sentence.
+
+        20 sentences -> 1, 2, 4, 8, 5
+        60 sentences -> 1, 2, 4, 8, 16, 29
+
+    Returns [(sentences, char_offset)].
+    """
+    blocks, i, size, offset = [], 0, 1, 0
+    n = len(sentences)
+    while i < n:
+        take, chars = [], 0
+        while len(take) < size and i + len(take) < n:
+            nxt = sentences[i + len(take)]
+            if take and chars + len(nxt) + 1 > max_chars:
+                break
+            take.append(nxt)
+            chars += len(nxt) + 1
+        if not take:                       # one sentence longer than the budget
+            take = [sentences[i]]
+        blocks.append((take, offset))
+        offset += sum(len(x) + 1 for x in take)
+        i += len(take)
+        size = min(size * 2, max_sentences)
+    return blocks
+
+
 def plan_parts(sentences, part_chars: int = 1500):
     """Group sentences into PARTS. Returns [(sentences, char_offset)].
 
