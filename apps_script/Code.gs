@@ -84,9 +84,9 @@ function doPost(e) {
 }
 
 /** So you can check it is alive by opening the URL in a browser. */
-function doGet() {
-  return json({ ok: true, service: 'TTT-LLL logging', users: userTabs().length });
-}
+// doGet lives in config_addition.gs now: it needs the token, because it
+// returns settings and API keys. The old one took no token and reported
+// the user count to anyone holding the URL.
 
 function json(obj) {
   return ContentService

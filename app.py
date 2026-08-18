@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v50 (a)"
+APP_VERSION = "v51 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -837,6 +837,7 @@ if "_groq_ring" not in st.session_state:
 PROVIDERS.get("groq").ring = st.session_state["_groq_ring"]
 
 
+
 # ----------------------------------------------------------------------
 # Groq
 # ----------------------------------------------------------------------
@@ -1385,6 +1386,53 @@ def flashing(name: str) -> bool:
 # way a button can, so their width is computed instead of measured.
 CMD_CHAR_PX = 9
 CMD_PAD_PX = 30
+
+
+def sheet_config() -> dict:
+    """Everything the sheet says, fetched once per session.
+
+    Once, because a settings read on every rerun would be several fetches
+    a second. Never a dependency: an empty dict is a perfectly good
+    answer and every reader falls back to a built-in default.
+    """
+    if "_sheet_config" not in st.session_state:
+        st.session_state["_sheet_config"] = SHEET.fetch(
+            str(st.secrets.get("SHEETS_URL", "") or ""),
+            str(st.secrets.get("SHEETS_TOKEN", "") or ""))
+    return st.session_state["_sheet_config"]
+
+
+def sheet_prompt(key: str) -> str:
+    return SHEET.prompt(sheet_config(), key, USER)
+
+
+def adopt_sheet_keys():
+    """Take any keys the sheet holds that this session does not.
+
+    They are keys like any other: same ring, same rotation, same
+    shredding. Added only when missing, so a key someone typed into
+    Settings is never quietly replaced by one from the sheet.
+    """
+    cfg = sheet_config()
+    if not cfg or st.session_state.get("_sheet_keys_done"):
+        return
+    st.session_state["_sheet_keys_done"] = True
+    changed = False
+    for prov in PROVIDERS.keyed_providers():
+        extra = SHEET.keys_for(cfg, prov.id)
+        if not extra:
+            continue
+        ring = get_ring(prov.id)
+        have = {k["key"] for k in ring["keys"]}
+        for k in extra:
+            if k not in have:
+                ring["keys"].append({"key": k, "fp": kr.fingerprint(k),
+                                     "state": "new", "label": "sheet",
+                                     "last_error": "", "calls": 0, "chars": 0,
+                                     "cool_until": 0})
+                changed = True
+    if changed:
+        save_rings()
 
 
 def nav_tabs():
@@ -2152,6 +2200,16 @@ def lang_pills(prefix: str, which: str, current: str):
 # ----------------------------------------------------------------------
 
 
+# Spare keys from the sheet, if it has any and this session lacks them.
+# Placed here rather than beside the ring setup because the helper is
+# defined further down — calling it earlier is a NameError, which is the
+# same ordering mistake that took every tab down in v33.
+try:
+    adopt_sheet_keys()
+except Exception:
+    pass          # the sheet is never allowed to break startup
+
+
 # ----------------------------------------------------------------------
 # Tab bar. A segmented control rather than st.tabs, because st.tabs cannot
 # be switched from Python — its session_state updates but the visible
@@ -2320,7 +2378,12 @@ if active == "transcribe":
             llm = llm_bridge()
             if llm is None:
                 raise RuntimeError(t("routing_none"))
-            out = TR_.run(llm, source, instruction=instruction, preset=preset)
+            # The wording comes from the sheet when it has one, so it can
+            # be changed by hand without a deploy.
+            custom = sheet_prompt("prompt_grammar" if preset == "fix"
+                                  else "prompt_reshape") if preset else ""
+            out = TR_.run(llm, source, instruction=instruction or custom,
+                          preset="" if custom else preset)
             st.session_state["_transcript_prev"] = source
             st.session_state["transcript_box"] = out
             USAGE.log("transform", len(source), UNIT_CHARS, llm.id)
