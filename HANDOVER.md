@@ -1556,3 +1556,70 @@ Browser test after the rework: 12 passed, 0 failed — four cells present,
 upload disabled while recording, stop posting exactly once with no eject
 step, ffprobe confirming real opus, and a chosen file posting with its
 name and matching byte count.
+
+---
+
+## 26. THE FILE ROUTER, AND PASTE (v58)
+
+### Everything now comes through one door
+
+The deck's fourth cell and the recorder hand back the same shape, so
+something has to decide what a file IS before anything tries to read it.
+`ttt/intake.py` does that and knows nothing about Streamlit or any
+provider — it says what a thing is and what should happen to it, which is
+what makes its rules testable without a browser or a key. **24 tests, 0
+failed.**
+
+**Content first, name second.** A phone will hand over `recording.wav`
+that is really an m4a, and Android's share sheet sometimes supplies no
+extension at all. Magic bytes do not lie; extensions do. RIFF needed care
+— it is WAV, AVI *and* WEBP depending on bytes 8-12.
+
+Routes: audio/video → transcribe, image → ocr, text → straight to the box,
+anything else → say plainly it cannot be used, rather than letting ffmpeg
+fail with a codec error about audio streams that explains nothing.
+
+### THE REAL FIX HIDING IN THIS
+
+The deck path called `stt.transcribe` DIRECTLY, so a long take or a big
+upload died at Groq's 25 MB limit with nothing to show for it. It now goes
+through `transcribe_any_size`, which already knew how to cut a file into
+ten-minute pieces, feed them one at a time and stitch the results back
+into one transcript — with a marker where a piece failed rather than a
+silent hole. The machinery existed; this path simply was not using it.
+
+### PASTE — Ctrl+V, and NO EXTENSION IS NEEDED
+
+Baba asked whether a Chrome extension is required to bridge the system
+clipboard to the browser. **It is not, and one would not help.**
+
+The distinction that matters:
+* `navigator.clipboard.read()` — reading the clipboard PROGRAMMATICALLY.
+  Needs a permission, prompts, refused outright in some browsers. This was
+  tried first and removed.
+* a real **paste event** — the user pressing Ctrl+V, or long-press → Paste
+  on Android. Needs no permission at all, because the keystroke IS the
+  consent, and `e.clipboardData` hands over the contents directly,
+  including image files.
+
+A hidden sink takes focus whenever the deck is touched anywhere that is
+not a button, so the paste has somewhere to land — the same trick as
+`paste_frontend`, already proven on the phone.
+
+An image on the clipboard is taken as a picture; otherwise the text is
+taken. Paste is IGNORED during a take, so it can never interrupt a
+recording. Tapping the upload cell still opens the file picker and reads
+nothing from the clipboard — reading it on a tap would hijack the button,
+since there is nearly always text on a clipboard and the picker would stop
+opening.
+
+Browser test with real dispatched `paste` events: **10 passed, 0 failed**,
+covering text intact, PNG bytes arriving as PNG, paste ignored mid-take,
+and stop still sending afterwards.
+
+### STILL BLOCKED
+
+A pasted picture has nowhere to go until `read_picture` is restored
+(§24). The router sends it to `ocr` and the app says the feature is out of
+order, which is at least honest. **Restoring image OCR now unblocks two
+things, not one.**

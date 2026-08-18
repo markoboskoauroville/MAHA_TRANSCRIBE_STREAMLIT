@@ -83,6 +83,7 @@
     <button class="key" id="bStop"  aria-label="stop"  disabled><span class="sq"></span><span id="lStop">stop</span></button>
     <button class="key" id="bFile" aria-label="upload"><span class="up"></span><span id="lFile">upload</span></button>
   </div>
+  <textarea id="sink" aria-hidden="true" tabindex="-1" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"></textarea>
   <input id="picker" type="file" style="display:none" accept="audio/*,video/*">
   <div id="msg" role="status" aria-live="polite"></div>
 </div>
@@ -287,7 +288,56 @@ function send(blob, name, secs){
   fr.readAsDataURL(blob);
 }
 
+// TAP = FILE PICKER. Nothing is read from the clipboard on a tap.
+//
+// Reading the clipboard programmatically (navigator.clipboard.read) needs
+// a permission, prompts, and is refused outright in some browsers. A REAL
+// PASTE needs none of that: the user pressing Ctrl+V — or long-press,
+// Paste on Android — IS the consent, and the event hands us the contents
+// directly. No extension is required for this and none would help.
 bFile.onclick=function(){ if (!running) picker.click(); };
+
+// Paste needs somewhere to land, so a hidden sink takes focus whenever
+// the deck is touched anywhere that is not a button. Same trick as
+// paste_frontend, which is already proven on the phone.
+function armPaste(){ try { sink.focus({preventScroll:true}); } catch(e){} }
+document.getElementById('deck').addEventListener('mousedown', function(e){
+  if (!e.target.closest('button')) armPaste();
+});
+document.getElementById('deck').addEventListener('touchstart', function(e){
+  if (!e.target.closest('button')) armPaste();
+}, {passive:true});
+
+document.addEventListener('paste', function(e){
+  if (running) return;                 // never interrupt a take
+  var dt = e.clipboardData || window.clipboardData;
+  if (!dt) return;
+
+  // A picture first: an image on the clipboard is unambiguous, and its
+  // file is right there in the event with no permission asked.
+  var items = dt.items || [];
+  for (var i=0;i<items.length;i++){
+    if (items[i].kind === 'file' && (items[i].type||'').indexOf('image/')===0){
+      var f = items[i].getAsFile();
+      if (f && f.size){
+        e.preventDefault();
+        var ext=(f.type.split('/')[1]||'png').split('+')[0];
+        say('pasted picture');
+        send(f, 'pasted.'+ext, 0);
+        return;
+      }
+    }
+  }
+  var txt = dt.getData('text/plain') || '';
+  if (txt.trim()){
+    e.preventDefault();
+    say('pasted text — ' + txt.trim().length + ' characters');
+    setValue({ text: txt, name: 'pasted.txt', bytes: txt.length,
+               seconds: 0, at: Date.now() });
+    sink.value='';
+  }
+});
+
 picker.onchange=function(){
   var f=picker.files && picker.files[0];
   picker.value='';

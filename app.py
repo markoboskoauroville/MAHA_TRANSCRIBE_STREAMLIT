@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v57 (deck: stop sends, upload cell)"
+APP_VERSION = "v58 (router + paste)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -76,6 +76,7 @@ from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
 from ttt import sheet as SHEET
+from ttt import intake
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
 from ttt import theme
@@ -276,6 +277,10 @@ STRINGS = {
     "rec_pause": {"en": "pause", "hr": "pauza"},
     "rec_stop":  {"en": "stop",  "hr": "stop"},
     "rec_upload": {"en": "upload", "hr": "datoteka"},
+    "img_unavailable": {"en": "Reading text from pictures is out of order.",
+                        "hr": "Čitanje teksta sa slika trenutno ne radi."},
+    "file_unknown": {"en": "Cannot use this file — {why}.",
+                     "hr": "Ne mogu koristiti ovu datoteku — {why}."},
     "pick_big":  {"en": "That file is too large for the deck — use this box.",
                   "hr": "Datoteka je prevelika za deck — koristi ovaj okvir."},
     "tab_talk":           {"en": "R",                "hr": "R"},
@@ -636,6 +641,15 @@ def cassette_recorder(key: str):
     if val.get("toobig"):
         st.session_state["_show_big_upload"] = True
         return None
+
+    # Pasted text arrives as text, not bytes. It needs no router and no
+    # ffmpeg — it is already words, so it goes straight to the box.
+    if val.get("text"):
+        st.session_state["transcript_box"] = val["text"]
+        st.session_state["_transcribe_method"] = "pasted"
+        st.session_state["flac_path"] = None
+        return None
+
     if not val.get("b64"):
         return None
     try:
@@ -646,6 +660,10 @@ def cassette_recorder(key: str):
         return None
     buf = io.BytesIO(raw)
     buf.name = val.get("name") or "take.webm"
+    # The browser knows the type better than the filename does; keep it
+    # for the router, which prefers content but uses mime to resolve a
+    # webm container that could hold either sound or picture.
+    st.session_state["_take_mime"] = val.get("mime") or ""
     return buf
 
 
@@ -2414,17 +2432,61 @@ if active == "transcribe":
                 os.remove(old_flac)
             st.session_state["_digest"] = digest
             try:
-                with st.spinner(t("preparing_audio")):
-                    flac_path = to_flac16k(audio.getvalue())
-                with st.spinner(t("transcribing")):
-                    text = stt.transcribe(flac_path, lang_code)
-                st.session_state["transcript_box"] = text
-                st.session_state["flac_path"] = flac_path
-                st.session_state["last_lang"] = lang_code
-                st.session_state["_transcribe_method"] = "direct"
-                st.session_state["_transcribe_provider"] = t_engine
-                USAGE.log("transcribe", audio_seconds(flac_path),
-                          UNIT_SECONDS, t_engine)
+                raw = audio.getvalue()
+                # WHAT IS THIS FILE? Decided by content first, name second.
+                # A phone will hand over 'recording.wav' that is really an
+                # m4a, and the share sheet sometimes supplies no extension
+                # at all. Handing a picture to ffmpeg produces a codec
+                # error about audio streams, which tells the person
+                # nothing about what they actually did.
+                plan = intake.route(
+                    name=getattr(audio, "name", ""),
+                    mime=st.session_state.get("_take_mime", ""),
+                    head=raw[:64], size=len(raw), spoken_limit=SAFE_BYTES)
+
+                if plan["pipeline"] == "read":
+                    st.session_state["transcript_box"] = raw.decode(
+                        "utf-8", errors="replace")
+                    st.session_state["_transcribe_method"] = "text"
+                    st.session_state["flac_path"] = None
+                elif plan["pipeline"] == "ocr":
+                    # No route for a picture until read_picture is
+                    # restored (HANDOVER §24). Say so plainly rather than
+                    # letting ffmpeg fail about missing audio streams.
+                    st.error(t("img_unavailable"))
+                elif plan["pipeline"] == "transcribe":
+                    with st.spinner(t("preparing_audio")):
+                        flac_path = to_flac16k(raw)
+                    # ALWAYS through transcribe_any_size. This path used
+                    # to call the provider directly, so a long take or a
+                    # big upload died at Groq's 25 MB limit with nothing
+                    # to show for it. The module already knows how to cut
+                    # a file into ten-minute pieces, feed them one at a
+                    # time and stitch the results back into one
+                    # transcript, with a marker where a piece failed
+                    # rather than a silent hole.
+                    prog = st.progress(0.0, text=t("transcribing"))
+
+                    def _cb(done, total):
+                        try:
+                            prog.progress(min(1.0, done / max(total, 1)),
+                                          text=f"{t('transcribing')} {done}/{total}")
+                        except Exception:
+                            pass
+
+                    text, method, reusable = transcribe_any_size(
+                        flac_path, chosen_model(stt.provider) or PRIMARY_MODEL,
+                        lang_code, progress_cb=_cb)
+                    prog.empty()
+                    st.session_state["transcript_box"] = text
+                    st.session_state["flac_path"] = reusable
+                    st.session_state["last_lang"] = lang_code
+                    st.session_state["_transcribe_method"] = method
+                    st.session_state["_transcribe_provider"] = t_engine
+                    USAGE.log("transcribe", audio_seconds(reusable),
+                              UNIT_SECONDS, t_engine)
+                else:
+                    st.error(t("file_unknown").format(why=plan["reason"]))
             except Exception as e:
                 st.error(str(e))
 
