@@ -1854,3 +1854,51 @@ Croatian sentence, with the frame posting 169 then 217 to match.
 
 **RULE: never post a constant to setFrameHeight.** If a number appears in
 a `setFrameHeight` call, it is a bug waiting for longer content.
+
+---
+
+## 32. SINGLE / MULTI — EATING THE ELEPHANT (v64)
+
+Baba: *"I don't need to talk 30 minutes. I can take a break, eat some
+kitchari, and then continue. How you eat elephant? Spoon by spoon."*
+
+Two modes, beside the language pills because both answer the same
+question — what happens when I press stop:
+
+* **single** — the new transcript REPLACES what is in the box (what the
+  app always did)
+* **multi** — the new transcript is APPENDED, separated by a blank line,
+  so a long piece of work can be done in sittings
+
+This is also the better answer to the forest problem than retry is.
+Retry rescues a send that failed; multi means the recording was never
+half an hour long in the first place. Six five-minute takes lose at most
+five minutes, and each one is safely in the box before the next begins.
+
+### One helper, every route
+
+`deliver_text()` is the ONLY place that decides overwrite-or-append, and
+the recorder, the opened file and pasted text all go through it. A mode
+that worked for the recorder but not for a pasted note would be worse
+than no mode, because it would be right often enough to be trusted.
+
+### Decisions inside it
+
+* A **blank line** between takes, not a space. They are separate
+  sittings and read as separate paragraphs; a space would run two
+  thoughts together with no way to tell them apart afterwards.
+* Empty or whitespace-only delivery **changes nothing** — in single mode
+  too, so a failed transcription can never wipe work already in the box.
+* The existing text is `rstrip`ed first, so appending after a box that
+  already ends in blank lines does not stack them up.
+* Default when nothing was ever chosen is **single**, the old behaviour.
+* The mode is in `SETTINGS_KEYS`, so it survives a reload.
+
+### Tests
+
+15 checks on the rules alone: both modes, empty/whitespace/None
+delivery, an empty box, three sittings gathering in order, switching
+mode mid-work in both directions, and identical takes both surviving
+rather than being silently merged. Four mutations run against the source
+— append disabled, separator changed, the empty guard removed, the
+rstrip removed — and each was caught.

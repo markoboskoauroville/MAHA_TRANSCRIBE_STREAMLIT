@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v63 (spinner, player height)"
+APP_VERSION = "v64 (single / multi)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -305,6 +305,8 @@ STRINGS = {
     "rec_stop":  {"en": "stop",  "hr": "stop"},
     "rec_upload": {"en": "open",   "hr": "otvori"},
     "rec_retry":   {"en": "retry",   "hr": "ponovi"},
+    "mode_single": {"en": "single", "hr": "jedan"},
+    "mode_multi":  {"en": "multi",  "hr": "više"},
     "rec_sending": {"en": "sending", "hr": "šaljem"},
     "img_unavailable": {"en": "Reading text from pictures is out of order.",
                         "hr": "Čitanje teksta sa slika trenutno ne radi."},
@@ -682,7 +684,7 @@ def cassette_recorder(key: str):
     # Pasted text arrives as text, not bytes. It needs no router and no
     # ffmpeg — it is already words, so it goes straight to the box.
     if val.get("text"):
-        st.session_state["transcript_box"] = val["text"]
+        deliver_text(val["text"])
         st.session_state["_transcribe_method"] = "pasted"
         st.session_state["flac_path"] = None
         return None
@@ -1125,7 +1127,7 @@ DEFAULT_SETTINGS = {"ui_lang": "en", "speech_lang": "hr", "voice": "Gabrijela",
 SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice",
                  "transcribe_engine",
                  "route_stt", "route_tts", "route_llm", "text_scale",
-                 "scheme", "font_family")
+                 "scheme", "font_family", "append_mode")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -2223,6 +2225,36 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
     doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
 
 
+def deliver_text(new_text: str) -> None:
+    """Put a finished transcript into the box, honouring single/multi.
+
+    SINGLE overwrites. MULTI appends, so a long piece of work can be done
+    in sittings — record for a while, stop, eat, come back, record again,
+    and the pieces gather in one place instead of the last one wiping the
+    rest. Baba: "How you eat elephant? Spoon by spoon."
+
+    Every route goes through here — recorder, opened file, pasted text —
+    because a mode that only worked for one of them would be worse than
+    no mode at all.
+    """
+    new_text = (new_text or "").strip()
+    if not new_text:
+        return
+    if st.session_state.get("append_mode"):
+        old = (st.session_state.get("transcript_box") or "").rstrip()
+        # A blank line between takes: they are separate sittings and read
+        # as separate paragraphs. Joining them with a space would run two
+        # thoughts together and there is no way to tell them apart after.
+        st.session_state["transcript_box"] = (old + "\n\n" + new_text) if old else new_text
+    else:
+        st.session_state["transcript_box"] = new_text
+
+
+def set_append_mode(on: bool):
+    st.session_state["append_mode"] = bool(on)
+    persist_settings()
+
+
 def _drop_take():
     """Forget the recording that is being held.
 
@@ -2508,8 +2540,7 @@ if active == "transcribe":
                     head=raw[:64], size=len(raw), spoken_limit=SAFE_BYTES)
 
                 if plan["pipeline"] == "read":
-                    st.session_state["transcript_box"] = raw.decode(
-                        "utf-8", errors="replace")
+                    deliver_text(raw.decode("utf-8", errors="replace"))
                     st.session_state["_transcribe_method"] = "text"
                     st.session_state["flac_path"] = None
                 elif plan["pipeline"] == "ocr":
@@ -2541,7 +2572,7 @@ if active == "transcribe":
                         flac_path, chosen_model(stt.provider) or model_for(lang_code),
                         lang_code, progress_cb=_cb)
                     prog.empty()
-                    st.session_state["transcript_box"] = text
+                    deliver_text(text)
                     st.session_state["flac_path"] = reusable
                     st.session_state["last_lang"] = lang_code
                     st.session_state["_transcribe_method"] = method
@@ -2705,7 +2736,7 @@ if active == "transcribe":
     # left alone, so it does not belong above the thing people came for.
     st.caption("")
     with st.container(key="langrow"):
-        lcol1, lcol2, _ = st.columns([1, 1, 4])
+        lcol1, lcol2, mcol1, mcol2, _ = st.columns([1, 1, 1.4, 1.4, 1.2])
         speech_now = st.session_state.get("speech_lang", "hr")
         lcol1.button(t("lang_hr"), key="tr_hr",
                      type="primary" if speech_now == "hr" else "secondary",
@@ -2713,6 +2744,15 @@ if active == "transcribe":
         lcol2.button(t("lang_en"), key="tr_en",
                      type="primary" if speech_now == "en" else "secondary",
                      on_click=set_speech_lang, args=("en",))
+        # Single or multi, in the same row as the language, because both
+        # answer "what happens when I press stop".
+        appending = bool(st.session_state.get("append_mode"))
+        mcol1.button(t("mode_single"), key="tr_single",
+                     type="secondary" if appending else "primary",
+                     on_click=set_append_mode, args=(False,))
+        mcol2.button(t("mode_multi"), key="tr_multi",
+                     type="primary" if appending else "secondary",
+                     on_click=set_append_mode, args=(True,))
     tab_signature(t("sig_transcribe"))
 
 
