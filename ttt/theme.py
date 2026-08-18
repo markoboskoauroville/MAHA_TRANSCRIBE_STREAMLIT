@@ -544,6 +544,25 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        rather than a panel. */
     div[data-testid="stVerticalBlock"] {{ gap: 0.42rem; }}
     div[data-testid="stHorizontalBlock"] {{ gap: 0.28rem !important; }}
+
+    /* THE STATUS BOX. Small type, the same dim monospace as the deck's
+       own line, so it reads as a continuation of it rather than as a new
+       piece of furniture. Folded away until something goes wrong. */
+    [class*="st-key-statusbox"] summary,
+    [class*="st-key-statusbox"] summary p {{
+      font-size: 0.72rem !important; color: var(--dim) !important;
+      letter-spacing: 0.04em;
+    }}
+    [class*="st-key-statusbox"] div[data-testid="stText"],
+    [class*="st-key-statusbox"] pre, [class*="st-key-statusbox"] code {{
+      font-size: 0.68rem !important; line-height: 1.45 !important;
+      color: var(--dim) !important; background: transparent !important;
+      white-space: pre-wrap !important; overflow-wrap: anywhere !important;
+      border: none !important; padding: 0 !important; margin: 0 !important;
+    }}
+    [class*="st-key-statusbox"] div[data-testid="stExpander"] {{
+      border-color: var(--line) !important; background: transparent !important;
+    }}
     [data-testid="stHeader"] {{ background: transparent; }}
     hr {{ border-color: var(--line); margin: 0.6rem 0; }}
     </style>

@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v65 (return path visible)"
+APP_VERSION = "v66 (status box, Whisper errors)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -309,6 +309,8 @@ STRINGS = {
     "mode_multi":  {"en": "multi",  "hr": "više"},
     "nothing_heard": {"en": "The audio arrived but no speech was found in it.",
                       "hr": "Zvuk je stigao ali u njemu nije pronađen govor."},
+    "status_word": {"en": "status", "hr": "status"},
+    "stt_errors":  {"en": "Whisper refused:", "hr": "Whisper odbio:"},
     "rec_sending": {"en": "sending", "hr": "šaljem"},
     "img_unavailable": {"en": "Reading text from pictures is out of order.",
                         "hr": "Čitanje teksta sa slika trenutno ne radi."},
@@ -985,6 +987,17 @@ def transcribe(path: str, model: str, language: str) -> str:
             return text.strip()
         except Exception as e:  # bad key, rate limit, network — try the next key
             last_err = e
+            # KEEP IT. transcribe_any_size falls through its tiers on an
+            # exception, so without this the real reason Whisper refused —
+            # a rate limit, a size rejection, a timeout — was swallowed and
+            # the screen simply showed nothing. Baba waited on a 7 MB take
+            # with no way to see that anything had gone wrong at all.
+            try:
+                errs = st.session_state.setdefault("_stt_errors", [])
+                errs.append(f"key {idx + 1}: {type(e).__name__}: {e}"[:300])
+                del errs[:-12]
+            except Exception:
+                pass
             continue
     raise RuntimeError(f"All Groq keys failed ({last_err})")
 
@@ -2545,6 +2558,7 @@ if active == "transcribe":
                 # the return was silent, so a take that produced nothing
                 # looked identical to one still working. Every stage is
                 # timed and named, and the line survives the rerun.
+                st.session_state.pop("_stt_errors", None)
                 stage = {"in": intake.describe(getattr(audio, "name", ""),
                                                st.session_state.get("_take_mime", ""),
                                                raw[:64]),
@@ -2593,6 +2607,11 @@ if active == "transcribe":
                     stage["chars"] = len((text or "").strip())
                     stage["method"] = method
                     st.session_state["_last_run"] = stage
+                    # Let the recording go. A 7 MB take is ~7 MB of bytes,
+                    # ~9 MB of base64 still held by the component, and a
+                    # BytesIO on top; keeping all of it after the words are
+                    # out is memory this instance does not have to spare.
+                    st.session_state.pop(hold_key, None)
                     # An EMPTY transcript is a real outcome and must say so.
                     # deliver_text ignores empty text on purpose, so without
                     # this the screen would show nothing at all and look
@@ -2616,25 +2635,38 @@ if active == "transcribe":
     # WHAT HAPPENED, kept on screen. Baba: "they are all good people, they
     # deserve to see."
     _lr = st.session_state.get("_last_run")
-    if _lr:
-        if _lr.get("error"):
-            st.caption("⚠ " + _lr["error"][:200])
-        else:
-            bits = []
-            if _lr.get("in"):
-                bits.append(f"{_lr['in']} {_lr.get('in_kb',0):,} KB")
-            if _lr.get("out"):
-                bits.append(f"→ {_lr['out']} {_lr.get('out_kb',0):,} KB")
-            if _lr.get("mins"):
-                bits.append(f"{_lr['mins']:.1f} min")
-            if _lr.get("convert_s"):
-                bits.append(f"convert {_lr['convert_s']:.1f}s")
-            if _lr.get("transcribe_s"):
-                bits.append(f"transcribe {_lr['transcribe_s']:.1f}s")
-            if _lr.get("method"):
-                bits.append(str(_lr["method"]))
-            bits.append(f"{_lr.get('chars',0):,} chars")
-            st.caption("  ·  ".join(bits))
+    _errs = st.session_state.get("_stt_errors") or []
+    if _lr or _errs:
+        # FOLDED AWAY BY DEFAULT, so it costs no room on a phone. It opens
+        # BY ITSELF when something went wrong, because an error nobody can
+        # see is the thing that wastes an evening. Small type, the same
+        # monospace as the line above it.
+        bad = bool(_errs or (_lr or {}).get("error") or
+                   ((_lr or {}).get("chars") == 0 and (_lr or {}).get("out")))
+        with st.container(key="statusbox"):
+            with st.expander(t("status_word"), expanded=bad):
+                if _errs:
+                    st.text(t("stt_errors"))
+                    for _line in _errs:
+                        st.text("  " + _line)
+                if _lr and _lr.get("error"):
+                    st.text("⚠ " + str(_lr["error"])[:300])
+                elif _lr:
+                    _bits = []
+                    if _lr.get("in"):
+                        _bits.append(f"{_lr['in']} {_lr.get('in_kb',0):,} KB")
+                    if _lr.get("out"):
+                        _bits.append(f"→ {_lr['out']} {_lr.get('out_kb',0):,} KB")
+                    if _lr.get("mins"):
+                        _bits.append(f"{_lr['mins']:.1f} min")
+                    if _lr.get("convert_s"):
+                        _bits.append(f"convert {_lr['convert_s']:.1f}s")
+                    if _lr.get("transcribe_s"):
+                        _bits.append(f"transcribe {_lr['transcribe_s']:.1f}s")
+                    if _lr.get("method"):
+                        _bits.append(str(_lr["method"]))
+                    _bits.append(f"{_lr.get('chars',0):,} chars")
+                    st.text("  ·  ".join(_bits))
 
     # ONE upload, and the file decides what happens to it. Two pickers
     # meant choosing before doing, and choosing wrongly was possible;

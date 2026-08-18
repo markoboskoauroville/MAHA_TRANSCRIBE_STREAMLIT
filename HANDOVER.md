@@ -1954,3 +1954,48 @@ line comes back reading `0 chars`, the audio was fine and Whisper heard
 no speech, and the question moves to the recording. If the line never
 appears at all, the run never reached the transcribe branch and the
 problem is above it.
+
+---
+
+## 34. THE STATUS BOX, AND WHY WHISPER'S REFUSAL WAS INVISIBLE (v66)
+
+A 147 KB take came back fine — `WebM (Opus) 147 KB → 16 kHz mono FLAC
+189 KB · 0.2 min · convert 0.3s · transcribe 0.3s · direct · 45 chars`.
+A 7 MB take sent, was acknowledged, and returned nothing at all.
+
+### WHY NO ERROR WAS EVER SHOWN
+
+`transcribe()` tries every key and, when they all fail, raises
+`All Groq keys failed (…)`. But `transcribe_any_size` catches exceptions
+to fall through its tiers — that is what makes it patient — so **the real
+reason Whisper refused was swallowed on the way past.** A rate limit, a
+size rejection, a timeout: all of them arrived at the screen as silence.
+
+Each key's failure is now kept in `_stt_errors` and shown verbatim. The
+list is cleared at the start of every run, so what is on screen always
+belongs to the take just attempted.
+
+### THE STATUS BOX
+
+Folded away by default so it costs no room on a phone, in small dim
+monospace matching the deck's own line. **It opens BY ITSELF when
+something went wrong** — an error nobody can see is the thing that wastes
+an evening — and that includes a `0 chars` result, which is a failure
+even though nothing threw.
+
+### MEMORY, THE UNPROVEN SUSPECT
+
+One 7 MB take costs roughly **41 MB held at once**: the base64 string the
+component sent (9.6 MB), the JSON parse peak (9.6 MB), the decoded bytes,
+the BytesIO copy, and the session_state hold (7 MB each). Streamlit
+Community Cloud gives about 1 GB for the whole process.
+
+41 MB should not kill it, but the take was being HELD after the words
+were out, so repeated large takes accumulated. `hold_key` is now dropped
+as soon as the transcript exists. **This is a plausible cause of the
+stall, not a proven one** — if the app dies on memory the process
+restarts and the session is simply gone, which looks exactly like
+"sent, then nothing", and leaves nothing on screen to read.
+
+The status box is what will settle it. If the next 7 MB take shows
+`Whisper refused:` with a real message, it was never memory.
