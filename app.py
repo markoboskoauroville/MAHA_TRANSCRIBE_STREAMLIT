@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v47 (a)"
+APP_VERSION = "v48 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -305,7 +305,9 @@ STRINGS = {
     # The gear is the tab label itself — a symbol everyone already
     # knows, and one less word in a row of words.
     "tab_settings":       {"en": "\u2699",            "hr": "\u2699"},
-    "tab_looks":          {"en": "\u25d0",            "hr": "\u25d0"},
+    # Same glyph as the owner's gear on purpose: they are the same
+    # KIND of thing, and only the colour says which is which.
+    "tab_looks":          {"en": "\u2699",            "hr": "\u2699"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -404,6 +406,7 @@ STRINGS = {
     "reshape_word":       {"en": "reshape",           "hr": "preoblikuj"},
     "transcript_ph":      {"en": "Your words will appear here",
                             "hr": "Ovdje će se pojaviti tvoje riječi"},
+    "new_take_word":      {"en": "new",               "hr": "novo"},
     "archive_word":       {"en": "archive",           "hr": "arhiva"},
     "clear_word":         {"en": "clear",             "hr": "obriši"},
     "copy_word":          {"en": "copy",              "hr": "kopiraj"},
@@ -2148,9 +2151,18 @@ if active == "transcribe":
     t_engine = stt.id
     lang_code = st.session_state.get("speech_lang", "hr")
 
+    # A new take needs its own command. Without one, the only way to
+    # record again was to work out that the recorder had to be cleared
+    # first — which is not a thing anyone should have to work out.
+    rec_key = "mic_%d" % st.session_state.get("_mic_gen", 0)
     st.audio_input(t("tab_transcribe"), sample_rate=48000,
-                   label_visibility="collapsed", key="mic")
-    audio = st.session_state.get("mic")
+                   label_visibility="collapsed", key=rec_key)
+    audio = st.session_state.get(rec_key)
+
+    def _new_take():
+        st.session_state["_mic_gen"] = st.session_state.get("_mic_gen", 0) + 1
+        st.session_state.pop("_digest", None)
+        flash("tx_new")
 
     if audio is not None:
         digest = hashlib.md5(audio.getvalue()).hexdigest()
@@ -2296,6 +2308,7 @@ if active == "transcribe":
         flash("tx_reshape")
 
     cmd_row("tx", [
+        (t("new_take_word"), "tx_new", _new_take),
         ("copy", None, None),
         (t("grammar_word"), "tx_grammar", _grammar),
         (t("reshape_word"), "tx_reshape", _reshape),
@@ -2557,15 +2570,27 @@ elif active == "translate":
 
     cmd_row("trsrc", [
         ("paste", None, None),
-        (t("translate_btn_word"), "do_translate_btn", _do_translate),
         (t("clear_word"), "tr_clear_src", _clear_src),
     ], target_key="translate_src_text")
 
     st.text_area("src", key="translate_src_text", height=120,
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
 
-    lang_pills("srcpill", "src", st.session_state["translate_src"])
-    lang_pills("tgtpill", "tgt", st.session_state["translate_tgt"])
+    # TRANSLATE BELONGS TO THE MATRIX, not to the command row.
+    #
+    # Baba's reasoning, and it is the workflow principle again: you pick
+    # the languages, THEN you translate. So the button sits beside the two
+    # language rows and spans both — it is the action for the pair, not
+    # for either one. Its label may break across two lines rather than
+    # push anything off the screen.
+    with st.container(key="trmatrix"):
+        mcol, bcol = st.columns([4, 1.4])
+        with mcol:
+            lang_pills("srcpill", "src", st.session_state["translate_src"])
+            lang_pills("tgtpill", "tgt", st.session_state["translate_tgt"])
+        with bcol:
+            st.button(t("translate_btn_word"), key="do_translate_btn",
+                      use_container_width=True, on_click=_do_translate)
 
     if st.session_state.get("_translate_error"):
         st.error(st.session_state.pop("_translate_error"))

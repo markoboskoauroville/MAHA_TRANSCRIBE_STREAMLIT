@@ -34,12 +34,27 @@ def _run(cmd, timeout):
         raise RuntimeError(f"ffmpeg failed: {tail}")
 
 
+# Levelling matters as much as resampling. A phone recording of someone
+# speaking softly across a room arrives quiet and uneven, and Whisper
+# mishears quiet audio in a particular way — it DROPS short words rather
+# than guessing at them, so the transcript looks fluent and is missing
+# things. loudnorm is EBU R128; -16 LUFS is the streaming convention and
+# leaves headroom, and -1.5 dBTP keeps it from clipping on the way.
+LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
+
+
 def to_flac16k(in_path: str, out_path: str = None) -> str:
-    """16kHz mono FLAC — Groq's own documented target, and a good idea for
-    every other STT too. ffmpeg detects the input format from content, not
-    extension, so this works on whatever a file picker hands over."""
+    """16kHz mono FLAC, levelled — Groq's own documented target, and a
+    good idea for every other STT too.
+
+    ffmpeg reads the input format from CONTENT rather than extension, so
+    this takes whatever the picker hands over: any audio container, and
+    video too — `-map 0:a` lifts the audio track straight out of a film
+    and throws the pictures away.
+    """
     out_path = out_path or (in_path + ".flac")
-    _run(["ffmpeg", "-y", "-i", in_path, "-ar", "16000", "-ac", "1",
+    _run(["ffmpeg", "-y", "-i", in_path, "-af", LOUDNORM,
+          "-ar", "16000", "-ac", "1",
           "-map", "0:a", "-c:a", "flac", out_path], timeout=1800)
     return out_path
 

@@ -939,6 +939,19 @@ solution is right and should be built:
     and during highlighting; if x or y moves by even a pixel, the
     approach is wrong.
 
+### D6. Server-side audio for fast retranscribe (Baba, 18.8.2026)
+
+Upload anything — any audio container, or a VIDEO, since `-map 0:a`
+lifts the audio track out and discards the pictures. Convert once to
+Whisper's native 16 kHz mono, LEVELLED (done in v48, see LOUDNORM in
+ttt/audio.py), and keep that file for the session so a retranscribe is
+server-to-server and near-instant instead of a re-upload.
+
+The conversion and levelling are done. What is NOT done is the KEEPING:
+Streamlit Cloud's disk is not durable and files must not outlive the
+session. Needs a decision on where — the same shared store as §15, or a
+short-lived bucket — plus a cleanup path so nothing lingers.
+
 ### D5. Two settings, done (v47)
 Grey ◐ = how the app looks, for everyone. Amber ⚙ = engines and keys,
 owner only. Colour carries the distinction so neither needs a word.

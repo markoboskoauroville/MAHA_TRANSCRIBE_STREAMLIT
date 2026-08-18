@@ -247,7 +247,6 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        said nothing — on a phone it was the biggest thing on the tab. */
     [data-testid="stFileUploaderDropzone"] {{
       padding: 0 !important;
-      min-height: 0 !important;
       background: transparent !important;
       border: none !important;
       justify-content: flex-start;
@@ -333,12 +332,14 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     [class*="st-key-cmdrow_"] {{ margin-bottom: -0.5rem; }}
     [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"] {{
       display: grid !important;
-      grid-auto-flow: column;
-      /* max-content, not 1fr: cells take the width of their word, as
-         Baba asked. Equal cells wasted the width a phone does not have —
-         "copy" does not need as much room as "reshape". */
-      grid-auto-columns: max-content;
-      justify-content: start;
+      /* FLEX, not grid-auto-flow: column. A column grid cannot wrap, so
+         once the words were long enough the last cell ran off the right
+         edge of the phone — Baba caught "+" hanging outside the screen.
+         Anything leaving the screen is a bug, always. Flex with wrap
+         keeps every cell its own width AND keeps them all on screen. */
+      display: flex !important;
+      flex-wrap: wrap;
+      align-content: flex-start;
       gap: 0 !important;
       border: 1px solid var(--line);
       border-radius: 4px;
@@ -348,8 +349,9 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       > div[data-testid="stColumn"] {{
       width: max-content !important;
       min-width: 0 !important;
-      flex: none !important;
+      flex: 0 0 auto !important;
       border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
     }}
     [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
       > div[data-testid="stColumn"]:last-child {{ border-right: none; }}
@@ -441,6 +443,49 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        silently won — it set 38px cells and re-added hover, so the grid
        above appeared not to work. Deleting rules is part of changing
        them. */
+
+    /* The translate action spans both language rows: one button for the
+       pair, the same height as the matrix beside it. The label wraps
+       rather than overflowing — nothing may leave the screen. */
+    .st-key-trmatrix div[data-testid="stHorizontalBlock"] {{
+      align-items: stretch;
+    }}
+    /* The column has to stretch too, or the button sits at its own
+       height beside a taller matrix and covers only the first row. */
+    .st-key-trmatrix div[data-testid="stColumn"] {{ display: flex; }}
+    .st-key-trmatrix div[data-testid="stColumn"] > div,
+    .st-key-trmatrix div[data-testid="stElementContainer"] {{
+      height: 100%; width: 100%;
+    }}
+    /* The language column must NOT stretch its own contents, or the two
+       pill rows spread apart to fill the button's height. */
+    .st-key-trmatrix div[data-testid="stColumn"]:first-child
+      div[data-testid="stVerticalBlock"] {{ height: auto; }}
+    .st-key-trmatrix .stButton button {{
+      /* A plain fixed height, not stretch. Three attempts at making it
+         follow the matrix all failed in different ways: stretching made
+         the pill rows spread to match, and removing the height collapsed
+         it to 20px. Two pill rows are 45px each plus a gap, so 98px
+         covers them — and a fixed figure cannot start a fight with the
+         column beside it. */
+      height: 98px !important;
+      /* NO min-height. Forcing one made the row taller, and the language
+         column then spread its two pill rows to fill the same height —
+         the button and the pills chased each other down the page. Let it
+         stretch to whatever the matrix beside it actually is. */
+      border-radius: 10px !important;
+      background: var(--surface-2) !important;
+      border: 1px solid var(--line) !important;
+      color: var(--amber) !important;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      white-space: normal !important;
+      line-height: 1.25;
+      padding: 0 0.4rem !important;
+    }}
+    .st-key-trmatrix .stButton button p {{
+      color: var(--amber) !important; white-space: normal !important;
+    }}
 
     /* Language switch: short labels, so nearly round. */
     .st-key-langrow .stButton button {{

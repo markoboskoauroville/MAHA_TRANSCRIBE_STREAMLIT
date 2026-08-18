@@ -163,7 +163,7 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
 <style>
   html, body {{ margin:0; padding:0; background:transparent;
                 display:flex; align-items:center;
-                justify-content:{"flex-start" if not size else "center"}; }}
+                justify-content:center; }}
   button {{
     {"width:100%; height:44px; border:none; background:transparent;"
      " justify-content:center; padding:0; font-weight:600;"
