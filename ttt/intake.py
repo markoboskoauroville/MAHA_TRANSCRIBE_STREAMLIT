@@ -128,3 +128,39 @@ def route(name="", mime="", head=b"", size=0, spoken_limit=0):
         return {"kind": kind, "pipeline": "read", "chunk": False, "reason": ""}
     return {"kind": UNKNOWN, "pipeline": None, "chunk": False,
             "reason": "not a sound, a picture or text"}
+
+
+# Human names. ffmpeg's codec ids mean nothing to most people, and a
+# person handing over a file deserves to see what the app thinks it is
+# and what it turned it into.
+_HUMAN = {
+    "mp3": "MP3", "wav": "WAV", "m4a": "M4A (MPEG-4 audio)",
+    "aac": "AAC", "ogg": "OGG", "oga": "OGG", "opus": "Opus",
+    "flac": "FLAC", "wma": "WMA", "amr": "AMR", "aiff": "AIFF",
+    "caf": "CAF", "3gp": "3GP", "mp4": "MP4 video", "mov": "MOV video",
+    "mkv": "MKV video", "avi": "AVI video", "webm": "WebM",
+    "m4v": "M4V video", "png": "PNG", "jpg": "JPEG", "jpeg": "JPEG",
+    "heic": "HEIC", "pdf": "PDF", "txt": "text",
+}
+
+
+def describe(name="", mime="", head=b"") -> str:
+    """A short human name for what arrived: 'WebM (Opus)', 'M4A (MPEG-4
+    audio)', 'MP3'. Never raises and never returns empty."""
+    mime = str(mime or "").lower()
+    ext = _ext_of(name)
+    base = _HUMAN.get(ext, "")
+    if not base:
+        if "webm" in mime:
+            base = "WebM"
+        elif "/" in mime:
+            base = mime.split("/", 1)[1].split(";")[0].upper()
+    if not base:
+        base = {AUDIO: "audio", VIDEO: "video", IMAGE: "picture",
+                TEXT: "text"}.get(kind_of(name, mime, head), "unknown")
+    codec = ""
+    if "opus" in mime:
+        codec = "Opus"
+    elif "mp4a" in mime or "aac" in mime:
+        codec = "AAC"
+    return f"{base} ({codec})" if codec and codec.lower() not in base.lower() else base

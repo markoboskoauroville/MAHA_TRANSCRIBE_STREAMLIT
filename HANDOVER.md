@@ -1902,3 +1902,55 @@ mode mid-work in both directions, and identical takes both surviving
 rather than being silently merged. Four mutations run against the source
 — append disabled, separator changed, the empty guard removed, the
 rstrip removed — and each was caught.
+
+---
+
+## 33. THE RETURN PATH, SAID OUT LOUD (v65)
+
+Baba sent a 7 MB take and waited, and waited, and nothing came back. The
+send was verbose — spinner, size, seconds, rate — and the return was
+completely silent.
+
+### The pipeline is NOT slow, and that is the clue
+
+Measured end to end on a real 6-minute, 7.2 MB webm/opus take, through
+the app's own functions:
+
+    router            audio -> transcribe, no chunking needed
+    ffmpeg convert    6.2s   ->  6.7 MB 16 kHz mono FLAC
+    Groq transcribe   6.8s   (large-v3), 6.5s (turbo)
+
+About thirteen seconds. So the waiting was not the work.
+
+**The spinner stopped at 9.0s, which means the acknowledgement arrived —
+Python received the audio and FINISHED ITS RUN. Yet no text appeared.**
+That narrows it hard: the run completed and produced nothing.
+
+The likeliest cause is an EMPTY transcript. `deliver_text()` ignores
+empty text on purpose, so that a failed pass cannot wipe work already in
+the box (§32) — but that meant an empty result showed nothing at all, and
+looked exactly like a job still running. **A silent success and a silent
+failure looked identical.**
+
+### What is on screen now
+
+Every stage is timed, named and kept:
+
+    WebM (Opus) 6,997 KB · → 16 kHz mono FLAC 6,890 KB · 6.0 min ·
+    convert 6.2s · transcribe 6.8s · direct · 1,240 chars
+
+Baba: *"they are all good people, they deserve to see."* `intake.describe()`
+gives human names — `M4A (MPEG-4 audio)`, `WebM (Opus)`, `MOV video` —
+rather than ffmpeg codec ids, and the line shows what it was turned INTO
+as well as what arrived.
+
+An empty transcript now says so in words, and an exception is kept on the
+line as `⚠ …` instead of vanishing with the rerun.
+
+### Still to find
+
+This does not FIX Baba's stall — it makes the next one legible. If the
+line comes back reading `0 chars`, the audio was fine and Whisper heard
+no speech, and the question moves to the recording. If the line never
+appears at all, the run never reached the transcribe branch and the
+problem is above it.

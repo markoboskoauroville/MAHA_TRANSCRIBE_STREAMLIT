@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v64 (single / multi)"
+APP_VERSION = "v65 (return path visible)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -307,6 +307,8 @@ STRINGS = {
     "rec_retry":   {"en": "retry",   "hr": "ponovi"},
     "mode_single": {"en": "single", "hr": "jedan"},
     "mode_multi":  {"en": "multi",  "hr": "više"},
+    "nothing_heard": {"en": "The audio arrived but no speech was found in it.",
+                      "hr": "Zvuk je stigao ali u njemu nije pronađen govor."},
     "rec_sending": {"en": "sending", "hr": "šaljem"},
     "img_unavailable": {"en": "Reading text from pictures is out of order.",
                         "hr": "Čitanje teksta sa slika trenutno ne radi."},
@@ -2539,6 +2541,16 @@ if active == "transcribe":
                     mime=st.session_state.get("_take_mime", ""),
                     head=raw[:64], size=len(raw), spoken_limit=SAFE_BYTES)
 
+                # THE RETURN PATH, SAID OUT LOUD. The send is verbose and
+                # the return was silent, so a take that produced nothing
+                # looked identical to one still working. Every stage is
+                # timed and named, and the line survives the rerun.
+                stage = {"in": intake.describe(getattr(audio, "name", ""),
+                                               st.session_state.get("_take_mime", ""),
+                                               raw[:64]),
+                         "in_kb": len(raw) // 1024}
+                _t0 = time.time()
+
                 if plan["pipeline"] == "read":
                     deliver_text(raw.decode("utf-8", errors="replace"))
                     st.session_state["_transcribe_method"] = "text"
@@ -2551,6 +2563,11 @@ if active == "transcribe":
                 elif plan["pipeline"] == "transcribe":
                     with st.spinner(t("preparing_audio")):
                         flac_path = to_flac16k(raw)
+                    stage["convert_s"] = time.time() - _t0
+                    stage["out"] = "16 kHz mono FLAC"
+                    stage["out_kb"] = os.path.getsize(flac_path) // 1024
+                    stage["mins"] = audio_seconds(flac_path) / 60.0
+                    _t1 = time.time()
                     # ALWAYS through transcribe_any_size. This path used
                     # to call the provider directly, so a long take or a
                     # big upload died at Groq's 25 MB limit with nothing
@@ -2572,6 +2589,17 @@ if active == "transcribe":
                         flac_path, chosen_model(stt.provider) or model_for(lang_code),
                         lang_code, progress_cb=_cb)
                     prog.empty()
+                    stage["transcribe_s"] = time.time() - _t1
+                    stage["chars"] = len((text or "").strip())
+                    stage["method"] = method
+                    st.session_state["_last_run"] = stage
+                    # An EMPTY transcript is a real outcome and must say so.
+                    # deliver_text ignores empty text on purpose, so without
+                    # this the screen would show nothing at all and look
+                    # exactly like a job still running — which is what
+                    # happened on Baba's 7 MB take.
+                    if not stage["chars"]:
+                        st.warning(t("nothing_heard"))
                     deliver_text(text)
                     st.session_state["flac_path"] = reusable
                     st.session_state["last_lang"] = lang_code
@@ -2582,7 +2610,31 @@ if active == "transcribe":
                 else:
                     st.error(t("file_unknown").format(why=plan["reason"]))
             except Exception as e:
+                st.session_state["_last_run"] = {"error": str(e)[:300]}
                 st.error(str(e))
+
+    # WHAT HAPPENED, kept on screen. Baba: "they are all good people, they
+    # deserve to see."
+    _lr = st.session_state.get("_last_run")
+    if _lr:
+        if _lr.get("error"):
+            st.caption("⚠ " + _lr["error"][:200])
+        else:
+            bits = []
+            if _lr.get("in"):
+                bits.append(f"{_lr['in']} {_lr.get('in_kb',0):,} KB")
+            if _lr.get("out"):
+                bits.append(f"→ {_lr['out']} {_lr.get('out_kb',0):,} KB")
+            if _lr.get("mins"):
+                bits.append(f"{_lr['mins']:.1f} min")
+            if _lr.get("convert_s"):
+                bits.append(f"convert {_lr['convert_s']:.1f}s")
+            if _lr.get("transcribe_s"):
+                bits.append(f"transcribe {_lr['transcribe_s']:.1f}s")
+            if _lr.get("method"):
+                bits.append(str(_lr["method"]))
+            bits.append(f"{_lr.get('chars',0):,} chars")
+            st.caption("  ·  ".join(bits))
 
     # ONE upload, and the file decides what happens to it. Two pickers
     # meant choosing before doing, and choosing wrongly was possible;
