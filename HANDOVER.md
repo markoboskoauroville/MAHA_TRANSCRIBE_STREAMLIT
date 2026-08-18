@@ -1339,3 +1339,52 @@ against every suite and each was caught.
 speech.platform.bing.com, so all validation used Speechify audio. Whisper
 should not care what made the sound, but that is inference, not
 measurement — the first Edge reading is the real test.
+
+---
+
+## 21. THE STEADY HIGHLIGHT (v55)
+
+The other half of §16 D4, and it became urgent the moment the timing half
+shipped: with real word timings the highlight moves two or three times a
+second instead of once a sentence, so a defect that used to fire per
+sentence now fires per word.
+
+### One property, measured
+
+`padding:1px 4px` on the highlighted word moved **every following word
+8 px sideways** and displaced **89 word-positions** while stepping a
+single 29-word sentence at a 320 px column. Measured in real Chromium,
+reading real geometry — not a judgement that it looked fine.
+
+`background`, `color` and `border-radius` are PAINTED. They never
+participate in the box model and cannot move anything. Padding was the
+only offender, so the amber fill the design language calls for costs
+nothing and stays. Dark-on-amber contrast is 9.06:1, above WCAG AAA.
+
+Note this corrects a slight over-statement in §16 D4, which said "never a
+background or bold: those change the text's metrics". Bold does. A
+background does not. Padding does. The instinct was right, the reason was
+half right, and the difference matters because it means the amber fill
+never had to be given up.
+
+### THE SECOND DEFINITION — the trap in §0, caught again
+
+`ttt/reader.py:highlight()` held its own copy of the same span and would
+have kept shaking in the LLL reader view while the Talk view was clean.
+That reads as an intermittent bug rather than a style one, which is far
+harder to chase. **When fixing a style, grep for another rule doing the
+same job before believing it is done.**
+
+### tests/test_shake.py
+
+Runs headless Chromium at a phone width, steps the highlight across a
+sentence and measures the bounding box of EVERY OTHER word at every step.
+Anything that is not the highlighted word must not move at all.
+
+It reads the shipped styles out of `app.py` and `ttt/reader.py` by regex
+rather than holding its own copy — a test with its own copy of the style
+passes forever while the real style drifts back to padding. Both arms
+were verified to go red when padding is reintroduced.
+
+Requires `playwright` and a chromium download, so it is a local test, not
+a Cloud one. Run it after ANY change to either highlight span.

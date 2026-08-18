@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v54 (word timings live)"
+APP_VERSION = "v55 (steady highlight)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2034,15 +2034,29 @@ def _highlight_span(text: str, start: int = None, end: int = None) -> str:
     """HTML-escaped text with [start:end) wrapped in the gold highlight span.
     With no range, the whole text is wrapped (sentence-level, the Edge case).
     Bounds are clamped defensively — a mark that's ever slightly out of
-    range must never crash the read, just highlight nothing that run."""
+    range must never crash the read, just highlight nothing that run.
+
+    NO PADDING, EVER. Measured in Chromium at a phone width: `padding:1px
+    4px` on the highlighted word moved every following word 8 px sideways
+    and displaced 89 word-positions while stepping one sentence. That is
+    the shaking. `background`, `color` and `border-radius` are painted and
+    never participate in layout, so the amber fill the design language
+    calls for costs nothing; padding was the only property that ever
+    reflowed the line.
+
+    This became urgent in v54: with real word timings the highlight moves
+    two or three times a second instead of once a sentence, so a defect
+    that used to fire per sentence now fires per word.
+
+    tests/test_shake.py holds the measurement and must stay at zero.
+    """
+    hl = 'background:#f59e0b;color:#0b0d10;border-radius:3px;'
     if start is None or end is None:
-        return ('<span style="background:#f59e0b;color:#0b0d10;'
-                'border-radius:4px;padding:1px 4px;">' + html.escape(text) + "</span>")
+        return f'<span style="{hl}">' + html.escape(text) + "</span>"
     start = max(0, min(start, len(text)))
     end = max(start, min(end, len(text)))
     return (html.escape(text[:start]) +
-            '<span style="background:#f59e0b;color:#0b0d10;'
-            'border-radius:4px;padding:1px 4px;">' + html.escape(text[start:end]) + "</span>" +
+            f'<span style="{hl}">' + html.escape(text[start:end]) + "</span>" +
             html.escape(text[end:]))
 
 

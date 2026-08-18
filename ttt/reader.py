@@ -52,9 +52,19 @@ def highlight(text: str, start=None, end=None) -> str:
     """HTML-escaped text with [start:end) wrapped in the highlight span.
     With no range the whole text is wrapped, which is the sentence-level
     case. Bounds are clamped defensively: a mark slightly out of range must
-    never break a read, it just highlights nothing that instant."""
+    never break a read, it just highlights nothing that instant.
+
+    NO PADDING — same rule and same reason as _highlight_span in app.py,
+    and this is the SECOND definition that HANDOVER §0 warns about. Both
+    must be fixed or the reader view keeps shaking while the Talk view is
+    clean, which reads as an intermittent bug rather than a style one.
+    Measured in Chromium at phone width: 1px/4px padding moved every
+    following word 8 px sideways and displaced 89 word-positions across a
+    single sentence. Background, colour and border-radius are painted and
+    never participate in layout; padding was the only offender.
+    """
     span_open = (f'<span style="background:{HL_BG};color:{HL_FG};'
-                 'border-radius:4px;padding:1px 4px;">')
+                 'border-radius:3px;">')
     if start is None or end is None:
         return span_open + html.escape(text) + "</span>"
     start = max(0, min(int(start), len(text)))
