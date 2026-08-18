@@ -62,12 +62,21 @@
   .dot { width:9px; height:9px; border-radius:50%; background:currentColor;
          flex:none; }
   .sq  { width:9px; height:9px; background:currentColor; flex:none; }
-  .up  { width:0; height:0; border-bottom:9px solid currentColor;
-         border-left:5px solid transparent; border-right:5px solid transparent;
-         flex:none; }
+  /* A folder, drawn rather than fetched: the tab is the ::before. */
+  .fold { width:11px; height:9px; flex:none; position:relative;
+          border:1.5px solid currentColor; border-radius:1px 2px 2px 2px;
+          border-top-width:2.5px; }
+  .fold::before { content:''; position:absolute; top:-4px; left:-1.5px;
+                  width:4px; height:2px; background:currentColor;
+                  border-radius:1px 1px 0 0; }
   .par { width:9px; height:9px; flex:none;
          border-left:3px solid currentColor; border-right:3px solid currentColor; }
-  #msg { margin-top:7px; min-height:16px; font-size:12px; color:var(--dim); }
+  /* This line said "sent — 56 KB" and got sliced through the middle of
+     the word, because the frame was shorter than the deck. A status line
+     that is cut in half reads as a broken app. It now has its own room
+     and wraps rather than clipping. */
+  #msg { margin-top:7px; min-height:17px; font-size:12px; color:var(--dim);
+         line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
   #msg.bad { color:#fca5a5; }
   @media (prefers-reduced-motion: reduce) { #scope { opacity:.85; } }
 </style>
@@ -81,7 +90,7 @@
     <button class="key" id="bRec"   aria-label="record"><span class="dot"></span><span id="lRec">rec</span></button>
     <button class="key" id="bPause" aria-label="pause" disabled><span class="par"></span><span id="lPause">pause</span></button>
     <button class="key" id="bStop"  aria-label="stop"  disabled><span class="sq"></span><span id="lStop">stop</span></button>
-    <button class="key" id="bFile" aria-label="upload"><span class="up"></span><span id="lFile">upload</span></button>
+    <button class="key" id="bFile" aria-label="upload"><span class="fold"></span><span id="lFile">open</span></button>
   </div>
   <textarea id="sink" aria-hidden="true" tabindex="-1" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"></textarea>
   <input id="picker" type="file" style="display:none" accept="audio/*,video/*">
@@ -94,7 +103,12 @@ function post(type, extra) {
     Object.assign({ isStreamlitMessage:true, type:type }, extra || {}), "*");
 }
 function setValue(v) { post("streamlit:setComponentValue", { value:v, dataType:"json" }); }
-function height() { post("streamlit:setFrameHeight", { height: 126 }); }
+function height() {
+  // Measure, never assume. A fixed number was 126 and the deck grew past
+  // it the moment the status line had anything to say.
+  var h = document.getElementById('deck').getBoundingClientRect().height;
+  post("streamlit:setFrameHeight", { height: Math.ceil(h) + 6 });
+}
 
 var bRec=document.getElementById('bRec'), bPause=document.getElementById('bPause'),
     bStop=document.getElementById('bStop'),
@@ -112,7 +126,10 @@ var gain=1;                     // smoothed display gain for the scope
 // this display must never tell.
 var FLOOR = 1.2 / 128;
 
-function say(s, bad){ msg.textContent=s||''; msg.className = bad?'bad':''; }
+function say(s, bad){
+  msg.textContent=s||''; msg.className = bad?'bad':'';
+  height();                       // the strip just changed size
+}
 function mmss(ms){
   var s=Math.floor(ms/1000); return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);
 }

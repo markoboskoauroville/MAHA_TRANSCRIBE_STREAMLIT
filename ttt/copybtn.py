@@ -62,7 +62,7 @@ def _js(value) -> str:
 
 
 def html(text: str, label: str, busy: str, done: str, failed: str,
-         scale: float = 1.0) -> str:
+         scale: float = 1.0, fg: str = FG, font: str = "") -> str:
     """The whole component. `text` is embedded as JSON, never interpolated
     raw — a transcript containing quotes, backslashes or newlines would
     otherwise break the script, and a transcript is arbitrary text by
@@ -78,9 +78,16 @@ def html(text: str, label: str, busy: str, done: str, failed: str,
   html, body {{ margin:0; padding:0; background:transparent; }}
   button {{
     width:100%; min-height:44px;               /* WCAG 2.5.5 target size */
-    font-family: ui-monospace, monospace;
+    /* Font and colour are PASSED IN, not fixed here. This component is an
+       iframe, so it inherits none of the page's CSS variables — which is
+       why 'copy' sat in a different typeface and a different cream from
+       the cells either side of it, in a row whose whole point is that
+       every cell looks the same. Baba spotted it immediately. */
+    font-family: {font or 'ui-monospace, monospace'};
     font-size: {size}rem;
-    color: {FG}; background: {BG};
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: {fg}; background: {BG};
     border: 1px solid {EDGE}; border-radius: 999px;
     padding: 0.5rem 1rem; cursor: pointer;
     transition: transform 90ms ease-out, background-color 90ms ease-out,

@@ -1623,3 +1623,40 @@ A pasted picture has nowhere to go until `read_picture` is restored
 (§24). The router sends it to `ocr` and the app says the feature is out of
 order, which is at least honest. **Restoring image OCR now unblocks two
 things, not one.**
+
+---
+
+## 27. INTERFACE CORRECTIONS FROM THE PHONE (v59)
+
+Four things Baba caught in one screenshot.
+
+**The status line was cut through the middle of a word.** "sent — 56 KB"
+was sliced in half because the component asked for a FIXED frame height of
+126 px and the deck grew past it the moment the line had anything to say.
+It now MEASURES the deck and asks for that, and re-measures every time the
+message changes. A status line cut in half reads as a broken app.
+
+**Eject is now OPEN, with a folder.** The word says what it does and the
+glyph is drawn in CSS, not fetched.
+
+**The command row never wraps again.** It was `flex-wrap: wrap`, added
+because a column grid pushed the last cell off the right edge. That fixed
+one thing and introduced a worse one: "clear" dropped to a second line and
+the strip became two rows of different widths. Baba: *"no new rows, it can
+only remove letters."*
+
+So: `flex-wrap: nowrap`, cells `flex: 0 1 auto` so they may SHRINK (with
+`0 0 auto` nowrap just pushes the last cell off screen again), and padding
+and font-size both give way with `clamp()` before any letter is clipped.
+
+Measured in Chromium at 320/360/390/412/480 px: **one row at every width,
+nothing off-screen, and no word clipped at all** — the type shrinks to
+9.6 px and everything stays readable. The `resh`/`gra` abbreviation is
+available as a last resort and is not currently needed.
+
+**Copy looked different because it IS different.** It is a `copybtn`
+iframe, and an iframe inherits none of the page's CSS variables, so it had
+its own hardcoded `ui-monospace` and its own cream. Font and colour are
+now passed in from the active scheme and typeface. **Any component in a
+row of otherwise-native controls has this problem; check for it whenever
+one cell looks off.**

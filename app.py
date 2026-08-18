@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v58 (router + paste)"
+APP_VERSION = "v59 (interface fixes)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -276,7 +276,7 @@ STRINGS = {
     "rec_btn":   {"en": "rec",   "hr": "snimaj"},
     "rec_pause": {"en": "pause", "hr": "pauza"},
     "rec_stop":  {"en": "stop",  "hr": "stop"},
-    "rec_upload": {"en": "upload", "hr": "datoteka"},
+    "rec_upload": {"en": "open",   "hr": "otvori"},
     "img_unavailable": {"en": "Reading text from pictures is out of order.",
                         "hr": "Čitanje teksta sa slika trenutno ne radi."},
     "file_unknown": {"en": "Cannot use this file — {why}.",
@@ -1462,6 +1462,12 @@ def copy_pill(text: str, where: str):
             label=t("copy_idle"), busy=t("copy_busy"),
             done=t("copy_done"), failed=t("copy_failed"),
             scale=a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
+            # Match the row it sits in: same typeface, same prose colour.
+            fg=theme.SCHEMES.get(
+                st.session_state.get("scheme", "amber"),
+                theme.SCHEMES["amber"]).get("prose", "#f2ddb4"),
+            font=theme.FONTS.get(st.session_state.get("font", "mono"),
+                                 theme.FONTS["mono"]),
         ),
         height=copybtn.HEIGHT,
     )

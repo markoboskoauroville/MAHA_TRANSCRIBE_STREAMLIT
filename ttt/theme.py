@@ -344,7 +344,16 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
          Anything leaving the screen is a bug, always. Flex with wrap
          keeps every cell its own width AND keeps them all on screen. */
       display: flex !important;
-      flex-wrap: wrap;
+      /* ONE ROW, ALWAYS. This used to be flex-wrap:wrap, added because a
+         column grid pushed the last cell off the right edge of the phone.
+         Wrapping fixed that and introduced a worse thing: "clear" dropped
+         onto a second line and the strip became two rows of different
+         widths. Baba: "no new rows, it can only remove letters."
+         So the row never wraps, the cells SHRINK, and the words are
+         clipped from the right — reshape becomes resh, grammar becomes
+         gra — before anything is ever allowed to leave the screen or
+         start a second line. */
+      flex-wrap: nowrap !important;
       align-content: flex-start;
       /* The row is a closed strip, not a set of boxes ending in mid-air.
          The LAST cell takes whatever width is left, so the border runs
@@ -361,7 +370,10 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       > div[data-testid="stColumn"] {{
       width: max-content !important;
       min-width: 0 !important;
-      flex: 0 0 auto !important;
+      /* 0 1 auto, not 0 0 auto: the cell must be ALLOWED to shrink, or
+         nowrap simply pushes the last one off the screen again. */
+      flex: 0 1 auto !important;
+      overflow: hidden;
       border-right: 1px solid var(--line);
       border-bottom: 1px solid var(--line);
     }}
@@ -386,10 +398,14 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       height: 44px !important;
       min-height: 44px !important;
       min-width: 0 !important;
-      padding: 0 0.85rem !important;
+      /* Padding and type both give way as the screen narrows, so the
+         letters survive as long as possible before any are clipped. */
+      padding: 0 clamp(0.2rem, 1.7vw, 0.85rem) !important;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: clip;
       justify-content: center;
-      font-size: 0.92rem !important;
+      font-size: clamp(0.60rem, 2.5vw, 0.92rem) !important;
       font-weight: 600;
       letter-spacing: 0.04em;
       border: none !important;
