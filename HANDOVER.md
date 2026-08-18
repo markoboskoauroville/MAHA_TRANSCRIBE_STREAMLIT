@@ -1660,3 +1660,63 @@ its own hardcoded `ui-monospace` and its own cream. Font and colour are
 now passed in from the active scheme and typeface. **Any component in a
 row of otherwise-native controls has this problem; check for it whenever
 one cell looks off.**
+
+---
+
+## 28. THREE REAL FAULTS FROM THE PHONE (v60)
+
+### new / grammar / reshape / clear did nothing — MY BUG FROM v57
+
+They highlighted and then nothing changed, which looked like dead
+buttons. The callbacks were running perfectly. **The deck was undoing
+them.**
+
+`_clear_all` and `_new_take` popped `_digest` — correct before v57, when
+the recording lived in the audio widget and vanished with it. Since v57
+the take is held in session state under `_take_mic_N`, so the next run
+found audio present and no digest, concluded it was a fresh recording,
+RE-TRANSCRIBED it and wrote the text straight back into the box. A
+fraction of a second after the button worked.
+
+`_drop_take()` now forgets the held audio, and anything that clears the
+transcript must call it.
+
+**The lesson: when state moves out of a widget and into session state,
+every code path that used to rely on the widget resetting has to be
+found.** Popping a digest is not clearing a cache if the thing the digest
+described is still sitting there.
+
+### THE CLOCK GETS ITS OWN ZONE
+
+It floated over the trace, so the moment the waveform reached full height
+the digits were drawn straight through and became unreadable — exactly
+when a running timer matters most. The scope window is now two zones: the
+trace on the left, and a solid black panel on the right that the trace
+CANNOT ENTER (`CLOCK_W`, subtracted from the drawing width, not merely
+layered above it). Amber while running, grey when idle.
+
+Measured: trace reaches x=1181, clock panel starts at x=1182, background
+solid, colour `rgb(245,158,11)` live and grey idle.
+
+### THE LANGUAGE IS NEVER GUESSED
+
+Croatian came back as something closer to Czech. Two causes, one fixed
+here and one confirmed:
+
+**The model did not follow the language.** Everything used
+`whisper-large-v3-turbo`. turbo is a distilled model — fast, fine for
+English, measurably worse on Croatian. `model_for(language)` now keeps
+turbo for English and gives everything else the full
+`whisper-large-v3`.
+
+**Language enforcement is real and was already in place** — `language=`
+has always been passed to Groq. MEASURED, all four combinations on
+Croatian audio: leaving the language OFF degrades BOTH models badly,
+scattering commas through every phrase and inventing words like "privy"
+and "liedenji". So the HR/ENG control is an instruction, not a hint, and
+**auto-detection is used nowhere in this app.**
+
+NOT PROVEN: that large-v3 beats turbo on Baba's actual Croatian. The only
+Croatian in the corpus is an English TTS voice reading unaccented text, so
+both models mangle it and the comparison says nothing. His own voice is
+the test.

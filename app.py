@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v59 (interface fixes)"
+APP_VERSION = "v60 (dead buttons, clock zone, forced language)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -213,6 +213,25 @@ st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
 
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
+
+# THE MODEL FOLLOWS THE LANGUAGE, and the language is never guessed.
+#
+# turbo is a distilled model: fast, and fine for English. On Croatian it
+# is measurably worse, which is why "Ovo je test hrvatskog jezika" came
+# back as something closer to Czech. English keeps turbo; everything else
+# gets the full model.
+#
+# Measured 19.8.2026 on Croatian audio, all four combinations: leaving the
+# language OFF degrades BOTH models badly — commas scattered through every
+# phrase and words like "privy" and "liedenji" appearing from nowhere.
+# Auto-detection is never used anywhere in this app. The HR/ENG control at
+# the bottom of the screen is an instruction, not a hint.
+FAST_LANGS = {"en"}
+
+
+def model_for(language: str) -> str:
+    lang = (language or "").strip().lower()[:2]
+    return PRIMARY_MODEL if lang in FAST_LANGS else CORRECTION_MODEL
 
 # Croatian first everywhere, English second.
 # ----------------------------------------------------------------------
@@ -2186,6 +2205,25 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
     doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
 
 
+def _drop_take():
+    """Forget the recording that is being held.
+
+    WHY THIS EXISTS. `clear` and `new` used to pop `_digest` and nothing
+    else — but since v57 the take itself lives in session state under
+    `_take_mic_N`, so the very next run found audio with no digest,
+    decided it was fresh, RE-TRANSCRIBED it and put the text straight
+    back. The button worked; the deck undid it a fraction of a second
+    later, which is exactly how it looked on the phone: a cell that
+    highlights and does nothing.
+
+    Anything that clears the transcript must also forget the audio.
+    """
+    for k in [k for k in list(st.session_state)
+              if k.startswith("_take_mic_") or k.startswith("_cassette_seen_")]:
+        st.session_state.pop(k, None)
+    st.session_state.pop("_take_mime", None)
+
+
 def _derive_marks(sent: str, audio_bytes, dur: float):
     """Word marks for audio whose engine reported none. None on any doubt.
 
@@ -2428,6 +2466,7 @@ if active == "transcribe":
     def _new_take():
         st.session_state["_mic_gen"] = st.session_state.get("_mic_gen", 0) + 1
         st.session_state.pop("_digest", None)
+        _drop_take()
         flash("tx_new")
 
     if audio is not None:
@@ -2481,7 +2520,7 @@ if active == "transcribe":
                             pass
 
                     text, method, reusable = transcribe_any_size(
-                        flac_path, chosen_model(stt.provider) or PRIMARY_MODEL,
+                        flac_path, chosen_model(stt.provider) or model_for(lang_code),
                         lang_code, progress_cb=_cb)
                     prog.empty()
                     st.session_state["transcript_box"] = text
@@ -2569,7 +2608,7 @@ if active == "transcribe":
                                 0.5, text=t("chunk_waiting").format(s=secs, i=idx + 1))
 
                         text, method, reusable = transcribe_any_size(
-                            tmp.name, chosen_model(stt.provider) or PRIMARY_MODEL,
+                            tmp.name, chosen_model(stt.provider) or model_for(lang_code),
                             lang_code, progress_cb=_cb, on_wait=_on_wait)
                     progress_bar.empty()
                     st.session_state["transcript_box"] = text
@@ -2601,6 +2640,7 @@ if active == "transcribe":
         for k in ("_transcript_prev", "flac_path", "_digest", "_pick_digest",
                   "_transcribe_method"):
             st.session_state.pop(k, None)
+        _drop_take()
         flash("tx_clear")
 
     def _apply_transform(preset="", instruction=""):

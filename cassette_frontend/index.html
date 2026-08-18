@@ -39,9 +39,18 @@
                border-radius:3px; height:46px; position:relative;
                overflow:hidden; margin-bottom:8px; }
   #scope { display:block; width:100%; height:100%; }
-  #clock { position:absolute; right:7px; top:50%; transform:translateY(-50%);
-           font-variant-numeric:tabular-nums; font-size:15px;
-           letter-spacing:.5px; color:var(--dim); }
+  /* THE CLOCK GETS ITS OWN ZONE. It used to float over the trace, and
+     the moment the waveform reached full height the digits were drawn
+     straight through and became unreadable — which is precisely when a
+     running timer matters most. The scope window is now two zones: the
+     trace on the left, a solid black panel on the right that the trace
+     cannot enter, with the numbers on top of it. Amber while running, so
+     it reads as live at a glance rather than needing to be studied. */
+  #clock { position:absolute; right:0; top:0; bottom:0; width:74px;
+           display:flex; align-items:center; justify-content:center;
+           background:var(--dark); border-left:1px solid var(--edge);
+           font-variant-numeric:tabular-nums; font-size:16px;
+           letter-spacing:.5px; color:var(--dim); z-index:2; }
   #clock.live { color:var(--amber); }
 
   /* transport row: square cells, shared borders, sized to fit */
@@ -135,6 +144,8 @@ function mmss(ms){
 }
 function elapsed(){ return acc + (running && !paused ? Date.now()-t0 : 0); }
 
+var CLOCK_W = 74;      // must match #clock width; the trace stops here
+
 function fit(){
   var r=scope.getBoundingClientRect(), d=window.devicePixelRatio||1;
   scope.width=Math.max(1,Math.round(r.width*d));
@@ -144,7 +155,7 @@ function fit(){
 
 function flatline(){
   fit();
-  var w=scope.clientWidth, h=scope.clientHeight;
+  var w=scope.clientWidth-CLOCK_W, h=scope.clientHeight;
   ctx.clearRect(0,0,w,h);
   ctx.strokeStyle='#2b313a'; ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
@@ -152,8 +163,8 @@ function flatline(){
 
 function draw(){
   raf=requestAnimationFrame(draw);
-  var w=scope.clientWidth, h=scope.clientHeight;
-  ctx.clearRect(0,0,w,h);
+  var w=scope.clientWidth-CLOCK_W, h=scope.clientHeight;
+  ctx.clearRect(0,0,scope.clientWidth,h);
   if (!analyser) return;
   var n=analyser.fftSize, buf=new Uint8Array(n);
   analyser.getByteTimeDomainData(buf);
