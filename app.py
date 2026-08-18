@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v53 (word timings)"
+APP_VERSION = "v54 (word timings live)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -74,6 +74,7 @@ from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
+from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
 from ttt import theme
 from ttt import gate
@@ -2061,6 +2062,31 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
     doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
 
 
+def _derive_marks(sent: str, audio_bytes, dur: float):
+    """Word marks for audio whose engine reported none. None on any doubt.
+
+    Never raises and never blocks the reading: every failure path returns
+    None, and the caller then reads the sentence exactly as it did before
+    this existed. A highlight is a courtesy; the audio is the point.
+    """
+    try:
+        if not audio_bytes or not dur:
+            return None
+        ring = get_ring("groq")
+        if not ring:
+            return None
+        # speech_lang is the key the reader actually sets ('hr'/'en').
+        # An invented key would silently read None and cost Whisper its
+        # language hint, which matters most on Croatian.
+        lang = st.session_state.get("speech_lang") or None
+        return WORDTIMES.marks_for(
+            sent, audio_bytes, dur,
+            rotate=lambda attempt: kr.rotate(ring, lambda k: attempt(k)),
+            language=lang)
+    except Exception:
+        return None
+
+
 def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
                         page_key: str, page_slot, progress_slot=None,
                         speed: float = 1.0, gap: float = 0.0):
@@ -2116,6 +2142,20 @@ def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
             break
         audio_bytes, dur = result[0], result[1]
         marks = result[2] if len(result) > 2 else None
+
+        if not marks:
+            # The engine gave no word marks — this is Edge. Recover them
+            # from the audio it just rendered, by asking Whisper for word
+            # timestamps and mapping what it HEARD onto what we are
+            # DISPLAYING. Measured against Speechify's exact marks on
+            # held-out sentences: median 47 ms, 80% inside 100 ms, against
+            # 119 ms median for a proportional guess. Full method and the
+            # approaches that failed: docs/WORD_TIMINGS.md.
+            #
+            # It costs one call (~0.4 s) before this sentence starts, and
+            # it is allowed to fail: marks stays None and the reader does
+            # exactly what it did before, sentence at a time.
+            marks = _derive_marks(sent, audio_bytes, dur)
 
         if marks:
             # Word-level: play once, then step the highlight through each

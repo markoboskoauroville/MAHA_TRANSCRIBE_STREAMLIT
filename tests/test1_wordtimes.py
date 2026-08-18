@@ -113,5 +113,53 @@ ck("a key ring returning nothing degrades to proportional",
 ck("a missing audio file returns None rather than raising",
    wt.fetch_word_times("/nonexistent.wav", "k"), None)
 
+
+# ---- tokenize: offsets must index the ORIGINAL string ----
+def spans_ok(text):
+    return all(text[a:b] == w for w, a, b in wt.tokenize(text))
+for txt in ["Wait — what? No, it's twenty-one.",
+            "Zvuk je prvi element koji dopire.",
+            "In 1947 the population reached 3,500 people.",
+            "  leading and trailing  ",
+            "one", "", "!!!", "a  b", "e-mail o'clock", "🎧 emoji here"]:
+    ckt(f"offsets index the original: {txt[:24]!r}", spans_ok(txt))
+
+ck("apostrophes stay inside the word",
+   [w for w,_,_ in wt.tokenize("it's fine")], ["it's","fine"])
+ck("hyphens stay inside the word",
+   [w for w,_,_ in wt.tokenize("twenty-one")], ["twenty-one"])
+# span ends at 4, so text[0:4] == "said" and the comma is left uncoloured
+ck("trailing punctuation is NOT part of the span",
+   wt.tokenize("said,")[0], ("said",0,4))
+ckt("...and slicing with it really excludes the comma",
+    "said,"[0:wt.tokenize("said,")[0][2]] == "said")
+ck("em dash is not a word", [w for w,_,_ in wt.tokenize("a — b")], ["a","b"])
+ck("digits are words", [w for w,_,_ in wt.tokenize("in 1947")], ["in","1947"])
+ck("empty text has no tokens", wt.tokenize(""), [])
+ck("punctuation-only text has no tokens", wt.tokenize("!?—"), [])
+ck("None text has no tokens", wt.tokenize(None), [])
+
+# ---- marks_for: refuses rather than guesses ----
+ck("engine marks pass straight through",
+   wt.marks_for("a b", b"x", 1.0, engine_marks=[{"start":0}]), [{"start":0}])
+ck("no rotate means no marks", wt.marks_for("a b", b"x", 1.0), None)
+ck("no audio means no marks",
+   wt.marks_for("a b", None, 1.0, rotate=lambda f: None), None)
+ck("no words means no marks",
+   wt.marks_for("!!!", b"x", 1.0, rotate=lambda f: None), None)
+ck("a failing rotate yields no marks",
+   wt.marks_for("a b", b"x", 1.0, rotate=lambda f: (_ for _ in ()).throw(RuntimeError())), None)
+
+# a rotate returning good heard data produces app-shaped marks
+heard = [H("Wait",0.0,0.4), H("what",0.5,0.9), H("No",1.0,1.3)]
+m = wt.marks_for("Wait — what? No,", b"x", 1.5, rotate=lambda f: heard)
+ckt("marks come back in the app's shape",
+    m and all({"start","end","start_time","end_time"} <= set(x) for x in m), f"{m}")
+ckt("one mark per displayed word", m and len(m)==3, f"{m}")
+ckt("mark spans point at real words",
+    m and [ "Wait — what? No,"[x["start"]:x["end"]] for x in m ]==["Wait","what","No"], f"{m}")
+ckt("mark times are non-decreasing",
+    m and all(a["start_time"]<=b["start_time"] for a,b in zip(m,m[1:])))
+
 print(f"\nTEST 1 (mechanism alone): {P} passed, {F} failed")
 sys.exit(1 if F else 0)

@@ -65,16 +65,26 @@ def proportional(words, total_seconds):
 #  layer 2 — Whisper word timestamps
 # --------------------------------------------------------------------
 
-def fetch_word_times(audio_path, key, language=None, model=MODEL,
-                     timeout=TIMEOUT):
+def fetch_word_times(audio, key, language=None, model=MODEL,
+                     timeout=TIMEOUT, suffix=".mp3"):
     """[{'word','start','end'}] from Groq, or None. Never raises.
+
+    `audio` is a path or raw bytes — Edge and Speechify both hand back
+    bytes, and writing them to disk first inside a Streamlit run is a
+    temp file nobody owns.
 
     response_format MUST be verbose_json and the granularity parameter
     MUST be sent, brackets included — with anything else the response
     arrives looking fine and carrying no timings at all.
     """
     try:
-        data = pathlib.Path(audio_path).read_bytes()
+        if isinstance(audio, (bytes, bytearray)):
+            data = bytes(audio)
+            name = "audio" + suffix
+        else:
+            p = pathlib.Path(audio)
+            data = p.read_bytes()
+            name = "audio" + (p.suffix or suffix)
         if not data:
             return None
         b = uuid.uuid4().hex
@@ -87,8 +97,8 @@ def fetch_word_times(audio_path, key, language=None, model=MODEL,
             body += (f"--{b}\r\nContent-Disposition: form-data; "
                      f"name=\"{k}\"\r\n\r\n{v}\r\n").encode()
         body += (f"--{b}\r\nContent-Disposition: form-data; name=\"file\"; "
-                 f"filename=\"audio{pathlib.Path(audio_path).suffix or '.wav'}\"\r\n"
-                 f"Content-Type: application/octet-stream\r\n\r\n").encode()
+                 f"filename=\"{name}\"\r\nContent-Type: "
+                 f"application/octet-stream\r\n\r\n").encode()
         body += data + b"\r\n" + f"--{b}--\r\n".encode()
         req = urllib.request.Request(
             ENDPOINT, data=body,
@@ -274,3 +284,56 @@ def word_times(words, total_seconds, audio_path=None, rotate=None,
                 return t, "whisper"
 
     return proportional(words, total_seconds), "proportional"
+
+
+# --------------------------------------------------------------------
+#  the bridge into the reader
+# --------------------------------------------------------------------
+
+# A "word" for highlighting is a run of letters, digits and the marks that
+# live INSIDE words — apostrophes and hyphens. Trailing punctuation is
+# deliberately excluded from the span: highlighting "said," colours the
+# comma too, which flickers at the end of every clause.
+_WORD_RE = re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*", re.UNICODE)
+
+
+def tokenize(text):
+    """[(word, start_char, end_char)] over `text`.
+
+    Offsets are into the ORIGINAL string, not a cleaned copy, because the
+    reader slices the displayed sentence with them. Any normalisation
+    that shifts a character by one puts the highlight on the wrong letter.
+    """
+    return [(m.group(0), m.start(), m.end())
+            for m in _WORD_RE.finditer(str(text or ""))]
+
+
+def marks_for(text, audio, total_seconds, rotate=None, language=None,
+              engine_marks=None):
+    """Marks in the shape the reader already consumes, or None.
+
+    Returns [{'start','end','start_time','end_time'}] where start/end are
+    CHARACTER offsets into `text` and the times are seconds into `audio`.
+
+    None means "no word-level timing available" — the caller should keep
+    doing whatever it does for sentence-level, rather than highlight
+    something it cannot back up.
+    """
+    if engine_marks:
+        return engine_marks
+    toks = tokenize(text)
+    if not toks or not rotate or audio is None:
+        return None
+    try:
+        heard = rotate(lambda k: fetch_word_times(
+            audio, k, language=language))
+    except Exception:
+        heard = None
+    if not heard:
+        return None
+    times = times_from_heard(heard, [w for w, _, _ in toks], total_seconds)
+    if not times or len(times) != len(toks):
+        return None
+    return [{"start": s, "end": e,
+             "start_time": float(t0), "end_time": float(t1)}
+            for (w, s, e), (t0, t1) in zip(toks, times)]

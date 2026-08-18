@@ -944,11 +944,20 @@ Edge returns no word marks, and the proportional guess in
 `speech.fill_missing_times` drifts badly over a long block. Baba's
 solution is right and should be built:
 
-  * Analyse the AMPLITUDE ENVELOPE of the rendered audio to find the
-    short silences between words. `ffmpeg -af silencedetect` gives this
-    directly, or read samples with numpy/soundfile for finer control.
-  * The gaps ARE the word boundaries. Count the words in the sentence,
-    align them to the detected gaps, and derive per-word timings.
+  * ~~Analyse the AMPLITUDE ENVELOPE to find the silences between
+    words.~~ **DISPROVED 18.8.2026, and this is why a year of tuning went
+    nowhere.** Measured against Speechify's exact marks: 236 of 238
+    inter-word intervals are EXACTLY ZERO SECONDS. Speech does not stop
+    between words — 'the elements' has no gap in it, the tongue simply
+    moves. Envelope detection finds stop-consonant closures instead: ten
+    "pauses" in a sentence that had four. There is nothing there to find.
+  * ~~The gaps ARE the word boundaries.~~ They are not. What IS wrong
+    with a proportional guess is PAUSES at punctuation being spread
+    across every word, so the error accumulates down the line. Weighting
+    by syllables instead of characters changes nothing at all: 232 ms
+    against 231 ms.
+  * **SOLVED INSTEAD by Whisper word timestamps** — see §20 and
+    docs/WORD_TIMINGS.md. Median 47 ms against 119 ms.
   * Then highlight by CHANGING THE WORD'S COLOUR, not by wrapping it in
     a box — a background or bold changes the text's metrics and the line
     reflows, which is the shaking. Colour alone keeps every glyph exactly
@@ -1243,3 +1252,90 @@ every signature is wrong. Proven: the naive port produces
   the probe was rejected at the token check, before any decode. This is
   the first thing the redeploy must prove.
 * Tests 2, 3 and 4 are outstanding. Nothing is wired into `app.py`.
+
+---
+
+## 20. WORD TIMINGS (v53, live in v54)
+
+Edge returns no word marks. It now gets them anyway, from the audio it
+just rendered. Full method, every failed approach with its numbers, and
+the rendering rule: **docs/WORD_TIMINGS.md**. Point other projects at that
+file; it is written to be portable.
+
+### The finding that matters
+
+**Speech has no silence between words.** 236 of 238 inter-word intervals
+in Speechify's own marks are exactly zero. Every silence-detection
+approach to word boundaries is looking for something that is not in the
+signal. If §16 D4 sent you hunting for gaps, stop — that section is now
+corrected in place.
+
+### What ships
+
+`ttt/wordtimes.py`, three layers, degrading in order:
+
+1. **engine marks** — Speechify already reports them, exactly
+2. **Whisper word timestamps** — one Groq call on the rendered audio,
+   `verbose_json` + `timestamp_granularities[]=word`, then the words it
+   HEARD are mapped onto the words being DISPLAYED with Needleman-Wunsch
+   over normalised tokens
+3. **proportional** — what it always did, always available
+
+Held out on unseen sentences and a voice never used in development:
+
+| | mean | median | <50 ms | <100 ms |
+|---|---|---|---|---|
+| proportional (was) | 138 ms | 119 ms | 26% | 45% |
+| **Whisper words** | **71 ms** | **47 ms** | **53%** | **80%** |
+
+Under ~50 ms a highlight reads as simultaneous with the voice. The median
+is inside that band.
+
+### The part that is easy to get wrong
+
+Not the timing — the MAPPING. Whisper returns the words it heard, which
+are not the words on screen: `12%` for '12 percent', `1,` for 'One',
+`3,500 people` merged into one token, and sometimes a word simply missing.
+Without sequence alignment one numeral throws the rest of the sentence out
+of step. Unmatched words are interpolated between their neighbours,
+because a highlight that stops moving is worse than one slightly early.
+
+### Wiring
+
+`_derive_marks()` in app.py, called from `read_sentences_live` ONLY when
+the engine returned no marks — Speechify never pays for the call. It costs
+~0.4 s before a sentence starts. Every failure path returns None and the
+reader behaves exactly as it did before, sentence at a time.
+
+### What was built and deliberately NOT shipped
+
+A complete DSP aligner: energy envelope, spectral flux, adaptive pause
+segmentation, DP for assigning words to phrases and DP again for placing
+boundaries inside them. Fitted duration prior, punctuation cues, digit
+handling. It reached 200 ms on the corpus its prior was fitted to and
+**195 ms on held-out data — worse than the 138 ms proportional method it
+was meant to beat.** Refining Whisper's anchors with the same DSP gave
+88 ms against 89 ms unrefined across nine settings: no gain, which follows
+directly from there being no acoustic gap to snap to. It is not in the
+repo. Do not rebuild it.
+
+What that work DID earn, if a no-network fallback is ever needed:
+punctuation predicts pauses (cut the worst sentence from 608 ms to
+322 ms); digits are spoken far longer than they look (`1947` has no vowel
+but takes 1.3 s, ~1.3 syllables per digit); and fit the duration prior
+rather than guessing it (0.168 s + 0.155 s/syllable, against a guess of
+0.055 + 0.180 that was 25% low on one-syllable words).
+
+### Test status
+
+Four tests: **65, 10, 21, 15 passed, 0 failed.** Test 3 found a real crash
+on API entries missing `start`, now fixed. Test 4 found a bug of my own —
+I had referenced a session key `read_lang` that does not exist anywhere,
+which would have silently cost Whisper its language hint on every
+Croatian sentence; the real key is `speech_lang`. Mutations were run
+against every suite and each was caught.
+
+**NOT TESTED:** anything on Edge audio. The sandbox cannot reach
+speech.platform.bing.com, so all validation used Speechify audio. Whisper
+should not care what made the sound, but that is inference, not
+measurement — the first Edge reading is the real test.
