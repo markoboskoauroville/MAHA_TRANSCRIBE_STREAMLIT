@@ -41,6 +41,23 @@ sets size, line height and targets. Keep that split — if this file starts
 setting font-size on reading surfaces, the text-size control breaks.
 """
 
+# Colour schemes. All four keep the same STRUCTURE — near-black ground,
+# one accent, warm prose — and differ only in hue, so the app never stops
+# looking like itself. Every one was checked to clear 7:1 for prose on
+# surface before being offered.
+SCHEMES = {
+    "amber": {"accent": "#f59e0b", "accent_hi": "#fbbf24", "prose": "#f2ddb4"},
+    "green": {"accent": "#4ade80", "accent_hi": "#86efac", "prose": "#dbf0e0"},
+    "cyan":  {"accent": "#38bdf8", "accent_hi": "#7dd3fc", "prose": "#d6ecf7"},
+    "paper": {"accent": "#e6e0d4", "accent_hi": "#ffffff", "prose": "#ece7dc"},
+}
+
+FONTS = {
+    "mono":  'ui-monospace, "JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace',
+    "sans":  '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    "serif": 'Georgia, "Times New Roman", serif',
+}
+
 TOKENS = {
     "bg": "#0b0d10",
     "surface": "#0d1117",
@@ -59,8 +76,13 @@ MONO = ('ui-monospace, "JetBrains Mono", "Cascadia Mono", "SF Mono", '
         'Menlo, Consolas, monospace')
 
 
-def css() -> str:
-    t = TOKENS
+def css(scheme: str = "amber", font: str = "mono") -> str:
+    t = dict(TOKENS)
+    sc = SCHEMES.get(scheme) or SCHEMES["amber"]
+    t["amber"] = sc["accent"]
+    t["amber_hi"] = sc["accent_hi"]
+    t["prose"] = sc["prose"]
+    mono = FONTS.get(font) or FONTS["mono"]
     return f"""
     <style>
     :root {{
@@ -73,7 +95,7 @@ def css() -> str:
       --prose: {t['prose']};
       --dim: {t['dim']};
       --red: {t['red']};
-      --mono: {MONO};
+      --mono: {mono};
     }}
 
     .stApp, [data-testid="stAppViewContainer"] {{
@@ -312,7 +334,11 @@ def css() -> str:
     [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"] {{
       display: grid !important;
       grid-auto-flow: column;
-      grid-auto-columns: 1fr;
+      /* max-content, not 1fr: cells take the width of their word, as
+         Baba asked. Equal cells wasted the width a phone does not have —
+         "copy" does not need as much room as "reshape". */
+      grid-auto-columns: max-content;
+      justify-content: start;
       gap: 0 !important;
       border: 1px solid var(--line);
       border-radius: 4px;
@@ -320,7 +346,7 @@ def css() -> str:
     }}
     [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
       > div[data-testid="stColumn"] {{
-      width: auto !important;
+      width: max-content !important;
       min-width: 0 !important;
       flex: none !important;
       border-right: 1px solid var(--line);
@@ -334,7 +360,9 @@ def css() -> str:
       width: 100% !important;
       height: 44px !important;
       min-height: 44px !important;
-      padding: 0 !important;
+      min-width: 0 !important;
+      padding: 0 0.85rem !important;
+      white-space: nowrap;
       justify-content: center;
       font-size: 0.92rem !important;
       font-weight: 600;
@@ -355,8 +383,22 @@ def css() -> str:
     [class*="st-key-cmdrow_"] .stButton button[kind="primary"] p {{
       color: var(--bg) !important;
     }}
+    /* NOT width:100% here. A component is given an explicit pixel width
+       computed from its word, and 100% resolves against a max-content
+       column — which then sizes to the iframe's intrinsic 300px and the
+       cell becomes four times too wide. Let the attribute stand. */
+    /* Streamlit does not honour the width passed to components.html
+       here, and an iframe's intrinsic 300px then wins a max-content
+       column. So the CELL is constrained instead and the iframe fills
+       it. 84px matches "paste" and "copy" at this font — the two words
+       that ever appear in a component cell. */
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"]:has(iframe) {{
+      width: 84px !important;
+      max-width: 84px !important;
+    }}
     [class*="st-key-cmdrow_"] iframe {{
-      width: 100% !important; height: 44px !important; display: block;
+      width: 84px !important; height: 44px !important; display: block;
     }}
     /* Streamlit wraps a component iframe in its own container which
        reports a slightly different height than a button cell, leaving a

@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v46 (a)"
+APP_VERSION = "v47 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -195,7 +195,9 @@ st.markdown(
 # reading stylesheet on top (size, line height, targets). That order
 # matters: a11y must be able to override anything theme sets about text,
 # because the reader's chosen size outranks the design.
-st.markdown(theme.css(), unsafe_allow_html=True)
+st.markdown(theme.css(st.session_state.get("scheme", "amber"),
+                      st.session_state.get("font_family", "mono")),
+            unsafe_allow_html=True)
 
 # The reading stylesheet, regenerated from the person's own text size on
 # every run. Injected AFTER the base sheet so it wins, and kept separate
@@ -303,6 +305,7 @@ STRINGS = {
     # The gear is the tab label itself — a symbol everyone already
     # knows, and one less word in a row of words.
     "tab_settings":       {"en": "\u2699",            "hr": "\u2699"},
+    "tab_looks":          {"en": "\u25d0",            "hr": "\u25d0"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -401,6 +404,7 @@ STRINGS = {
     "reshape_word":       {"en": "reshape",           "hr": "preoblikuj"},
     "transcript_ph":      {"en": "Your words will appear here",
                             "hr": "Ovdje će se pojaviti tvoje riječi"},
+    "archive_word":       {"en": "archive",           "hr": "arhiva"},
     "clear_word":         {"en": "clear",             "hr": "obriši"},
     "copy_word":          {"en": "copy",              "hr": "kopiraj"},
     "copy_done_word":     {"en": "copied",            "hr": "kopirano"},
@@ -411,6 +415,12 @@ STRINGS = {
     "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
     "admin_off":          {"en": "Usage log not connected.",
                             "hr": "Zapis korištenja nije spojen."},
+    "looks_size":         {"en": "Text size",         "hr": "Veličina slova"},
+    "looks_font":         {"en": "Typeface",          "hr": "Pismo"},
+    "looks_scheme":       {"en": "Colour",            "hr": "Boja"},
+    "looks_preview":      {"en": "The quick brown fox jumps over the lazy dog. 0123456789",
+                            "hr": "Gojazni đačić s ljutim che pjeva u fioci. 0123456789"},
+    "sig_looks":          {"en": "looks",             "hr": "izgled"},
     "sig_transcribe":     {"en": "transcribe",        "hr": "transkripcija"},
     "sig_read":           {"en": "read",              "hr": "čitanje"},
     "sig_translate":      {"en": "translate",         "hr": "prijevod"},
@@ -564,7 +574,7 @@ except Exception:
     _player_component = None
 
 
-def paste_target(where: str):
+def paste_target(where: str, width: int = 96):
     """Returns pasted text once, or None. Never raises: a paste box that
     fails must not take the page down."""
     if _paste_component is None:
@@ -575,7 +585,7 @@ def paste_target(where: str):
             # every other item is readable.
             labels={"idle": t("paste_btn"), "hint": t("paste_hint"),
                     "done": t("paste_done"), "word": t("paste_btn")},
-            key=f"paste_{where}", default=None)
+            width=width, key=f"paste_{where}", default=None)
     except Exception:
         return None
     if not isinstance(val, dict):
@@ -961,7 +971,8 @@ DEFAULT_SETTINGS = {"ui_lang": "en", "speech_lang": "hr", "voice": "Gabrijela",
                     "transcribe_engine": "groq", "text_scale": a11y.DEFAULT_SCALE}
 SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice",
                  "transcribe_engine",
-                 "route_stt", "route_tts", "route_llm", "text_scale")
+                 "route_stt", "route_tts", "route_llm", "text_scale",
+                 "scheme", "font_family")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -1359,27 +1370,73 @@ def flashing(name: str) -> bool:
     return bool(at) and (time.time() - at) < FLASH_SECONDS
 
 
-def cmd_row(where: str, items, target_key: str = None, copy_text: str = ""):
-    """A row of equal cells, laid out on a real grid.
+# Roughly how wide a monospace character is at the command font size.
+# Components live in iframes and cannot size themselves to their text the
+# way a button can, so their width is computed instead of measured.
+CMD_CHAR_PX = 9
+CMD_PAD_PX = 30
 
-    Baba asked for "an underlying invisible table" and he was right about
-    the cause: the pipes were compensating for a layout that was only
-    approximately aligned, so they drifted against the words beside them.
-    The row is now a CSS grid — every cell exactly the same width, all
-    baselines shared, nothing to drift.
 
-    And with real cells, the pipes are redundant: a thin border does the
-    separating better and gives a much larger thing to press, which
-    matters more here than a typographic flourish. An HTML <table> could
-    not have done this — paste and copy are components living in iframes,
-    and an iframe cannot sit inside markdown.
+def nav_tabs():
+    """The tab list. The owner gets a second settings entry.
+
+    Two gears, deliberately different: the GREY one is how the app looks
+    — font, size, colours — and belongs to whoever is using it. The AMBER
+    one is engines and keys, and only the owner ever sees it. Colour does
+    the explaining, so neither needs a word.
     """
+    tabs = ["transcribe", "talk", "translate", "looks"]
+    if is_admin():
+        tabs.append("settings")
+    return tabs
+
+
+def cmd_width(word: str) -> int:
+    return max(64, len(word) * CMD_CHAR_PX + CMD_PAD_PX)
+
+
+def cmd_row(where: str, items, target_key: str = None, copy_text: str = "",
+            with_size: bool = True):
+    """THE row. Every command in the app is built here, so there is one
+    appearance and one behaviour to keep right.
+
+    Cells are sized to their WORD rather than forced equal — Baba's
+    correction, and it is better: "copy" needs less room than "reshape",
+    and equal cells wasted the width that a phone does not have.
+
+    − and + ride at the end of the same row. They are commands too; the
+    only reason they were a separate row was that they used to be a
+    different kind of control.
+    """
+    row = list(items)
+    scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+
+    def _smaller():
+        st.session_state["text_scale"] = a11y.smaller(
+            st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+        persist_settings()
+
+    def _bigger():
+        st.session_state["text_scale"] = a11y.bigger(
+            st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+        persist_settings()
+
+    if with_size:
+        row += [("−", f"sz_minus_{where}", _smaller),
+                ("+", f"sz_plus_{where}", _bigger)]
+
+    widths = []
+    for label, _, _ in row:
+        word = t("copy_word") if label == "copy" else (
+            t("paste_btn") if label == "paste" else label)
+        widths.append(cmd_width(word))
+
     with st.container(key=f"cmdrow_{where}"):
-        cols = st.columns(len(items))
-        for col, (label, key, cb) in zip(cols, items):
+        cols = st.columns(widths)
+        for col, (label, key, cb), w in zip(cols, row, widths):
             with col:
                 if label == "paste":
-                    got = paste_target(where)
+                    got = paste_target(where, width=w)
                     if got and target_key:
                         st.session_state[target_key] = got
                         st.rerun()
@@ -1388,9 +1445,12 @@ def cmd_row(where: str, items, target_key: str = None, copy_text: str = ""):
                         copybtn.cp_html(copy_text or "", label=t("copy_word"),
                                         done_label=t("copy_done_word"),
                                         failed_label="—", size=0),
-                        height=40)
+                        height=44, width=w)
                 else:
+                    disabled = (label == "−" and a11y.at_min(scale)) or \
+                               (label == "+" and a11y.at_max(scale))
                     st.button(label, key=key, use_container_width=True,
+                              disabled=disabled,
                               type="primary" if flashing(key or label) else "secondary",
                               on_click=cb)
 
@@ -1445,29 +1505,6 @@ def name_the_symbols():
         "try{var o=new MutationObserver(function(){apply();});"
         "o.observe(window.parent.document.body,{childList:true,subtree:true});}catch(e){}"
         "})();</script>", height=0)
-
-
-def size_row(where: str):
-    """A bare − and + against the right edge, hard above the box.
-
-    No background, no label, no percentage: the same terminal language as
-    the command rows, but pushed right so it does not compete with the
-    commands on the left. Baba: "small plus and minuses, right aligned,
-    almost touching the edge of the code box."
-    """
-    scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-
-    def _set(fn):
-        st.session_state["text_scale"] = fn(
-            st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-        persist_settings()
-
-    with st.container(key=f"sizerow_{where}"):
-        _, c1, c2 = st.columns([6, 1, 1])
-        c1.button("−", key=f"sz_minus_{where}", help=t("text_smaller"),
-                  disabled=a11y.at_min(scale), on_click=_set, args=(a11y.smaller,))
-        c2.button("+", key=f"sz_plus_{where}", help=t("text_bigger"),
-                  disabled=a11y.at_max(scale), on_click=_set, args=(a11y.bigger,))
 
 
 def audio_seconds(path) -> float:
@@ -2092,7 +2129,7 @@ def lang_pills(prefix: str, which: str, current: str):
 # ----------------------------------------------------------------------
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
-    "nav", ["transcribe", "talk", "translate", "settings"],
+    "nav", nav_tabs(),
     format_func=lambda k: t("tab_" + k),
     key="active_tab", required=True, label_visibility="collapsed",
 )
@@ -2264,7 +2301,6 @@ if active == "transcribe":
         (t("reshape_word"), "tx_reshape", _reshape),
         (t("clear_word"), "tx_clear", _clear_all),
     ], copy_text=st.session_state.get("transcript_box", ""))
-    size_row("tx")
 
     st.text_area(t("transcript_label"), key="transcript_box", height=200,
                  label_visibility="collapsed", placeholder=t("transcript_ph"))
@@ -2416,17 +2452,24 @@ elif active == "talk":
             st.session_state["talk_text"] = ""
             flash("rd_clear")
 
+        def _keep_text():
+            txt = (st.session_state.get("talk_text") or "").strip()
+            if txt:
+                st.session_state["_archive"] = RT.add_piece(
+                    st.session_state.get("_archive", []), txt)
+                RT.save_archive(archive_store, st.session_state["_archive"])
+            flash("rd_keep")
+
         cmd_row("rd", [
             ("paste", None, None),
+            (t("archive_word"), "rd_keep", _keep_text),
             (t("clear_word"), "rd_clear", _clear_talk),
         ], target_key="talk_text")
-        size_row("rd")
 
         st.text_area(t("tab_talk"), key="talk_text", height=150,
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
 
-        bcol1, bcol2 = st.columns(2)
-        go = bcol1.button(SYM["read"], key="read_btn", help=t("read_btn"))
+        go = st.button(SYM["read"], key="read_btn", help=t("read_btn"))
 
         # The archive, brought over from the tab that was merged away.
         archive_store = Store(RT.ARCHIVE_NS, USER, ls_read=LS_DATA,
@@ -2443,8 +2486,7 @@ elif active == "talk":
                     st.session_state.get("_archive", []), txt)
                 RT.save_archive(archive_store, st.session_state["_archive"])
 
-        bcol2.button(SYM["save"], key="talk_keep", help=t("read_save"),
-                     on_click=_keep_text)
+
 
         archive = st.session_state.get("_archive", [])
         if archive:
@@ -2541,6 +2583,40 @@ elif active == "translate":
                  label_visibility="collapsed", placeholder=t("translate_out_ph"))
 
     tab_signature(t("sig_translate"))
+
+
+elif active == "looks":
+    # HOW THE APP LOOKS — everyone gets this. Size, typeface, colour.
+    # Deliberately separate from engines and keys: what a person sees is
+    # theirs to set, what the app talks to is the owner's.
+    st.caption(t("looks_size"))
+    cmd_row("looks_size", [], with_size=True)
+
+    st.caption(t("looks_font"))
+    fcols = st.columns(3)
+    for col, (fid, label) in zip(fcols, [("mono", "mono"), ("sans", "sans"),
+                                         ("serif", "serif")]):
+        def _pick_font(f=fid):
+            st.session_state["font_family"] = f
+            persist_settings()
+        col.button(label, key=f"font_{fid}", use_container_width=True,
+                   type="primary" if st.session_state.get("font_family", "mono") == fid
+                   else "secondary", on_click=_pick_font)
+
+    st.caption(t("looks_scheme"))
+    scols = st.columns(4)
+    for col, sid in zip(scols, ["amber", "green", "cyan", "paper"]):
+        def _pick_scheme(x=sid):
+            st.session_state["scheme"] = x
+            persist_settings()
+        col.button(sid, key=f"scheme_{sid}", use_container_width=True,
+                   type="primary" if st.session_state.get("scheme", "amber") == sid
+                   else "secondary", on_click=_pick_scheme)
+
+    st.text_area("preview", key="looks_preview", height=110,
+                 label_visibility="collapsed", value=t("looks_preview"))
+
+    tab_signature(t("sig_looks"))
 
 
 elif active == "settings":

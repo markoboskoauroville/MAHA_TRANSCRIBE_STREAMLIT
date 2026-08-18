@@ -883,3 +883,62 @@ devices.
   * **A prompt from the sheet is untrusted text.** It goes into an LLM
     instruction, so keep the fencing that `transform.build_prompt`
     already applies to the material, and cap the length.
+
+---
+
+## 16. NEXT: the cassette deck, and fixing Edge's drift
+
+Baba's brief of 18.8.2026, recorded in full because it is a session's work
+and was NOT attempted in one pass. Doing it badly would have been worse
+than leaving it clearly written down.
+
+The role model is his own TTT Mini keyboard: dark ground, soft-cornered
+keys, one accent, everything on a grid, nothing decorative.
+
+### D1. The transport deck
+Replace `st.audio_input` with a custom component: four square buttons in
+one row — **record, pause, stop, eject** — in the manner of a 1980s
+Technics cassette deck. Eject opens the file picker. Under them a THIN
+oscilloscope line, a few pixels tall, that dances while signal is
+present, and a running timer.
+
+This needs a real recorder component (MediaRecorder + AnalyserNode in
+the iframe, posting the blob back). `st.audio_input` cannot be restyled
+into this; do not try.
+
+### D2. The recording archive
+Every recording in a session is kept, as pasted text already is. A small
+square with a dropdown holding ONE text action: **retranscribe**. The
+reason is concrete — someone picks the wrong language, and the audio must
+not be lost with the mistake.
+
+### D3. One interface across phases
+**A rule, not a preference:** the interface must not change shape between
+idle, recording and reading. The player is always present, greyed when
+inactive. Reading does not rearrange the screen; it only fills in what
+was already there.
+
+Reading mode: the same box, text enlarged, no jumping. When stopped, the
+whole text returns at normal size.
+
+### D4. Word highlighting that does not shake — AND FIXING THE TIMINGS
+Edge returns no word marks, and the proportional guess in
+`speech.fill_missing_times` drifts badly over a long block. Baba's
+solution is right and should be built:
+
+  * Analyse the AMPLITUDE ENVELOPE of the rendered audio to find the
+    short silences between words. `ffmpeg -af silencedetect` gives this
+    directly, or read samples with numpy/soundfile for finer control.
+  * The gaps ARE the word boundaries. Count the words in the sentence,
+    align them to the detected gaps, and derive per-word timings.
+  * Then highlight by CHANGING THE WORD'S COLOUR, not by wrapping it in
+    a box — a background or bold changes the text's metrics and the line
+    reflows, which is the shaking. Colour alone keeps every glyph exactly
+    where it was.
+  * Verify by measuring: capture the bounding box of a fixed word before
+    and during highlighting; if x or y moves by even a pixel, the
+    approach is wrong.
+
+### D5. Two settings, done (v47)
+Grey ◐ = how the app looks, for everyone. Amber ⚙ = engines and keys,
+owner only. Colour carries the distinction so neither needs a word.
