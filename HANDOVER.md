@@ -1042,3 +1042,69 @@ Tabs beyond the existing per-user and Summary/Daily ones:
     ring, get the same rotation and the same shredding, and are never
     written to a browser.
   * **No text in the sheet, still.** Settings and keys, never content.
+
+
+---
+
+## 18. AUDIT AGAINST THE SOURCE — 18.8.2026
+
+Checked file by file rather than assumed. The handover had drifted from
+the code in three ways, all now recorded truthfully rather than tidied
+away.
+
+### The real file map
+
+    app.py                  entrypoint, tabs, all UI
+    help_text.py            HELP + login strings (hr/en)
+    talk_engine.py          Edge TTS: synth_sentence, sentences_of
+
+    ttt/a11y.py             text scale, reading CSS, WCAG rules
+    ttt/audio.py            ffmpeg: loudnorm + 16k mono, tiering, retry
+    ttt/copybtn.py          copy component (circle and word forms)
+    ttt/gate.py             login throttle ladder
+    ttt/keyring.py          key ring + thread-safe rotate()
+    ttt/read_tab.py         archive (add/remove/save/load pieces)
+    ttt/routing.py          patch bay model (hidden in UI, still used)
+    ttt/sheet.py            settings + spare keys from the Google Sheet
+    ttt/speech.py           blocks, per-part build, sentence marks
+    ttt/store.py            3-layer storage (local_only for content)
+    ttt/theme.py            design tokens, schemes, fonts, all CSS
+    ttt/transform.py        AI text transforms
+    ttt/usage.py            usage logging to the sheet
+    ttt/vision.py           Groq vision: picture -> text
+    ttt/providers/          base, edge, speechify, assemblyai, groq, anthropic
+
+    paste_frontend/         paste component (NOT used - paste removed v49)
+    player_frontend/        part player (audio + subtitle + ended signal)
+    ls_bridge_frontend/     localStorage bridge
+    apps_script/Code.gs             deployed script (logging + config)
+    apps_script/config_addition.gs  the config half, already pasted in
+    apps_script/SETUP.md            setup guide
+
+### DEAD CODE, found by AST, not by reading
+
+Fourteen top-level functions in app.py are never referenced. They are
+leftovers from features that were replaced rather than removed, and
+several are still DESCRIBED in this document as if live:
+
+    split_into_chunks   mask_key         ring_import       provider_models
+    handles_big_files   cp_row           copy_pill         sp_test_one
+    aai_test_one        aai_transcribe   forget_me         do_correct
+    read_this           read_sentences_live
+
+`ttt/reader.py` is likewise no longer imported — the reading path is
+speech.py plus player_frontend now. `paste_frontend/` is unused since
+paste was removed.
+
+**Do not delete these blind.** Some are genuinely obsolete (cp_row,
+copy_pill, read_sentences_live, read_this — all replaced by cmd_row and
+the block player). Others may be wanted again: do_correct is
+retranscribe-with-a-better-model, which is close to the retranscribe
+feature still queued, and sp_test_one/aai_test_one are the per-key Test
+buttons that the simplified Settings stopped rendering.
+
+### What this means for the next session
+
+Clearing this is worth one focused pass with the four tests applied, not
+a casual tidy — `read_sentences_live` and `do_correct` in particular
+touch paths that still half-exist.
