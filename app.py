@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v56 (cassette deck)"
+APP_VERSION = "v57 (deck: stop sends, upload cell)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -275,7 +275,9 @@ STRINGS = {
     "rec_btn":   {"en": "rec",   "hr": "snimaj"},
     "rec_pause": {"en": "pause", "hr": "pauza"},
     "rec_stop":  {"en": "stop",  "hr": "stop"},
-    "rec_eject": {"en": "eject", "hr": "izbaci"},
+    "rec_upload": {"en": "upload", "hr": "datoteka"},
+    "pick_big":  {"en": "That file is too large for the deck — use this box.",
+                  "hr": "Datoteka je prevelika za deck — koristi ovaj okvir."},
     "tab_talk":           {"en": "R",                "hr": "R"},
     "speech_lang_label":  {"en": "Speech language",  "hr": "Jezik govora"},
     "lang_en":            {"en": "ENG",              "hr": "ENG"},
@@ -616,24 +618,35 @@ def cassette_recorder(key: str):
     try:
         val = _cassette_component(
             labels={"rec": t("rec_btn"), "pause": t("rec_pause"),
-                    "stop": t("rec_stop"), "eject": t("rec_eject")},
+                    "stop": t("rec_stop"), "upload": t("rec_upload")},
             key=key, default=None)
     except Exception:
         return None
-    if not isinstance(val, dict) or not val.get("b64"):
+    if not isinstance(val, dict):
         return None
     stamp = val.get("at")
     seen = f"_cassette_seen_{key}"
     if stamp and st.session_state.get(seen) == stamp:
         return None                     # already taken; do not re-transcribe
     st.session_state[seen] = stamp
+
+    # Too large to cross the websocket base64'd. Streamlit's own uploader
+    # has a proper transfer path for that, so it is revealed rather than
+    # the person being told no.
+    if val.get("toobig"):
+        st.session_state["_show_big_upload"] = True
+        return None
+    if not val.get("b64"):
+        return None
     try:
         raw = base64.b64decode(val["b64"])
     except Exception:
         return None
     if not raw:
         return None
-    return io.BytesIO(raw)
+    buf = io.BytesIO(raw)
+    buf.name = val.get("name") or "take.webm"
+    return buf
 
 
 def paste_target(where: str, width: int = 96):
@@ -2378,10 +2391,15 @@ if active == "transcribe":
     # NOT transparent, so the bitrate floor is real. See HANDOVER §22.
     rec_key = "mic_%d" % st.session_state.get("_mic_gen", 0)
     audio = cassette_recorder(rec_key)
+    # STORE IT UNDER A DIFFERENT KEY. rec_key belongs to the component
+    # widget, and Streamlit refuses to let anything else write to a key a
+    # widget owns — assigning to it raises StreamlitAPIException on the
+    # very next run, which is what crashed the app on the phone in v56.
+    hold_key = "_take_" + rec_key
     if audio is not None:
-        st.session_state[rec_key] = audio
+        st.session_state[hold_key] = audio
     else:
-        audio = st.session_state.get(rec_key)
+        audio = st.session_state.get(hold_key)
 
     def _new_take():
         st.session_state["_mic_gen"] = st.session_state.get("_mic_gen", 0) + 1
@@ -2416,8 +2434,15 @@ if active == "transcribe":
     # first. `type` is left OPEN rather than listing extensions, because
     # Android's chooser greys out anything not in the accept list — which
     # is what made pictures unselectable when the lists were combined.
-    picked = st.file_uploader(
-        t("pick_any"), label_visibility="collapsed", key="any_upload")
+    # The deck's fourth cell is the file picker now, so this box normally
+    # is not shown at all — one row instead of two. It appears only when a
+    # file was too big for the component channel, which is the one case
+    # Streamlit's own uploader still does better.
+    picked = None
+    if st.session_state.get("_show_big_upload"):
+        st.caption(t("pick_big"))
+        picked = st.file_uploader(
+            t("pick_any"), label_visibility="collapsed", key="any_upload")
 
     if picked is not None:
         raw = picked.getvalue()

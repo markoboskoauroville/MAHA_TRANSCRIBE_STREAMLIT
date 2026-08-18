@@ -62,8 +62,8 @@
   .dot { width:9px; height:9px; border-radius:50%; background:currentColor;
          flex:none; }
   .sq  { width:9px; height:9px; background:currentColor; flex:none; }
-  .tri { width:0; height:0; border-left:9px solid currentColor;
-         border-top:5px solid transparent; border-bottom:5px solid transparent;
+  .up  { width:0; height:0; border-bottom:9px solid currentColor;
+         border-left:5px solid transparent; border-right:5px solid transparent;
          flex:none; }
   .par { width:9px; height:9px; flex:none;
          border-left:3px solid currentColor; border-right:3px solid currentColor; }
@@ -81,8 +81,9 @@
     <button class="key" id="bRec"   aria-label="record"><span class="dot"></span><span id="lRec">rec</span></button>
     <button class="key" id="bPause" aria-label="pause" disabled><span class="par"></span><span id="lPause">pause</span></button>
     <button class="key" id="bStop"  aria-label="stop"  disabled><span class="sq"></span><span id="lStop">stop</span></button>
-    <button class="key" id="bEject" aria-label="eject" disabled><span class="tri"></span><span id="lEject">eject</span></button>
+    <button class="key" id="bFile" aria-label="upload"><span class="up"></span><span id="lFile">upload</span></button>
   </div>
+  <input id="picker" type="file" style="display:none" accept="audio/*,video/*">
   <div id="msg" role="status" aria-live="polite"></div>
 </div>
 
@@ -95,7 +96,7 @@ function setValue(v) { post("streamlit:setComponentValue", { value:v, dataType:"
 function height() { post("streamlit:setFrameHeight", { height: 126 }); }
 
 var bRec=document.getElementById('bRec'), bPause=document.getElementById('bPause'),
-    bStop=document.getElementById('bStop'), bEject=document.getElementById('bEject'),
+    bStop=document.getElementById('bStop'),
     scope=document.getElementById('scope'), clock=document.getElementById('clock'),
     msg=document.getElementById('msg');
 var ctx=scope.getContext('2d');
@@ -178,7 +179,7 @@ function keys(state){
   bRec.disabled   = (state==='rec'||state==='pause');
   bPause.disabled = !(state==='rec'||state==='pause');
   bStop.disabled  = !(state==='rec'||state==='pause');
-  bEject.disabled = !(state==='done');
+  bFile.disabled  = (state==='rec'||state==='pause');
   bRec.className   = 'key' + (state==='rec' ? ' arm' : '');
   bPause.className = 'key' + (state==='pause' ? ' on' : '');
   clock.className  = (state==='rec') ? 'live' : '';
@@ -230,8 +231,9 @@ function finish(){
   analyser=null;
   clock.textContent=mmss(acc);
   if (!lastBlob.size) { keys('idle'); say('nothing was recorded', true); return; }
-  keys('done');
-  say(mmss(acc)+' recorded — press eject to use it');
+  // Stop IS the send. Baba's correction: pressing stop should transcribe,
+  // not arm a second button. One less press on every single take.
+  send(lastBlob, '', Math.round(acc/1000));
 }
 
 bRec.onclick=function(){ if (!running) start(); };
@@ -254,22 +256,42 @@ bStop.onclick=function(){
   try { rec.stop(); } catch(e){ finish(); }
 };
 
-bEject.onclick=function(){
-  if (!lastBlob || !lastBlob.size) return;
-  bEject.disabled=true; say('sending…');
+// A file has to cross the websocket base64'd, which inflates it by a
+// third. Streamlit's own uploader has a proper transfer path for big
+// files, so anything past this is handed back to it rather than risked
+// here — see TOO_BIG handling in app.py.
+var MAX_SEND = 45 * 1024 * 1024;
+
+function send(blob, name, secs){
+  if (!blob || !blob.size) return;
+  if (blob.size > MAX_SEND) {
+    setValue({ toobig:true, bytes:blob.size, name:name||'', at:Date.now() });
+    say('too large for the deck — use the file box below', true);
+    keys('idle');
+    return;
+  }
+  say('sending…');
   var fr=new FileReader();
-  fr.onerror=function(){ say('could not read the recording', true); bEject.disabled=false; };
+  fr.onerror=function(){ say('could not read it', true); keys(lastBlob?'done':'idle'); };
   fr.onload=function(){
     var s=String(fr.result||''), i=s.indexOf(',');
     setValue({ b64: i<0 ? s : s.slice(i+1),
-               mime: lastBlob.type || 'audio/webm',
-               seconds: Math.round(acc/1000),
-               bytes: lastBlob.size,
+               mime: blob.type || 'application/octet-stream',
+               name: name || '',
+               seconds: secs || 0,
+               bytes: blob.size,
                at: Date.now() });
-    say('sent — ' + Math.round(lastBlob.size/1024) + ' KB');
+    say('sent — ' + Math.round(blob.size/1024) + ' KB');
     lastBlob=null; keys('idle'); clock.textContent='0:00';
   };
-  fr.readAsDataURL(lastBlob);
+  fr.readAsDataURL(blob);
+}
+
+bFile.onclick=function(){ if (!running) picker.click(); };
+picker.onchange=function(){
+  var f=picker.files && picker.files[0];
+  picker.value='';
+  if (f) send(f, f.name, 0);
 };
 
 window.addEventListener("message", function(ev){
@@ -280,7 +302,6 @@ window.addEventListener("message", function(ev){
     document.getElementById('lRec').textContent   = a.rec   || 'rec';
     document.getElementById('lPause').textContent = a.pause || 'pause';
     document.getElementById('lStop').textContent  = a.stop  || 'stop';
-    document.getElementById('lEject').textContent = a.eject || 'eject';
   }
   height();
 });

@@ -1505,3 +1505,54 @@ and that cannot be tested without a running Streamlit. A half-restored
 chain that compiles and fails differently is worse than a known gap.
 `ttt.vision` currently shows as an unused import, which is the second
 independent sign the whole path is dead.
+
+---
+
+## 25. DECK CORRECTIONS FROM THE FIRST PHONE TEST (v57)
+
+The deck itself worked on Android on the first try — it recorded 0:12 and
+sent 197 KB. Three things came back from that test.
+
+### THE CRASH — my bug, and worth remembering
+
+`StreamlitAPIException` on every run after a take. I stored the recording
+in `st.session_state[rec_key]`, and `rec_key` is the COMPONENT WIDGET'S
+OWN KEY. Streamlit refuses to let anything else write to a key a widget
+owns, and it does not complain when you write it — it raises on the NEXT
+run, which is why it looked like the recorder had broken rather than the
+storage. The take now lives under `"_take_" + rec_key`.
+
+**Never reuse a widget's key as a place to keep the widget's output.**
+
+### STOP IS THE SEND
+
+Eject is gone. Pressing stop now posts the recording straight to Python
+and transcription begins. Baba's reasoning, and it is right: eject was a
+second press on every single take for no decision — nobody records
+something and then decides not to transcribe it.
+
+### THE FOURTH CELL IS THE FILE PICKER
+
+`rec | pause | stop | upload`, and the separate Upload box below is gone —
+one row instead of two.
+
+The picker is a real `<input type="file">` inside the component, so a
+chosen file travels the same base64 path as a recording. **Above 45 MB it
+refuses and reveals Streamlit's own uploader instead**, because a file has
+to cross the websocket base64'd (a third larger) and Streamlit's uploader
+has a proper transfer path for that. So the big box still exists; it is
+simply not on screen until it is the right answer.
+
+### CONSEQUENCE THAT NEEDS FIXING NEXT
+
+The picker now accepts **audio and video only**. Images were dropped on
+purpose: sending a PNG down the deck's path would hand it to ffmpeg and
+fail confusingly, and the image OCR that used to catch it has been dead
+since `92c4cbb` (§24). **Restoring `read_picture` and giving images a way
+back in belong together** — until then there is no route for a picture,
+where before there was a broken one.
+
+Browser test after the rework: 12 passed, 0 failed — four cells present,
+upload disabled while recording, stop posting exactly once with no eject
+step, ffprobe confirming real opus, and a chosen file posting with its
+name and matching byte count.
