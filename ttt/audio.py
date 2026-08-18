@@ -42,6 +42,16 @@ def _run(cmd, timeout):
 # leaves headroom, and -1.5 dBTP keeps it from clipping on the way.
 LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 
+# MEASURED TRAP, 18.8.2026. loudnorm works internally in floating point, so
+# adding it to Groq's documented command silently changes the FLAC encoder's
+# output from 16-bit to 24-bit. Groq's own command has no filter, which is
+# why the docs never show this. The result was files 48% larger than needed
+# for a transcript Groq returns BYTE-IDENTICAL either way (verified against
+# the real API, 398 chars both ways). Whisper takes 16-bit; the extra depth
+# buys nothing and costs half the storage, half the upload and half the
+# Drive quota. Do not remove this without re-measuring both.
+SAMPLE_FMT = "s16"
+
 
 def to_flac16k(in_path: str, out_path: str = None) -> str:
     """16kHz mono FLAC, levelled — Groq's own documented target, and a
@@ -54,7 +64,7 @@ def to_flac16k(in_path: str, out_path: str = None) -> str:
     """
     out_path = out_path or (in_path + ".flac")
     _run(["ffmpeg", "-y", "-i", in_path, "-af", LOUDNORM,
-          "-ar", "16000", "-ac", "1",
+          "-ar", "16000", "-ac", "1", "-sample_fmt", SAMPLE_FMT,
           "-map", "0:a", "-c:a", "flac", out_path], timeout=1800)
     return out_path
 
@@ -91,7 +101,7 @@ def split_into_chunks(flac_path: str, chunk_seconds: int = CHUNK_SECONDS):
     pattern = os.path.join(out_dir, "chunk_%04d.flac")
     _run(["ffmpeg", "-y", "-i", flac_path, "-f", "segment",
           "-segment_time", str(chunk_seconds), "-ar", "16000", "-ac", "1",
-          "-c:a", "flac", pattern], timeout=3600)
+          "-sample_fmt", SAMPLE_FMT, "-c:a", "flac", pattern], timeout=3600)
     return sorted(glob.glob(os.path.join(out_dir, "chunk_*.flac"))), out_dir
 
 

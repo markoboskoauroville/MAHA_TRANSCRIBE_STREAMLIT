@@ -60,10 +60,18 @@ Workflow on every change, in order: build -> test -> push -> THEN update
 this file. It must always describe the newest feature. If this file
 disagrees with the code, the code is right and this file is a bug.
 
-**4. TEST EVERY FEATURE THREE TIMES.**
-Not once, not "it compiled". Three real passes, and prefer three
-*different kinds* of pass over the same check run three times, because
-repeating one check only proves it is repeatable:
+**4. TEST EVERY FEATURE FOUR TIMES.**
+Superseded the earlier "three times" on 18.8.2026. Four passes, and each
+must be able to FAIL while the other three PASS — before writing one, ask
+what could be true that would make this test pass and the feature still be
+broken. (1) the mechanism alone, outside the app, no network or UI;
+(2) inside the running app with real data and real dependencies, looking
+for a number an outside party confirms; (3) the ugly cases — empty,
+enormous, malformed, hostile, twice, out of order, absent, and NEVER
+ANSWERS; (4) the upgrade from the version before. After each passes, break
+it on purpose and confirm it goes red: a test never seen fail is a rumour,
+and roughly half of all failures are in the test, not the code. If two
+tests cannot fail independently, that is three tests and a duplicate.
   1. the logic alone, in plain Python, no Streamlit, no network
   2. the running app in a real browser at phone width
   3. the awkward case — reload, empty input, a dead key, a second user
@@ -74,7 +82,17 @@ assertions (a hex colour that the browser serialises as rgb(), an expander
 whose contents are not in the DOM until it is opened, a timeout shorter
 than the audio it was waiting for).
 
-**5. API KEYS: Marko lends, Claude shreds. Every time.**
+**5. API KEYS: Marko lends, Claude shreds — at the END of the session.**
+Amended 18.8.2026. The original wording was "every time", and it was read
+as shredding after the first test and asking again, which wasted a whole
+session in re-uploads. The agreement now: keys are uploaded once, held for
+the WHOLE of that conversation, and die with the sandbox when it ends —
+which is a real end, not a promise, because the sandbox does not persist
+between conversations. Never print them, always redact them from command
+output, scan every staged diff for key material before committing, and say
+plainly that the scan came back clean. Baba rotates them when the app is
+finished. What has NOT changed: they never enter the repo, never enter the
+chat, and are never assumed to survive into a new conversation.
 The working agreement, stated by Baba and to be honoured exactly:
 *"Marko is giving you the keys when you need it for testing and you throw
 them into fire."*
@@ -1108,3 +1126,120 @@ buttons that the simplified Settings stopped rendering.
 Clearing this is worth one focused pass with the four tests applied, not
 a casual tidy — `read_sentences_live` and `do_correct` in particular
 touch paths that still half-exist.
+
+---
+
+## 19. DRIVE AUDIO STORAGE (v52)
+
+Half-built: the Apps Script and the client are written and tested against
+each other; NOTHING IS WIRED INTO app.py YET, and none of it has run
+against the real deployment. Test 2 is outstanding and needs Baba to
+redeploy first.
+
+### What was measured, not assumed
+
+**The platform refuses a request body over 52,428,800 bytes (50 MiB).**
+Exactly. 50 MiB passes; one KB more is HTTP 400. Measured against the live
+deployment by posting padded bodies with a DELIBERATELY WRONG token, so
+the script rejected them before writing anything and the sheet was never
+touched. Stable across three repeats.
+
+**16-bit 16 kHz FLAC runs ~17,200 bytes per second of speech.** So one
+10-minute part is ~10.3 MB, ~13.7 MB as base64 — about a quarter of the
+envelope. That is why parts are 10 minutes, and why there is no chunked
+upload protocol: one part is one request, in both directions, and there is
+no reassembly logic to get wrong.
+
+**Groq CAN fetch audio from a `url` instead of an upload**, and it is the
+documented route above 25 MB. Verified: Groq fetched a 2 MB file from S3
+and returned a transcript byte-identical to uploading the same file, and a
+dead URL failed in 0.2s rather than hanging. WE DO NOT USE IT. Two
+reasons: ContentService cannot serve binary at all (see below), and a
+URL Groq can reach is a URL anyone can reach, which would have meant
+flipping Drive files to link-public and revoking them afterwards — a
+revocation that fails leaves the audio public forever.
+
+### THE BIT DEPTH BUG (fixed in v52, was live since v48)
+
+`loudnorm` works internally in floating point, so adding it to Groq's
+documented ffmpeg command silently changed the FLAC encoder's output from
+16-bit to **24-bit**. Groq's own command has no filter, which is why the
+docs never show this and why it went unnoticed. Every stored and uploaded
+file was **48% larger than necessary** for a transcript Groq returns
+BYTE-IDENTICAL either way (verified against the real API, 398 chars both
+ways). Fixed with `-sample_fmt s16` in BOTH `to_flac16k` and
+`split_into_chunks` — the second one matters, because without it a
+re-encode would reintroduce 24-bit in the parts actually sent to Drive.
+Verified across stereo/mp3/m4a/mp4-video/silent/0.08s/already-16k inputs:
+all seven produce 16000,1,16.
+
+### Architecture
+
+Audio goes: ffmpeg (levelled, 16 kHz mono, 16-bit) -> split into
+10-minute parts -> Drive, one part per request. Coming back it is
+Drive -> Streamlit -> Whisper as bytes.
+
+**ContentService can only serve text.** There is no way to return raw
+bytes from an Apps Script web app; this was checked in the docs before
+building, not discovered afterwards. So a part comes back as base64 inside
+JSON and this process decodes it and hands the bytes to Whisper. The
+phone still only ever uploads once — everything after is datacentre to
+datacentre, which was the actual point of storing it.
+
+**Two secrets, on purpose.** `SHARED_TOKEN` unlocks `doGet`, which returns
+the settings AND the API keys. Download links are the part most likely to
+end up in a log, so they carry a short-lived HMAC signature made with a
+SEPARATE `DOWNLOAD_SECRET` (`DRIVE_SECRET` in Streamlit secrets). The
+audio branch sits ABOVE the token check in `doGet` for exactly this
+reason. Losing the download secret must never cost the keys, and there are
+tests both ways: `SHARED_TOKEN` cannot open audio, `DOWNLOAD_SECRET`
+cannot read config.
+
+### Traps found while building, both by a test failing
+
+**The signature covers the SANITISED rec_id.** `safeName_` lowercases and
+strips punctuation, so a client that signs the RAW id gets "bad signature"
+for a recording that plainly exists — which reads exactly like a broken
+secret and is not. `safe_name()` in `ttt/drive.py` must match `safeName_`
+character for character; there is a test that runs both over 25 inputs
+including traversal, unicode, emoji and the 60-char cap. `new_rec_id()`
+also mints ids that are already lowercase hex so the two cannot diverge in
+practice.
+
+**GAS hands back SIGNED bytes** from `computeHmacSha256Signature` (-128 to
+127). Without `& 0xFF` the hex conversion emits literal `-` characters and
+every signature is wrong. Proven: the naive port produces
+`7c71057f5459803f4929631f-52e4a-a`.
+
+### Failure directions, chosen deliberately
+
+* Registration happens AFTER every part uploads. A half-stored recording
+  leaves orphan Drive files and no archive row — the harmless direction.
+  A row with missing audio would not be.
+* `fetch()` returns [] rather than a partial list. A partial list
+  transcribes to a fluent transcript with a hole in the middle and nothing
+  in the result would show anything was missing.
+* Re-uploading a part REPLACES it, so a retry after a timeout cannot
+  double the storage. Re-registering updates the row. Both are idempotent.
+* Every wait has a deadline (15s small calls, 180s per part), because a
+  call that neither answers nor refuses reaches no catch handler.
+* `DriveStore` never raises and is never a dependency: storage failing
+  must not cost anyone their transcript.
+
+### Test status
+
+* **Test 1, mechanism alone: 41 passed, 0 failed.** The real Apps Script
+  source executed under a fake GAS runtime (`gastest/`) — our code runs
+  untouched, only Google's services are faked. Seven deliberate mutations
+  of the source were each caught: audio branch moved below the token
+  check, `& 0xFF` dropped, expiry check removed, duplicate-part trashing
+  removed, signature comparison forced true, dispatch removed from
+  doPost, per-user folder collapsed.
+* Interop: `safe_name` 25/25 agree with `safeName_`; `sign_part` 4/4 agree
+  with `signPart_`. Both shown to fail under mutation.
+* **NOT TESTED, and cannot be until Baba redeploys:** whether Apps Script
+  can base64-decode and Drive-write a real ~14 MB part inside its 6-minute
+  execution and memory limits. The 50 MiB figure is the TRANSPORT limit —
+  the probe was rejected at the token check, before any decode. This is
+  the first thing the redeploy must prove.
+* Tests 2, 3 and 4 are outstanding. Nothing is wired into `app.py`.

@@ -60,6 +60,19 @@ function doPost(e) {
     if (body.token !== SHARED_TOKEN) {
       return json({ ok: false, error: 'bad token' });
     }
+
+    // --- Drive audio storage -----------------------------------------
+    // This dispatch MUST stay above the appendRow below. These requests
+    // are not usage events, and if they fall through, every 10-minute
+    // audio part also writes a usage row and the counts become fiction.
+    if (body.what === 'audio_put')  return json(putAudio_(body));
+    if (body.what === 'audio_reg')  return json(registerRec_(body));
+    if (body.what === 'audio_del')  return json(deleteRec_(body));
+    if (body.what === 'audio_list') {
+      return json({ ok: true, recordings: listRecs_(body.user) });
+    }
+    // ------------------------------------------------------------------
+
     var user = String(body.user || 'unknown').toLowerCase().trim();
     if (!user) user = 'unknown';
 
