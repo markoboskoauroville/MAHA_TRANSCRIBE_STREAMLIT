@@ -14,6 +14,7 @@ import hmac
 import html
 import time
 import hashlib
+import io
 import tempfile
 import subprocess
 import base64
@@ -21,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v55 (steady highlight)"
+APP_VERSION = "v56 (cassette deck)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -74,6 +75,7 @@ from ttt import routing as RO
 from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
+from ttt import sheet as SHEET
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
 from ttt import theme
@@ -267,6 +269,13 @@ STRINGS = {
     # screen, so it should cost the least. T transcribe, R read, TR
     # translate, and the gear.
     "tab_transcribe":     {"en": "T",                "hr": "T"},
+    # The cassette deck transport. Words, not only symbols: the shapes
+    # carry the meaning for anyone who knows a tape deck, and the word
+    # carries it for everyone else.
+    "rec_btn":   {"en": "rec",   "hr": "snimaj"},
+    "rec_pause": {"en": "pause", "hr": "pauza"},
+    "rec_stop":  {"en": "stop",  "hr": "stop"},
+    "rec_eject": {"en": "eject", "hr": "izbaci"},
     "tab_talk":           {"en": "R",                "hr": "R"},
     "speech_lang_label":  {"en": "Speech language",  "hr": "Jezik govora"},
     "lang_en":            {"en": "ENG",              "hr": "ENG"},
@@ -577,12 +586,54 @@ try:
 except Exception:
     _paste_component = None
 
+_CASSETTE_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "cassette_frontend")
+try:
+    _cassette_component = components.declare_component(
+        "ttt_cassette", path=_CASSETTE_FRONTEND)
+except Exception:
+    _cassette_component = None
+
 _PLAYER_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "player_frontend")
 try:
     _player_component = components.declare_component("ttt_player", path=_PLAYER_FRONTEND)
 except Exception:
     _player_component = None
+
+
+def cassette_recorder(key: str):
+    """The transport row. Returns the recording once, or None.
+
+    Returns a BytesIO so the caller can keep using .getvalue() exactly as
+    it did with st.audio_input — the recording path downstream is
+    untouched, which is the whole point of swapping only the capture.
+
+    Never raises: a recorder that fails must leave the page standing.
+    """
+    if _cassette_component is None:
+        return None
+    try:
+        val = _cassette_component(
+            labels={"rec": t("rec_btn"), "pause": t("rec_pause"),
+                    "stop": t("rec_stop"), "eject": t("rec_eject")},
+            key=key, default=None)
+    except Exception:
+        return None
+    if not isinstance(val, dict) or not val.get("b64"):
+        return None
+    stamp = val.get("at")
+    seen = f"_cassette_seen_{key}"
+    if stamp and st.session_state.get(seen) == stamp:
+        return None                     # already taken; do not re-transcribe
+    st.session_state[seen] = stamp
+    try:
+        raw = base64.b64decode(val["b64"])
+    except Exception:
+        return None
+    if not raw:
+        return None
+    return io.BytesIO(raw)
 
 
 def paste_target(where: str, width: int = 96):
@@ -890,11 +941,33 @@ def translate_text(llm, text: str, source_lang: str, target_lang: str) -> str:
 def transcode_to_flac(in_path: str) -> str:
     """ffmpeg auto-detects input format from content, not extension, so this
     works on whatever a file picker hands it — mp3, m4a, ogg, wav, anything
-    ffmpeg reads. Same 16kHz mono FLAC target Groq documents."""
+    ffmpeg reads. Groq's documented 16kHz mono FLAC target, PLUS levelling.
+
+    LEVELLED FIRST, THEN TRANSCODED. Groq's own command has no filter, and
+    this path went without one for a long time, which meant a phone held
+    away from the mouth was sent to Whisper as quietly as it was recorded.
+    Measured word error rate against a clean reference:
+
+        very quiet (-32dB), clean      2.9%  ->  0.0%
+        quiet with heavy room noise    7.2%  ->  2.9%
+        quiet with light room noise    0.0%  ->  2.9%
+        loud and clean                 0.0%  ->  0.0%
+
+    It rescues the two cases that actually fail in the field and costs a
+    little on one case that was already perfect. Worth it.
+
+    -sample_fmt s16 IS NOT OPTIONAL AND MUST NOT BE REMOVED. loudnorm
+    works internally in floating point, so adding it to Groq's command
+    silently promotes the FLAC encoder's output from 16-bit to 24-bit and
+    every file becomes ~48% larger for a transcript Whisper returns
+    byte-identical either way. That trap cost a full diagnosis in v52 —
+    see HANDOVER.md §19. Anywhere loudnorm goes, s16 goes with it.
+    """
     out_path = in_path + ".flac"
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", in_path, "-ar", "16000", "-ac", "1",
+            ["ffmpeg", "-y", "-i", in_path, "-af", ttt_audio.LOUDNORM,
+             "-ar", "16000", "-ac", "1", "-sample_fmt", ttt_audio.SAMPLE_FMT,
              "-map", "0:a", "-c:a", "flac", out_path],
             check=True, capture_output=True, timeout=1800,
         )
@@ -2294,10 +2367,21 @@ if active == "transcribe":
     # A new take needs its own command. Without one, the only way to
     # record again was to work out that the recorder had to be cleared
     # first — which is not a thing anyone should have to work out.
+    # THE CASSETTE DECK. st.audio_input cannot be restyled into a transport
+    # row with a live scope, so capture is a real component now. Only the
+    # CAPTURE changed — the bytes go into exactly the same ffmpeg and
+    # transcribe path as before, which is why this swap is small.
+    #
+    # Format is webm/opus at 128 kbit, because MediaRecorder cannot produce
+    # WAV in any browser. Measured transparent: through this app's ffmpeg
+    # chain, Whisper returns the same words as a WAV reference. 32 kbit was
+    # NOT transparent, so the bitrate floor is real. See HANDOVER §22.
     rec_key = "mic_%d" % st.session_state.get("_mic_gen", 0)
-    st.audio_input(t("tab_transcribe"), sample_rate=48000,
-                   label_visibility="collapsed", key=rec_key)
-    audio = st.session_state.get(rec_key)
+    audio = cassette_recorder(rec_key)
+    if audio is not None:
+        st.session_state[rec_key] = audio
+    else:
+        audio = st.session_state.get(rec_key)
 
     def _new_take():
         st.session_state["_mic_gen"] = st.session_state.get("_mic_gen", 0) + 1

@@ -1,0 +1,298 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  THE CASSETTE DECK — a real recorder component.
+
+  st.audio_input cannot be restyled into this, so this is a REAL component
+  that captures with MediaRecorder and posts the blob back to Python. It
+  uses the same raw postMessage protocol as paste_frontend: no npm, no
+  build step, one file that Streamlit Cloud serves as-is.
+
+  FORMAT, measured 18.8.2026, not chosen by taste. MediaRecorder cannot
+  produce WAV in any browser — the API emits webm/opus, ogg/opus or
+  mp4/aac only. Opus at 128 kbit mono was verified transparent: through
+  the app's own ffmpeg chain to 16 kHz FLAC, Whisper returned identical
+  words to a WAV reference. 32k was NOT transparent ("Sound" came back as
+  "Bound"), so the bitrate floor is real. 128k costs about 1 MB a minute,
+  where raw WAV would have been 5.8 MB a minute and 345 MB an hour — which
+  would not survive the websocket on a long recording.
+
+  The oscilloscope is a real AnalyserMode reading of the live signal, not
+  an animation. If it is flat, the microphone is genuinely not receiving,
+  and that is the single most useful thing a recorder can tell someone
+  before they talk for ten minutes into a dead input.
+-->
+<style>
+  :root {
+    --deck:#15181d; --face:#1d2127; --edge:#2b313a; --amber:#f59e0b;
+    --dark:#0b0d10; --text:#e5e7eb; --dim:#9aa3af; --rec:#dc2626;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; background:transparent;
+              font:14px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+              color:var(--text); -webkit-user-select:none; user-select:none; }
+  #deck { background:var(--deck); border:1px solid var(--edge);
+          border-radius:6px; padding:10px; }
+
+  /* the scope window */
+  #scopewrap { background:var(--dark); border:1px solid var(--edge);
+               border-radius:3px; height:46px; position:relative;
+               overflow:hidden; margin-bottom:8px; }
+  #scope { display:block; width:100%; height:100%; }
+  #clock { position:absolute; right:7px; top:50%; transform:translateY(-50%);
+           font-variant-numeric:tabular-nums; font-size:15px;
+           letter-spacing:.5px; color:var(--dim); }
+  #clock.live { color:var(--amber); }
+
+  /* transport row: square cells, shared borders, sized to fit */
+  #row { display:flex; gap:0; }
+  .key { flex:1 1 0; height:44px; min-width:0;
+         background:var(--face); color:var(--text);
+         border:1px solid var(--edge); border-right-width:0;
+         font:inherit; font-size:13px; cursor:pointer;
+         display:flex; align-items:center; justify-content:center;
+         gap:5px; padding:0 2px; }
+  .key:last-child { border-right-width:1px; }
+  .key:first-child { border-radius:3px 0 0 3px; }
+  .key:last-child  { border-radius:0 3px 3px 0; }
+  .key:disabled { color:#4b5563; cursor:default; }
+  .key.on { background:var(--amber); color:var(--dark); }
+  .key.arm { background:var(--rec); color:#fff; }
+  .key:focus-visible { outline:3px solid var(--amber); outline-offset:-3px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:currentColor;
+         flex:none; }
+  .sq  { width:9px; height:9px; background:currentColor; flex:none; }
+  .tri { width:0; height:0; border-left:9px solid currentColor;
+         border-top:5px solid transparent; border-bottom:5px solid transparent;
+         flex:none; }
+  .par { width:9px; height:9px; flex:none;
+         border-left:3px solid currentColor; border-right:3px solid currentColor; }
+  #msg { margin-top:7px; min-height:16px; font-size:12px; color:var(--dim); }
+  #msg.bad { color:#fca5a5; }
+  @media (prefers-reduced-motion: reduce) { #scope { opacity:.85; } }
+</style>
+
+<div id="deck">
+  <div id="scopewrap">
+    <canvas id="scope"></canvas>
+    <div id="clock">0:00</div>
+  </div>
+  <div id="row">
+    <button class="key" id="bRec"   aria-label="record"><span class="dot"></span><span id="lRec">rec</span></button>
+    <button class="key" id="bPause" aria-label="pause" disabled><span class="par"></span><span id="lPause">pause</span></button>
+    <button class="key" id="bStop"  aria-label="stop"  disabled><span class="sq"></span><span id="lStop">stop</span></button>
+    <button class="key" id="bEject" aria-label="eject" disabled><span class="tri"></span><span id="lEject">eject</span></button>
+  </div>
+  <div id="msg" role="status" aria-live="polite"></div>
+</div>
+
+<script>
+function post(type, extra) {
+  window.parent.postMessage(
+    Object.assign({ isStreamlitMessage:true, type:type }, extra || {}), "*");
+}
+function setValue(v) { post("streamlit:setComponentValue", { value:v, dataType:"json" }); }
+function height() { post("streamlit:setFrameHeight", { height: 126 }); }
+
+var bRec=document.getElementById('bRec'), bPause=document.getElementById('bPause'),
+    bStop=document.getElementById('bStop'), bEject=document.getElementById('bEject'),
+    scope=document.getElementById('scope'), clock=document.getElementById('clock'),
+    msg=document.getElementById('msg');
+var ctx=scope.getContext('2d');
+
+var media=null, rec=null, chunks=[], analyser=null, actx=null, raf=null;
+var t0=0, acc=0, running=false, paused=false, lastBlob=null;
+var gain=1;                     // smoothed display gain for the scope
+
+// Below this, the input is effectively dead and the trace stays FLAT on
+// purpose. Auto-gain without a floor would amplify the noise of a
+// disconnected microphone into a convincing dance, which is the one lie
+// this display must never tell.
+var FLOOR = 1.2 / 128;
+
+function say(s, bad){ msg.textContent=s||''; msg.className = bad?'bad':''; }
+function mmss(ms){
+  var s=Math.floor(ms/1000); return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);
+}
+function elapsed(){ return acc + (running && !paused ? Date.now()-t0 : 0); }
+
+function fit(){
+  var r=scope.getBoundingClientRect(), d=window.devicePixelRatio||1;
+  scope.width=Math.max(1,Math.round(r.width*d));
+  scope.height=Math.max(1,Math.round(r.height*d));
+  ctx.setTransform(d,0,0,d,0,0);
+}
+
+function flatline(){
+  fit();
+  var w=scope.clientWidth, h=scope.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='#2b313a'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+}
+
+function draw(){
+  raf=requestAnimationFrame(draw);
+  var w=scope.clientWidth, h=scope.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  if (!analyser) return;
+  var n=analyser.fftSize, buf=new Uint8Array(n);
+  analyser.getByteTimeDomainData(buf);
+
+  // Peak of this frame, then a gain that maps it near the top of the
+  // window. Speech sits around -20 dBFS, which at a fixed scale is about
+  // two pixels of movement on a 46px window — technically correct and
+  // useless to look at. Gain rises quickly and falls slowly so the trace
+  // does not pump between syllables.
+  var peak=0;
+  for (var k=0;k<n;k++){ var a=Math.abs(buf[k]-128)/128; if (a>peak) peak=a; }
+  var want = peak > FLOOR ? Math.min(0.86/peak, 14) : 0;
+  gain += (want - gain) * (want > gain ? 0.35 : 0.06);
+
+  var amp = h/2 - 3;
+  ctx.lineWidth=1.5;
+  ctx.strokeStyle = paused ? '#6b7280' : '#f59e0b';
+  ctx.beginPath();
+  for (var i=0;i<n;i++){
+    var x=i/(n-1)*w;
+    var y=h/2 + ((buf[i]-128)/128) * gain * amp;
+    if (y<1) y=1; if (y>h-1) y=h-1;
+    i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+  }
+  ctx.stroke();
+  clock.textContent=mmss(elapsed());
+}
+
+function pick(){
+  // Highest quality the browser will actually give us. MediaRecorder has
+  // no WAV; opus is the honest maximum and 128k was measured transparent.
+  var want=['audio/webm;codecs=opus','audio/webm',
+            'audio/ogg;codecs=opus','audio/mp4'];
+  for (var i=0;i<want.length;i++){
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(want[i])) return want[i];
+  }
+  return '';
+}
+
+function keys(state){
+  bRec.disabled   = (state==='rec'||state==='pause');
+  bPause.disabled = !(state==='rec'||state==='pause');
+  bStop.disabled  = !(state==='rec'||state==='pause');
+  bEject.disabled = !(state==='done');
+  bRec.className   = 'key' + (state==='rec' ? ' arm' : '');
+  bPause.className = 'key' + (state==='pause' ? ' on' : '');
+  clock.className  = (state==='rec') ? 'live' : '';
+}
+
+async function start(){
+  try {
+    media = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount:1, echoCancellation:false, noiseSuppression:false,
+               autoGainControl:false }
+    });
+  } catch (e) {
+    say('microphone refused — check the browser permission', true);
+    return;
+  }
+  var mime=pick();
+  try {
+    rec = new MediaRecorder(media, mime ? { mimeType:mime, audioBitsPerSecond:128000 }
+                                        : { audioBitsPerSecond:128000 });
+  } catch (e) {
+    try { rec = new MediaRecorder(media); }
+    catch (e2) { say('this browser cannot record', true); return; }
+  }
+  chunks=[];
+  rec.ondataavailable=function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onerror=function(){ say('recording stopped unexpectedly', true); };
+  rec.onstop=finish;
+
+  actx = new (window.AudioContext||window.webkitAudioContext)();
+  if (actx.state==='suspended') { try { await actx.resume(); } catch(e){} }
+  analyser = actx.createAnalyser();
+  analyser.fftSize=1024; analyser.smoothingTimeConstant=0.6;
+  actx.createMediaStreamSource(media).connect(analyser);
+
+  acc=0; t0=Date.now(); running=true; paused=false; lastBlob=null;
+  rec.start(1000);              // a chunk a second: a crash loses one second
+  fit(); if (!raf) draw();
+  keys('rec'); say('');
+}
+
+function finish(){
+  running=false; paused=false;
+  if (raf) { cancelAnimationFrame(raf); raf=null; }
+  flatline();
+  var type = (chunks[0] && chunks[0].type) || 'audio/webm';
+  lastBlob = new Blob(chunks, { type:type });
+  if (media) { media.getTracks().forEach(function(t){ t.stop(); }); media=null; }
+  if (actx) { try { actx.close(); } catch(e){} actx=null; }
+  analyser=null;
+  clock.textContent=mmss(acc);
+  if (!lastBlob.size) { keys('idle'); say('nothing was recorded', true); return; }
+  keys('done');
+  say(mmss(acc)+' recorded — press eject to use it');
+}
+
+bRec.onclick=function(){ if (!running) start(); };
+
+bPause.onclick=function(){
+  if (!rec) return;
+  if (!paused) {
+    try { rec.pause(); } catch(e){}
+    acc += Date.now()-t0; paused=true; keys('pause'); say('paused');
+  } else {
+    try { rec.resume(); } catch(e){}
+    t0=Date.now(); paused=false; keys('rec'); say('');
+  }
+};
+
+bStop.onclick=function(){
+  if (!rec) return;
+  if (!paused) acc += Date.now()-t0;
+  paused=false;
+  try { rec.stop(); } catch(e){ finish(); }
+};
+
+bEject.onclick=function(){
+  if (!lastBlob || !lastBlob.size) return;
+  bEject.disabled=true; say('sending…');
+  var fr=new FileReader();
+  fr.onerror=function(){ say('could not read the recording', true); bEject.disabled=false; };
+  fr.onload=function(){
+    var s=String(fr.result||''), i=s.indexOf(',');
+    setValue({ b64: i<0 ? s : s.slice(i+1),
+               mime: lastBlob.type || 'audio/webm',
+               seconds: Math.round(acc/1000),
+               bytes: lastBlob.size,
+               at: Date.now() });
+    say('sent — ' + Math.round(lastBlob.size/1024) + ' KB');
+    lastBlob=null; keys('idle'); clock.textContent='0:00';
+  };
+  fr.readAsDataURL(lastBlob);
+};
+
+window.addEventListener("message", function(ev){
+  var m=ev.data;
+  if (!m || m.type!=="streamlit:render") return;
+  var a=(m.args||{}).labels;
+  if (a) {
+    document.getElementById('lRec').textContent   = a.rec   || 'rec';
+    document.getElementById('lPause').textContent = a.pause || 'pause';
+    document.getElementById('lStop').textContent  = a.stop  || 'stop';
+    document.getElementById('lEject').textContent = a.eject || 'eject';
+  }
+  height();
+});
+
+window.addEventListener('resize', function(){ if (!running) flatline(); });
+
+if (!navigator.mediaDevices || !window.MediaRecorder) {
+  say('this browser cannot record audio', true);
+  bRec.disabled=true;
+}
+keys('idle');
+flatline();
+post("streamlit:componentReady", { apiVersion: 1 });
+height();
+</script>

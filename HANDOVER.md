@@ -1388,3 +1388,120 @@ were verified to go red when padding is reintroduced.
 
 Requires `playwright` and a chromium download, so it is a local test, not
 a Cloud one. Run it after ANY change to either highlight span.
+
+---
+
+## 22. THE CASSETTE DECK (v56)
+
+Replaces `st.audio_input` in the transcribe tab with a real recorder
+component: rec / pause / stop / eject as a transport row, a live
+oscilloscope, and a running timer.
+
+### Format — measured, not chosen
+
+**MediaRecorder cannot produce WAV in any browser.** The API emits
+webm/opus, ogg/opus or mp4/aac only; WAV would mean capturing raw PCM
+through an AudioWorklet and writing the header in JS. It would also not
+survive the trip: WAV is 5.8 MB a minute and 345 MB an hour, against
+1 MB a minute for opus at 128k, and that blob crosses the websocket
+base64'd.
+
+Opus at 128k is transparent for this purpose. Through the app's own
+ffmpeg chain to 16 kHz FLAC, Whisper returned the same words as a WAV
+reference. **32k was NOT transparent** — "Sound" came back as "Bound" —
+so the floor is real. 64k was already clean; 128k is for the headroom,
+because the test material was clean studio TTS and a phone in a room is
+harder to encode.
+
+Note the fake device reports **stereo** even when the constraint asks for
+mono. ffmpeg's `-ac 1` handles it, but do not assume the constraint is
+honoured.
+
+### The scope must not be able to lie
+
+It reads the live signal through an AnalyserNode. It is auto-gained,
+because speech sits near -20 dBFS and at a fixed scale moved **two pixels
+on a 46 px window** — technically correct and useless to look at. Gain
+rises fast and falls slowly so it does not pump between syllables.
+
+Auto-gain WITHOUT a floor would amplify the noise of a disconnected
+microphone into a convincing dance, which is the one lie this display must
+never tell. Hence `FLOOR`. Measured in real Chromium:
+
+    real speech        trace fills 43 px of 46, varying 14-43 with the voice
+    dead microphone    1 px, flat
+
+**If the scope is flat, the microphone is genuinely not receiving.** That
+is the single most useful thing a recorder can say before someone talks
+for ten minutes into nothing.
+
+### Recording is chunked every second
+
+`rec.start(1000)`. A crash or a killed tab loses one second, not the take.
+
+### Test status
+
+Test 2, real Chromium with a fake microphone at `--use-file-for-fake-
+audio-capture`: **18 passed, 1 failed**, and the one failure was the
+test's own metric (lit-pixel count cannot tell a flat line from a
+waveform; vertical extent can). componentReady, transport state
+transitions, the clock freezing under pause, the blob posting back once,
+the byte count matching, and **ffprobe as an outside party confirming the
+blob is real opus audio**.
+
+The mic needs a SECURE CONTEXT. `page.set_content()` fails with
+"microphone refused" — serve the component over `http://127.0.0.1` to
+test it.
+
+---
+
+## 23. LEVELLING ON THE TRANSCRIBE PATH (v56)
+
+`app.py:transcode_to_flac` — the function the microphone and the file
+picker actually use — was Groq's raw command with **no levelling at all**.
+`ttt/audio.py:to_flac16k` had it; this one never did. THERE ARE TWO
+TRANSCODE FUNCTIONS AND TWO `split_into_chunks`. That duplication is a
+live hazard: the v52 bit-depth fix only ever touched one half of it.
+
+Levelling now runs before transcoding. Measured word error rate:
+
+    very quiet (-32dB), clean      2.9%  ->  0.0%
+    quiet with heavy room noise    7.2%  ->  2.9%
+    quiet with light room noise    0.0%  ->  2.9%
+    loud and clean                 0.0%  ->  0.0%
+
+It rescues the two cases that actually fail in the field and costs a
+little on one that was already perfect.
+
+`-sample_fmt s16` went in at the same time and MUST NOT be separated from
+it: loudnorm works in floating point and silently promotes FLAC output to
+24-bit, making every file ~48% larger for an identical transcript. See
+§19.
+
+---
+
+## 24. TWO DEAD FEATURES FOUND BY pyflakes
+
+`python3 -m pyflakes app.py` finds names that are used but never defined.
+These compile fine and crash at runtime, so nothing catches them until a
+person presses the button. **Run it before every push.**
+
+**FIXED — the sheet prompts.** `SHEET` was used in three places and
+`ttt.sheet` was never imported into app.py, so `sheet_prompt()` raised
+NameError inside a try/except. Grammar and reshape showed an error instead
+of using the wording from the sheet. One missing import line.
+
+**STILL BROKEN — reading text out of a picture.** `read_picture` is
+called at the image branch of the file picker but does not exist. Commit
+`92c4cbb` ("Terminal command rows everywhere", 17.8.2026) deleted it along
+with `vision_model` and `http_json_groq_models` while leaving the caller
+behind. Image OCR has been dead since then.
+
+It is NOT restored here, deliberately. The originals are recoverable from
+`git show d94bd60:app.py`, but `vision_model` was written against a
+model-listing helper that no longer exists — the provider API is now
+`provider.models(task, fetch)` — so a faithful restore means rewriting it,
+and that cannot be tested without a running Streamlit. A half-restored
+chain that compiles and fails differently is worse than a known gap.
+`ttt.vision` currently shows as an unused import, which is the second
+independent sign the whole path is dead.
