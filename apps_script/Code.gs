@@ -29,7 +29,7 @@ var SHARED_TOKEN = 'CHANGE_ME_to_a_long_random_string';
 /** Everyone who can log in. Used by setup() to pre-build a tab for each.
  *  A user who is not listed still gets a tab automatically on first use,
  *  so this list only saves you seeing an empty sheet on day one. */
-var KNOWN_USERS = ['marko0612', 'emina', 'marinko'];
+var KNOWN_USERS = ['user1', 'user2', 'user3'];
 
 // ---------------------------------------------------------------------
 

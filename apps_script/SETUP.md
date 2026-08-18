@@ -11,7 +11,7 @@ A Google Sheet that fills itself in as people use the app.
   characters, hours in the app, first and last use.
 - **Daily** — per user, per day: how many uses and how much. This is the
   "how hard are they hammering it" view.
-- **u_emina**, **u_marinko**, **u_marko0612**, … — one tab per person,
+- **u_user1**, **u_user2**, **u_user3**, … — one tab per person,
   every single use as its own row, so you can build any calculation you
   like yourself.
 
@@ -48,7 +48,7 @@ and when.
 5. Check the user list on the next line is right:
 
    ```js
-   var KNOWN_USERS = ['marko0612', 'emina', 'marinko'];
+   var KNOWN_USERS = ['user1', 'user2', 'user3'];
    ```
 
    Anyone missing still gets a tab automatically the first time they use

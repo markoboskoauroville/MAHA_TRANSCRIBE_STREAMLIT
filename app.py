@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v49 (a)"
+APP_VERSION = "v50 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -305,9 +305,16 @@ STRINGS = {
     # The gear is the tab label itself — a symbol everyone already
     # knows, and one less word in a row of words.
     "tab_settings":       {"en": "\u2699",            "hr": "\u2699"},
-    # Same glyph as the owner's gear on purpose: they are the same
-    # KIND of thing, and only the colour says which is which.
-    "tab_looks":          {"en": "\u2699",            "hr": "\u2699"},
+    # Same glyph as the owner's gear on purpose: they are the same KIND
+    # of thing, and only the colour says which is which.
+    #
+    # BUT THE STRINGS MUST DIFFER. st.segmented_control matches options by
+    # their FORMATTED LABEL, not by their value — two options rendering
+    # the identical "⚙" collapsed into one, and pressing the first
+    # selected the second. Reproduced exactly: tab 4 pressed, tab 5
+    # checked. A zero-width space makes the strings distinct while
+    # leaving them pixel-identical on screen.
+    "tab_looks":          {"en": "\u2699\u200b",      "hr": "\u2699\u200b"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -1398,8 +1405,34 @@ def cmd_width(word: str) -> int:
     return max(64, len(word) * CMD_CHAR_PX + CMD_PAD_PX)
 
 
+def size_controls():
+    """Text size, in Settings and nowhere else.
+
+    − and + used to ride on every command row. Baba removed them: they
+    appeared four times, they were the only controls that changed how the
+    app looks rather than what it does, and a decision made once does not
+    belong beside the ones made constantly.
+    """
+    scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+    steps = []
+    v = a11y.MIN_SCALE
+    while v <= a11y.MAX_SCALE + 0.001:
+        steps.append(round(v, 2))
+        v = round(v + a11y.STEP, 2)
+
+    cols = st.columns(min(len(steps), 8))
+    for i, val in enumerate(steps[:8]):
+        def _pick(x=val):
+            st.session_state["text_scale"] = x
+            persist_settings()
+        cols[i].button(f"{a11y.percent(val)}", key=f"sz_{i}",
+                       use_container_width=True,
+                       type="primary" if abs(scale - val) < 0.01 else "secondary",
+                       on_click=_pick)
+
+
 def cmd_row(where: str, items, target_key: str = None, copy_text: str = "",
-            with_size: bool = True):
+            with_size: bool = False):
     """THE row. Every command in the app is built here, so there is one
     appearance and one behaviour to keep right.
 
@@ -2608,7 +2641,7 @@ elif active == "looks":
     # Deliberately separate from engines and keys: what a person sees is
     # theirs to set, what the app talks to is the owner's.
     st.caption(t("looks_size"))
-    cmd_row("looks_size", [], with_size=True)
+    size_controls()
 
     st.caption(t("looks_font"))
     fcols = st.columns(3)

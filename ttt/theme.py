@@ -211,6 +211,12 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       color: var(--bg) !important;
       font-weight: 700;
     }}
+    /* The OWNER's gear is amber even when unselected: it is the one that
+       changes things for everybody, and it should look like it. The
+       user's own looks-gear stays quiet grey. Last tab = owner's. */
+    [data-testid="stButtonGroup"] button[role="radio"]:last-child p {{
+      color: var(--amber) !important;
+    }}
     [data-testid="stButtonGroup"] button[role="radio"][aria-checked="true"] p {{
       color: var(--bg);
       font-weight: 700;

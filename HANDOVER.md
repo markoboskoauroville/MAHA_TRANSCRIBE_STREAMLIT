@@ -268,7 +268,7 @@ transcribed, and starts reading.
 The sentence being spoken is highlighted in gold, and repeated alone in a
 large **subtitle box** below (the NaturalReader idea).
 
-**Translate.** A third tab, added for Emina and Marinko — they like
+**Translate.** A third tab, added for the other two users — they like
 languages. Two boxes and pill-button language switches, From and Croatian
 first / English / Italian / German / French, a swap (⇄) that exchanges both
 the languages and the text, and a **Translate** button that calls Groq
@@ -766,7 +766,7 @@ updated. Nothing is started before the one before it is finished.
         keyboard.
 
     L2. ADMIN CONTROLS WHAT OTHERS SEE.
-        marko0612 (K, not C) is the owner. He gets
+        the owner (whoever ADMIN_USER names) is the owner. He gets
         a panel listing every other user with
         switches for what each of them may see:
         their own API keys, the patch bay, the
@@ -860,8 +860,8 @@ their own wording — and Baba can edit it by hand in the sheet, which is
 the real appeal.
 
     user        key              value
-    emina       prompt_grammar   Ispravi pravopis, ne diraj stil.
-    marinko     prompt_reshape   Skrati na natuknice.
+    user1       prompt_grammar   Ispravi pravopis, ne diraj stil.
+    user2       prompt_reshape   Skrati na natuknice.
 
 **Then, as wanted:** saved texts (the Read archive, which is
 browser-only today and dies with a cleared browser), per-user voice and
@@ -971,3 +971,74 @@ like the usage log.
 ### D5. Two settings, done (v47)
 Grey ◐ = how the app looks, for everyone. Amber ⚙ = engines and keys,
 owner only. Colour carries the distinction so neither needs a word.
+
+---
+
+## 17. THE SHEET AND THE DRIVE AS THE APP'S BACKEND
+
+Baba's design, 18.8.2026. The Google Sheet stops being a log and becomes
+the app's dashboard and configuration; the Drive folder becomes its audio
+store. Both are reached through the SAME Apps Script web app that already
+exists, which is what makes this cheap.
+
+### THE PERMISSION QUESTION, ANSWERED
+
+Baba asked: *"if I authenticate all these links, will the user have right
+to use it?"*
+
+**The users never authenticate, and never need a Google account.** An
+Apps Script web app deployed as **"Execute as: Me"** and **"Who has
+access: Anyone"** runs every request under BABA'S OWN Google identity.
+The Streamlit app calls a URL with the shared token; the script does the
+Drive and Sheet work as him and returns a result. Emina's browser never
+touches Google at all.
+
+Three consequences worth being clear about:
+
+  * The shared token IS the security. Anyone with the URL and the token
+    can write. Keep it in Streamlit secrets, never in the repo.
+  * Files land in HIS Drive and count against HIS quota. That is the
+    intent — it is his app.
+  * "Anyone" means anyone with the URL, not anyone signed in. It does
+    NOT make the Drive folder public; the folder can stay private,
+    because the script is what reaches it.
+
+### THE AUDIO ROUND TRIP
+
+    upload → Streamlit → ffmpeg (levelled, 16 kHz mono)
+           → Apps Script → Drive /<user>/<id>.flac
+           → Whisper reads it back through the script
+
+Retranscribe then costs no upload: the prepared file is already there, so
+changing the language is one call. The script creates a per-user folder on
+first write — `DriveApp.getFolderById(ROOT).createFolder(user)` if it does
+not exist.
+
+### THE SHEET AS CONFIGURATION
+
+Tabs beyond the existing per-user and Summary/Daily ones:
+
+  * **settings** — one row per setting, `scope | key | value`, where
+    scope is `global` or a username. TRUE/FALSE for switches, text for
+    prompts. A user row wins over the global row; if the user has none,
+    global applies. First two settings to carry: `prompt_grammar` and
+    `prompt_reshape`, so the AI wording is editable by hand without a
+    deploy.
+  * **assemblyai**, **anthropic**, one per provider — keys that are NOT
+    in Streamlit secrets are read from here as a fallback. This is what
+    lets a key be added without a redeploy.
+
+### RULES FOR WHOEVER BUILDS IT
+
+  * **Never a dependency.** If the sheet or Drive is unreachable the app
+    behaves exactly as it does today, on built-in defaults. Short
+    timeout, swallow everything, same as the usage log.
+  * **Cache per session.** A settings read on every rerun is several
+    fetches a second.
+  * **A prompt from the sheet is untrusted text.** It goes into an LLM
+    instruction, so keep transform.py's existing fencing and cap the
+    length.
+  * **Keys read from the sheet are still keys.** They go into the same
+    ring, get the same rotation and the same shredding, and are never
+    written to a browser.
+  * **No text in the sheet, still.** Settings and keys, never content.
