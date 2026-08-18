@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v48 (a)"
+APP_VERSION = "v49 (a)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1438,12 +1438,7 @@ def cmd_row(where: str, items, target_key: str = None, copy_text: str = "",
         cols = st.columns(widths)
         for col, (label, key, cb), w in zip(cols, row, widths):
             with col:
-                if label == "paste":
-                    got = paste_target(where, width=w)
-                    if got and target_key:
-                        st.session_state[target_key] = got
-                        st.rerun()
-                elif label == "copy":
+                if label == "copy":
                     components.html(
                         copybtn.cp_html(copy_text or "", label=t("copy_word"),
                                         done_label=t("copy_done_word"),
@@ -2474,8 +2469,7 @@ elif active == "talk":
             flash("rd_keep")
 
         cmd_row("rd", [
-            ("paste", None, None),
-            (t("archive_word"), "rd_keep", _keep_text),
+                (t("archive_word"), "rd_keep", _keep_text),
             (t("clear_word"), "rd_clear", _clear_talk),
         ], target_key="talk_text")
 
@@ -2569,7 +2563,6 @@ elif active == "translate":
         flash("tr_go")
 
     cmd_row("trsrc", [
-        ("paste", None, None),
         (t("clear_word"), "tr_clear_src", _clear_src),
     ], target_key="translate_src_text")
 

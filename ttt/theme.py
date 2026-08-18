@@ -340,6 +340,12 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       display: flex !important;
       flex-wrap: wrap;
       align-content: flex-start;
+      /* The row is a closed strip, not a set of boxes ending in mid-air.
+         The LAST cell takes whatever width is left, so the border runs
+         to the edge and every cell keeps its own text-sized width.
+         Baba: "if there is space to be filled up, we can make empty
+         button" — this fills it without adding a control nobody asked
+         for and nobody should press. */
       gap: 0 !important;
       border: 1px solid var(--line);
       border-radius: 4px;
@@ -354,7 +360,18 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       border-bottom: 1px solid var(--line);
     }}
     [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
-      > div[data-testid="stColumn"]:last-child {{ border-right: none; }}
+      > div[data-testid="stColumn"]:last-child {{
+      border-right: none;
+      flex: 1 1 auto !important;
+      width: auto !important;
+    }}
+    /* ...and its button must not stretch with it: the control stays the
+       size of its word, sitting at the left of the space it closes. */
+    [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"]:last-child .stButton button {{
+      width: auto !important;
+      min-width: 44px;
+    }}
     [class*="st-key-cmdrow_"] div[data-testid="stVerticalBlock"] {{ gap: 0; }}
     [class*="st-key-cmdrow_"] div[data-testid="stElementContainer"] {{ width: 100%; }}
 
@@ -444,35 +461,16 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        above appeared not to work. Deleting rules is part of changing
        them. */
 
-    /* The translate action spans both language rows: one button for the
-       pair, the same height as the matrix beside it. The label wraps
-       rather than overflowing — nothing may leave the screen. */
-    .st-key-trmatrix div[data-testid="stHorizontalBlock"] {{
-      align-items: stretch;
-    }}
-    /* The column has to stretch too, or the button sits at its own
-       height beside a taller matrix and covers only the first row. */
-    .st-key-trmatrix div[data-testid="stColumn"] {{ display: flex; }}
-    .st-key-trmatrix div[data-testid="stColumn"] > div,
-    .st-key-trmatrix div[data-testid="stElementContainer"] {{
-      height: 100%; width: 100%;
-    }}
-    /* The language column must NOT stretch its own contents, or the two
-       pill rows spread apart to fill the button's height. */
-    .st-key-trmatrix div[data-testid="stColumn"]:first-child
-      div[data-testid="stVerticalBlock"] {{ height: auto; }}
-    .st-key-trmatrix .stButton button {{
-      /* A plain fixed height, not stretch. Three attempts at making it
-         follow the matrix all failed in different ways: stretching made
-         the pill rows spread to match, and removing the height collapsed
-         it to 20px. Two pill rows are 45px each plus a gap, so 98px
-         covers them — and a fixed figure cannot start a fight with the
-         column beside it. */
-      height: 98px !important;
-      /* NO min-height. Forcing one made the row taller, and the language
-         column then spread its two pill rows to fill the same height —
-         the button and the pills chased each other down the page. Let it
-         stretch to whatever the matrix beside it actually is. */
+    /* The translate action sits beside the two language rows.
+
+       SCOPED TO THE BUTTON ONLY. The previous version styled every
+       .stButton inside the matrix, which caught the language pills too:
+       they lost their amber fill and grew to fill the row, so a selected
+       language looked the same as an unselected one and the whole block
+       became a wall of tall boxes. A rule aimed at one control must say
+       which control. */
+    .st-key-trmatrix .st-key-do_translate_btn button {{
+      height: 96px !important;
       border-radius: 10px !important;
       background: var(--surface-2) !important;
       border: 1px solid var(--line) !important;
@@ -483,8 +481,14 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       line-height: 1.25;
       padding: 0 0.4rem !important;
     }}
-    .st-key-trmatrix .stButton button p {{
+    .st-key-trmatrix .st-key-do_translate_btn button p {{
       color: var(--amber) !important; white-space: normal !important;
+    }}
+    /* The pills stay pill-height: a control should never be much taller
+       than the word inside it. */
+    .st-key-trmatrix div[data-testid="stColumn"] .stButton button {{
+      height: 44px !important;
+      min-height: 44px !important;
     }}
 
     /* Language switch: short labels, so nearly round. */

@@ -952,6 +952,22 @@ Streamlit Cloud's disk is not durable and files must not outlive the
 session. Needs a decision on where — the same shared store as §15, or a
 short-lived bucket — plus a cleanup path so nothing lingers.
 
+### D7. Audio storage moves to Google Drive (Baba, 18.8.2026)
+
+Once the rest is proven, converted audio goes to GOOGLE DRIVE through the
+same Apps Script web app as §15 — Baba will supply the folder. Drive
+keeps each user's audio until he chooses to delete it, which solves the
+problem Cloud disk cannot: durability without a new service or a second
+auth path.
+
+Then retranscribe is server-to-server: the levelled 16 kHz file is
+already there, so changing the language costs one API call and no upload.
+
+Rules when building it: the same shared token, no audio in the usage
+tabs, a per-user folder, and the app must still work unchanged when Drive
+is unreachable — storage is a convenience, never a dependency, exactly
+like the usage log.
+
 ### D5. Two settings, done (v47)
 Grey ◐ = how the app looks, for everyone. Amber ⚙ = engines and keys,
 owner only. Colour carries the distinction so neither needs a word.
