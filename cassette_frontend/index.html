@@ -140,6 +140,9 @@ function say(s, bad){
   msg.textContent=s||''; msg.className = bad?'bad':'';
   height();                       // the strip just changed size
 }
+// spinTick writes msg directly and deliberately does NOT call height():
+// re-measuring the frame ten times a second would post a resize on every
+// tick for a line that never changes height.
 function mmss(ms){
   var s=Math.floor(ms/1000); return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);
 }
@@ -319,6 +322,37 @@ var BACKOFF = [2000, 4000, 8000, 15000, 25000];
 var pending = null;      // {blob, name, secs, stamp, tries}
 var ackTimer = null;
 
+// A BRAILLE SPINNER, because a 7 MB upload followed by a transcription
+// looked completely stale — Baba sent it and had no way to tell whether
+// anything was happening or the app had died. It runs from the moment a
+// send starts until Python acknowledges, which covers BOTH the upload and
+// the transcription, so it stops exactly when the words appear.
+var SPIN = '\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f';
+var spinI = 0, spinTimer = null, sendT0 = 0;
+
+function kb(n){ return Math.round(n/1024); }
+
+function spinTick(){
+  if (!pending) return;
+  spinI = (spinI + 1) % SPIN.length;
+  var el = (Date.now() - sendT0) / 1000;
+  var rate = el > 0.3 ? '  \u00b7  ' + Math.round(kb(pending.blob.size)/el) + ' KB/s' : '';
+  msg.className = '';
+  msg.textContent = SPIN[spinI] + '  ' + kb(pending.blob.size) + ' KB  \u00b7  '
+                  + el.toFixed(1) + 's' + rate
+                  + (pending.tries ? '  \u00b7  try ' + (pending.tries+1) : '');
+}
+
+function startSpin(){
+  sendT0 = sendT0 || Date.now();
+  if (spinTimer) return;
+  spinTimer = setInterval(spinTick, 90);
+  spinTick();
+}
+function stopSpin(){
+  if (spinTimer) { clearInterval(spinTimer); spinTimer=null; }
+}
+
 function clearAck(){ if (ackTimer) { clearTimeout(ackTimer); ackTimer=null; } }
 
 function armAck(){
@@ -328,12 +362,13 @@ function armAck(){
   ackTimer = setTimeout(function(){
     if (!pending) return;
     if (pending.tries >= MAX_TRIES){
+      stopSpin();
       keys('retry');
       say('not sent after ' + MAX_TRIES + ' tries — press retry', true);
       return;
     }
     pending.tries++;
-    say('no answer — retrying (' + pending.tries + '/' + MAX_TRIES + ')');
+    startSpin();
     postPending();
   }, wait);
 }
@@ -370,10 +405,11 @@ function send(blob, name, secs){
     keys('idle');
     return;
   }
-  say('sending — ' + Math.round(blob.size/1024) + ' KB');
   pending = { blob: blob, name: name||'', secs: secs||0,
               stamp: Date.now(), tries: 0 };
+  sendT0 = Date.now();
   keys('sending');
+  startSpin();
   postPending();
 }
 
@@ -381,16 +417,24 @@ function send(blob, name, secs){
 // blob allowed to be forgotten.
 function acked(stamp){
   if (!pending || String(pending.stamp) !== String(stamp)) return;
-  clearAck();
-  say('sent — ' + Math.round(pending.blob.size/1024) + ' KB');
+  clearAck(); stopSpin();
+  // What it cost, kept on screen: size, how long the whole round trip
+  // took, and the rate. After a long recording in a weak signal these are
+  // the numbers worth knowing before starting another one.
+  var el = (Date.now() - sendT0) / 1000;
+  var size = kb(pending.blob.size);
+  say('sent  ' + size + ' KB  \u00b7  ' + el.toFixed(1) + 's  \u00b7  '
+      + Math.round(size/Math.max(el,0.1)) + ' KB/s');
+  sendT0 = 0;
   pending=null; lastBlob=null; keys('idle'); clock.textContent='0:00';
 }
 
 function retryNow(){
   if (!pending) return;
   pending.tries = 0;
-  say('retrying');
+  sendT0 = Date.now();
   keys('sending');
+  startSpin();
   postPending();
 }
 

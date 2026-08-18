@@ -1810,3 +1810,47 @@ survive the browser being killed or the page reloading. Making it survive
 that means writing the take into IndexedDB before the first send attempt
 and clearing it on ack. That is the next piece of this work and it is not
 built.
+
+---
+
+## 31. THE SPINNER, AND THE PLAYER'S CLIPPED BUTTONS (v63)
+
+### A 7 MB send looked completely dead
+
+Baba sent 7 MB to Whisper and the screen said `sent — 6997 KB` and then
+nothing at all, for as long as it took. No way to tell whether it was
+working or the app had died.
+
+There is now a **braille spinner** on that line, running from the moment a
+send starts until Python acknowledges — which covers BOTH the upload and
+the transcription, so it stops exactly when the words appear. Beside it:
+size, seconds elapsed, and the transfer rate.
+
+    in flight   ⠦  6997 KB  ·  12.4s  ·  564 KB/s   · try 2
+    finished    sent  6997 KB  ·  14.2s  ·  492 KB/s
+
+The totals stay on screen afterwards. After a long recording on a weak
+signal those are the numbers worth knowing before starting another one.
+
+`spinTick` writes the message directly and deliberately does NOT call
+`height()` — re-measuring the frame ten times a second would post a
+resize on every tick for a line whose height never changes.
+
+### The Read tab's buttons were sliced in half
+
+`player_frontend` posted a hardcoded `250 + 90*(scale-1)` px. Fine until
+the highlighted sentence runs to four lines — then the content is taller
+than the frame and the transport buttons underneath are cut across the
+middle, which is exactly what Baba photographed.
+
+**This is the third time a hardcoded frame height has caused a visible
+bug** (the deck's 126 in §27, this, and the deck again before that). A
+component's height must be MEASURED, and measured AGAIN when its content
+changes. This one uses a `ResizeObserver` on `document.body`, so it tracks
+sentence-to-sentence changes rather than being right once at load.
+
+Verified: body 160px on a short line and 208px on Baba's four-line
+Croatian sentence, with the frame posting 169 then 217 to match.
+
+**RULE: never post a constant to setFrameHeight.** If a number appears in
+a `setFrameHeight` call, it is a bug waiting for longer content.

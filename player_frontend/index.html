@@ -116,10 +116,27 @@ window.addEventListener("message", function (event) {
     show(0);
     if (args.autoplay) { a.play().catch(function () {}); }
   }
-  post("streamlit:setFrameHeight", { height: Math.round(250 + 90 * (scale - 1)) });
+  fit();
 });
 
+// MEASURE, NEVER GUESS. This posted a hardcoded 250 + 90*(scale-1), which
+// is fine until the highlighted sentence runs to four lines — then the
+// content is taller than the frame and the transport buttons underneath
+// are sliced in half. Baba caught them cut across the middle. The deck
+// had exactly this bug with a hardcoded 126.
+//
+// A ResizeObserver keeps it right as the text changes from sentence to
+// sentence, which a one-off measurement would not.
+function fit(){
+  var h = document.body.getBoundingClientRect().height;
+  post("streamlit:setFrameHeight", { height: Math.ceil(h) + 8 });
+}
+if (window.ResizeObserver) {
+  new ResizeObserver(fit).observe(document.body);
+}
+window.addEventListener('load', fit);
+
 post("streamlit:componentReady", { apiVersion: 1 });
-post("streamlit:setFrameHeight", { height: 250 });
+fit();
 </script>
 </body></html>
