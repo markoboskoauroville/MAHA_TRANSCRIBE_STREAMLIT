@@ -1752,3 +1752,61 @@ file's provenance was unclear because the concat step had errored. No
 number is claimed. Audio is transcribed in ten-minute chunks, so the
 exposure is bounded either way. **If a long recording ever feels slow,
 this is the first thing to re-measure, properly, with many runs.**
+
+---
+
+## 30. BULLETPROOF SENDING (v62)
+
+Baba records for half an hour in a forest where the internet comes and
+goes. The dangerous moment is pressing stop while the socket is down: the
+recording is sitting in the browser and the app has no idea it never
+arrived.
+
+### The recording is not forgotten until it is PROVEN to have landed
+
+`setComponentValue` posts to the parent frame and tells us nothing about
+whether it survived. So **Python echoes back the stamp it received**, and
+the component holds the blob until it sees its own stamp come back.
+Anything unacknowledged is sent again.
+
+The echo must go out on EVERY render, not only the run that received the
+value — the run that receives it is not necessarily the run the component
+is listening on.
+
+### Five tries, then it stops and the cell says retry
+
+`BACKOFF = [2, 4, 8, 15, 25]` seconds. It **stops on purpose**: after five
+failures across nearly a minute the connection is properly gone, and
+hammering it drains a phone battery that may be the only one for hours.
+The fourth cell then becomes **retry** (amber) and one tap starts again
+with the counter reset — no cell appears or disappears, it changes word.
+
+`rec` is disabled while a take is unsent, so a second recording can never
+overwrite one that has not landed.
+
+### It does not wait when the signal is already back
+
+The browser fires `online` the moment the connection returns, and that
+resends immediately with the counter reset. Sitting out a 25-second
+backoff while the signal has already returned is time nobody should spend
+looking at a phone in a forest.
+
+### Tested, 19 checks across two scenarios
+
+**No acknowledgement ever** (13 passed): sends, shows *sending*, retries
+without an ack, STOPS at the limit rather than forever, offers retry,
+keeps the blob, manual retry resends, the ack clears it, the cell returns
+to *open*, and nothing more is sent afterwards.
+
+**Connection lost and restored** (6 passed): gives up at the limit,
+resends by itself on `online` without a tap, keeps the recording intact
+through all of it, and blocks `rec` while a take is unsent.
+
+### THE REMAINING HOLE, stated plainly
+
+**The blob lives in memory. Closing the tab loses it.** Retry survives a
+dead connection, a dead server and a phone that sleeps — it does NOT
+survive the browser being killed or the page reloading. Making it survive
+that means writing the take into IndexedDB before the first send attempt
+and clearing it on ack. That is the next piece of this work and it is not
+built.

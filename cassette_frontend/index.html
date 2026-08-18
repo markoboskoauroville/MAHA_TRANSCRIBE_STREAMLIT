@@ -128,6 +128,7 @@ var ctx=scope.getContext('2d');
 var media=null, rec=null, chunks=[], analyser=null, actx=null, raf=null;
 var t0=0, acc=0, running=false, paused=false, lastBlob=null;
 var gain=1;                     // smoothed display gain for the scope
+var L_OPEN='open', L_RETRY='retry', L_SENDING='sending';
 
 // Below this, the input is effectively dead and the trace stays FLAT on
 // purpose. Auto-gain without a floor would amplify the noise of a
@@ -208,7 +209,12 @@ function keys(state){
   bRec.disabled   = (state==='rec'||state==='pause');
   bPause.disabled = !(state==='rec'||state==='pause');
   bStop.disabled  = !(state==='rec'||state==='pause');
-  bFile.disabled  = (state==='rec'||state==='pause');
+  bFile.disabled  = (state==='rec'||state==='pause'||state==='sending');
+  bRec.disabled   = bRec.disabled || state==='sending' || state==='retry';
+  var lbl=document.getElementById('lFile');
+  if (state==='retry')       { lbl.textContent = L_RETRY; bFile.className='key arm'; }
+  else if (state==='sending'){ lbl.textContent = L_SENDING; }
+  else                       { lbl.textContent = L_OPEN; }
   bRec.className   = 'key' + (state==='rec' ? ' arm' : '');
   bPause.className = 'key' + (state==='pause' ? ' on' : '');
   clock.className  = (state==='rec') ? 'live' : '';
@@ -291,6 +297,71 @@ bStop.onclick=function(){
 // here — see TOO_BIG handling in app.py.
 var MAX_SEND = 45 * 1024 * 1024;
 
+// ── BULLETPROOF SENDING ──────────────────────────────────────────────
+//
+// Baba records for half an hour in a forest where the internet comes and
+// goes. The dangerous moment is pressing stop while the socket is down:
+// the recording is sitting right here in the browser and the app has no
+// idea it never arrived.
+//
+// setComponentValue posts to the parent frame and tells us nothing about
+// whether it survived the trip. So Python ECHOES BACK the stamp it
+// received, and anything not acknowledged is sent again. The blob is
+// held here until an ack proves it landed — never dropped on the
+// assumption that a send worked.
+//
+// Five automatic attempts with a lengthening wait, then it STOPS and the
+// fourth cell becomes "retry". It stops on purpose: after five failures
+// over a minute the connection is properly gone, and hammering it drains
+// a phone battery that may be the only one for hours.
+var MAX_TRIES = 5;
+var BACKOFF = [2000, 4000, 8000, 15000, 25000];
+var pending = null;      // {blob, name, secs, stamp, tries}
+var ackTimer = null;
+
+function clearAck(){ if (ackTimer) { clearTimeout(ackTimer); ackTimer=null; } }
+
+function armAck(){
+  clearAck();
+  if (!pending) return;
+  var wait = BACKOFF[Math.min(pending.tries, BACKOFF.length-1)];
+  ackTimer = setTimeout(function(){
+    if (!pending) return;
+    if (pending.tries >= MAX_TRIES){
+      keys('retry');
+      say('not sent after ' + MAX_TRIES + ' tries — press retry', true);
+      return;
+    }
+    pending.tries++;
+    say('no answer — retrying (' + pending.tries + '/' + MAX_TRIES + ')');
+    postPending();
+  }, wait);
+}
+
+function postPending(){
+  if (!pending) return;
+  var fr=new FileReader();
+  fr.onerror=function(){ armAck(); };
+  fr.onload=function(){
+    var s=String(fr.result||''), i=s.indexOf(',');
+    setValue({ b64: i<0 ? s : s.slice(i+1),
+               mime: pending.blob.type || 'application/octet-stream',
+               name: pending.name || '',
+               seconds: pending.secs || 0,
+               bytes: pending.blob.size,
+               at: pending.stamp });
+    armAck();
+  };
+  fr.readAsDataURL(pending.blob);
+}
+
+// The browser tells us the moment the connection is back. Waiting out a
+// 25-second backoff when the signal has already returned is time nobody
+// should spend looking at a phone in a forest.
+window.addEventListener('online', function(){
+  if (pending) { pending.tries = 0; say('back online — sending'); postPending(); }
+});
+
 function send(blob, name, secs){
   if (!blob || !blob.size) return;
   if (blob.size > MAX_SEND) {
@@ -299,21 +370,28 @@ function send(blob, name, secs){
     keys('idle');
     return;
   }
-  say('sending…');
-  var fr=new FileReader();
-  fr.onerror=function(){ say('could not read it', true); keys(lastBlob?'done':'idle'); };
-  fr.onload=function(){
-    var s=String(fr.result||''), i=s.indexOf(',');
-    setValue({ b64: i<0 ? s : s.slice(i+1),
-               mime: blob.type || 'application/octet-stream',
-               name: name || '',
-               seconds: secs || 0,
-               bytes: blob.size,
-               at: Date.now() });
-    say('sent — ' + Math.round(blob.size/1024) + ' KB');
-    lastBlob=null; keys('idle'); clock.textContent='0:00';
-  };
-  fr.readAsDataURL(blob);
+  say('sending — ' + Math.round(blob.size/1024) + ' KB');
+  pending = { blob: blob, name: name||'', secs: secs||0,
+              stamp: Date.now(), tries: 0 };
+  keys('sending');
+  postPending();
+}
+
+// Called when Python confirms it has the recording. Only here is the
+// blob allowed to be forgotten.
+function acked(stamp){
+  if (!pending || String(pending.stamp) !== String(stamp)) return;
+  clearAck();
+  say('sent — ' + Math.round(pending.blob.size/1024) + ' KB');
+  pending=null; lastBlob=null; keys('idle'); clock.textContent='0:00';
+}
+
+function retryNow(){
+  if (!pending) return;
+  pending.tries = 0;
+  say('retrying');
+  keys('sending');
+  postPending();
 }
 
 // TAP = FILE PICKER. Nothing is read from the clipboard on a tap.
@@ -323,7 +401,11 @@ function send(blob, name, secs){
 // PASTE needs none of that: the user pressing Ctrl+V — or long-press,
 // Paste on Android — IS the consent, and the event hands us the contents
 // directly. No extension is required for this and none would help.
-bFile.onclick=function(){ if (!running) picker.click(); };
+bFile.onclick=function(){
+  if (running) return;
+  if (pending) { retryNow(); return; }   // the cell IS the retry control
+  picker.click();
+};
 
 // Paste needs somewhere to land, so a hidden sink takes focus whenever
 // the deck is touched anywhere that is not a button. Same trick as
@@ -375,6 +457,10 @@ picker.onchange=function(){
 window.addEventListener("message", function(ev){
   var m=ev.data;
   if (!m || m.type!=="streamlit:render") return;
+  // Python echoes the stamp of whatever it received. This is the only
+  // proof a send arrived.
+  var ackStamp=(m.args||{}).ack;
+  if (ackStamp) acked(ackStamp);
   var a=(m.args||{}).labels;
   if (a) {
     document.getElementById('lRec').textContent   = a.rec   || 'rec';

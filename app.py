@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v61 (one model, every language)"
+APP_VERSION = "v62 (bulletproof send)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -304,6 +304,8 @@ STRINGS = {
     "rec_pause": {"en": "pause", "hr": "pauza"},
     "rec_stop":  {"en": "stop",  "hr": "stop"},
     "rec_upload": {"en": "open",   "hr": "otvori"},
+    "rec_retry":   {"en": "retry",   "hr": "ponovi"},
+    "rec_sending": {"en": "sending", "hr": "šaljem"},
     "img_unavailable": {"en": "Reading text from pictures is out of order.",
                         "hr": "Čitanje teksta sa slika trenutno ne radi."},
     "file_unknown": {"en": "Cannot use this file — {why}.",
@@ -648,9 +650,17 @@ def cassette_recorder(key: str):
     if _cassette_component is None:
         return None
     try:
+        # THE ACKNOWLEDGEMENT. The component holds the recording until it
+        # sees its own stamp come back, and resends it up to five times if
+        # it does not. Without this echo every take would appear to fail.
+        # It must be sent on EVERY render, not only the one that received
+        # the value, because the run that receives it is not necessarily
+        # the run the component is listening on.
         val = _cassette_component(
             labels={"rec": t("rec_btn"), "pause": t("rec_pause"),
-                    "stop": t("rec_stop"), "upload": t("rec_upload")},
+                    "stop": t("rec_stop"), "upload": t("rec_upload"),
+                    "retry": t("rec_retry"), "sending": t("rec_sending")},
+            ack=st.session_state.get(f"_cassette_seen_{key}"),
             key=key, default=None)
     except Exception:
         return None
