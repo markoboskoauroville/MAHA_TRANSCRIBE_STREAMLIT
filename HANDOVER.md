@@ -1720,3 +1720,35 @@ NOT PROVEN: that large-v3 beats turbo on Baba's actual Croatian. The only
 Croatian in the corpus is an English TTS voice reading unaccented text, so
 both models mangle it and the comparison says nothing. His own voice is
 the test.
+
+---
+
+## 29. ONE MODEL FOR EVERY LANGUAGE (v61)
+
+v60 split the model by language — turbo for English, full `large-v3` for
+everything else — on the assumption that turbo's speed was worth having
+where its accuracy held up. That assumption was never tested. It has been
+now.
+
+**Measured on 24 English clips whose exact spoken text was known** (they
+were sent to Speechify, so the reference is not a guess):
+
+    whisper-large-v3-turbo    35 errors / 340 words
+    whisper-large-v3          36 errors / 340 words
+
+One word apart in 340 — noise. There is no accuracy reason to prefer
+either on English.
+
+Baba: *"Why don't we use the large model for English as well? I can wait.
+I am patient yogi."* With accuracy equal and the choice his, the tie
+breaks toward the better model and toward ONE code path instead of a
+language-to-model table that can be wrong. `FAST_LANGS` is gone.
+
+**HONESTLY NOT MEASURED: turbo's speed advantage on long files.** It is a
+distilled model and should be faster, but the timings came back with
+twenty-fold variance between identical runs — turbo 2.36s then 46.83s on
+the same file — which is queue noise, not a measurement, and the test
+file's provenance was unclear because the concat step had errored. No
+number is claimed. Audio is transcribed in ten-minute chunks, so the
+exposure is bounded either way. **If a long recording ever feels slow,
+this is the first thing to re-measure, properly, with many runs.**

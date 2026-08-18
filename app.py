@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v60 (dead buttons, clock zone, forced language)"
+APP_VERSION = "v61 (one model, every language)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -214,24 +214,32 @@ st.markdown(a11y.css(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
 PRIMARY_MODEL = "whisper-large-v3-turbo"   # fast first pass
 CORRECTION_MODEL = "whisper-large-v3"      # slower, more accurate — used by Correct
 
-# THE MODEL FOLLOWS THE LANGUAGE, and the language is never guessed.
+# ONE MODEL, EVERY LANGUAGE: whisper-large-v3.
 #
-# turbo is a distilled model: fast, and fine for English. On Croatian it
-# is measurably worse, which is why "Ovo je test hrvatskog jezika" came
-# back as something closer to Czech. English keeps turbo; everything else
-# gets the full model.
+# v60 split this — turbo for English, the full model for everything else —
+# on the assumption that turbo's speed was worth having where its accuracy
+# held up. Measured on 24 English clips whose exact spoken text was known:
+# turbo made 35 errors in 340 words, large-v3 made 36. One word apart, in
+# 340. There is no accuracy reason to prefer either.
 #
-# Measured 19.8.2026 on Croatian audio, all four combinations: leaving the
-# language OFF degrades BOTH models badly — commas scattered through every
-# phrase and words like "privy" and "liedenji" appearing from nowhere.
-# Auto-detection is never used anywhere in this app. The HR/ENG control at
-# the bottom of the screen is an instruction, not a hint.
-FAST_LANGS = {"en"}
-
-
+# Baba: "Why don't we use the large model for English as well? I can wait.
+# I am patient yogi." With accuracy equal and the choice his, the tie is
+# broken toward the better model and toward having ONE code path instead
+# of a language-to-model table that can be wrong.
+#
+# HONESTLY NOT MEASURED: turbo's speed advantage on LONG files. It is a
+# distilled model and should be quicker, but the timings came back with
+# 20-fold variance between identical runs — queue noise, not a
+# measurement — so no number is claimed here. Audio is transcribed in
+# ten-minute chunks, so the exposure is bounded either way.
+#
+# THE LANGUAGE IS NEVER GUESSED. Measured on Croatian across all four
+# combinations: leaving the language OFF degrades BOTH models badly,
+# scattering commas through every phrase and inventing words like "privy"
+# and "liedenji". The HR/ENG control is an instruction, not a hint, and
+# auto-detection is used nowhere in this app.
 def model_for(language: str) -> str:
-    lang = (language or "").strip().lower()[:2]
-    return PRIMARY_MODEL if lang in FAST_LANGS else CORRECTION_MODEL
+    return CORRECTION_MODEL
 
 # Croatian first everywhere, English second.
 # ----------------------------------------------------------------------
