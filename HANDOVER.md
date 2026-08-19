@@ -2215,6 +2215,26 @@ code is also required" is a note someone can paste past. **One file that
 is pasted whole cannot be pasted wrong**, so the split files remain for
 reading and this is the one to deploy.
 
+### ONE BLOCK AT THE TOP
+
+Baba: *"write at the beginning the functions which will store my shared
+token, Drive root ID, download secrets — everything at the top in one
+place, not scrolling through the things."*
+
+Every editable value now sits between two thick boxes near the top:
+`SHARED_TOKEN`, `DOWNLOAD_SECRET`, `DRIVE_ROOT_ID`, `KNOWN_USERS`,
+`KEY_PROVIDERS`, and the two rarely-touched `LINK_SECONDS` and
+`MAX_PART_BYTES`. They were scattered across lines 92 to 436; they are
+now lines 98 to 147, and the block closes with END OF THE PART YOU EDIT.
+
+They are lifted, not copied — a duplicate `var` would have shadowed the
+real one and been invisible until something behaved oddly. Checked: no
+duplicate top-level declarations, and nothing editable remains below the
+block.
+
+**Keep it that way.** Anything a person is expected to change belongs in
+that block, however far from it the code that uses it happens to be.
+
 ### THE TOKEN INCIDENT — 19.8.2026
 
 Baba pasted the live script into the chat as message text, containing the

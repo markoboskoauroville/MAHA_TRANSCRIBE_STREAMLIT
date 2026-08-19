@@ -10,43 +10,34 @@
  *  time: they were all present and nothing routed to them.
  *
  * ───────────────────────────────────────────────────────────────────
- *  FILL IN THREE THINGS.  They are the only ones. Search for FILL ME.
+ *  WHAT YOU FILL IN
  * ───────────────────────────────────────────────────────────────────
  *
- *  1. SHARED_TOKEN      a long random string.
- *                       The SAME string goes in Streamlit secrets as
- *                       SHEETS_TOKEN. Nothing works until they match.
+ *  EVERYTHING is in one block a little further down, between two thick
+ *  boxes. Nothing below that block ever needs touching. You do not have
+ *  to read or scroll through the rest of this file.
  *
- *  2. DRIVE_ROOT_ID     the id of your Drive folder. Open the folder;
- *                       the id is the last part of the address:
- *                       drive.google.com/drive/folders/THIS_PART
- *                       Only needed for audio storage. Leave the
- *                       placeholder if you are not using it yet —
- *                       everything else still works.
+ *  Three that matter:
+ *      SHARED_TOKEN      -> Streamlit secrets as SHEETS_TOKEN
+ *      DOWNLOAD_SECRET   -> Streamlit secrets as DRIVE_SECRET
+ *      DRIVE_ROOT_ID     -> only for audio storage; leave it otherwise
  *
- *  3. DOWNLOAD_SECRET   a DIFFERENT long random string.
- *                       The SAME string goes in Streamlit secrets as
- *                       DRIVE_SECRET.
+ *  Two you may want:
+ *      KNOWN_USERS       -> who gets a tab on day one
+ *      KEY_PROVIDERS     -> which k_ key tabs get made
  *
- *  MAKE THE TWO SECRETS YOURSELF, and never paste them into a chat, an
- *  email or a screenshot. On a Mac or in Termux:
+ *  Two you probably never will:
+ *      LINK_SECONDS, MAX_PART_BYTES
  *
- *      openssl rand -base64 33
- *
- *  Run it twice and use one for each. If a secret ever appears in a
- *  message it must be replaced — a message cannot be unsent, and text
- *  in a chat log cannot be deleted afterwards.
- *
- *  WHY TWO DIFFERENT SECRETS. SHARED_TOKEN unlocks doGet, which hands
- *  back your settings AND every API key in the k_ tabs. A download link
- *  is the part most likely to end up in a log, so it carries its own
- *  credential with its own expiry. Losing the download secret must
- *  never cost you the keys. setupDrive() refuses to run if you make
- *  them the same.
+ *  MAKE THE SECRETS YOURSELF:   openssl rand -base64 33
+ *  Run it twice, once for each. Never paste a secret into a chat, an
+ *  email or a screenshot — a message cannot be unsent, and text in a
+ *  chat log cannot be deleted afterwards. If one ever lands in a
+ *  message, replace it rather than hope.
  *
  *  THERE ARE NO API KEYS IN THIS FILE, and none should ever be added.
- *  Groq, Speechify, Anthropic and AssemblyAI keys live in the k_ tabs
- *  of the spreadsheet, where the app reads them through doGet.
+ *  Groq, Speechify, Anthropic and AssemblyAI keys live in the k_ tabs of
+ *  the spreadsheet, where the app reads them through doGet.
  *
  * ───────────────────────────────────────────────────────────────────
  *  AFTER PASTING — in this order
@@ -78,23 +69,80 @@
  *  accident.
  */
 
-// ---------------------------------------------------------------------
-// CONFIGURATION — change these two lines, nothing else.
-// ---------------------------------------------------------------------
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                                                                   ║
+// ║   EVERYTHING YOU FILL IN IS IN THIS ONE BLOCK.                    ║
+// ║   Nothing below it needs to be touched, ever.                     ║
+// ║                                                                   ║
+// ╚═══════════════════════════════════════════════════════════════════╝
 
-/** FILL ME (1 of 3) — a long random string, so strangers cannot write to
- *  the sheet or read your keys. Make it with:
- *      openssl rand -base64 33
- *  The SAME string goes in Streamlit secrets as SHEETS_TOKEN.
- *
- *  IF THIS EVER APPEARS IN A MESSAGE, A SCREENSHOT OR A LOG, REPLACE IT.
- *  It unlocks doGet, which returns every API key in the k_ tabs. */
+// ─── 1 ─── THE SHARED TOKEN ──────────────────────────────────────────
+// A long random string, so strangers cannot write to your sheet or read
+// your keys. The SAME string goes into Streamlit secrets as
+// SHEETS_TOKEN. Nothing works until the two match.
+//
+// Make it yourself:   openssl rand -base64 33
+//
+// IF IT EVER APPEARS IN A MESSAGE, A SCREENSHOT OR A LOG, REPLACE IT.
+// It unlocks doGet, which hands back every API key in the k_ tabs. A
+// message cannot be unsent.
 var SHARED_TOKEN = 'CHANGE_ME_to_a_long_random_string';
 
-/** Everyone who can log in. Used by setup() to pre-build a tab for each.
- *  A user who is not listed still gets a tab automatically on first use,
- *  so this list only saves you seeing an empty sheet on day one. */
+
+// ─── 2 ─── THE DOWNLOAD SECRET ───────────────────────────────────────
+// A DIFFERENT long random string. The same one goes into Streamlit
+// secrets as DRIVE_SECRET. Run the openssl line a second time.
+//
+// It must not equal SHARED_TOKEN, and setupDrive() refuses to run if it
+// does. The reason: the token above unlocks your settings AND your API
+// keys, while a download link is the part most likely to end up in a log
+// somewhere. Losing one must never cost you the other.
+var DOWNLOAD_SECRET = 'CHANGE_ME_to_a_different_long_random_string';
+
+
+// ─── 3 ─── THE DRIVE FOLDER ──────────────────────────────────────────
+// Open the folder in Drive; the id is the last part of the address:
+//     drive.google.com/drive/folders/THIS_PART
+//
+// Only used for audio storage. If you are not using that yet, leave the
+// placeholder — everything else works without it.
+var DRIVE_ROOT_ID = 'PUT_YOUR_FOLDER_ID_HERE';
+
+
+// ─── 4 ─── WHO CAN LOG IN ────────────────────────────────────────────
+// Used by setup() to build a tab for each person on day one. Somebody
+// not listed still gets a tab automatically on first use, so this list
+// only saves you looking at an empty sheet.
 var KNOWN_USERS = ['user1', 'user2', 'user3'];
+
+
+// ─── 5 ─── WHICH PROVIDERS GET A KEY TAB ─────────────────────────────
+// One k_ tab is made for each. Add a name here to add a tab.
+// THE KEYS THEMSELVES ARE NEVER IN THIS FILE — they go in the tabs, in
+// the spreadsheet, and the app reads them through doGet.
+var KEY_PROVIDERS = ['assemblyai', 'anthropic', 'speechify', 'groq'];
+
+
+// ─── 6 ─── RARELY CHANGED ────────────────────────────────────────────
+// Sensible as they are. Here only so that nothing is hidden further
+// down the file.
+
+// How long a signed download link stays valid, in seconds. Short on
+// purpose: the app signs one the moment it needs it.
+var LINK_SECONDS = 600;
+
+// Biggest audio part accepted, as base64. The platform refuses a request
+// body over 50 MiB — measured, not guessed — so the app sends one
+// 10-minute part at a time, about 14 MB. Anything near the ceiling is a
+// bug in the caller and is refused here rather than half-written.
+var MAX_PART_BYTES = 40 * 1024 * 1024;
+
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║   END OF THE PART YOU EDIT.                                       ║
+// ║   Everything below is the working code.                           ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+
 
 // ---------------------------------------------------------------------
 
@@ -297,8 +345,6 @@ function onOpen() {
 //  tabs with their headers and a few sensible starting rows.
 // =====================================================================
 
-/** Providers that may have a key tab. Add to this list to add a tab. */
-var KEY_PROVIDERS = ['assemblyai', 'anthropic', 'speechify', 'groq'];
 
 /** Settings the app understands, with their built-in defaults. These are
  *  written into the sheet by setupConfig() so the list is discoverable —
@@ -415,25 +461,6 @@ function doGet(e) {
 //  the language and transcribing again costs no upload from the phone.
 // =====================================================================
 
-/** FILL ME (2 of 3) — the Drive folder that holds everything.
- *  Take the id from its URL: drive.google.com/drive/folders/THIS_PART
- *  Only needed for audio storage; leave it if you are not using that. */
-var DRIVE_ROOT_ID = 'PUT_YOUR_FOLDER_ID_HERE';
-
-/** FILL ME (3 of 3) — a DIFFERENT long random string, NOT SHARED_TOKEN.
- *  Make it with:  openssl rand -base64 33
- *  The same string goes in Streamlit secrets as DRIVE_SECRET. */
-var DOWNLOAD_SECRET = 'CHANGE_ME_to_a_different_long_random_string';
-
-/** How long a download link stays valid. Short on purpose: the app signs
- *  one the moment it needs it, so it never needs to last. */
-var LINK_SECONDS = 600;
-
-/** Guard rails. The platform refuses a request body over 50 MiB — this
- *  is measured, not guessed — so the app sends one 10-minute part at a
- *  time (~14 MB as base64). Anything near the ceiling is a bug in the
- *  caller, and is refused here rather than half-written to Drive. */
-var MAX_PART_BYTES = 40 * 1024 * 1024;
 
 var REC_HEADERS = ['user', 'rec_id', 'created', 'seconds', 'parts',
                    'folder_id', 'language', 'note'];
