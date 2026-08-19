@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v77 (player always there)"
+APP_VERSION = "v78 (words first)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -318,6 +318,8 @@ STRINGS = {
     "arc_del_help":  {"en": "Delete this one", "hr": "Obriši ovo"},
     "nothing_heard": {"en": "The audio arrived but no speech was found in it.",
                       "hr": "Zvuk je stigao ali u njemu nije pronađen govor."},
+    "keeping_audio": {"en": "Saving the recording…",
+                      "hr": "Spremam snimku…"},
     "status_word": {"en": "status", "hr": "status"},
     "stt_errors":  {"en": "Whisper refused:", "hr": "Whisper odbio:"},
     "rec_sending": {"en": "sending", "hr": "šaljem"},
@@ -2737,14 +2739,21 @@ if active == "transcribe":
                     stage["chars"] = len((text or "").strip())
                     stage["method"] = method
                     st.session_state["_last_run"] = stage
-                    # Keep the audio BEFORE the bytes are released, and
-                    # after the words are safe.
-                    keep_audio(reusable, audio_seconds(reusable), lang_code)
-                    # Let the recording go. A 7 MB take is ~7 MB of bytes,
-                    # ~9 MB of base64 still held by the component, and a
-                    # BytesIO on top; keeping all of it after the words are
-                    # out is memory this instance does not have to spare.
-                    st.session_state.pop(hold_key, None)
+                    # THE WORDS GO ON SCREEN FIRST. Nothing may come
+                    # between the transcript and the person who spoke it.
+                    #
+                    # keep_audio() used to run HERE, before delivery, and
+                    # my own comment claimed it was "after the words are
+                    # safe" — it was not. A Drive upload is the whole
+                    # recording sent again as base64 to Apps Script, and
+                    # while it ran the transcript sat finished in a
+                    # variable with nothing on screen. Recording, stopping,
+                    # and never getting the words back is exactly what that
+                    # looks like.
+                    #
+                    # Storage is a convenience for LATER. It must never
+                    # stand in front of the thing the person came for.
+                    deliver_text(text)
                     # An EMPTY transcript is a real outcome and must say so.
                     # deliver_text ignores empty text on purpose, so without
                     # this the screen would show nothing at all and look
@@ -2757,7 +2766,21 @@ if active == "transcribe":
                                    f"{stage.get('mins',0):.1f} min, "
                                    f"method {stage.get('method','?')}")
                         st.warning(t("nothing_heard"))
-                    deliver_text(text)
+
+                    # Only now, with the words delivered, keep the audio.
+                    # SAY THAT IT IS HAPPENING. Measured against the real
+                    # script: 5.8s for a 30-second take, 9.0s for two
+                    # minutes, and it grows with the recording. Silent
+                    # waiting after the text appears looks like the app
+                    # has hung — which is what silent waiting BEFORE the
+                    # text looked like, only worse.
+                    with st.spinner(t("keeping_audio")):
+                        keep_audio(reusable, audio_seconds(reusable), lang_code)
+                    # And let the recording go: a 7 MB take is ~7 MB of
+                    # bytes plus ~9 MB of base64 still held by the
+                    # component, which is memory this instance cannot
+                    # spare once the words are out.
+                    st.session_state.pop(hold_key, None)
                     st.session_state["flac_path"] = reusable
                     st.session_state["last_lang"] = lang_code
                     st.session_state["_transcribe_method"] = method

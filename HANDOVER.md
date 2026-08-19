@@ -2760,3 +2760,42 @@ not.
 
 Still to do in R: the voice grid, mid-reading regeneration, the
 oscilloscope, and the full text below the subtitle.
+
+---
+
+## 50. THE WORDS GO ON SCREEN FIRST (v78)
+
+Baba: *"I press Record, I press Stop, it sent audio. I am not getting
+transcription back."*
+
+**My bug, from v75.** `keep_audio()` ran BEFORE `deliver_text()`, and the
+comment above it claimed it sat "after the words are safe". It did not.
+The transcript sat finished in a variable while the whole recording was
+uploaded to Drive as base64.
+
+Measured against the real script:
+
+    30-second take   0.6 MB   5.8s of silent waiting
+    2-minute take    2.4 MB   9.0s
+
+And it grows with the recording. `store_audio` is TRUE in the sheet and
+`DRIVE_SECRET` is in Streamlit secrets, so this was live on every single
+transcription.
+
+### Two changes
+
+**Delivery moved in front of storage.** Nothing may come between the
+transcript and the person who spoke it. Storage is a convenience for
+LATER; it must never stand in front of what they came for.
+
+**The remaining wait is announced** — *Saving the recording…* — because
+even after the text appears, a silent multi-second freeze reads as a hang.
+
+### The rule
+
+**Anything slow that is not the answer goes AFTER the answer, and says
+what it is doing.** Storage, logging, archiving, cleanup — none of it may
+sit between a person and the result of the thing they asked for.
+
+Worth noting how it hid: a comment asserted the ordering was correct.
+**A comment is not a check.** It read as considered, and it was wrong.
