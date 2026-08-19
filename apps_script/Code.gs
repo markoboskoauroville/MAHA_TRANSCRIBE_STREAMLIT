@@ -165,9 +165,17 @@ function setup() {
   buildDaily(ss);
   SpreadsheetApp.getUi().alert(
     'TTT-LLL logging is ready.\n\n' +
-    'Next: Deploy > New deployment > Web app, ' +
-    'set "Who has access" to "Anyone", then copy the URL it gives you ' +
-    'and send it to Claude to put in the app.'
+    'Next, IF THIS IS THE FIRST TIME:\n' +
+    'Deploy > New deployment > Web app, set "Who has access" to ' +
+    '"Anyone", and put the URL it gives you into Streamlit secrets as ' +
+    'SHEETS_URL.\n\n' +
+    'IF YOU ALREADY HAVE A DEPLOYMENT — which you do, if the app has ' +
+    'ever worked:\n' +
+    'Deploy > Manage deployments > pencil > Version: New version > ' +
+    'Deploy.\n\n' +
+    'DO NOT use "New deployment" the second time. It makes a SECOND web ' +
+    'app with a DIFFERENT URL, and SHEETS_URL in Streamlit then points ' +
+    'at the old one, which keeps answering with the old code.'
   );
 }
 

@@ -2490,3 +2490,105 @@ rename looked finished.
 
 Re-verified: **41 passed, 0 failed** both as separate files and as the
 merged one, app boots headless with a clean log.
+
+---
+
+## 46. THE FIRST REAL SETUP — every trap, in order
+
+Baba set the Apps Script up from nothing on 19.8.2026, on a Mac, having
+never used clasp. Written down so nobody walks into the same holes.
+
+### THE ONE THAT COST THE MOST: popups appear on the SPREADSHEET
+
+`setup()`, `setupConfig()` and `setupDrive()` all end with
+`SpreadsheetApp.getUi().alert(...)`. Run from the Apps Script EDITOR, that
+dialog opens on the **spreadsheet tab** — which is usually a different
+window, often not even open. The editor shows the function running
+forever.
+
+**It is not stuck. It is waiting for a click you cannot see.** The work is
+already done; the tabs are already there.
+
+Either run them from the sheet's own **TTT-LLL** menu, or run from the
+editor and then go and look at the spreadsheet. If a function seems to
+hang for more than about thirty seconds, that is the reason, every time.
+
+### "New deployment" is WRONG the second time
+
+`setup()`'s own alert said *Deploy > New deployment*, which is right once
+and wrong forever after: it creates a SECOND web app with a DIFFERENT
+URL, while `SHEETS_URL` still points at the first — so the old code keeps
+answering and nothing appears to change.
+
+Fixed in the script: the alert now gives both cases and says plainly not
+to use New deployment twice. **The update path is Deploy > Manage
+deployments > pencil > Version: New version > Deploy.**
+
+### The order, and how to tell it worked
+
+Ignore the spinner. Look for the tabs.
+
+    setup()        Summary, Daily, one u_<user> per user
+    setupConfig()  settings, k_groq, k_speechify, k_anthropic, k_assemblyai
+    setupDrive()   recordings
+
+If the tab exists, that function did its job whatever the editor says.
+
+### clasp, in the order that works
+
+1. `npm install -g @google/clasp` — "added 263 packages" is success; the
+   funding notice is a donation notice, not a bill
+2. `clasp login` — must be the account that OWNS the spreadsheet
+3. **Turn on the Apps Script API** at script.google.com/home/usersettings.
+   Miss it and every push fails with an error that explains nothing.
+4. script id is the middle of the editor URL, between `projects/` and
+   `/edit`
+5. write `.clasp.json` with `printf`, not an editor — opening TextEdit for
+   three lines is where typos come from
+6. `clasp push` → "Pushed 2 files"
+7. **Deploy.** Push is not deploy.
+
+### The secrets, and what confused him
+
+Two random strings, made with `openssl rand -base64 33`, each pasted in
+TWO places — `Code.gs` and Streamlit secrets — spelled identically. The
+folder id goes in `Code.gs` ONLY.
+
+What genuinely was not clear, and is worth saying to anyone new: **nothing
+syncs.** clasp copies a file to Google. The Streamlit paste is done by
+hand. Google and Streamlit never talk to each other; they only ever
+compare a password. Between saving Streamlit and deploying Google the app
+says `bad token`, and that is correct rather than broken.
+
+Also: `Code.gs` uses `'single'` quotes and TOML uses `"double"`. Only the
+value moves; the quotes stay where they are. Copying the quotes across
+makes the value literally contain apostrophes.
+
+### A test that only worked on unconfigured files
+
+Running the suite against Baba's FILLED-IN `Code.gs` gave 17 passed, 22
+failed — and the file was perfect. The harness substituted its test token
+by replacing the literal `CHANGE_ME_...` placeholder, so on a real file
+the swap silently missed and every signed-URL check ran against the wrong
+secret.
+
+**A test that only passes on a file nobody has configured cannot check
+the only kind of file that matters.** It now substitutes by pattern
+(`/^var SHEETS_TOKEN = '[^']*';/m`). Re-verified 41/0 on both his file and
+the repo's, with all mutations still caught.
+
+### Protect the filled-in file
+
+`Code.gs` is tracked, and it now holds a real token:
+
+    git update-index --assume-unchanged apps_script/Code.gs
+
+Or the next `git add -A` publishes it.
+
+### Drive layout, confirmed working
+
+`setupDrive()` reported **"Drive folder found: USERS"**. The structure is
+`USERS/<user>/<rec_id>/part_0000.flac` — a folder per user made on first
+write, a folder per recording inside it, one file per ten-minute part.
+Nothing appears yet: Drive is still paused on the app side and
+`ttt/drive.py` is not wired into `app.py`.
