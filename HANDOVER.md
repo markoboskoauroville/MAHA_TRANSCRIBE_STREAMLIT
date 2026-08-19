@@ -3215,3 +3215,90 @@ single/multi entirely.** Now routed through the helper.
 That is exactly the drift the one-helper rule exists to prevent, appearing
 within days of the rule being written. **When a helper exists, every path
 must use it; a direct assignment beside it is a slow leak.**
+
+---
+
+## 59. WHERE THIS SESSION ENDS — start here
+
+Two things are open. One is small and blocking; one is designed and not
+built.
+
+### BLOCKING: text reaches the archive but not the box
+
+**Do this first, it takes five minutes.** Baba records one short take,
+opens the **L** module, and copies the `deliver` line. It reads:
+
+    delivered 47 chars, box now 47 chars, mode single
+
+That single line eliminates two of three possibilities:
+
+| what it says | what it means | where to look |
+|---|---|---|
+| no `deliver` line at all | `deliver_text` never ran; the archive row came from elsewhere | the transcribe branch, above the call |
+| `delivered N, box now N` | the box WAS set and something later loses it | the rerun after the component ack |
+| `delivered N, box now 0` | the assignment itself fails | a Streamlit widget-state behaviour to learn |
+
+**Already ruled out, do not re-check:** `deliver_text` itself (tested in
+isolation, single sets, multi appends, both archive); the
+set-before-widget pattern (verified in a real Streamlit instance);
+`setdefault`; `cmd_row` (T1 passes no `target_key`); `flash`; every
+assignment between the delivery and the text area; `st.rerun()`; other
+session-key collisions (swept, none).
+
+Reasoning from the source has been exhausted. **Get the line.**
+
+### DESIGNED, NOT BUILT: the paired Drive archive
+
+Baba: *"they go in pairs always"* — audio and transcript stored together,
+deleted together, and pullable without retranscribing.
+
+**The sheet is the index; Drive is the store. Do NOT scan Drive.** One
+request returns every row from `recordings`; scanning means an API call
+per user folder, then per recording, then per file — dozens of round
+trips through Apps Script, which is the slowest part of the stack.
+
+Store the transcript as a FILE beside the audio:
+
+    USERS/<user>/<rec_id>/
+        part_0000.flac
+        text.txt
+
+Not a sheet cell: a folder trash removes both atomically so they cannot
+come apart, and a long transcript would hit the per-cell ceiling. The
+sheet row records `chars` and `has_text`, so the list can offer "pull"
+versus "retranscribe" without fetching anything.
+
+In T1's archive list, per row: **pull** reads `text.txt` (instant, free),
+**retranscribe** fetches the audio and runs Whisper in another language,
+**delete** trashes the folder AND the sheet row.
+
+This also fixes the archive dying on reload: it stops living in session
+state and starts being read from the sheet.
+
+**Work needed:** `putText_`/`getText_` in `Code.gs` (dispatch already
+exists), matching methods in `ttt/drive.py`, `has_text`/`chars` columns on
+the `recordings` tab, and T1's archive list reading from Drive instead of
+`ttt/archive.py`.
+
+### Still open, lower down
+
+* `read_picture` — deleted by `92c4cbb`; blocks picture upload, pasted
+  images and the router's `ocr` branch. Needs rewriting against
+  `provider.models()`.
+* The nonsense detector — LAST on purpose. It needs MEASURING, not
+  building: a corrector that rewrites correct Croatian is worse than
+  none. It wants a test set of known-good and known-mangled Croatian and
+  a count of fixes versus breaks.
+* T2 system audio — Windows native, macOS needs BlackHole, Android
+  impossible.
+* Unsent takes die with the tab (IndexedDB would fix it).
+* The 7 MB stall never recurred after the status box and log landed.
+* **Nothing has ever been tested on Edge audio.** Every word-timing
+  measurement used Speechify.
+
+### The deployed token was deliberately left alone
+
+It is the one that reached a chat twice. Baba was told twice, understood,
+and chose to carry on. **It was not rotated.** If it ever is, it changes
+in `Code.gs` AND Streamlit secrets together, then push and deploy a New
+version.
