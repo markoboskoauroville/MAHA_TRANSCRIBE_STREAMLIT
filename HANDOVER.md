@@ -2845,3 +2845,72 @@ keeps working.
 instead of session state, retranscribing a stored recording in another
 language, and deleting from Drive through the interface. The data now
 exists for all three.
+
+---
+
+## 52. SENTENCE CUES (v80) — the spoon before the waveform player
+
+`ttt/cues.py`. Word timings say when each WORD is spoken; a player needs
+where each SENTENCE begins and ends — for the subtitle line, and for
+"jump to the next sentence". No Streamlit, no browser, so the rules are
+testable on a laptop with no audio and no keys.
+
+**Both views come from the SAME word list.** The subtitle shows a
+sentence, the highlight colours a word inside it, the jump moves a whole
+one. If sentence boundaries came from splitting the text separately they
+would drift from the word times by a word here and there, and the
+highlight would look like it belonged to the wrong line. A cue therefore
+carries `first`/`last` indices into the word list.
+
+### THE BUG REAL AUDIO FOUND, and invented data never would
+
+On made-up data it worked perfectly. On the first real run it produced
+**one cue of eight seconds for a sentence full of question marks and
+semicolons.**
+
+Because `wordtimes.tokenize()` deliberately EXCLUDES trailing punctuation
+from a word's span — so the highlight does not colour the comma — `what?`
+arrives here as `what`. Judging sentence ends from the word list alone
+finds nothing at all.
+
+`cues(..., text=...)` now reads the character that FOLLOWS each word in
+the original, which is where the punctuation actually is. Verified on real
+Whisper timings: the punctuation sentence splits into 2 cues, and the
+genuinely-one-sentence passage stays 1.
+
+**Pass `text` whenever there is one.** Without it the function still works,
+but only for word lists that kept their punctuation.
+
+### Decisions worth keeping
+
+* **Back goes to the START of this sentence first**, and only steps to the
+  previous one when already near the start — the same as every music
+  player, because the common wish is "say that again", not "go back one".
+* **A boundary belongs to the LATER cue**: at the moment one ends and the
+  next begins, the next is what should be on screen, because it is the
+  one about to be spoken.
+* **Short cues fold BACKWARD at the end.** Folding forward alone leaves a
+  final "Yes." flashing for 200 ms — and the end of a reading is exactly
+  where a short sentence is likeliest.
+* Abbreviations (`Mr.`, `npr.`, `itd.`) and initials (`J. R. R.`) do not
+  split a sentence. A consequence: a synthetic test using `"a."` and
+  `"b."` sees ONE cue, because a one-letter sentence is indistinguishable
+  from an initial. That is the test being unrealistic, not the rule.
+* `to_srt()` exists so a reading can be exported and the timings opened in
+  any subtitle tool and checked by eye.
+
+25 checks, plus verification against real Whisper timings on two clips.
+
+### Where this fits
+
+Toward the waveform player Baba asked for: waveform, paging playhead,
+transport, subtitle, and 30-second generate-ahead. **This is the timing
+layer under all of it.** Still to build: the canvas component itself and
+the chunked generate-ahead pipeline, which is the hard part because it
+touches audio generation that works today.
+
+And first, per Baba's own standing rule: **read `ma-reader-thermux`
+before inventing.** Searching his repos already showed
+`2py_word_timing_lab.py` runs the SAME experiment this project repeated —
+Speechify marks as truth, proportional vs DSP vs Whisper, even the same
+test sentences. The chunk-ahead logic may well be solved there too.
