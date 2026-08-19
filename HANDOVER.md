@@ -3079,3 +3079,61 @@ app boots clean.
 The 30-second generate-ahead pipeline. Still the hard part, still new:
 the reader builds the next block when the previous ENDS, so there is a
 pause between parts. Generating while the current one plays removes it.
+
+---
+
+## 56. THE GENERATE-AHEAD ALREADY EXISTED (v83)
+
+I told Baba twice that the 30-second generate-ahead was "the hard part,
+still to build". **It was already built, in this repo, and had been for a
+long time.**
+
+`PREFETCH_AHEAD = 3`. After the player is on the page, the next three
+blocks are built IN PARALLEL in a `ThreadPoolExecutor`. It runs after the
+render on purpose: the player is a client-side iframe already playing, so
+Python carrying on does not interrupt the sound. The workers touch no
+Streamlit API, and `keyring.rotate()` locks around choosing a key, so
+several threads share one ring safely.
+
+**This is the second time in this session that something was declared new
+and turned out to be already solved** — the first was the word-timing
+experiment, which `ma-reader-thermux/2py_word_timing_lab.py` had already
+run with the same method and the same sentences.
+
+Baba's standing rule says to read the repos before inventing. It needs
+extending: **read THIS repo too.** The rule was followed outward and not
+inward.
+
+### And the blocks are better than 30 seconds
+
+Baba asked for fixed 30-second blocks. `SPEECH.plan_blocks()` already does
+something better, and it is his own algorithm: **1, 2, 4, 8, 16 …
+sentences, then steady.**
+
+The first block is ONE sentence, so sound starts in about four seconds
+instead of the twenty a full-size request takes. Each block then doubles,
+so a long text needs few requests — and by the time blocks are large,
+there is plenty of recorded speech playing to cover the longer wait.
+
+Modelled against a 4-second synthesis time per block:
+
+    block   spoken   played so far   margin
+        1     4.2s            0.0s     0.2s
+        2     6.2s            4.2s     6.4s
+        3    10.4s           10.4s    16.8s
+
+The margin GROWS. Fixed 30-second blocks would have made the first wait
+seven times longer and gained nothing.
+
+### Verified after the waveform swap
+
+Prefetch runs after the player renders, still uses the pool, still three
+ahead; the finish signal still advances the part, and the waveform player
+does send it. The chain is intact end to end.
+
+### So the R redesign is complete
+
+Waveform, paging playhead with instant turns, transport with sentence
+jumps, subtitle with the red word, player always present and greyed when
+idle, cues from one source of truth, and generate-ahead. What remains is
+Baba using it and telling me what is wrong.
