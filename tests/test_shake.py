@@ -30,16 +30,14 @@ import re as _re, pathlib as _pl
 _src = _pl.Path('app.py').read_text()
 SHIPPED = _re.search(r"hl = '([^']+)'", _src).group(1)
 PROPOSED = SHIPPED
+COLOUR_ONLY = 'color:#ef4444;'   # what actually ships now
 
 # THE SECOND DEFINITION. HANDOVER §0: when a style is fixed in one place,
 # look for another rule doing the same job before believing it is done.
 # reader.py had its own copy and would have kept shaking on its own.
 _rsrc = _pl.Path('ttt/reader.py').read_text()
-_m = _re.search(r"span_open = \(f'<span style=\"([^\"]+)'\s*\n\s*'([^']+)'",
-                _rsrc)
-READER = (_m.group(1) + _m.group(2)).replace('{HL_BG}', '#f59e0b').replace(
-    '{HL_FG}', '#0b0d10').rstrip('">')
-COLOUR_ONLY = ('color:#f59e0b;text-shadow:0 0 12px rgba(245,158,11,.55);')
+# reader.py builds its span from a constant, so read the constant.
+READER = 'color:' + _re.search(r'HL_WORD = "([^"]+)"', _rsrc).group(1) + ';'
 
 SENTENCE = ("Sound is the first of the elements to reach a child and the "
             "last to leave a dying person which is why every tradition "

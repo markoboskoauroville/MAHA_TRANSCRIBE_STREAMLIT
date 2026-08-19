@@ -20,6 +20,9 @@ import html
 PAGE_CHARS = 1500
 
 HL_BG = "#f59e0b"
+# The spoken word. Measured: 5.17:1 on the reading background, and the
+# largest separation from the cream prose of the reds tried.
+HL_WORD = "#ef4444"
 HL_FG = "#0b0d10"
 
 
@@ -49,29 +52,25 @@ def digest(text: str) -> str:
 
 
 def highlight(text: str, start=None, end=None) -> str:
-    """HTML-escaped text with [start:end) wrapped in the highlight span.
-    With no range the whole text is wrapped, which is the sentence-level
-    case. Bounds are clamped defensively: a mark slightly out of range must
-    never break a read, it just highlights nothing that instant.
+    """The spoken word, coloured. Same rule as _highlight_span in app.py,
+    and this is the SECOND definition that HANDOVER §0 warns about — both
+    must change together or the reader view keeps the old amber block
+    while Talk is clean, which reads as an intermittent bug.
 
-    NO PADDING — same rule and same reason as _highlight_span in app.py,
-    and this is the SECOND definition that HANDOVER §0 warns about. Both
-    must be fixed or the reader view keeps shaking while the Talk view is
-    clean, which reads as an intermittent bug rather than a style one.
-    Measured in Chromium at phone width: 1px/4px padding moved every
-    following word 8 px sideways and displaced 89 word-positions across a
-    single sentence. Background, colour and border-radius are painted and
-    never participate in layout; padding was the only offender.
+    Colour only: no background, no padding, no weight. Nothing here
+    participates in layout, so the line cannot reflow as the highlight
+    moves. With no range, nothing is highlighted.
     """
-    span_open = (f'<span style="background:{HL_BG};color:{HL_FG};'
-                 'border-radius:3px;">')
     if start is None or end is None:
-        return span_open + html.escape(text) + "</span>"
+        return html.escape(text)
+    span_open = '<span style="color:' + HL_WORD + ';">'
     start = max(0, min(int(start), len(text)))
     end = max(start, min(int(end), len(text)))
-    return (html.escape(text[:start]) + span_open
-            + html.escape(text[start:end]) + "</span>"
-            + html.escape(text[end:]))
+    if end <= start:
+        return html.escape(text)      # nothing to colour; no empty span
+    return (html.escape(text[:start]) + span_open +
+            html.escape(text[start:end]) + "</span>" + html.escape(text[end:]))
+
 
 
 def render_page(sentences, current_idx, word_start=None, word_end=None) -> str:

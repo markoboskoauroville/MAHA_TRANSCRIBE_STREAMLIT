@@ -2338,3 +2338,56 @@ Two traps when doing it:
   `git checkout -- .streamlit/` restores the repo's real `config.toml`
   and `secrets.toml.example`, which a plain `rm -rf .streamlit` removes
   along with the stub. That nearly went into this commit.
+
+---
+
+## 42. THE RED WORD (v73) — step 1 of 4
+
+Baba's order: **red word highlight → archive → R redesign → nonsense
+detector.** Easiest first, hardest last. This is step 1.
+
+### Colour only, and only the word
+
+*"Don't highlight the sentence at all, no background, only the current
+word spoken."*
+
+The amber block is gone from both definitions. It marked the WHOLE
+sentence whenever no word range was known, so a quarter of the screen
+changed colour every few seconds and the eye had nothing precise to
+follow. A single red word is where the voice actually is.
+
+**With no word range, NOTHING is highlighted now.** That is deliberate:
+marking a whole sentence because the word is unknown is guessing in
+paint. Since v54 the marks are recovered from Whisper, so this is rare.
+
+### The red was measured, not chosen
+
+    #ef4444   5.17:1 against the reading background  (WCAG AA)
+              2.83:1 against the cream prose around it
+
+The second number is the one that mattered. Several reds beat it on
+background contrast — `#f87171` reaches 7.03 — but sit closer to the
+prose, so they read as a tinted word rather than a different one.
+`#ef4444` has the largest separation from `#f2ddb4` of the reds tried.
+
+### Still zero shake
+
+Colour is painted and cannot reflow a line, but it was measured rather
+than assumed. `tests/test_shake.py`, both definitions: **0.0 px, 0 words
+displaced**, against 8.0 px and 89 displaced for the old padded block.
+
+The test needed repairing — it read the old style by regex and the
+function's shape changed. It now reads `HL_WORD` from `ttt/reader.py`
+and the `hl = '...'` line from `app.py`, so it still tracks what ships
+rather than holding its own copy.
+
+### 14 checks, both definitions
+
+One span only, the right red, no background, no padding, no weight, no
+border, surrounding words untouched, HTML escaped, out-of-range clamped,
+reversed range survives, and a zero-width range produces no empty span.
+
+### Booted before pushing
+
+Per §41: stub secrets, headless run, `/healthz` returned 200, no errors
+in the log. **This is now the habit.**

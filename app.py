@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v72 (fix duplicate key)"
+APP_VERSION = "v73 (red word highlight)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2227,30 +2227,37 @@ def read_this():
 
 
 def _highlight_span(text: str, start: int = None, end: int = None) -> str:
-    """HTML-escaped text with [start:end) wrapped in the gold highlight span.
-    With no range, the whole text is wrapped (sentence-level, the Edge case).
-    Bounds are clamped defensively — a mark that's ever slightly out of
-    range must never crash the read, just highlight nothing that run.
+    """HTML-escaped text with [start:end) coloured as the spoken word.
 
-    NO PADDING, EVER. Measured in Chromium at a phone width: `padding:1px
-    4px` on the highlighted word moved every following word 8 px sideways
-    and displaced 89 word-positions while stepping one sentence. That is
-    the shaking. `background`, `color` and `border-radius` are painted and
-    never participate in layout, so the amber fill the design language
-    calls for costs nothing; padding was the only property that ever
-    reflowed the line.
+    COLOUR ONLY, AND ONLY THE WORD. Baba: "don't highlight the sentence at
+    all, no background, only the current word spoken."
 
-    This became urgent in v54: with real word timings the highlight moves
-    two or three times a second instead of once a sentence, so a defect
-    that used to fire per sentence now fires per word.
+    The amber block is gone. It marked the whole sentence when no word
+    range was known, which meant a quarter of the screen changed colour
+    every few seconds and the eye had nothing precise to follow. A single
+    red word is where the voice IS.
 
-    tests/test_shake.py holds the measurement and must stay at zero.
+    Red #ef4444 was chosen by measurement, not taste: 5.17:1 against the
+    reading background (WCAG AA) and 2.83:1 against the cream prose around
+    it — the highest separation of the reds tested, so it reads as a
+    DIFFERENT word rather than merely a tinted one.
+
+    NOTHING HERE TOUCHES LAYOUT. No background, no padding, no weight, no
+    border. Colour is painted and cannot reflow a line, which is what
+    makes the highlight steady while it moves word by word — see §21 and
+    tests/test_shake.py, which must stay at zero.
+
+    With no range, NOTHING is highlighted. That is deliberate: when the
+    word is not known, marking the whole sentence would be guessing in
+    paint.
     """
-    hl = 'background:#f59e0b;color:#0b0d10;border-radius:3px;'
     if start is None or end is None:
-        return f'<span style="{hl}">' + html.escape(text) + "</span>"
+        return html.escape(text)
+    hl = 'color:#ef4444;'
     start = max(0, min(start, len(text)))
     end = max(start, min(end, len(text)))
+    if end <= start:
+        return html.escape(text)      # nothing to colour; no empty span
     return (html.escape(text[:start]) +
             f'<span style="{hl}">' + html.escape(text[start:end]) + "</span>" +
             html.escape(text[end:]))
