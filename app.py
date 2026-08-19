@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v84 (R matches T1)"
+APP_VERSION = "v85 (deliver reporting)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2461,6 +2461,16 @@ def deliver_text(new_text: str, keep: bool = True) -> None:
     else:
         st.session_state["transcript_box"] = new_text
 
+    # WHAT ACTUALLY LANDED IN THE BOX. Baba reported text reaching the
+    # archive but not the box, and reasoning about it from the source got
+    # nowhere — every path looked correct. This records the truth at the
+    # moment it happens, so the log answers it instead of a guess.
+    errlog.add(st.session_state, "deliver",
+               "delivered %d chars, box now %d chars, mode %s"
+               % (len(new_text),
+                  len(st.session_state.get("transcript_box") or ""),
+                  "multi" if st.session_state.get("append_mode") else "single"))
+
 
 def set_append_mode(on: bool):
     st.session_state["append_mode"] = bool(on)
@@ -3019,7 +3029,11 @@ if active == "transcribe":
                             tmp.name, chosen_model(stt.provider) or model_for(lang_code),
                             lang_code, progress_cb=_cb, on_wait=_on_wait)
                     progress_bar.empty()
-                    st.session_state["transcript_box"] = text
+                    # THROUGH deliver_text, like every other route. This
+                    # path set the box directly, so an uploaded big file
+                    # was never archived and ignored single/multi — the
+                    # exact drift the one-helper rule exists to prevent.
+                    deliver_text(text)
                     st.session_state["last_lang"] = lang_code
                     st.session_state["flac_path"] = reusable
                     st.session_state["_transcribe_method"] = method

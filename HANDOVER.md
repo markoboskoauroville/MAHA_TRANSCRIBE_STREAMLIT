@@ -3180,3 +3180,38 @@ playing, play, back restarting the sentence, next advancing.
 **One failure was the test, not the code**: it measured `currentTime`
 while playback was still running from an earlier step. In isolation, back
 goes 7.0 → 5.0 correctly.
+
+---
+
+## 58. TEXT REACHES THE ARCHIVE BUT NOT THE BOX (v85) — instrumented, not guessed
+
+Baba: *"this tab just sends the text to archive. It doesn't appear in the
+text box."*
+
+`deliver_text()` archives AND sets `transcript_box`, a few lines apart. If
+one ran the other ran. Tested in isolation: single sets the box, multi
+appends, both archive. **The function is correct.** The set-before-widget
+pattern was also verified in a real Streamlit instance and works. Every
+path between delivery and the text area was read: no reassignment, no
+`st.rerun()`, no reset.
+
+**So reasoning from the source ran out.** `deliver_text` now records what
+it actually did — `delivered 11 chars, box now 11 chars, mode single` —
+into the **L** module. The next attempt answers it outright:
+
+* **no `deliver` line** → it was never reached, and the archive entry came
+  from elsewhere
+* **`delivered N, box now N`** → the box WAS set and something after the
+  delivery loses it, which points at the rerun, not the write
+* **`delivered N, box now 0`** → the assignment itself fails, which would
+  be a Streamlit behaviour worth learning
+
+### A real bug found while looking
+
+The BIG-UPLOAD path set `transcript_box` directly instead of going through
+`deliver_text`, so a large uploaded file was **never archived and ignored
+single/multi entirely.** Now routed through the helper.
+
+That is exactly the drift the one-helper rule exists to prevent, appearing
+within days of the rule being written. **When a helper exists, every path
+must use it; a direct assignment beside it is a slow leak.**
