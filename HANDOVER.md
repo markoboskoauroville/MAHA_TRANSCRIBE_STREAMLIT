@@ -3674,3 +3674,101 @@ is actually synthesised in these tests.
 
 The oscilloscope, the full text below the subtitle, and Edge audio has
 still never been measured for word timings (§20).
+
+---
+
+## 65. ENGINES, AND CHECK ENGINE (v90)
+
+Baba: *"we need to develop the mechanism to switch engines. One engine
+we developed, that's the Edge plus Groq, and this is another engine...
+this is main engine for your every user."*
+
+### An engine is a PRESET, not a new mechanism
+
+`ttt/routing.py` already patches each task (stt, tts, llm) to a provider
+independently, and that stays the truth. `ttt/engines.py` is a named set
+of those three routes:
+
+    Edge / Groq                        stt groq        tts edge        llm groq
+    Speechify / AssemblyAI / Claude    stt assemblyai  tts speechify   llm anthropic
+
+Choosing one writes the SAME `route_*` settings the patch bay writes, so
+the two views can never disagree and a mixed board is still possible by
+hand. **Nothing downstream learns about engines** — the tabs and the
+reader keep asking the registry for a capability, exactly as rule 2
+requires.
+
+### The check is the point
+
+*"There will be also check engine... it will just check if it can
+connect, it means keys are good, engine can work."*
+
+A light meaning "a key is present" would be §47 again, where a failure
+path and a success path both answered `ok`. So the check calls each
+provider's own `test_key` against a real endpoint. Three states:
+
+    ok      the network agreed
+    fail    it refused, and the reason is kept
+    skip    keyless (Edge) — nothing to authenticate, so nothing proven
+
+**The verdict is the WORST part, never an average.** An engine whose
+reading works and whose transcription does not is a broken engine.
+
+`tasks_for()` names WHAT stops working rather than only which vendor
+refused, so a failed row reads "Speechify (read aloud) 401" and not
+merely "Speechify failed".
+
+A provider doing two jobs is tested ONCE — Groq is both stt and llm in
+the free engine, and testing it twice would double every check.
+
+### The corner says which engine, and whether it was proven
+
+Baba: *"in the corner of the frame you need to write current engine —
+the status and confirmation all parts work."* `tab_signature` now
+carries it.
+
+**It is DERIVED from the routes on every render**, never read back from
+the stored name: patch one crosspoint by hand and it says `mixed`
+rather than keeping a label that is quietly no longer true. The tick
+appears only when a check has actually PASSED for the engine now
+running — an unchecked engine gets its name and nothing else, because a
+tick meaning "probably" is the one thing this corner must not say. A
+verdict belonging to the other engine is discarded, not worn.
+
+### The bug this found
+
+**A brand-new person saw `mixed`.** Nothing writes `route_*` until an
+engine is chosen or a crosspoint is patched, so every route was unset
+and no engine matched — the label wrong in the one case where it matters
+most, the first time anybody looks at it. `current()` now treats an
+unset route as its task's default, taken from `routing.TASKS` rather
+than written down twice.
+
+### Interface language is gone from Settings
+
+Baba: *"instead of interface language, which will be always English, no
+question asked."* The pills are removed. The STRINGS table still holds
+both languages and the login screen still offers five — this was only
+the in-app chrome. `ui_lang` remains in settings and still defaults to
+English.
+
+### Test status
+
+`tests/test_engines.py` — **28 passed**, no Streamlit, no network.
+`tests/test_engine_ui.py` — **15 passed** in the running app.
+Mutations, all caught: one failure no longer failing the engine (2
+red), `current()` trusting the stored name (2 red), switching engine
+keeping the old verdict (1 red).
+
+**A TEST TRAP WORTH REMEMBERING.** Settings persist to a file in
+`tempfile.gettempdir()` per user, and that file OUTLIVES an AppTest —
+so clicking an engine in one test restored itself over `session_state`
+in the next, and a later test read the earlier one's choice. It looked
+exactly like a bug in `current()` and was the app working as designed.
+Every settings-touching test must clear that file first.
+
+### Not done
+
+The check has never run against real keys — the sandbox has none for
+Speechify, AssemblyAI or Anthropic, and the Groq key in the test secrets
+is a stub. **The first real press of `check engine` is the real test.**

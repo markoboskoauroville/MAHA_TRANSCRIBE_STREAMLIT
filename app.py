@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v89 (a) (reader: voices always on, play on the deck)"
+APP_VERSION = "v90 (a) (engines, and check engine)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -73,6 +73,7 @@ from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR_
 from ttt import vision
 from ttt import routing as RO
+from ttt import engines as EN
 from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
@@ -510,6 +511,19 @@ STRINGS = {
     "settings_owner_only": {"en": "Settings are managed by the owner.",
                             "hr": "Postavkama upravlja vlasnik."},
     "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
+    "settings_engine":    {"en": "Engine",             "hr": "Motor"},
+    "eng_check":          {"en": "check engine",       "hr": "provjeri motor"},
+    "eng_good":           {"en": "all parts answered", "hr": "svi dijelovi rade"},
+    "eng_bad":            {"en": "this engine cannot run",
+                           "hr": "ovaj motor ne može raditi"},
+    "eng_stale":          {"en": "the engine changed — check it again",
+                           "hr": "motor je promijenjen — provjeri ponovno"},
+    "eng_keyless":        {"en": "no key needed",      "hr": "ne treba ključ"},
+    "eng_nokeys":         {"en": "no working key",     "hr": "nema ispravnog ključa"},
+    "eng_task_stt":       {"en": "transcribe",         "hr": "transkripcija"},
+    "eng_task_tts":       {"en": "read aloud",         "hr": "čitanje"},
+    "eng_task_llm":       {"en": "AI text",            "hr": "AI tekst"},
+    "eng_mixed":          {"en": "mixed",              "hr": "miješano"},
     "admin_off":          {"en": "Usage log not connected.",
                             "hr": "Zapis korištenja nije spojen."},
     # SHORT LABELS. Baba: "text size does not need to be text size, just
@@ -1187,10 +1201,11 @@ def transcribe_any_size(path: str, model: str, language: str, progress_cb=None,
 # restarts, so the file is a same-instance convenience, not a durable store;
 # localStorage is the one that really survives.
 # ----------------------------------------------------------------------
-DEFAULT_SETTINGS = {"ui_lang": "en", "speech_lang": "hr", "voice": "Gabrijela",
+DEFAULT_SETTINGS = {"ui_lang": "en", "engine": EN.DEFAULT,
+                    "speech_lang": "hr", "voice": "Gabrijela",
                     "voice_engine": "edge", "sp_voice": "beatrice_32",
                     "transcribe_engine": "groq", "text_scale": a11y.DEFAULT_SCALE}
-SETTINGS_KEYS = ("ui_lang", "speech_lang", "voice", "voice_engine", "sp_voice",
+SETTINGS_KEYS = ("ui_lang", "engine", "speech_lang", "voice", "voice_engine", "sp_voice",
                  "transcribe_engine",
                  "route_stt", "route_tts", "route_llm", "text_scale",
                  "scheme", "font_family", "append_mode")
@@ -1764,7 +1779,26 @@ def tab_signature(name: str):
     the right margin so it reads as a signature on the panel rather than
     as another control. Settings has none; the gear already says it.
     """
-    st.markdown(f'<div class="tabsig">{html.escape(name)}</div>',
+    # AND WHICH ENGINE IS RUNNING. Baba: "in the corner of the frame you
+    # need to write current engine — the status and confirmation all
+    # parts work."
+    #
+    # It is DERIVED from the routes every render, never read back from
+    # the stored name, so patching one crosspoint by hand shows "mixed"
+    # instead of a label that is quietly no longer true.
+    #
+    # The tick is only added when a check has actually PASSED for this
+    # engine. An unchecked engine gets the name and nothing else, because
+    # a tick that means "probably" is the thing this corner must never
+    # say.
+    eng = EN.current(st.session_state)
+    label = eng.label if eng else t("eng_mixed")
+    res = st.session_state.get("_engine_check") or {}
+    mark = ""
+    if eng and res.get("engine") == eng.id:
+        mark = " ✓" if res.get("state") == EN.OK else " ✗"
+    bits = [x for x in (html.escape(name), html.escape(label) + mark) if x]
+    st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
                 unsafe_allow_html=True)
 
 
@@ -2437,6 +2471,96 @@ def keep_audio(flac_path: str, seconds: float, language: str) -> None:
     except Exception as e:
         errlog.add(st.session_state, "drive",
                    f"{type(e).__name__}: {e}")
+
+
+# =====================================================================
+#  ENGINES
+# =====================================================================
+
+def engine_test_one(provider_id):
+    """Prove ONE provider can actually be reached. (state, detail).
+
+    Not "is a key present" — that is the §47 mistake, where a failure
+    path and a success path both answered ok. This calls the provider's
+    own test_key against a real endpoint, so a green light means the
+    network agreed.
+    """
+    prov = PROVIDERS.get(provider_id)
+    if prov is None:
+        return EN.FAIL, "no such engine part"
+    if not prov.needs_key:
+        # Edge is keyless. There is nothing to authenticate, so there is
+        # nothing to prove here — saying "ok" would claim a test that
+        # never ran.
+        return EN.SKIP, t("eng_keyless")
+
+    if provider_id == "groq":
+        # Groq's keys are the app's own, from Streamlit secrets, not a
+        # user ring — so they are read from the provider, not get_ring().
+        keys = list(getattr(prov, "keys", []) or [])
+        if not keys:
+            return EN.FAIL, t("eng_nokeys")
+        last = ""
+        for k in keys:
+            err, _kind = prov.test_key(k)
+            if not err:
+                return EN.OK, ""
+            last = str(err)[:120]
+        return EN.FAIL, last or t("eng_nokeys")
+
+    ring = get_ring(provider_id)
+    entries = [e for e in (ring.get("keys") or []) if e.get("state") != "dead"]
+    if not entries:
+        return EN.FAIL, t("eng_nokeys")
+    last = ""
+    for entry in entries:
+        key = entry.get("key") or ""
+        if not key:
+            continue
+        err, kind = prov.test_key(key)
+        if not err:
+            return EN.OK, ""
+        last = str(err)[:120]
+        if kind:
+            entry["state"] = "dead" if kind == "dead" else entry.get("state", "new")
+    save_rings()
+    return EN.FAIL, last or t("eng_nokeys")
+
+
+def pick_engine(engine_id):
+    """Choose an engine: write its routes, and forget any stale verdict.
+
+    The check result is dropped on purpose. A green tick left over from
+    the engine you were on a moment ago is worse than no tick, because
+    it is read as applying to the one you just chose.
+    """
+    engine = EN.get(engine_id)
+    if engine is None:
+        return
+    for key, value in EN.route_settings(engine).items():
+        st.session_state[key] = value
+    st.session_state[EN.SETTING_KEY] = engine.id
+    st.session_state.pop("_engine_check", None)
+    persist_settings()
+
+
+def run_engine_check():
+    engine = EN.get(st.session_state.get(EN.SETTING_KEY, EN.DEFAULT))
+    if engine is None:
+        return
+    state, rows = EN.check(engine, engine_test_one)
+    st.session_state["_engine_check"] = {
+        "engine": engine.id, "state": state, "rows": rows,
+        "at": time.strftime("%H:%M"),
+    }
+
+
+def engine_now():
+    """The engine the ROUTES currently amount to, or None for a mixed
+    board. Derived, never trusted from the stored name — someone can
+    patch one crosspoint by hand and the label must not keep claiming an
+    engine that is no longer running."""
+    return EN.current(st.session_state)
 
 
 def _revoice():
@@ -3874,20 +3998,55 @@ elif active == "settings":
         if st.session_state.get("_key_msg"):
             st.caption(st.session_state.pop("_key_msg"))
 
-        # ---- interface language -----------------------------------
-        # The label sat ABOVE the pills and the pills rose into it. Put on
-        # the same row, in the small dim type, it reads as a label instead
-        # of a heading and costs no vertical space.
-        with st.container(key="statusbox_lang"):
-            llab, lcol1, lcol2, _ = st.columns([1.6, 1, 1, 2.4])
-            llab.text(t("settings_lang"))
-            lang_now = st.session_state.get("ui_lang", "en")
-            lcol1.button("ENG", key="ui_en",
-                         type="primary" if lang_now == "en" else "secondary",
-                         on_click=set_ui_lang, args=("en",))
-            lcol2.button("HR", key="ui_hr",
-                         type="primary" if lang_now == "hr" else "secondary",
-                         on_click=set_ui_lang, args=("hr",))
+        # ---- THE ENGINE -------------------------------------------
+        # This replaced the interface-language pills. Baba: "instead of
+        # interface language, which will be always English, no question
+        # asked, we write engine." The STRINGS table keeps both languages
+        # and the login screen still offers five — this is only the
+        # in-app chrome, which is now English and settled.
+        #
+        # GLOBAL, not per-user: it is the app's engine, so it is stored
+        # beside the app's own settings rather than in one person's
+        # browser.
+        with st.container(key="statusbox_engine"):
+            elab, ecol1, ecol2 = st.columns([1.1, 2.1, 2.8])
+            elab.text(t("settings_engine"))
+            _now = engine_now()
+            _now_id = _now.id if _now else ""
+            for col, eng in zip((ecol1, ecol2), EN.ENGINES):
+                col.button(eng.label, key="eng_%s" % eng.id,
+                           type="primary" if eng.id == _now_id else "secondary",
+                           help=eng.note,
+                           on_click=pick_engine, args=(eng.id,),
+                           use_container_width=True)
+
+            # CHECK ENGINE. Baba: "it will just check if it can connect,
+            # it means keys are good, engine can work."
+            st.button(t("eng_check"), key="eng_check",
+                      on_click=run_engine_check)
+
+            _res = st.session_state.get("_engine_check")
+            if _res:
+                # A verdict about a DIFFERENT engine is worse than none —
+                # it is read as applying to the one on screen.
+                if _res.get("engine") != _now_id:
+                    st.caption(t("eng_stale"))
+                else:
+                    _bad = _res.get("state") == EN.FAIL
+                    st.caption(("✗ " if _bad else "✓ ") +
+                               (t("eng_bad") if _bad else t("eng_good")) +
+                               "  ·  " + _res.get("at", ""))
+                    for _row in _res.get("rows", []):
+                        _p = PROVIDERS.get(_row["provider"])
+                        _name = getattr(_p, "label", None) or _row["provider"]
+                        _jobs = ", ".join(
+                            t("eng_task_" + j) for j in
+                            EN.tasks_for(EN.get(_now_id), _row["provider"])
+                        ) if _now_id else ""
+                        _mark = {EN.OK: "✓", EN.FAIL: "✗", EN.SKIP: "–"}.get(
+                            _row["state"], "?")
+                        st.text("  %s %s (%s) %s" % (
+                            _mark, _name, _jobs, _row.get("detail", "")))
 
         # Help lived here as an expander AND as its own module. Two copies
         # of the same text drift apart, and the module is the one people
