@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v69 (log module)"
+APP_VERSION = "v70 (interface fixes)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -358,7 +358,12 @@ STRINGS = {
     "tab_read":           {"en": "Read",             "hr": "Čitaonica"},
     # The gear is the tab label itself — a symbol everyone already
     # knows, and one less word in a row of words.
-    "tab_settings":       {"en": "\u2699",            "hr": "\u2699"},
+    # TWO GEARS WERE INDISTINGUISHABLE. They differed only by a
+    # zero-width space, which is invisible by definition, so Baba
+    # could not tell which one he needed. The row is otherwise
+    # letters, so this is a letter: A for admin. No colour trick,
+    # nothing that can break, and it reads at a glance.
+    "tab_settings":       {"en": "A",                "hr": "A"},
     # Same glyph as the owner's gear on purpose: they are the same KIND
     # of thing, and only the colour says which is which.
     #
@@ -486,9 +491,14 @@ STRINGS = {
     "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
     "admin_off":          {"en": "Usage log not connected.",
                             "hr": "Zapis korištenja nije spojen."},
-    "looks_size":         {"en": "Text size",         "hr": "Veličina slova"},
-    "looks_font":         {"en": "Typeface",          "hr": "Pismo"},
-    "looks_scheme":       {"en": "Colour",            "hr": "Boja"},
+    # SHORT LABELS. Baba: "text size does not need to be text size, just
+    # write TXT. Typeface, shorten it. Colour, put just one letter — as we
+    # have up there. Everybody understands one letter." The nav row is
+    # already letters, so the panel matches it and the labels stop eating
+    # a whole line each.
+    "looks_size":         {"en": "TXT",              "hr": "TXT"},
+    "looks_font":         {"en": "TY",               "hr": "TY"},
+    "looks_scheme":       {"en": "C",                "hr": "C"},
     "looks_preview":      {"en": "The quick brown fox jumps over the lazy dog. 0123456789",
                             "hr": "Gojazni đačić s ljutim che pjeva u fioci. 0123456789"},
     "sig_looks":          {"en": "looks",             "hr": "izgled"},
@@ -1621,10 +1631,14 @@ def nav_tabs():
     one is engines and keys, and only the owner ever sees it. Colour does
     the explaining, so neither needs a word.
     """
-    tabs = ["transcribe", "tabaudio", "talk", "translate", "looks", "help"]
+    tabs = ["transcribe", "tabaudio", "talk", "translate", "looks"]
     if is_admin():
         tabs.append("settings")
         tabs.append("log")
+    # HELP IS ALWAYS LAST. It is the one tab whose position should never
+    # move as other modules come and go — somebody looking for help looks
+    # at the end of the row.
+    tabs.append("help")
     return tabs
 
 
@@ -2543,8 +2557,16 @@ if active == "transcribe":
         audio = st.session_state.get(hold_key)
 
     def _new_take():
+        # NEW MEANS START AGAIN. It reset the deck and dropped the held
+        # audio but left the text on screen, so pressing it changed
+        # nothing a person could see — which is indistinguishable from a
+        # dead button, and is what Baba reported. In multi mode this is
+        # also the only way to begin a fresh document.
         st.session_state["_mic_gen"] = st.session_state.get("_mic_gen", 0) + 1
-        st.session_state.pop("_digest", None)
+        st.session_state["transcript_box"] = ""
+        for k in ("_digest", "_pick_digest", "flac_path", "_transcript_prev",
+                  "_transcribe_method", "_last_run", "_stt_errors"):
+            st.session_state.pop(k, None)
         _drop_take()
         flash("tx_new")
 
@@ -3244,6 +3266,15 @@ elif active == "settings":
     if not is_admin():
         st.caption(t("settings_owner_only"))
     else:
+        # Small, at the top, out of the way. It is a health reading, not a
+        # heading — it was sitting among the controls in body type, which
+        # is why the panel read as cluttered.
+        _u = USAGE.status()
+        with st.container(key="statusbox"):
+            st.text(f"{t('admin_sent')}: {_u['sent']}  ·  "
+                    f"{t('admin_failed')}: {_u['failed']}"
+                    if _u["enabled"] else t("admin_off"))
+
         # ---- who the app talks to ---------------------------------
         rings = load_keys()
         for prov in PROVIDERS.keyed_providers():
@@ -3280,22 +3311,22 @@ elif active == "settings":
             st.caption(st.session_state.pop("_key_msg"))
 
         # ---- interface language -----------------------------------
-        st.caption(t("settings_lang"))
-        lcol1, lcol2, _ = st.columns([1, 1, 4])
-        lang_now = st.session_state.get("ui_lang", "en")
-        lcol1.button("ENG", key="ui_en",
-                     type="primary" if lang_now == "en" else "secondary",
-                     on_click=set_ui_lang, args=("en",))
-        lcol2.button("HR", key="ui_hr",
-                     type="primary" if lang_now == "hr" else "secondary",
-                     on_click=set_ui_lang, args=("hr",))
+        # The label sat ABOVE the pills and the pills rose into it. Put on
+        # the same row, in the small dim type, it reads as a label instead
+        # of a heading and costs no vertical space.
+        with st.container(key="statusbox"):
+            llab, lcol1, lcol2, _ = st.columns([1.6, 1, 1, 2.4])
+            llab.text(t("settings_lang"))
+            lang_now = st.session_state.get("ui_lang", "en")
+            lcol1.button("ENG", key="ui_en",
+                         type="primary" if lang_now == "en" else "secondary",
+                         on_click=set_ui_lang, args=("en",))
+            lcol2.button("HR", key="ui_hr",
+                         type="primary" if lang_now == "hr" else "secondary",
+                         on_click=set_ui_lang, args=("hr",))
 
-        # ---- usage log --------------------------------------------
-        u = USAGE.status()
-        st.caption(f"{t('admin_sent')}: {u['sent']} · {t('admin_failed')}: {u['failed']}"
-                   if u["enabled"] else t("admin_off"))
-
-        with st.expander(t("help_title")):
-            st.markdown(safe_text("HELP"))
+        # Help lived here as an expander AND as its own module. Two copies
+        # of the same text drift apart, and the module is the one people
+        # find. Removed rather than kept in sync.
 
     tab_signature("")
