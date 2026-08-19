@@ -57,6 +57,14 @@
   .bk,.fw{width:0;height:0;flex:none;
     border-top:6px solid transparent;border-bottom:6px solid transparent}
   .bk{border-right:9px solid currentColor}
+  /* Drawn, not fetched — the same rule as every other glyph here. */
+  .dl{width:9px;height:9px;flex:none;position:relative;
+      border-bottom:2px solid currentColor}
+  .dl:before{content:"";position:absolute;left:3px;top:-1px;
+      width:2px;height:6px;background:currentColor}
+  .dl:after{content:"";position:absolute;left:1px;top:3px;
+      width:0;height:0;border-left:3px solid transparent;
+      border-right:3px solid transparent;border-top:4px solid currentColor}
   .fw{border-left:9px solid currentColor}
 
   /* The subtitle sits UNDER the transport: the controls are in the same
@@ -76,6 +84,10 @@
      exist yet is meaningless. */
   body.idle #row > *{pointer-events:none}
   body.idle.startable #bPlay{pointer-events:auto;opacity:1;cursor:pointer}
+  /* Nothing to save until something has been made. Dead rather than
+     hidden: the row must keep its four cells (§57), and a control that
+     appears and disappears moves everything under it. */
+  body.idle #bSave{pointer-events:none}
   body.idle #sub{opacity:.5}
 
   /* NOTHING EMPTY RESERVES SPACE. Idle, the subtitle and the message
@@ -102,7 +114,7 @@
     <button class="key" id="bPlay" aria-label="play"><span class="tri" id="gPlay"></span><span id="lPlay">play</span></button>
     <button class="key" id="bBack" aria-label="previous sentence"><span class="bk"></span><span id="lBack">back</span></button>
     <button class="key" id="bFwd" aria-label="next sentence"><span class="fw"></span><span id="lFwd">next</span></button>
-    <button class="key" id="bSpare" aria-label="unused" disabled><span id="lSpare">&nbsp;</span></button>
+    <button class="key" id="bSave" aria-label="download this audio"><span class="dl"></span><span id="lSave">save</span></button>
   </div>
   <div id="sub" aria-live="polite"></div>
   <div id="msg" role="status" aria-live="polite"></div>
@@ -121,6 +133,7 @@ var wave=document.getElementById('wave'), ctx=wave.getContext('2d'),
     clock=document.getElementById('clock'), pageEl=document.getElementById('page'),
     sub=document.getElementById('sub'), msg=document.getElementById('msg'),
     bPlay=document.getElementById('bPlay'), bBack=document.getElementById('bBack'),
+    bSave=document.getElementById('bSave'),
     bFwd=document.getElementById('bFwd'), gPlay=document.getElementById('gPlay'),
     lPlay=document.getElementById('lPlay');
 
@@ -243,6 +256,9 @@ function setPlaying(on){
 }
 
 var LBL={play:'play',pause:'pause',back:'back',next:'next'};
+// Which block this is, so a saved file says which one it came from. The
+// page label already shows it; this keeps the filename honest too.
+var PART=1;
 
 bPlay.onclick=function(){
   if(!audio.src){
@@ -255,6 +271,20 @@ bPlay.onclick=function(){
     return;
   }
   if(audio.paused){ audio.play().catch(function(){}); } else { audio.pause(); }
+};
+/* SAVE THE AUDIO. Baba asked for the empty fourth cell to become a
+   download. The source is already a data: URL held by this frame, so
+   nothing is fetched and no server round trip is needed — the anchor
+   simply hands the bytes the player is playing to the platform's own
+   download, which is what makes it work the same on a phone as on a
+   desktop. */
+bSave.onclick=function(){
+  if(!audio.src) return;
+  var a=document.createElement('a');
+  a.href=audio.src;
+  /* A name that says what it is and does not collide between parts. */
+  a.download='ttt-lll-'+(PART||1)+'.mp3';
+  document.body.appendChild(a); a.click(); a.remove();
 };
 audio.onplay=function(){ setPlaying(true); if(!raf) tick(); };
 audio.onpause=function(){ setPlaying(false); };
@@ -322,6 +352,8 @@ window.addEventListener("message", function(ev){
     document.getElementById('lFwd').textContent=LBL.next;
     lPlay.textContent=audio.paused?LBL.play:LBL.pause; }
   cues=a.cues||[]; words=a.words||[]; wtimes=a.wtimes||[];
+  if(a.part) PART=a.part;
+  if(a.labels && a.labels.save) document.getElementById('lSave').textContent=a.labels.save;
   document.body.classList.toggle('idle', !a.src);
   // STARTABLE = there is text waiting and no audio yet, so play means
   // "make it" rather than "resume". Python decides; the component only

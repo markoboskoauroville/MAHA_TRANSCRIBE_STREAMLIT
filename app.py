@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v91 (a) (patch bay removed, engine lives in the sheet)"
+APP_VERSION = "v92 (a) (users in the sheet, engine each, save button)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -468,6 +468,13 @@ STRINGS = {
     "eng_task_stt":       {"en": "transcribe",         "hr": "transkripcija"},
     "eng_task_tts":       {"en": "read aloud",         "hr": "čitanje"},
     "eng_task_llm":       {"en": "AI text",            "hr": "AI tekst"},
+    "wave_save":          {"en": "save",               "hr": "spremi"},
+    "eng_nousers":        {"en": "no users tab yet — run TTT-LLL ▸ Set up "
+                                 "users tab in the sheet, then deploy a "
+                                 "New version",
+                           "hr": "nema kartice korisnika"},
+    "eng_global_word":    {"en": "global",              "hr": "globalno"},
+    "eng_users_title":    {"en": "Engine per user",     "hr": "Motor po korisniku"},
     "eng_mixed":          {"en": "mixed",              "hr": "miješano"},
     "eng_saved":          {"en": "saved to the sheet for everyone",
                            "hr": "spremljeno u tablicu za sve"},
@@ -850,6 +857,18 @@ def check_password() -> bool:
         entered = st.session_state.get("_pw_input", "")
         st.session_state["_pw_input"] = ""
 
+        # BOTH BOXES FIRE THIS. Now that there is a username field above
+        # the password, on_change runs when someone finishes typing their
+        # NAME — with the password still empty. Treating that as an
+        # attempt marked the login wrong before they had typed it and
+        # spent one of the throttle's tries, so a person could throttle
+        # themselves simply by filling the form top to bottom.
+        #
+        # An empty password is not an attempt. Nothing to compare, no
+        # verdict, no failure recorded.
+        if not entered:
+            return
+
         # Refuse to even compare while the throttle is running, so a
         # guesser gains nothing by hammering. See ttt/gate.py for what
         # this does and does not protect against.
@@ -860,12 +879,49 @@ def check_password() -> bool:
             st.session_state["_gate_wait"] = wait
             return
 
-        matched = next((p for p in PASSWORDS if hmac.compare_digest(entered, p)), None)
+        # THE SHEET IS ASKED FIRST, when a username was given.
+        #
+        # Baba: "Username, password, I am defining in the sheet. These
+        # users are my family." So identity is a NAME now, not the
+        # password itself — which is what makes per-user settings, Drive
+        # folders and usage rows readable instead of being labelled with
+        # a secret.
+        #
+        # IT CANNOT LOCK ANYONE OUT. An unreachable sheet, a missing
+        # users tab and a wrong password are all just "no", and the
+        # built-in APP_PASSWORDS are then tried exactly as before. §1 is
+        # the reason this is written so carefully: a failure on the login
+        # screen is total, because nobody can get past it to reach
+        # anything else.
+        matched = None
+        who = ""
+        name = (st.session_state.get("_user_input") or "").strip()
+        if name:
+            try:
+                got = SHEET.login(str(st.secrets.get("SHEETS_URL", "") or ""),
+                                  str(st.secrets.get("SHEETS_TOKEN", "") or ""),
+                                  name, entered)
+            except Exception:
+                got = None            # never a dependency, never a crash
+            if got:
+                matched = entered
+                who = got["user"]
+                # Their own engine, if the sheet gives them one. A blank
+                # cell means "use the global engine", so it is not an
+                # override and must not be treated as one.
+                if EN.get(got.get("engine", "")):
+                    st.session_state["_assigned_engine"] = got["engine"]
+
+        if matched is None:
+            matched = next((p for p in PASSWORDS
+                            if hmac.compare_digest(entered, p)), None)
+            who = matched or ""
+
         st.session_state["_authed"] = matched is not None
         if matched is not None:
             gate.record_success(tstate)
             st.session_state.pop("_gate_wait", None)
-            st.session_state["_user"] = matched
+            st.session_state["_user"] = who
             if st.session_state.get("_remember_me"):
                 queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
         else:
@@ -901,6 +957,11 @@ def check_password() -> bool:
     # So: password, Remember me, and a single fold-out underneath. Whoever
     # can see it may open the whole thing; whoever cannot sees one box and
     # already knows what to do. Nothing is removed — only folded.
+    # A NAME ABOVE THE PASSWORD. Optional on purpose: leave it empty and
+    # the old password-only login still works, so nobody who already has
+    # a password has to learn anything on the day this ships.
+    st.text_input(labels.get("username", "Username"), key="_user_input",
+                  on_change=_entered)
     st.text_input(labels["password"], type="password", key="_pw_input", on_change=_entered)
     st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
@@ -1587,6 +1648,61 @@ def sheet_prompt(key: str) -> str:
     return SHEET.prompt(sheet_config(), key, USER)
 
 
+def user_engine_panel():
+    """The owner assigns each person their engine.
+
+    Baba: *"I want in this panel to have list of all users and assign
+    them engines. Your normal user doesn't have these settings. He is
+    working with engine which I assign."*
+
+    Owner only, and the list comes from the sheet's users tab —
+    usernames and engines, never passwords, because the script has no
+    endpoint that returns them.
+    """
+    url = str(st.secrets.get("SHEETS_URL", "") or "")
+    token = str(st.secrets.get("SHEETS_TOKEN", "") or "")
+    if "_users_list" not in st.session_state:
+        try:
+            st.session_state["_users_list"] = SHEET.list_users(url, token)
+        except Exception:
+            st.session_state["_users_list"] = []
+    people = st.session_state.get("_users_list") or []
+
+    if not people:
+        # Said plainly rather than showing an empty panel that looks
+        # broken. The two likely causes are both actionable.
+        st.caption(t("eng_nousers"))
+        return
+
+    def _assign(username, engine_id):
+        ok = SHEET.set_user_engine(url, token, username, engine_id)
+        st.session_state["_users_msg"] = username + (
+            " → " + engine_id if ok else "  " + t("eng_notsaved"))
+        if ok:
+            st.session_state.pop("_users_list", None)
+
+    for person in people:
+        who = person.get("user", "")
+        theirs = (person.get("engine") or "").strip().lower()
+        cols = st.columns([1.6, 1.4, 2.0, 1.0])
+        cols[0].text(who)
+        for col, eng in zip(cols[1:3], EN.ENGINES):
+            col.button(eng.label, key="ue_%s_%s" % (who, eng.id),
+                       type="primary" if theirs == eng.id else "secondary",
+                       on_click=_assign, args=(who, eng.id),
+                       use_container_width=True)
+        # A BLANK ENGINE IS NOT AN ENGINE — it means "use the global
+        # one", so it needs its own way back rather than being an
+        # unreachable state once anything has been assigned.
+        cols[3].button(t("eng_global_word"), key="ue_%s_none" % who,
+                       type="primary" if not theirs else "secondary",
+                       on_click=_assign, args=(who, ""),
+                       use_container_width=True)
+
+    if st.session_state.get("_users_msg"):
+        st.caption(st.session_state.pop("_users_msg"))
+
+
 def adopt_sheet_engine():
     """Apply the engine the SHEET names, once per session.
 
@@ -1610,7 +1726,13 @@ def adopt_sheet_engine():
     if not cfg:
         return                      # no sheet is not an error
     st.session_state["_sheet_engine_done"] = True
-    name = SHEET.setting(cfg, EN.SETTING_KEY, USER).strip().lower()
+    # THE PERSON'S OWN ENGINE WINS. Baba: "each user can have separate
+    # engine settings I've written in the sheet, and you serve the user."
+    # It comes back from login_ on the users tab; the global settings row
+    # is the fallback for anyone who has no engine of their own.
+    name = (st.session_state.get("_assigned_engine") or "").strip().lower()
+    if not EN.get(name):
+        name = SHEET.setting(cfg, EN.SETTING_KEY, USER).strip().lower()
     engine = EN.get(name)
     if engine is None:
         return                      # a typo must not switch anything
@@ -3610,7 +3732,8 @@ elif active == "talk":
                 src="data:audio/mpeg;base64," + base64.b64encode(cached["audio"]).decode(),
                 cues=wave_cues(cached["marks"]), words=[], wtimes=[],
                 labels={"play": t("wave_play"), "pause": t("wave_pause"),
-                        "back": t("wave_back"), "next": t("wave_next")},
+                        "back": t("wave_back"), "next": t("wave_next"),
+                        "save": t("wave_save")},
                 part=idx + 1, parts=len(parts),
                 scale=scale, autoplay=True, key="talk_player", default=None)
             # The part finished: move to the next one and let the spinner
@@ -3683,7 +3806,8 @@ elif active == "talk":
             _ev0 = _wave_component(
                 src="", cues=[], words=[], wtimes=[],
                 labels={"play": t("wave_play"), "pause": t("wave_pause"),
-                        "back": t("wave_back"), "next": t("wave_next")},
+                        "back": t("wave_back"), "next": t("wave_next"),
+                        "save": t("wave_save")},
                 part=0, parts=0, startable=_has_text,
                 scale=a11y.clamp(st.session_state.get(
                     "text_scale", a11y.DEFAULT_SCALE)),
@@ -4018,6 +4142,11 @@ elif active == "settings":
         # GLOBAL, not per-user: it is the app's engine, so it is stored
         # beside the app's own settings rather than in one person's
         # browser.
+        # THE ENGINE IS THE OWNER'S TO SET. Baba: "your normal user
+        # doesn't have these settings, he is working with engine which I
+        # assign." A normal user is not shown the controls at all —
+        # hidden rather than disabled, because a dead button invites a
+        # question that has no good answer for the person asking it.
         with st.container(key="statusbox_engine"):
             elab, ecol1, ecol2 = st.columns([1.1, 2.1, 2.8])
             elab.text(t("settings_engine"))
@@ -4063,6 +4192,10 @@ elif active == "settings":
                             _row["state"], "?")
                         st.text("  %s %s (%s) %s" % (
                             _mark, _name, _jobs, _row.get("detail", "")))
+
+            # ---- ONE ENGINE PER PERSON ----------------------------
+            st.text(t("eng_users_title"))
+            user_engine_panel()
 
         # Help lived here as an expander AND as its own module. Two copies
         # of the same text drift apart, and the module is the one people

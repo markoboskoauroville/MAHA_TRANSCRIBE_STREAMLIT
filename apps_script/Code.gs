@@ -198,6 +198,9 @@ function doPost(e) {
     if (body.what === 'text_put')   return json(putText_(body));
     if (body.what === 'text_get')   return json(getText_(body));
     if (body.what === 'set_put')    return json(putSetting_(body));
+    if (body.what === 'login')      return json(login_(body));
+    if (body.what === 'users')      return json({ ok: true, users: listUsers_() });
+    if (body.what === 'user_engine') return json(setUserEngine_(body));
     if (body.what === 'audio_list') {
       return json({ ok: true, recordings: listRecs_(body.user) });
     }
@@ -320,6 +323,10 @@ function onOpen() {
     .createMenu('TTT-LLL')
     .addItem('Refresh statistics', 'refresh')
     .addItem('First-time setup', 'setup')
+    // Runnable from the sheet's own menu, because running it from the
+    // editor opens its dialog on the SPREADSHEET tab, which is usually
+    // a different window and looks like the function hanging (§46).
+    .addItem('Set up users tab', 'setupUsers')
     .addToUi();
 }
 
@@ -380,6 +387,110 @@ function putSetting_(body) {
   }
   s.appendRow([scope, key, value]);
   return { ok: true, updated: false, scope: scope, key: key };
+}
+
+// ---------------------------------------------------------------------
+//  USERS
+//
+//  Baba: "Username, password, I am defining in the sheet. These users
+//  are my family." So one tab, filled in by hand, and no self-service
+//  password screen to build or explain.
+//
+//      username | password | engine | note
+//
+//  THE PASSWORD NEVER LEAVES THIS SCRIPT. login_ is asked "is this pair
+//  right" and answers yes or no; there is no endpoint that returns the
+//  table. That matters because SHEETS_TOKEN already unlocks the API keys
+//  (§19) — it must not also hand out the family's passwords to anyone
+//  holding the URL.
+// ---------------------------------------------------------------------
+
+var USER_HEADERS = ['username', 'password', 'engine', 'note'];
+
+function usersSheet_(ss) {
+  var s = ss.getSheetByName('users');
+  if (!s) {
+    s = ss.insertSheet('users');
+    s.appendRow(USER_HEADERS);
+    s.getRange(1, 1, 1, USER_HEADERS.length).setFontWeight('bold');
+    s.setFrozenRows(1);
+    s.setColumnWidth(1, 140);
+    s.setColumnWidth(2, 160);
+    s.setColumnWidth(3, 110);
+    s.setColumnWidth(4, 240);
+  }
+  return s;
+}
+
+/** Run once from the TTT-LLL menu. Creates the users tab. */
+function setupUsers() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = usersSheet_(ss);
+  var n = Math.max(0, s.getLastRow() - 1);
+  SpreadsheetApp.getUi().alert(
+    'Users tab ready.\n\n' + n + ' user(s) defined.\n\n' +
+    'Columns: username | password | engine | note\n' +
+    "engine is 'free' (Edge/Groq) or 'studio' " +
+    '(Speechify/AssemblyAI/Claude). Leave it blank to use the global ' +
+    'engine from the settings tab.');
+}
+
+function userRows_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = ss.getSheetByName('users');
+  if (!s || s.getLastRow() < 2) return [];
+  return s.getRange(2, 1, s.getLastRow() - 1, USER_HEADERS.length).getValues();
+}
+
+/** Is this pair right? Returns the user and their engine, never the
+ *  password — not even back to the caller that supplied it. */
+function login_(body) {
+  var u = String(body.username || '').trim().toLowerCase();
+  var p = String(body.password == null ? '' : body.password);
+  if (!u || !p) return { ok: false, error: 'username and password required' };
+
+  var rows = userRows_();
+  for (var i = 0; i < rows.length; i++) {
+    var name = String(rows[i][0] || '').trim().toLowerCase();
+    var pass = String(rows[i][1] == null ? '' : rows[i][1]);
+    // Compare the whole string. A trimmed password would let a trailing
+    // space in the sheet silently change what the person has to type.
+    if (name && name === u && pass === p) {
+      return { ok: true, user: name,
+               engine: String(rows[i][2] || '').trim().toLowerCase(),
+               note: String(rows[i][3] || '') };
+    }
+  }
+  return { ok: false, error: 'no' };
+}
+
+/** Usernames and engines ONLY, for the owner's panel. No passwords. */
+function listUsers_() {
+  return userRows_().map(function (r) {
+    return { user: String(r[0] || '').trim().toLowerCase(),
+             engine: String(r[2] || '').trim().toLowerCase(),
+             note: String(r[3] || '') };
+  }).filter(function (r) { return r.user; });
+}
+
+/** Give one person their own engine. */
+function setUserEngine_(body) {
+  var u = String(body.username || '').trim().toLowerCase();
+  var e = String(body.engine || '').trim().toLowerCase();
+  if (!u) return { ok: false, error: 'username required' };
+  if (e && e !== 'free' && e !== 'studio') {
+    return { ok: false, error: 'not an engine: ' + e };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = usersSheet_(ss);
+  var rows = userRows_();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim().toLowerCase() === u) {
+      s.getRange(i + 2, 3).setValue(e);
+      return { ok: true, user: u, engine: e };
+    }
+  }
+  return { ok: false, error: 'no such user' };
 }
 
 function setupConfig() {

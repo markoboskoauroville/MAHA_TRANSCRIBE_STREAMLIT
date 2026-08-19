@@ -100,6 +100,72 @@ def put_setting(url: str, token: str, key: str, value: str,
         return False
 
 
+def _post(url: str, token: str, payload: dict, timeout: int = TIMEOUT):
+    """One POST to the script. `None` on any failure at all."""
+    if not url or not token:
+        return None
+    try:
+        body = dict(payload)
+        body["token"] = token
+        req = urllib.request.Request(
+            url, data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json",
+                     "User-Agent": "TTT-LLL/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+
+
+def login(url: str, token: str, username: str, password: str):
+    """Ask the sheet whether this pair is right.
+
+    Returns `{"user":…, "engine":…}` or None. THE PASSWORD IS SENT AND
+    NOT STORED: there is no endpoint that returns the user table, so a
+    person's password never travels back out of the script — which
+    matters because this same token already unlocks the API keys.
+
+    None means "no, or could not ask". The caller MUST treat those the
+    same way and fall back to the built-in passwords, or an unreachable
+    sheet would lock the whole family out — the §1 failure, where a
+    convenience took the entire app down.
+    """
+    out = _post(url, token, {"what": "login",
+                             "username": str(username or ""),
+                             "password": str(password or "")})
+    if not out or not out.get("ok"):
+        return None
+    user = str(out.get("user") or "").strip().lower()
+    if not user:
+        return None
+    return {"user": user,
+            "engine": str(out.get("engine") or "").strip().lower(),
+            "note": str(out.get("note") or "")}
+
+
+def list_users(url: str, token: str) -> list:
+    """Usernames and their engines, for the owner's panel. Never
+    passwords — the script has no endpoint that returns them."""
+    out = _post(url, token, {"what": "users"})
+    if not out or not out.get("ok"):
+        return []
+    return [u for u in (out.get("users") or []) if u.get("user")]
+
+
+def set_user_engine(url: str, token: str, username: str, engine: str) -> bool:
+    """Give one person their own engine. True when it landed.
+
+    Success is only believed when the reply names the user back: a
+    deployment without this branch falls through to the usage-logging
+    appendRow and answers ok, which is the §47 trap.
+    """
+    out = _post(url, token, {"what": "user_engine",
+                             "username": str(username or ""),
+                             "engine": str(engine or "")})
+    return bool(out and out.get("ok")
+                and str(out.get("user") or "") == str(username or "").lower())
+
+
 def settings_map(config: dict) -> dict:
     """`{(scope, key): value}` from the raw rows, lowercased scopes."""
     out = {}

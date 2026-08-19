@@ -324,11 +324,16 @@ demandera plus le mot de passe sur ce téléphone.
 # showing, so the guide's instructions point at words that actually appear
 # on screen.
 LOGIN_LABELS = {
-    "hr": {"password": "Lozinka", "remember": "Zapamti me", "wrong": "Pogrešna lozinka."},
-    "en": {"password": "Password", "remember": "Remember me", "wrong": "Wrong password."},
-    "it": {"password": "Password", "remember": "Ricordami", "wrong": "Password errata."},
-    "de": {"password": "Passwort", "remember": "Angemeldet bleiben", "wrong": "Falsches Passwort."},
-    "fr": {"password": "Mot de passe", "remember": "Se souvenir de moi", "wrong": "Mot de passe incorrect."},
+    "hr": {"username": "Korisnik", "password": "Lozinka",
+           "remember": "Zapamti me", "wrong": "Pogrešna lozinka."},
+    "en": {"username": "Username", "password": "Password",
+           "remember": "Remember me", "wrong": "Wrong password."},
+    "it": {"username": "Utente", "password": "Password",
+           "remember": "Ricordami", "wrong": "Password errata."},
+    "de": {"username": "Benutzer", "password": "Passwort",
+           "remember": "Angemeldet bleiben", "wrong": "Falsches Passwort."},
+    "fr": {"username": "Utilisateur", "password": "Mot de passe",
+           "remember": "Se souvenir de moi", "wrong": "Mot de passe incorrect."},
 }
 
 # Shown once, at the very top of the login screen, above everything else —

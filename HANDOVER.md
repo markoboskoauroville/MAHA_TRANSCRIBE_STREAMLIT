@@ -3879,3 +3879,107 @@ getText_ / the two columns) and v91 (putSetting_). One deploy covers
 both: Deploy → Manage deployments → pencil → Version: New version.
 Until then the paired archive stores nothing and the engine cannot be
 saved globally.
+
+---
+
+## 67. USERS IN THE SHEET, AN ENGINE EACH, AND A SAVE BUTTON (v92)
+
+### Identity was the password. It is a name now.
+
+§3 said *"identity is the password"* — whichever password matched named
+the settings profile. That meant `USER` was a secret, and it was being
+used as a **Drive folder name, a sheet scope and a usage row label**.
+
+Baba: *"Username, password, I am defining in the sheet... These users
+are my family."* So one tab, filled in by hand:
+
+    username | password | engine | note
+
+`TTT-LLL ▸ Set up users tab` creates it. No self-service password
+screen: they ask him.
+
+### The password never leaves the script
+
+There is **no endpoint that returns the users table.** `login_` is asked
+"is this pair right" and answers yes or no; `listUsers_` maps only
+username, engine and note, for the owner's panel.
+
+This matters because `SHEETS_TOKEN` already unlocks every API key (§19).
+It must not also hand out the family's passwords to anyone holding the
+URL.
+
+### IT CANNOT LOCK ANYONE OUT
+
+§1 is the reason this is written so carefully: a failure on the login
+screen is TOTAL, because nobody can get past it to reach anything else.
+
+  * an unreachable sheet, a missing users tab and a wrong password are
+    all just "no"
+  * the built-in `APP_PASSWORDS` are then tried exactly as before
+  * the username box is OPTIONAL — leave it empty and the old
+    password-only login works unchanged
+
+**A real bug caught by test 5:** both boxes fire the same `on_change`,
+so finishing the USERNAME ran a login attempt with an empty password —
+marking the login wrong before anything had been typed and spending one
+of the throttle's tries. A person could throttle themselves by filling
+the form top to bottom. An empty password is no longer an attempt.
+
+### An engine each
+
+Baba: *"I want in this panel to have list of all users and assign them
+engines. Your normal user doesn't have these settings. He is working
+with engine which I assign."*
+
+`login_` returns that person's engine and it wins over the global
+settings row. **A blank cell means "use the global engine"** — it is not
+an override and is not treated as one, so the panel gives it its own
+button rather than leaving it an unreachable state.
+
+The panel is owner-only, which it gets for free: the whole admin module
+is already behind `is_admin()`. A normal user is not shown the controls
+at all — hidden rather than disabled, because a dead button invites a
+question that has no good answer for the person asking it.
+
+### The empty fourth cell is now save
+
+The transport's spare cell downloads the audio being played. The source
+is already a `data:` URL held by the frame, so nothing is fetched and
+there is no server round trip — the anchor hands the bytes to the
+platform's own download, which is why it works the same on a phone as on
+a desktop. Dead when there is nothing to save; the row keeps its four
+cells (§57).
+
+### Test status
+
+`tests/test_users.py` — **32 passed.** Login right and wrong, blank
+engine staying blank, case-insensitive names, the reply carrying no
+password field, unreachable sheet, bad token, an old deployment's bare
+`ok` not believed, the list carrying no passwords, assigning and
+clearing, and the save cell existing.
+
+`tests/test_login.py` — **7 passed.** Renders, password-only still
+works with no sheet, wrong password refused, typing a name is not an
+attempt, throttle still bites on real attempts. Mutations: blocking the
+password fallback fails 2, counting an empty password fails 2.
+
+Whole suite green: 32, 7, 28, 15, 27, 15, 16, 10 in Python, 44 in the
+GAS harness, 20 on the Drive client.
+
+### KNOWN CONSEQUENCE, not yet handled
+
+Drive folders are `USERS/<user>/`, and `<user>` used to be the password
+and is now the name. **Recordings stored before this change sit under a
+folder named after the old value and will not be listed for the renamed
+person.** Nothing is lost; nothing is migrated either. Renaming those
+folders by hand in Drive is the fix if it matters.
+
+### THE DEPLOY DEBT IS NOW THREE CHANGES
+
+`Code.gs` is ahead of the deployment by v86 (putText_/getText_/two
+columns), v91 (putSetting_) and v92 (the users tab, login_, listUsers_,
+setUserEngine_). ONE deploy covers all three: Deploy → Manage
+deployments → pencil → Version: New version. Until then: the paired
+archive stores nothing, the engine cannot be saved globally, and login
+falls back to APP_PASSWORDS — which is exactly what it is designed to
+do, so nothing breaks in the meantime.
