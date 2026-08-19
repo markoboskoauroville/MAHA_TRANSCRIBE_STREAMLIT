@@ -2192,3 +2192,54 @@ entries, oldest falling off.
 22 checks: ordering, the copy text carrying detail and dates, the cap
 holding under 420 entries with the newest surviving, clear, and every
 scrubbing case.
+
+---
+
+## 39. ONE APPS SCRIPT FILE (v69)
+
+`apps_script/TTT_LLL_Complete.gs` — all three files merged, with the two
+routing edits already in place, verified as a single script: syntax
+clean, no duplicate top-level declarations, **41 passed / 0 failed**.
+
+### Why one file now
+
+Baba pasted Code.gs, config_addition.gs and drive_addition.gs and left out
+the two edits to the EXISTING code. Every Drive function was present and
+correct, and nothing routed to any of them. Run against his paste: **15
+passed, 25 failed** — `audio_put` fell through to `appendRow` (audio
+written as usage rows), and every download answered `bad token` because
+`doGet` had no audio branch.
+
+The header comment was not enough. A note saying "one edit to existing
+code is also required" is a note someone can paste past. **One file that
+is pasted whole cannot be pasted wrong**, so the split files remain for
+reading and this is the one to deploy.
+
+### THE TOKEN INCIDENT — 19.8.2026
+
+Baba pasted the live script into the chat as message text, containing the
+real `SHARED_TOKEN`, and asked for it to be shredded afterwards.
+
+**It could not be.** Sandbox files can be deleted; message text in a
+conversation cannot. It was confirmed to match `SHEETS_TOKEN` exactly, and
+that token unlocks `doGet`, which returns every API key in the k_ tabs.
+He was told to rotate immediately rather than being allowed to believe it
+was gone.
+
+He then asked for the corrected script to be written back into chat WITH
+his keys filled in. Refused, and explained: it would put a fresh secret
+into chat text again, and the old token was already burned so baking it
+into a new deployment would deploy a dead credential.
+
+**RULES THAT CAME OUT OF THIS:**
+* **Never write a secret into a chat message**, not even one the person
+  supplied and asked to see again. A file on disk can be shredded; a
+  message cannot be unsent.
+* **Ask for secrets as UPLOADS, never as pasted text.** Uploads land where
+  they can genuinely be deleted and where the redactor keeps them out of
+  the output.
+* **Never claim to have shredded something that is in the conversation.**
+  Say plainly what can and cannot be removed.
+* There are NO API keys in the Apps Script and none should ever be added —
+  they live in the k_ tabs. "Fill in my keys" does not apply to this file,
+  and saying so is more useful than complying.
