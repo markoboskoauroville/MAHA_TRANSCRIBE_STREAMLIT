@@ -2914,3 +2914,59 @@ before inventing.** Searching his repos already showed
 `2py_word_timing_lab.py` runs the SAME experiment this project repeated —
 Speechify marks as truth, proportional vs DSP vs Whisper, even the same
 test sentences. The chunk-ahead logic may well be solved there too.
+
+---
+
+## 53. WHAT MA READER ALREADY SOLVED — read before building the player
+
+Per Baba's standing rule, `ma-reader-thermux` was read before designing
+the waveform player. Findings, so the next session starts from what is
+known rather than from scratch.
+
+### The look-ahead is genuinely NEW
+
+**It is not solved there.** MA Reader renders sentence by sentence and
+follows with scrolling; it never needed a 30-second buffer with the next
+block generating while the current plays. Four mentions of anything
+buffer-shaped in 1143 lines, none about audio look-ahead.
+
+So the generate-ahead pipeline is real new work, and it is the hard part.
+The canvas drawing is the easy half.
+
+### Three rules that ARE solved, and must govern the player
+
+**1. THE TELEPROMPTER RULE.** Every sentence begins at the TOP of the
+screen — not only when it has wandered out of view: every one, every
+time, unconditionally. The old rule moved only when a sentence crossed an
+edge, so the reading line landed wherever the last one left it and the eye
+had to hunt. *"A teleprompter does not make you hunt."*
+
+**2. THE JUMP IS INSTANT.** No smooth scroll survives anywhere in the
+reading path. *"An animation is a delay by another name: the line slides
+for a few hundred milliseconds while the voice is already speaking it, so
+the eye arrives after the ear."* If a pause is wanted it is a SETTING in
+seconds, not an easing curve. This applies directly to the paging
+playhead: **the page turn must be instant, not a slide.**
+
+**3. THE LIT WORD STAYS ON SCREEN.** Following the sentence is not
+enough — a sentence can be taller than the window. The word is watched
+separately, movement is throttled to one per 250 ms so a hand scroll is
+never fought, and nothing moves while the word sits comfortably inside the
+view, because *"a page that creeps on every word is worse than one that
+never moves."*
+
+### One trap worth carrying over verbatim
+
+Empty tokens are KEPT, with no elements, so the array stays one-for-one
+with the server's timings. *"Dropping them would slide every later index
+up by one and the highlight would run a word ahead of the voice for the
+rest of the sentence."* `ttt/cues.py` already holds `first`/`last` indices
+for the same reason; this confirms the approach the hard way.
+
+### What this means for the build order
+
+1. canvas waveform + paging playhead + transport — driven by `cues.py`,
+   obeying instant page turns
+2. subtitle line — the cue text, already available
+3. generate-ahead — LAST, because it is new, it is the hard part, and it
+   touches audio generation that works today
