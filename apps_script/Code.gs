@@ -326,7 +326,15 @@ function onOpen() {
     // Runnable from the sheet's own menu, because running it from the
     // editor opens its dialog on the SPREADSHEET tab, which is usually
     // a different window and looks like the function hanging (§46).
+    // ALL FOUR SETUPS ARE ON THE MENU. setupConfig and setupDrive used
+    // to be editor-only, and their confirmation dialogs open on the
+    // SPREADSHEET tab — which is usually a different window, so the
+    // editor showed the function running forever while it waited for a
+    // click nobody could see (§46). Run from here, the dialog appears
+    // where the person already is.
     .addItem('Set up users tab', 'setupUsers')
+    .addItem('Set up settings and keys tabs', 'setupConfig')
+    .addItem('Set up Drive storage', 'setupDrive')
     .addToUi();
 }
 

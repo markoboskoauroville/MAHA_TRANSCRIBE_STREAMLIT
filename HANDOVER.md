@@ -4147,3 +4147,51 @@ the T2 tab fails 1.
 
 Whole suite green: 19, 32, 7, 28, 15, 27, 15, 16, 10 in Python, 44 GAS,
 20 Drive. Browser-checked at 320 and 360px.
+
+
+---
+
+## 69. THE ADMINISTRATOR'S GUIDE (v97)
+
+`docs/ADMIN.md`. Baba: *"I want to be a real administrator one day. Now
+I'm just learning."*
+
+Six parts: changing the script through clasp, the Sheet and its tabs,
+managing users, Drive, what to do when something is wrong, and what
+could move into the app.
+
+### Three things in it that are easy to get wrong
+
+**The placeholder trap has a routine now.** His local `Code.gs` holds
+real secrets and is `assume-unchanged`, so `git pull` will not update
+it — which means a script change needs an explicit un-hide, stash,
+pull, re-fill, re-hide. Written out step by step rather than left as
+"merge it yourself".
+
+**`APP_PASSWORDS` is the emergency door, and he must not delete it.**
+The sheet login falls back to it, so it is the only way in if the sheet
+is unreachable. Given its own section, because a family locked out of
+their own app by a spreadsheet typo is the failure this whole design
+must not have.
+
+**Passwords in a spreadsheet, said plainly.** Anyone with view access
+to that sheet can read every password. For five family members and a
+private sheet that is a fair trade — and it is what makes a forgotten
+password a ten-second fix. Two rules follow: never share the sheet, and
+never let anyone reuse a password from elsewhere.
+
+### All four setups are on the sheet menu now
+
+`setupConfig` and `setupDrive` were editor-only. Their confirmation
+dialogs open on the SPREADSHEET tab, so run from the editor they look
+like a function hanging forever while waiting for a click in another
+window (§46). All four are on the TTT-LLL menu, where the dialog
+appears where the person already is.
+
+### What is deliberately NOT built
+
+Adding, deleting and re-passwording users in the app. The endpoints
+would be small; the risk is not. **A bug in a user panel can lock
+everybody out, including the owner** — a spreadsheet cannot. If it is
+built later, §1 still governs: `APP_PASSWORDS` stays as the door that
+always opens.
