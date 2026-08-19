@@ -87,10 +87,57 @@
   #msg { margin-top:7px; min-height:17px; font-size:12px; color:var(--dim);
          line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
   #msg.bad { color:#fca5a5; }
+  /* THE GEAR, and the menu it opens. Same surface, same edge, same
+     radius as a key — it is part of the deck, not a control borrowed
+     from the page around it. */
+  #deck { position:relative; }
+  /* ABOVE THE SCOPE, NOT BEHIND IT. The clock sits in the scope's own
+     top-right corner and, without a z-index here, it covered the gear
+     and swallowed every tap — the gear rendered perfectly and could not
+     be pressed, which is the worst kind of broken because it looks
+     fine. Caught by a real click in a real browser. */
+  #bGear { position:absolute; right:0; top:-2px; width:30px; height:30px;
+           z-index:6;
+           background:transparent; border:0; padding:0; cursor:pointer;
+           display:flex; align-items:center; justify-content:center;
+           color:var(--dim); }
+  #bGear:hover, #bGear[aria-expanded="true"] { color:var(--amber); }
+  /* THE SAME ⚙ THE TAB BAR USES, not a drawn one. A CSS cog at 13px
+     read as a cross rather than a gear, and the point of Baba's rule is
+     that the icon is RECOGNISED — the same glyph in the same corner
+     everywhere. Consistency beats craft here. */
+  #bGear { font-size:15px; line-height:1; }
+
+  #srcmenu { position:absolute; right:0; top:30px; z-index:5;
+             background:var(--dark); border:1px solid var(--edge);
+             border-radius:8px; padding:4px; min-width:150px;
+             display:flex; flex-direction:column; gap:3px; }
+  #srcmenu button { background:var(--face); border:1px solid var(--edge);
+             border-radius:6px; color:var(--ink); font:inherit;
+             font-size:12px; padding:9px 10px; text-align:left;
+             cursor:pointer; white-space:nowrap; }
+  /* An author `display:flex` BEATS the [hidden] attribute, which the
+     browser implements as display:none in its own stylesheet. So the
+     menu was open from the moment the deck loaded — closed in the
+     markup, open on screen. Say it explicitly. */
+  #srcmenu[hidden] { display:none; }
+  #srcmenu button:hover { border-color:var(--amber); }
+  /* The one in use is filled, exactly as a chosen pill is elsewhere. */
+  #srcmenu button.on { background:var(--amber); color:var(--dark);
+             border-color:var(--amber); font-weight:600; }
+
   @media (prefers-reduced-motion: reduce) { #scope { opacity:.85; } }
 </style>
 
 <div id="deck">
+  <!-- THE GEAR IS ALWAYS THE UPPER RIGHT CORNER. Baba's standing rule
+       across this app: the same glyph, the same place, whatever it
+       opens. Here it opens the source. Deliberately quiet — which input
+       a person records from is set once and then forgotten, so it must
+       not sit on the panel competing with rec. -->
+  <button id="bGear" aria-label="source" aria-haspopup="true"
+          aria-expanded="false">⚙</button>
+  <div id="srcmenu" role="menu" hidden></div>
   <div id="scopewrap">
     <canvas id="scope"></canvas>
     <div id="clock">0:00</div>
@@ -112,7 +159,9 @@ function post(type, extra) {
     Object.assign({ isStreamlitMessage:true, type:type }, extra || {}), "*");
 }
 function setValue(v) { post("streamlit:setComponentValue", { value:v, dataType:"json" }); }
-var L_NOAUDIO='no sound was shared — tick "share audio" in the box',
+var bGear=document.getElementById('bGear'), srcmenu=document.getElementById('srcmenu');
+var L_BUSY='stop the recording before changing the source',
+    L_NOAUDIO='no sound was shared — tick "share audio" in the box',
     L_NOSYS='this browser cannot capture computer audio',
     L_SYSREFUSED='sharing was cancelled';
 function height() {
@@ -236,6 +285,59 @@ function keys(state){
    this one the first time either was fixed, and the module map (rule 2)
    says shared machinery lives in one place and is used by everyone. */
 var SOURCE = 'mic';
+
+/* THE SOURCE MENU, behind the gear.
+   Options come from Python so the list can grow without touching this
+   file, and the choice is posted back so it persists like every other
+   setting. */
+var SOURCES = [];
+
+function closeMenu(){
+  srcmenu.hidden = true;
+  bGear.setAttribute('aria-expanded','false');
+  height();
+}
+
+function drawMenu(){
+  srcmenu.innerHTML = '';
+  SOURCES.forEach(function(opt){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = opt.label;
+    b.setAttribute('role','menuitem');
+    if (opt.id === SOURCE) b.className = 'on';
+    b.onclick = function(){
+      closeMenu();
+      if (opt.id === SOURCE) return;      // nothing changed, say nothing
+      /* CHANGING SOURCE MID-TAKE WOULD LOSE IT. The stream is already
+         open and the recorder is running against it; swapping inputs
+         under a live recording is the one moment this must refuse. */
+      if (running) { say(L_BUSY, true); return; }
+      SOURCE = opt.id;
+      drawMenu();
+      setValue({ at: Date.now(), source: opt.id });
+    };
+    srcmenu.appendChild(b);
+  });
+}
+
+bGear.onclick = function(e){
+  e.stopPropagation();
+  if (!SOURCES.length) return;
+  var open = srcmenu.hidden;
+  srcmenu.hidden = !open;
+  bGear.setAttribute('aria-expanded', open ? 'true' : 'false');
+  height();
+};
+
+/* A tap anywhere else closes it, the way every menu is expected to
+   behave. Escape too, because a keyboard user must be able to leave. */
+document.addEventListener('click', function(){
+  if (!srcmenu.hidden) closeMenu();
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && !srcmenu.hidden) { closeMenu(); bGear.focus(); }
+});
 
 async function grab(){
   if (SOURCE !== 'system') {
@@ -578,11 +680,16 @@ window.addEventListener("message", function(ev){
   var ackStamp=(m.args||{}).ack;
   if (ackStamp) acked(ackStamp);
   if ((m.args||{}).source) SOURCE=(m.args||{}).source;
+  var srcs=(m.args||{}).sources;
+  if (srcs && JSON.stringify(srcs)!==JSON.stringify(SOURCES)) {
+    SOURCES=srcs; drawMenu();
+  } else if (srcs) { drawMenu(); }
   var a=(m.args||{}).labels;
   if (a) {
     if (a.noaudio)    L_NOAUDIO=a.noaudio;
     if (a.nosystem)   L_NOSYS=a.nosystem;
     if (a.sysrefused) L_SYSREFUSED=a.sysrefused;
+    if (a.busy) L_BUSY=a.busy;
     document.getElementById('lRec').textContent   = a.rec   || 'rec';
     document.getElementById('lPause').textContent = a.pause || 'pause';
     document.getElementById('lStop').textContent  = a.stop  || 'stop';

@@ -592,20 +592,9 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     iframe {{ display: block; }}
     [data-testid="stIFrame"] {{ margin-bottom: 0 !important; }}
 
-    /* THE SOURCE DROPDOWN SITS ON ITS OWN LINE, and that is measured
-       rather than conceded. Forced onto the pill row at 360px it fitted
-       the row and CLIPPED the word "microphone" at the right edge —
-       §27's rule is that the type may shrink but no word may be cut,
-       because a half-word reads as a broken app. It is a narrow control
-       on its own line instead: one row, nothing hidden. */
-    [class*="st-key-srcrow"] div[data-testid="stHorizontalBlock"] {{
-      flex-wrap: nowrap !important;
-      gap: 0.25rem !important;
-      align-items: center;
-    }}
-    [class*="st-key-srcrow"] [data-baseweb="select"] {{
-      font-size: 0.72rem !important;
-    }}
+    /* The source dropdown's CSS lived here. It is a gear inside the
+       deck now (v95), styled in the component's own stylesheet, so
+       there is nothing on the page left to style. */
 
     /* THE VOICES, ON ONE ROW. Four pills wrapping to a second line cost
        a whole row of a phone screen and say nothing extra. Same nowrap

@@ -67,22 +67,43 @@ check("3 the tab is called T, not T1",
 check("4 there is no tab_tabaudio label left", '"tab_tabaudio"' not in src)
 
 # --- the dropdown -----------------------------------------------------
-sel = [x for x in at.selectbox if x.key == "rec_source"]
-check("5 there is a source dropdown", len(sel) == 1,
+# THE SOURCE IS NO LONGER A STREAMLIT WIDGET. It is a gear inside the
+# deck, so there is nothing on the page to find — which is the point.
+check("5 there is NO page-level source widget any more",
+      not [x for x in at.selectbox if x.key == "rec_source"],
       [x.key for x in at.selectbox])
 # AppTest reports the FORMATTED labels, not the raw values — format_func
 # has already run by the time .options is read. Asserting the raw values
 # here failed against a dropdown that was perfectly correct.
-check("6 it offers microphone and computer audio",
-      sel and list(sel[0].options) == ["microphone", "computer audio"],
-      sel[0].options if sel else None)
+check("6 the deck is handed both options instead",
+      '"mic"' in src and '"system"' in src and "sources=[" in src)
 check("7 it starts on the microphone", sget(at, "rec_source") == "mic",
       sget(at, "rec_source"))
 
 # --- switching --------------------------------------------------------
-at2 = app()
+# Choosing the source is a press INSIDE the deck now, which AppTest
+# cannot click. The honest seam is the persistence path it writes to:
+# store the setting the way the gear does and confirm the app comes up
+# on it. Pre-seeding session_state does NOT work and should not — the
+# stored settings are applied over it at startup, which is the whole
+# point of them.
+def store_setting(key, value, user="stub"):
+    import json
+    import tempfile
+    d = os.path.join(tempfile.gettempdir(), "maha_settings")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, user + ".json"), "w") as fh:
+        json.dump({key: value, "epoch": 2}, fh)
+
+
+at2 = AppTest.from_file(
+    os.path.join(os.path.dirname(__file__), "..", "app.py"),
+    default_timeout=90)
+at2.session_state["_authed"] = True
+at2.session_state["_user"] = "stub"
+at2.session_state["active_tab"] = "transcribe"
+store_setting("rec_source", "system")
 at2.run()
-[x for x in at2.selectbox if x.key == "rec_source"][0].select("system").run()
 check("8 it can be switched to computer audio",
       sget(at2, "rec_source") == "system", sget(at2, "rec_source"))
 check("9 and the app still runs", not at2.exception, at2.exception)
@@ -98,7 +119,7 @@ check("11 the microphone shows no such line — it is not different",
       "AUDIO BOX" not in caps3.upper(), caps3[:120])
 
 # --- it survives a reload --------------------------------------------
-check("12 rec_source is a persisted setting",
+check("12 rec_source is still a persisted setting",
       '"rec_source"' in src.split("SETTINGS_KEYS = (")[1].split(")")[0])
 
 # --- the component is told -------------------------------------------

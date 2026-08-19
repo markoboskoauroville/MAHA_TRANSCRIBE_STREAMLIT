@@ -4068,6 +4068,49 @@ Order in T, top to bottom, measured in a browser at 360px:
 The computer-audio hint moved with it, UNDER the dropdown it explains
 rather than above the deck.
 
+### THE SOURCE IS BEHIND A GEAR IN THE DECK (v95)
+
+Baba: *"it should not be so obvious what is input. It should be hidden
+under one gear icon inside the cassette deck. Always gear icon is in
+upper right corner."*
+
+The Streamlit selectbox is gone. The gear lives in the deck's own
+upper-right corner, in the component's stylesheet, and opens a menu
+built from the same surface, edge and radius as a key — it is part of
+the instrument rather than furniture borrowed from the page.
+
+The option list is passed IN from Python, so it can grow — a tab, a
+window, a named virtual device — without touching the component. The
+choice is posted back and persisted like any other setting.
+
+**Changing source mid-take is refused.** The stream is open and the
+recorder is running against it; swapping inputs under a live recording
+is the one moment this must say no.
+
+**THE SAME ⚙ THE TAB BAR USES.** A CSS-drawn cog at 13px read as a
+cross. The point of the rule is that the icon is RECOGNISED, so the
+glyph is the same character in the same corner as everywhere else.
+
+### Two bugs a real browser found, and AppTest never could
+
+Both looked perfect in code and in every non-visual test.
+
+**The clock swallowed the gear.** `#clock` sits in the scope's top-right
+corner and, with no `z-index` on the gear, covered it — the gear
+rendered exactly right and could not be pressed. Playwright reported
+`<div id="clock"> intercepts pointer events`. That is the worst kind of
+broken, because a screenshot looks correct.
+
+**`[hidden]` did nothing.** An author `display:flex` on `#srcmenu` BEATS
+the `hidden` attribute, which the browser implements as `display:none`
+in its own stylesheet. The menu was closed in the markup and open on
+screen from the moment the deck loaded. Fixed with an explicit
+`#srcmenu[hidden] { display:none; }`.
+
+**The rule both of these earn: a component's internals are invisible to
+AppTest.** Anything inside an iframe has to be clicked in a real
+browser, through `frame_locator`, or it is not tested at all.
+
 ### Platform reality, unchanged from §36
 
     Windows   works, nothing to install

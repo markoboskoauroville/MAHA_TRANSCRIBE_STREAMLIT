@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v94 (a) (source sits with the recorder)"
+APP_VERSION = "v95 (a) (source behind a gear in the deck)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -479,6 +479,8 @@ STRINGS = {
                                  "i OZNAČI KUĆICU ZA ZVUK. Windows dijeli "
                                  "zvuk sustava; macOS treba BlackHole; "
                                  "Android ovo ne može."},
+    "sys_busy":           {"en": "stop the recording before changing the source",
+                           "hr": "zaustavi snimanje prije promjene izvora"},
     "sys_noaudio":        {"en": "no sound was shared — tick the audio box "
                                  "in the sharing window and try again",
                            "hr": "zvuk nije podijeljen — označi kućicu za "
@@ -704,14 +706,29 @@ def cassette_recorder(key: str, source: str = "mic"):
                     "stop": t("rec_stop"), "upload": t("rec_upload"),
                     "retry": t("rec_retry"), "sending": t("rec_sending"),
                     "noaudio": t("sys_noaudio"), "nosystem": t("sys_nosystem"),
-                    "sysrefused": t("sys_refused")},
+                    "sysrefused": t("sys_refused"), "busy": t("sys_busy")},
             source=source,
+            # The list lives in Python so it can grow — a tab, a window,
+            # a named virtual device — without touching the component.
+            sources=[{"id": "mic", "label": t("src_mic")},
+                     {"id": "system", "label": t("src_system")}],
             ack=st.session_state.get(f"_cassette_seen_{key}"),
             key=key, default=None)
     except Exception:
         return None
     if not isinstance(val, dict):
         return None
+    # A SOURCE CHANGE ARRIVES ON THE SAME CHANNEL as a recording, and it
+    # must not be mistaken for one. Handled before the stamp bookkeeping,
+    # because it is not a take and has nothing to acknowledge.
+    if val.get("source"):
+        chosen = str(val["source"])
+        if chosen != st.session_state.get("rec_source"):
+            st.session_state["rec_source"] = chosen
+            persist_settings()
+            st.rerun()
+        return None
+
     stamp = val.get("at")
     seen = f"_cassette_seen_{key}"
     if stamp and st.session_state.get(seen) == stamp:
@@ -2793,31 +2810,11 @@ def _voice_row(engine, sp_ring_talk):
     return synth_fn
 
 
-def _source_row():
-    """WHERE THE SOUND COMES FROM — directly under the deck.
-
-    Baba: *"input menu should go where it belongs, below the cassette
-    recorder."* It was under the language pills, which put it two rows
-    away from the thing it governs. The source is a property of the
-    RECORDER, so it reads with the recorder.
-
-    A dropdown rather than pills: the list will grow — a tab, a window, a
-    named virtual device — and more pills would push the row onto a
-    second line, which §27 settled as a bug.
-
-    On its own line, MEASURED: beside the four pills at 360px it fitted
-    the row and clipped the word "microphone". The type may shrink, but
-    no word may be cut.
-    """
-    with st.container(key="srcrow"):
-        _sc, _ = st.columns([2.2, 2.8])
-        _srcs = ["mic", "system"]
-        _sc.selectbox(
-            t("src_label"), _srcs,
-            index=_srcs.index(st.session_state.get("rec_source", "mic")),
-            format_func=lambda k: t("src_" + k),
-            key="rec_source", on_change=persist_settings,
-            label_visibility="collapsed")
+# The source used to be a Streamlit selectbox on its own row. It is now
+# a gear in the deck's own upper-right corner (v95): the input is set
+# once and then forgotten, so it should not sit on the panel competing
+# with rec — and a page dropdown inside a Technics deck was furniture
+# borrowed from somewhere else.
 
 
 def _lang_mode_row():
@@ -3258,8 +3255,6 @@ if active == "transcribe":
     with st.container(key="deckbox"):
         audio = cassette_recorder(rec_key, source=_source)
 
-    # THE SOURCE SITS WITH THE RECORDER IT GOVERNS.
-    _source_row()
     if _t2:
         # UNDER the dropdown it explains, not above the deck. One line,
         # and only what is different — what the browser will and will not
