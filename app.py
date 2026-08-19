@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v85 (deliver reporting)"
+APP_VERSION = "v86 (a) (paired drive archive)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2891,6 +2891,23 @@ if active == "transcribe":
                     if _rec_id:
                         st.session_state["_last_rec_id"] = _rec_id
                         stage["rec_id"] = _rec_id
+                        # THE PAIR IS COMPLETED HERE, and it cannot be
+                        # done any earlier: the audio upload runs
+                        # alongside Whisper, so at the moment it starts
+                        # there is no transcript to store yet. The text
+                        # goes in once both exist, into the same folder,
+                        # so trashing that folder takes them both.
+                        #
+                        # After deliver_text, never before. Storage is a
+                        # convenience for later and must never stand
+                        # between someone and the words they just spoke.
+                        if text:
+                            _st = drive_store()
+                            if not _st.put_text(_rec_id, text):
+                                errlog.add(
+                                    st.session_state, "drive",
+                                    "transcript not stored beside the audio",
+                                    _st.last_error or "no reason given")
                     # And let the recording go: a 7 MB take is ~7 MB of
                     # bytes plus ~9 MB of base64 still held by the
                     # component, which is memory this instance cannot

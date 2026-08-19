@@ -170,10 +170,41 @@ class DriveStore:
             self.last_error = "corrupt part: {}".format(err)
             return None
 
+    # -- the transcript, stored beside the audio -------------------------
+    #
+    # THEY GO IN PAIRS. The text is a file inside the recording's own
+    # folder, not a sheet cell, so trashing the folder removes both at
+    # once and they cannot come apart. A cell would also truncate a long
+    # transcript at the sheet's 50,000-character ceiling.
+    #
+    # No signature here, unlike get_part. A signed link exists because a
+    # download URL is the thing most likely to end up in a log; this goes
+    # through doPost under SHEETS_TOKEN like every other write, so losing
+    # DRIVE_SECRET still cannot open anyone's text.
+
+    def put_text(self, rec_id: str, text: str):
+        """Write the transcript. Replaces any earlier one, so a
+        retranscribe leaves exactly one text.txt. Returns the response or
+        None."""
+        return self._post({"what": "text_put", "rec_id": safe_name(rec_id),
+                           "text": "" if text is None else str(text)},
+                          TIMEOUT_SMALL)
+
+    def get_text(self, rec_id: str):
+        """Read the transcript back — instant and free, against a
+        retranscribe which costs a fetch and a Whisper call. Returns the
+        text, or None when there is none stored."""
+        out = self._post({"what": "text_get", "rec_id": safe_name(rec_id)},
+                         TIMEOUT_SMALL)
+        if not out:
+            return None
+        text = out.get("text")
+        return None if text is None else str(text)
+
     # -- whole recordings -----------------------------------------------
 
     def store(self, flac_path: str, seconds: float = 0.0,
-              language: str = "", note: str = ""):
+              language: str = "", note: str = "", text: str = ""):
         """Split the levelled FLAC into parts, upload each, then register.
 
         Registration happens LAST and on purpose: a recording that appears
@@ -205,7 +236,19 @@ class DriveStore:
                              "parts": len(parts), "folder_id": folder_id,
                              "language": language, "note": note},
                             TIMEOUT_SMALL)
-            return rec_id if ok else None
+            if not ok:
+                return None
+            # AFTER registration, because putText_ updates has_text and
+            # chars on the row and the row must exist for it to find.
+            #
+            # A failed text write does NOT fail the store. The audio is
+            # safe, the row is correct, and has_text stays FALSE — so the
+            # list offers "retranscribe" for this recording instead of
+            # "pull", which is the honest answer rather than a row that
+            # promises text nobody can fetch.
+            if text:
+                self.put_text(rec_id, text)
+            return rec_id
         except Exception as err:
             self.last_error = "{}: {}".format(type(err).__name__, err)[:200]
             return None

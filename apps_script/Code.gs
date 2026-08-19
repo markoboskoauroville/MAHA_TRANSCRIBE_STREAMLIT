@@ -195,6 +195,8 @@ function doPost(e) {
     if (body.what === 'audio_put')  return json(putAudio_(body));
     if (body.what === 'audio_reg')  return json(registerRec_(body));
     if (body.what === 'audio_del')  return json(deleteRec_(body));
+    if (body.what === 'text_put')   return json(putText_(body));
+    if (body.what === 'text_get')   return json(getText_(body));
     if (body.what === 'audio_list') {
       return json({ ok: true, recordings: listRecs_(body.user) });
     }
@@ -437,8 +439,22 @@ function doGet(e) {
 // =====================================================================
 
 
+// has_text and chars exist so the archive list can offer "pull" versus
+// "retranscribe" WITHOUT fetching anything. One request returns every
+// row; scanning Drive instead would mean an API call per user folder,
+// then per recording, then per file — dozens of round trips through the
+// slowest part of the stack. The sheet is the index; Drive is the store.
 var REC_HEADERS = ['user', 'rec_id', 'created', 'seconds', 'parts',
-                   'folder_id', 'language', 'note'];
+                   'folder_id', 'language', 'note', 'has_text', 'chars'];
+
+/** The transcript, stored as a FILE beside the audio rather than in a
+ *  sheet cell. Two reasons, both load-bearing:
+ *
+ *  1. A folder trash removes the audio AND the text in one action, so
+ *     the pair cannot come apart. Baba: "they go in pairs always."
+ *  2. A sheet cell tops out at 50,000 characters. A long transcript
+ *     would be silently truncated, which is the worst way to lose text. */
+var TEXT_NAME = 'text.txt';
 
 /** Run ONCE from the editor. Creates the recordings tab. Safe to re-run. */
 function setupDrive() {
@@ -475,6 +491,20 @@ function recSheet_(ss) {
     s.setFrozenRows(1);
     s.setColumnWidth(2, 200);
     s.setColumnWidth(6, 260);
+    return s;
+  }
+
+  // MIGRATION. Baba's sheet already exists with eight columns, made
+  // before text was stored. Widening it here rather than asking him to
+  // re-run setupDrive() means the upgrade costs him nothing and cannot
+  // be half-done. Only ever ADDS the missing headers on the right: the
+  // existing columns keep their positions, so every row already written
+  // still reads correctly.
+  var have = s.getLastColumn();
+  if (have < REC_HEADERS.length) {
+    var missing = REC_HEADERS.slice(have);
+    s.getRange(1, have + 1, 1, missing.length).setValues([missing])
+     .setFontWeight('bold');
   }
   return s;
 }
@@ -576,6 +606,110 @@ function putAudio_(body) {
            bytes: bytes.length, folder_id: folder.getId() };
 }
 
+/** The transcript, written beside the audio in the SAME folder.
+ *
+ *  Replace, never add — the same trap as putAudio_. A retranscribe
+ *  writes text.txt a second time and must leave exactly one file, or
+ *  the folder ends up holding two transcripts with no way to tell which
+ *  is current.
+ *
+ *  The sheet row is updated in the same call, so has_text and chars can
+ *  never disagree with what is actually in Drive. Doing it in two calls
+ *  would leave a window where the list says "pull" for a recording that
+ *  has no text. */
+function putText_(body) {
+  var user = safeName_(body.user);
+  var recId = safeName_(body.rec_id);
+  if (!user || !recId) return { ok: false, error: 'user and rec_id required' };
+
+  var text = String(body.text == null ? '' : body.text);
+
+  // THE PAIR IS ENFORCED HERE, and this was a real bug caught by test F1.
+  //
+  // recFolder_ CREATES the folder when it is missing — correct for
+  // putAudio_, where the first part is what brings a recording into
+  // existence. For text it is wrong: writing text for an unknown rec_id
+  // would mint a folder holding a transcript and no audio, with no row
+  // in the index, which is precisely the half of a pair that must never
+  // exist. The sheet is the index, so the row is what says a recording
+  // is real.
+  if (findRecRow_(user, recId) < 0) {
+    return { ok: false, error: 'no such recording' };
+  }
+
+  var folder;
+  try {
+    folder = recFolder_(user, recId);
+  } catch (err) {
+    return { ok: false, error: 'no such recording' };
+  }
+
+  var old = folder.getFilesByName(TEXT_NAME);
+  while (old.hasNext()) old.next().setTrashed(true);
+
+  // UTF-8 explicitly. Croatian is the first language of this app and
+  // č/ć/š/ž/đ must survive the round trip; the default charset would
+  // depend on the script's locale, which is not something to leave to
+  // chance for the only content the user actually wrote.
+  var blob = Utilities.newBlob('', 'text/plain', TEXT_NAME)
+                      .setDataFromString(text, 'UTF-8');
+  var file = folder.createFile(blob);
+
+  var chars = text.length;
+  setTextFlags_(user, recId, chars > 0, chars);
+
+  return { ok: true, file_id: file.getId(), name: TEXT_NAME, chars: chars };
+}
+
+/** Read the transcript back. Instant and free next to a retranscribe,
+ *  which is the whole point of storing it. */
+function getText_(body) {
+  var user = safeName_(body.user);
+  var recId = safeName_(body.rec_id);
+  if (!user || !recId) return { ok: false, error: 'user and rec_id required' };
+
+  var folder;
+  try {
+    folder = recFolder_(user, recId);
+  } catch (err) {
+    return { ok: false, error: 'no such recording' };
+  }
+  var it = folder.getFilesByName(TEXT_NAME);
+  if (!it.hasNext()) return { ok: false, error: 'no text stored' };
+
+  var text = it.next().getBlob().getDataAsString('UTF-8');
+  return { ok: true, text: text, chars: text.length };
+}
+
+/** Keep the index honest about what the store holds. Silent when the row
+ *  is missing: an orphan recording is a real state (registration happens
+ *  after upload, on purpose) and it must not turn a good text write into
+ *  a reported failure. */
+/** Sheet row number for a recording, or -1. One place that knows how a
+ *  row is matched, so the index cannot be searched two different ways. */
+function findRecRow_(user, recId) {
+  var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('recordings');
+  if (!s || s.getLastRow() < 2) return -1;
+  var vals = s.getRange(2, 1, s.getLastRow() - 1, 2).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    if (safeName_(vals[i][0]) === safeName_(user) &&
+        safeName_(vals[i][1]) === safeName_(recId)) {
+      return i + 2;
+    }
+  }
+  return -1;
+}
+
+function setTextFlags_(user, recId, hasText, chars) {
+  var row = findRecRow_(user, recId);
+  if (row < 0) return false;
+  var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('recordings');
+  s.getRange(row, REC_HEADERS.indexOf('has_text') + 1)
+   .setValue(hasText ? 'TRUE' : 'FALSE');
+  s.getRange(row, REC_HEADERS.indexOf('chars') + 1).setValue(Number(chars || 0));
+  return true;
+}
+
 /** One row per recording, so the archive survives a cleared browser.
  *  Re-registering the same rec_id updates its row instead of adding a
  *  second one — doing it twice must change nothing. */
@@ -586,21 +720,39 @@ function registerRec_(body) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var s = recSheet_(ss);
-  var row = [user, recId, new Date(), Number(body.seconds || 0),
-             Number(body.parts || 0), String(body.folder_id || ''),
-             String(body.language || ''), String(body.note || '')];
+  var hasText = body.has_text ? 'TRUE' : 'FALSE';
+  var chars = Number(body.chars || 0);
 
   var last = s.getLastRow();
   if (last > 1) {
-    var vals = s.getRange(2, 1, last - 1, 2).getValues();
+    var vals = s.getRange(2, 1, last - 1, REC_HEADERS.length).getValues();
+    var iHas = REC_HEADERS.indexOf('has_text');
+    var iChars = REC_HEADERS.indexOf('chars');
     for (var i = 0; i < vals.length; i++) {
       if (safeName_(vals[i][0]) === user && safeName_(vals[i][1]) === recId) {
-        s.getRange(i + 2, 1, 1, REC_HEADERS.length).setValues([row]);
+        // PRESERVE THE TEXT FLAGS unless this call actually carries them.
+        // Registration runs BEFORE the transcript is written, and a
+        // retranscribe re-registers; blindly writing FALSE here would
+        // tell the list there is no text for a recording whose text.txt
+        // is sitting in Drive, and the row would offer "retranscribe"
+        // for something that could simply be pulled.
+        if (body.has_text === undefined) {
+          hasText = String(vals[i][iHas] || 'FALSE');
+          chars = Number(vals[i][iChars] || 0);
+        }
+        s.getRange(i + 2, 1, 1, REC_HEADERS.length).setValues([[
+          user, recId, new Date(), Number(body.seconds || 0),
+          Number(body.parts || 0), String(body.folder_id || ''),
+          String(body.language || ''), String(body.note || ''),
+          hasText, chars]]);
         return { ok: true, updated: true };
       }
     }
   }
-  s.appendRow(row);
+  s.appendRow([user, recId, new Date(), Number(body.seconds || 0),
+               Number(body.parts || 0), String(body.folder_id || ''),
+               String(body.language || ''), String(body.note || ''),
+               hasText, chars]);
   return { ok: true, updated: false };
 }
 
@@ -616,7 +768,12 @@ function listRecs_(user) {
     out.push({ rec_id: String(r[1]), created: String(r[2]),
                seconds: Number(r[3] || 0), parts: Number(r[4] || 0),
                folder_id: String(r[5] || ''), language: String(r[6] || ''),
-               note: String(r[7] || '') });
+               note: String(r[7] || ''),
+               // String(true) is 'true' and the sheet stores 'TRUE', so
+               // compare case-insensitively — a checkbox column and a
+               // text column must both read as the same boolean.
+               has_text: String(r[8] || '').toUpperCase() === 'TRUE',
+               chars: Number(r[9] || 0) });
   });
   return out.reverse();
 }
