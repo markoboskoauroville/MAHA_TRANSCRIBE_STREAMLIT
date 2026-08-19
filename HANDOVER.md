@@ -2639,3 +2639,30 @@ The actual round trip — store, list, fetch back — because the deployment
 does not support it yet. What IS tested: the disabled store is a silent
 no-op, a full configuration enables it, and an undeployed script is
 refused with a clear reason rather than believed.
+
+### Round trip CONFIRMED, 19.8.2026
+
+After the deploy, against the real script and the real `USERS` folder,
+with a real 2-second recording:
+
+    stored          rec_id 20260819-094352-c7062f8c
+    listed          parts=1 seconds=2.016 lang=en
+    stored twice    no duplicate row
+    deleted         gone from the list
+
+**5 passed, 0 failed.** Upload, register, list, idempotent re-store and
+delete all work end to end. App boots clean with the wiring in place.
+
+Not covered: the DOWNLOAD path, which needs `DRIVE_SECRET` to sign a
+link. Baba generated it and it is not in this sandbox, so
+retranscribe-from-Drive is untested. That is the next thing to prove, and
+it needs a real recording made in the app.
+
+### The token was deliberately left alone
+
+The deployed script still carries the OLD `SHEETS_TOKEN` — the one that
+went into a chat twice. Baba was told twice, understood, and chose to
+carry on: *"I don't care about this, let it be the same."* It is his data
+and his call. Recorded so nobody later assumes it was rotated: **it was
+not.** If it ever is, it changes in `Code.gs` AND Streamlit secrets
+together, then push and deploy a New version.
