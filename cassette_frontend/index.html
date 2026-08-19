@@ -96,7 +96,7 @@
      and swallowed every tap — the gear rendered perfectly and could not
      be pressed, which is the worst kind of broken because it looks
      fine. Caught by a real click in a real browser. */
-  #bGear { position:absolute; right:0; top:-2px; width:30px; height:30px;
+  #bGear { position:absolute; right:0; bottom:0; width:30px; height:30px;
            z-index:6;
            background:transparent; border:0; padding:0; cursor:pointer;
            display:flex; align-items:center; justify-content:center;
@@ -108,7 +108,10 @@
      everywhere. Consistency beats craft here. */
   #bGear { font-size:15px; line-height:1; }
 
-  #srcmenu { position:absolute; right:0; top:30px; z-index:5;
+  /* OPENS UPWARDS, because the gear is at the bottom now. Anchored
+     below it the menu would hang past the deck's own edge and be cut
+     off by the iframe, which measures itself to the deck. */
+  #srcmenu { position:absolute; right:0; bottom:32px; z-index:7;
              background:var(--dark); border:1px solid var(--edge);
              border-radius:8px; padding:4px; min-width:150px;
              display:flex; flex-direction:column; gap:3px; }
@@ -130,11 +133,13 @@
 </style>
 
 <div id="deck">
-  <!-- THE GEAR IS ALWAYS THE UPPER RIGHT CORNER. Baba's standing rule
-       across this app: the same glyph, the same place, whatever it
-       opens. Here it opens the source. Deliberately quiet — which input
-       a person records from is set once and then forgotten, so it must
-       not sit on the panel competing with rec. -->
+  <!-- THE GEAR SITS IN THE DECK'S LOWER RIGHT CORNER. It began upper
+       right, where it landed on the scope's own clock and had to be
+       lifted above it to be pressable at all. Down here it touches
+       nothing: the message line is the only thing on that row and it
+       starts from the left. Still the same glyph as the tab bar, still
+       quiet — which input a person records from is set once and then
+       forgotten, so it must not compete with rec. -->
   <button id="bGear" aria-label="source" aria-haspopup="true"
           aria-expanded="false">⚙</button>
   <div id="srcmenu" role="menu" hidden></div>

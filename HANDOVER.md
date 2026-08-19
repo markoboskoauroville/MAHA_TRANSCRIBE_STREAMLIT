@@ -4075,7 +4075,12 @@ under one gear icon inside the cassette deck. Always gear icon is in
 upper right corner."*
 
 The Streamlit selectbox is gone. The gear lives in the deck's own
-upper-right corner, in the component's stylesheet, and opens a menu
+LOWER-right corner (moved there in v96 — upper right is where the
+scope's clock lives, which is why the gear needed a z-index just to be
+pressable; lower right touches nothing, because the message line is the
+only thing on that row and starts from the left). Its menu opens
+UPWARDS, or it would hang past the deck's edge and be cut off by the
+iframe, which measures itself to the deck. The gear is in the component's stylesheet, and opens a menu
 built from the same surface, edge and radius as a key — it is part of
 the instrument rather than furniture borrowed from the page.
 
