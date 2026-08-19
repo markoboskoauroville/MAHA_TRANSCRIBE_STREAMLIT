@@ -2109,3 +2109,53 @@ says it is upcoming, names BlackHole, says Android is impossible, warns
 about the law, points at the `open` key as today's answer, and **has
 exactly two buttons — the language toggle — and no fake controls**. The
 help module names every module by its new name in both languages.
+
+---
+
+## 38. THE LOG MODULE (v69)
+
+**L**, admin only.
+
+### Why it exists
+
+Errors in this app are caught in a lot of places ON PURPOSE: a failed
+transcription must not lose the audio, a failed highlight must not stop
+the reading, a failed Drive write must not cost a transcript. That
+patience is right — and it kept swallowing the REASON. `transcribe()`
+raises "All Groq keys failed", `transcribe_any_size` catches it to fall
+through its tiers, and the screen showed silence. That cost an evening on
+a 7 MB take.
+
+**Every caught error is now written to the log as well as handled.**
+
+Wired in at: each Groq key failure (with which key, which model, which
+language), the transcribe block's catch-all, and an EMPTY transcript —
+which is a failure even though nothing threw.
+
+### It cannot break the app
+
+`errlog.add()` never raises, whatever it is handed — `None`, an object,
+raw bytes, or no store at all. A logger that can break the thing it is
+logging is worse than no logger. Tested against all of those.
+
+### KEYS ARE SCRUBBED BEFORE STORING
+
+The whole point of the module is that the history can be copied and
+handed to somebody else, which is exactly the journey a leaked key must
+never make. `gsk_…`, `sk_…`, `ghp_…`, `github_pat_…` and AWS ids are
+replaced with `***REDACTED***` on the way in, so a key cannot be in the
+store even in principle. Ordinary words in the same message survive.
+
+Verified by mutation: with the scrubber disabled the test goes red, so it
+is a real check and not decoration.
+
+### Using it
+
+Newest first, because the thing that just went wrong is the thing being
+looked for. Grouped by day. One press copies the WHOLE history as text —
+that is the point of the module. `clear log` empties it. Capped at 300
+entries, oldest falling off.
+
+22 checks: ordering, the copy text carrying detail and dates, the cap
+holding under 420 entries with the newest surviving, clear, and every
+scrubbing case.

@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v68 (T1 / T2, modules)"
+APP_VERSION = "v69 (log module)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -77,6 +77,7 @@ from ttt import a11y
 from ttt import speech as SPEECH
 from ttt import sheet as SHEET
 from ttt import intake
+from ttt import errlog
 from ttt import help_page as HELP_PAGE
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
@@ -370,6 +371,11 @@ STRINGS = {
     "tab_looks":          {"en": "\u2699\u200b",      "hr": "\u2699\u200b"},
     "tab_help":           {"en": "H",                "hr": "H"},
     "tab_tabaudio":       {"en": "T2",               "hr": "T2"},
+    "tab_log":            {"en": "L",                "hr": "L"},
+    "log_title":          {"en": "Error log",        "hr": "Zapis grešaka"},
+    "log_empty":          {"en": "Nothing has gone wrong yet.",
+                           "hr": "Zasad nije bilo grešaka."},
+    "log_clear":          {"en": "clear log",        "hr": "obriši zapis"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -1001,6 +1007,10 @@ def transcribe(path: str, model: str, language: str) -> str:
                 del errs[:-12]
             except Exception:
                 pass
+            errlog.add(st.session_state, "whisper",
+                       f"{type(e).__name__}: {e}",
+                       f"key {idx + 1} of {len(KEYS)}, model {model}, "
+                       f"language {language}")
             continue
     raise RuntimeError(f"All Groq keys failed ({last_err})")
 
@@ -1614,6 +1624,7 @@ def nav_tabs():
     tabs = ["transcribe", "tabaudio", "talk", "translate", "looks", "help"]
     if is_admin():
         tabs.append("settings")
+        tabs.append("log")
     return tabs
 
 
@@ -2621,6 +2632,11 @@ if active == "transcribe":
                     # exactly like a job still running — which is what
                     # happened on Baba's 7 MB take.
                     if not stage["chars"]:
+                        errlog.add(st.session_state, "transcribe",
+                                   "empty transcript — audio arrived, no speech found",
+                                   f"{stage.get('in','?')} {stage.get('in_kb',0)} KB, "
+                                   f"{stage.get('mins',0):.1f} min, "
+                                   f"method {stage.get('method','?')}")
                         st.warning(t("nothing_heard"))
                     deliver_text(text)
                     st.session_state["flac_path"] = reusable
@@ -2633,6 +2649,10 @@ if active == "transcribe":
                     st.error(t("file_unknown").format(why=plan["reason"]))
             except Exception as e:
                 st.session_state["_last_run"] = {"error": str(e)[:300]}
+                errlog.add(st.session_state, "transcribe",
+                           f"{type(e).__name__}: {e}",
+                           f"{stage.get('in','?')} {stage.get('in_kb',0)} KB"
+                           if "stage" in dir() else "")
                 st.error(str(e))
 
     # WHAT HAPPENED, kept on screen. Baba: "they are all good people, they
@@ -3167,6 +3187,46 @@ elif active == "help":
     # not to do.
     components.html(HELP_PAGE.page(st.session_state.get("ui_lang", "hr")),
                     height=620, scrolling=True)
+
+
+elif active == "log":
+    # ADMIN ONLY. Errors in this app are caught in many places on purpose,
+    # so that a failed transcription does not lose the audio and a failed
+    # highlight does not stop the reading. That patience kept swallowing
+    # the REASON, which is what cost an evening on a 7 MB take. Every
+    # caught error is now written here as well as handled.
+    st.subheader(t("log_title"))
+    _rows = errlog.entries(st.session_state)
+    if not _rows:
+        st.caption(t("log_empty"))
+    else:
+        _all = errlog.as_text(st.session_state)
+        # The whole history in one press — the point of the module is that
+        # it can be handed to somebody else.
+        components.html(
+            copybtn.html(_all, label=t("copy_idle"), busy=t("copy_busy"),
+                         done=t("copy_done"), failed=t("copy_failed"),
+                         scale=a11y.clamp(st.session_state.get(
+                             "text_scale", a11y.DEFAULT_SCALE)),
+                         fg=theme.SCHEMES.get(
+                             st.session_state.get("scheme", "amber"),
+                             theme.SCHEMES["amber"]).get("prose", "#f2ddb4"),
+                         font=theme.FONTS.get(
+                             st.session_state.get("font", "mono"),
+                             theme.FONTS["mono"])),
+            height=copybtn.HEIGHT)
+        st.button(t("log_clear"), key="log_clear",
+                  on_click=lambda: errlog.clear(st.session_state))
+        with st.container(key="statusbox"):
+            _day = None
+            for _e in _rows:
+                if _e.get("day") != _day:
+                    _day = _e.get("day")
+                    st.text(f"--- {_day} ---")
+                st.text(f"{_e.get('t','')}  [{_e.get('where','')}]  "
+                        f"{_e.get('msg','')}")
+                if _e.get("detail"):
+                    st.text(f"            {_e['detail']}")
 
 
 elif active == "settings":
