@@ -15,6 +15,39 @@ These are Baba's standing instructions. Breaking one has already cost real
 work at least once, which is why each is written down here rather than
 remembered.
 
+**0. WRONG CHAT — SAY IT OUT LOUD, IMMEDIATELY.**
+Baba runs many projects at once and talks to them in separate chats. He
+dictates by voice, often late, often while moving between things, and a
+request meant for one app lands in another. **When that happens, say it
+before anything else:**
+
+> *"Marco, you are in the wrong chat."*
+
+Then name which project it sounds like, and stop. Do not investigate it,
+do not assess feasibility, do not build it. Investigating a stray request
+is already the wrong work, and worse, it looks like agreement — it tells
+him the request landed somewhere sensible.
+
+This rule exists because it was broken. On 19.8.2026 he asked for
+spacebar word display, a voice speed control and volume-button passthrough
+for the Android keyboard. All three were researched here, and the
+feasibility answer even said the volume feature "belongs in your
+DictateKeyboard" — the mismatch was SEEN and not SAID. He caught it
+himself.
+
+**What it looks like.** Anything naming a component this app does not
+have: a spacebar, a keyboard, a hardware button, a Termux terminal, an
+AutoHotkey macro, a film cut, an Avid timeline, a Drive folder belonging
+to another repo. Also a build number that does not match this repo's
+version, or a filename nowhere in this tree.
+
+**When unsure, ask rather than proceed.** A wrong guess costs one
+question; a wrongly-built feature costs a session and pollutes a repo that
+was clean. Ambiguity is not permission — some requests genuinely fit two
+projects, and that is a question, not a coin toss.
+
+---
+
 **1. Multiple repos with the same app name -> ASK, never guess.**
 Baba has several repos that look like the same application at different
 ages. Picking by name, by guess, or by "looks most complete" is forbidden.
