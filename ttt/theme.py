@@ -592,6 +592,23 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     iframe {{ display: block; }}
     [data-testid="stIFrame"] {{ margin-bottom: 0 !important; }}
 
+    /* THE VOICES, ON ONE ROW. Four pills wrapping to a second line cost
+       a whole row of a phone screen and say nothing extra. Same nowrap
+       override as the command row: the cells may SHRINK, and the type
+       gives way before any name is clipped. */
+    [class*="st-key-voicerow"] div[data-testid="stHorizontalBlock"] {{
+      flex-wrap: nowrap !important;
+      gap: 0.25rem !important;
+    }}
+    [class*="st-key-voicerow"] div[data-testid="stColumn"] {{
+      flex: 0 1 auto !important; min-width: 0 !important; width: auto !important;
+    }}
+    [class*="st-key-voicerow"] .stButton button {{
+      font-size: clamp(0.60rem, 2.6vw, 0.82rem) !important;
+      padding: 0.34rem 0.5rem !important;
+      width: 100%;
+    }}
+
     /* THE ARCHIVE. Small type: it is a list to scan, not to read, and it
        sits under the thing that matters. The rows are quiet so the
        transcript above stays the loudest thing on screen. */

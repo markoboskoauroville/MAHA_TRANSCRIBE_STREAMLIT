@@ -67,8 +67,24 @@
   #sub .now{color:#ef4444}
   #msg{margin-top:6px;min-height:15px;font-size:12px;color:var(--dim)}
 
-  body.idle #wave,body.idle #row{opacity:.38;pointer-events:none}
+  body.idle #wave{opacity:.38}
+  body.idle #row{opacity:.38}
+  /* PLAY STAYS LIVE WHEN IDLE. Baba: "users should click play right on
+     the deck itself, this button is redundant." So the separate go
+     button is gone and this cell is what starts the reading. The other
+     two cells stay dead, because stepping through sentences that do not
+     exist yet is meaningless. */
+  body.idle #row > *{pointer-events:none}
+  body.idle.startable #bPlay{pointer-events:auto;opacity:1;cursor:pointer}
   body.idle #sub{opacity:.5}
+
+  /* NOTHING EMPTY RESERVES SPACE. Idle, the subtitle and the message
+     line have nothing to say, and a phone screen is too small to hold
+     room for text that does not exist. They collapse and the deck
+     shrinks with them. */
+  body.idle #sub{min-height:0;margin-top:0}
+  body.idle #msg{min-height:0;margin-top:0}
+  body.idle #scopewrap{height:56px}
 </style>
 
 <div id="deck">
@@ -229,7 +245,15 @@ function setPlaying(on){
 var LBL={play:'play',pause:'pause',back:'back',next:'next'};
 
 bPlay.onclick=function(){
-  if(!audio.src) return;
+  if(!audio.src){
+    // NOTHING LOADED: this is the start of a reading, not a transport
+    // press. Python hears it and builds the first block. The stamp lets
+    // it ignore repeats, exactly as the finish signal does.
+    if(document.body.classList.contains('startable')){
+      setValue({at: Date.now(), start: true});
+    }
+    return;
+  }
   if(audio.paused){ audio.play().catch(function(){}); } else { audio.pause(); }
 };
 audio.onplay=function(){ setPlaying(true); if(!raf) tick(); };
@@ -299,6 +323,10 @@ window.addEventListener("message", function(ev){
     lPlay.textContent=audio.paused?LBL.play:LBL.pause; }
   cues=a.cues||[]; words=a.words||[]; wtimes=a.wtimes||[];
   document.body.classList.toggle('idle', !a.src);
+  // STARTABLE = there is text waiting and no audio yet, so play means
+  // "make it" rather than "resume". Python decides; the component only
+  // obeys, because only Python knows whether the box has anything in it.
+  document.body.classList.toggle('startable', !!a.startable);
   if(a.src && a.src!==loaded){
     load(a.src);
     // A new block: play it without waiting to be pressed, the same as the

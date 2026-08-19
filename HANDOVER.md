@@ -3554,3 +3554,123 @@ at a different URL (§46).
 `admin_off` is a **repeated dictionary key with different values** in
 `STRINGS` (app.py ~432 and ~510), so one of the two strings can never
 appear. pyflakes finds it; it is not mine and predates this session.
+
+---
+
+## 63. THE BOX IS NO LONGER WIDGET STATE (v88) — the actual fix
+
+Three sessions of "text reaches the archive but not the box" ended here.
+Every path was correct, which is the signature of the CONTAINER being
+wrong rather than the code that fills it.
+
+`transcript_box` was the text_area's OWN WIDGET KEY. Streamlit owns a
+widget's key: it restores that slot from the frontend's copy on a rerun
+and garbage-collects it when the widget does not render. The deck
+acknowledges every take by posting back, and each post is another rerun
+(§30) — so a value written by Python was competing with the browser's
+idea of what was in that box, several times per recording.
+
+**§25 already learned the mirror image**: *never reuse a widget's key as
+a place to keep the widget's output.* This is the same lesson from the
+other side, and the same shape of fix — keep the value somewhere
+Streamlit does not manage.
+
+### The rewrite
+
+`_t1_text` is the truth. The text_area is only a VIEW of it.
+
+  * the value is passed EXPLICITLY, never through the key
+  * the key carries a GENERATION NUMBER, so delivering text mounts a new
+    widget — the one reliable way to make a text_area show a value it
+    did not previously hold
+  * typing syncs back through `on_change` WITHOUT bumping the
+    generation, or the box would remount under the person's fingers on
+    every keystroke
+
+Fourteen call sites moved to `t1_text()` / `t1_set_text()`.
+
+### The test that would have caught it
+
+`tests/test_box.py` asserts what the box CONTAINS, not that a function
+was called — the old code called everything correctly. **15 passed.**
+Mutations: removing the generation bump fails 3; restoring
+`key="transcript_box"` fails 6 immediately.
+
+**Honest limit:** test 6 sets the generation by hand rather than through
+`t1_set_text`, which is why mutation A did not fail it. Tests 11-13 go
+through the real path and did.
+
+### Layout, from the phone
+
+  * **HR / ENG / single / multi moved out of the bottom** into the slot
+    the status line held, directly under the deck. Both pairs answer
+    "what happens when I press stop", so they belong before recording.
+  * **the status box moved to the foot and no longer opens by itself.**
+    §34 gave it auto-open so an error could not be missed; for a reader
+    who cannot see well, an expander springing open mid-screen moves
+    everything under it, which is worse. Admin-only anyway, and every
+    error is in L regardless.
+  * **the archive tick is BESIDE the row.** Streamlit stacks columns
+    below ~640px — the default §7 calls a bug — so the block is forced
+    horizontal like the command row.
+  * rows show the FIRST TWO WORDS then an ellipsis
+    (`archive.preview_words`); the block steps down to 0.66rem.
+
+---
+
+## 64. THE READER: VOICES ALWAYS ON, PLAY ON THE DECK (v89)
+
+### The voices were hidden exactly when they mattered
+
+They rendered only in the WRITING state, so the one moment a voice is
+easiest to judge — while it is speaking — was the one moment it could
+not be changed. `_voice_row()` is now called in BOTH states.
+
+**Changing voice mid-reading drops the cache and KEEPS THE INDEX**, so
+the new voice takes over from the block being listened to rather than
+starting the whole text again. Changing voice in the middle of a long
+piece must not cost the listener their place.
+
+The synth closure has to be REBUILT on the main thread when this
+happens (`_voice_row_synth_only`), because the closure captured the old
+voice and the prefetch workers would otherwise carry on making audio in
+it. `_voice_row_synth_only` draws no buttons — the row is rendered once,
+further down; building it twice would put two rows of voices on screen.
+
+### The separate play button is gone
+
+Baba: *"users should click play right on the deck itself, this button is
+redundant."* `read_btn` is deleted. The idle transport's own play cell
+starts the reading:
+
+  * Python passes `startable` when there is text and no audio
+  * the component keeps `#bPlay` live while idle and dead otherwise —
+    stepping through sentences that do not exist is meaningless
+  * pressing it posts `{at, start:true}`, stamped, so one press is one
+    start, the same rule the finish signal follows
+
+### Nothing empty reserves space
+
+Idle, the subtitle and message lines have nothing to say, so they
+collapse to zero and the scope shrinks to 56px. Measured: the idle deck
+is **136px**. The voice pills were wrapping a fourth name onto its own
+line, costing a whole row of a phone screen to say nothing — the row is
+now `nowrap` with the type giving way first, exactly as §27 established
+for the command row.
+
+### Test status
+
+`tests/test_reader.py` — **10 passed.** Voices present in both states,
+the same voices, exactly one row of them, the separate button gone, the
+cache dropped on a voice change, the index kept, and new text ending the
+reading. Mutations: not rendering the row while playing fails 3;
+not dropping the cache fails 1.
+
+Note the sandbox cannot reach `speech.platform.bing.com`, so edge-tts
+raises an SSL error under test. It is swallowed, and it is why no audio
+is actually synthesised in these tests.
+
+### Still not done in R
+
+The oscilloscope, the full text below the subtitle, and Edge audio has
+still never been measured for word timings (§20).

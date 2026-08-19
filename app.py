@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v88 (a) (the box is no longer widget state)"
+APP_VERSION = "v89 (a) (reader: voices always on, play on the deck)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2195,7 +2195,7 @@ def forget_me():
     st.session_state["_forgotten"] = True
 
 
-def voice_picker(prefix: str):
+def voice_picker(prefix: str, on_pick=None):
     """Every voice on ONE row, short names, no language headings.
 
     Baba: "HR ENG, it's not necessary. Gabrijela Srecko, we know, are
@@ -2206,12 +2206,23 @@ def voice_picker(prefix: str):
     """
     current = st.session_state.get("voice", "Gabrijela")
     names = [n for group in VOICES_BY_LANG.values() for n in group]
-    cols = st.columns(len(names))
+    # ONE ROW, ALWAYS. A wrapped fourth voice costs a whole line of a
+    # phone screen to say nothing — the keyed container lets the
+    # stylesheet force nowrap, the same override the command row and the
+    # archive rows already use.
+    with st.container(key="voicerow"):
+        cols = st.columns(len(names))
     for col, name in zip(cols, names):
         col.button(
             VOICE_SHORT.get(name, name), key=f"{prefix}_{name}",
             type="primary" if name == current else "secondary",
-            help=name, on_click=pick_voice, args=(name,))
+            help=name,
+            # on_pick lets the reader rebuild a reading already in flight
+            # when the voice changes. Nothing else passes it, so every
+            # other caller behaves exactly as before.
+            on_click=(lambda n=name: (pick_voice(n), on_pick and on_pick()))
+            if on_pick else pick_voice,
+            args=() if on_pick else (name,))
 
 
 def do_correct():
@@ -2426,6 +2437,76 @@ def keep_audio(flac_path: str, seconds: float, language: str) -> None:
     except Exception as e:
         errlog.add(st.session_state, "drive",
                    f"{type(e).__name__}: {e}")
+
+
+def _revoice():
+    """A voice was chosen. If a reading is in flight, rebuild it.
+
+    Baba: "while the audio is playing, user can change the voice, and
+    then you're going to re-render audio."
+
+    The cache is dropped and the INDEX IS KEPT, so the new voice takes
+    over from the block being listened to rather than starting the whole
+    text again — changing voice in the middle of a long piece must not
+    cost the listener their place.
+    """
+    job = st.session_state.get("_talk_job")
+    if job:
+        job["cache"] = {}
+        st.session_state.pop("_talk_player_seen", None)
+        st.session_state["_talk_revoice"] = True
+
+
+def _voice_row_synth_only(engine, sp_ring_talk):
+    """The synth closure WITHOUT drawing the buttons.
+
+    Rebuilding a reading's voice must not put a second row of voices on
+    the page — the row is rendered once, further down, and this is only
+    the function that makes the sound.
+    """
+    if engine == "speechify":
+        current_sp = st.session_state.get("sp_voice", "beatrice_32")
+
+        def synth_fn(text):
+            return sp_synthesize(sp_ring_talk, text, current_sp)
+        return synth_fn
+
+    vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
+
+    def synth_fn(text):
+        return tk.synth_sentence(text, vkey) + (None,)
+    return synth_fn
+
+
+def _voice_row(engine, sp_ring_talk):
+    """The voices, ALWAYS on screen — writing or playing.
+
+    They used to render only in the writing state, so the one moment a
+    voice is easiest to judge, while it is speaking, was the one moment
+    it could not be changed.
+    """
+    if engine == "speechify":
+        current_sp = st.session_state.get("sp_voice", "beatrice_32")
+        quick = list(SP_CURATED)
+        if current_sp not in quick:
+            quick.insert(0, current_sp)
+        cols = st.columns(4)
+        for i, vid in enumerate(quick[:8]):
+            cols[i % 4].button(
+                vid.split("_")[0].replace("-", " ").title(), key=f"talksp_{vid}",
+                type="primary" if vid == current_sp else "secondary",
+                on_click=lambda v=vid: (pick_sp_voice(v), _revoice()))
+
+        def synth_fn(text):
+            return sp_synthesize(sp_ring_talk, text, current_sp)
+        return synth_fn
+
+    voice_picker("talkvoice", on_pick=_revoice)
+    vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
+
+    def synth_fn(text):
+        return tk.synth_sentence(text, vkey) + (None,)
+    return synth_fn
 
 
 def _lang_mode_row():
@@ -3348,6 +3429,14 @@ elif active == "talk":
         # component says so, the next part is made, and the player is
         # replaced in the same place. Baba: "you just remove that player
         # and put at the same place the other player."
+        # A VOICE WAS CHANGED WHILE PLAYING. The cache was dropped by
+        # _revoice; the synth closure still points at the OLD voice, so it
+        # has to be rebuilt here — on the main thread, before any worker
+        # touches it. The index is untouched, so the new voice takes over
+        # from the block being listened to.
+        if st.session_state.pop("_talk_revoice", False):
+            job["synth"] = _voice_row_synth_only(engine, sp_ring_talk)
+
         idx = job["index"]
         parts = job["parts"]
         cached = job["cache"].get(idx)
@@ -3399,9 +3488,17 @@ elif active == "talk":
                     job["index"] = idx + 1
                     st.rerun()
 
+        # THE VOICES, ON SCREEN WHILE IT PLAYS. Baba: "the voices should
+        # be always available on screen, so while the audio is playing
+        # user can change the voice and then you re-render audio." A
+        # voice is easiest to judge while it is speaking, and that was
+        # exactly when it could not be changed.
+        _voice_row(engine, sp_ring_talk)
+
         def _new_text():
             st.session_state.pop("_talk_job", None)
             st.session_state.pop("_talk_player_seen", None)
+            st.session_state.pop("_talk_revoice", False)
 
         st.button(t("new_text"), key="talk_new", on_click=_new_text)
 
@@ -3441,36 +3538,32 @@ elif active == "talk":
         # One shape for both modules: the transport is the first thing
         # under the tabs in each, so a hand goes to the same place without
         # looking, whichever module is open.
+        # PLAY ON THE DECK IS WHAT STARTS THE READING. Baba: "users
+        # should click play right on the deck itself, this button is
+        # redundant." So the separate go button below the box is gone and
+        # the transport's own play cell does it — one control for
+        # starting and for pausing, in the place a hand already goes.
+        _has_text = bool((st.session_state.get("talk_text") or "").strip())
+        _start = False
         if _wave_component is not None:
-            _wave_component(src="", cues=[], words=[], wtimes=[],
-                            labels={"play": t("wave_play"), "pause": t("wave_pause"),
-                                    "back": t("wave_back"), "next": t("wave_next")},
-                            part=0, parts=0,
-                            scale=a11y.clamp(st.session_state.get(
-                                "text_scale", a11y.DEFAULT_SCALE)),
-                            autoplay=False, key="talk_player_idle",
-                            default=None)
+            _ev0 = _wave_component(
+                src="", cues=[], words=[], wtimes=[],
+                labels={"play": t("wave_play"), "pause": t("wave_pause"),
+                        "back": t("wave_back"), "next": t("wave_next")},
+                part=0, parts=0, startable=_has_text,
+                scale=a11y.clamp(st.session_state.get(
+                    "text_scale", a11y.DEFAULT_SCALE)),
+                autoplay=False, key="talk_player_idle",
+                default=None)
+            # One press is one start. The stamp guards against the
+            # component re-reporting the same press across reruns, the
+            # same rule the finish signal follows.
+            if isinstance(_ev0, dict) and _ev0.get("start"):
+                if st.session_state.get("_talk_start_seen") != _ev0.get("at"):
+                    st.session_state["_talk_start_seen"] = _ev0.get("at")
+                    _start = True
 
-        if engine == "speechify":
-            current_sp = st.session_state.get("sp_voice", "beatrice_32")
-            quick = list(SP_CURATED)
-            if current_sp not in quick:
-                quick.insert(0, current_sp)
-            cols = st.columns(4)
-            for i, vid in enumerate(quick[:8]):
-                cols[i % 4].button(
-                    vid.split("_")[0].replace("-", " ").title(), key=f"talksp_{vid}",
-                    type="primary" if vid == current_sp else "secondary",
-                    on_click=pick_sp_voice, args=(vid,))
-
-            def synth_fn(text):
-                return sp_synthesize(sp_ring_talk, text, current_sp)
-        else:
-            voice_picker("talkvoice")
-            vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
-
-            def synth_fn(text):
-                return tk.synth_sentence(text, vkey) + (None,)
+        synth_fn = _voice_row(engine, sp_ring_talk)
 
         def _clear_talk():
             st.session_state["talk_text"] = ""
@@ -3500,7 +3593,8 @@ elif active == "talk":
         # whole player bar appear and everything below it jumped down the
         # page. The bar is the tallest thing in this module; that jump was
         # the worst one in the app.
-        go = st.button(SYM["read"], key="read_btn", help=t("read_btn"))
+        # (the go button lived here and is gone — see the deck above)
+        go = _start
 
         # The archive, brought over from the tab that was merged away.
         archive_store = Store(RT.ARCHIVE_NS, USER, ls_read=LS_DATA,
