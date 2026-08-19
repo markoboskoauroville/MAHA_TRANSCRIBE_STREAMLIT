@@ -96,6 +96,31 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       --dim: {t['dim']};
       --red: {t['red']};
       --mono: {mono};
+
+      /* ---- ONE RHYTHM -------------------------------------------------
+         Baba, from a phone screenshot: "the space between all these
+         frames is not equal. Above, below the recorder there is too much
+         space." Every frame — deck, command row, box, archive, language
+         row — now sits on this single gap, so the spacing cannot drift
+         apart one rule at a time. Change it here and the whole column
+         re-spaces together. */
+      --frame-gap: 0.55rem;
+    }}
+
+    /* ---- TYPE SCALE ---------------------------------------------------
+       "Everything too large." The whole interface steps down together
+       rather than rule by rule, so the proportions between the parts are
+       preserved and nothing has to be re-tuned against anything else.
+
+       This is a scale on the CHROME, not on the reading surfaces. The
+       transcript, the reader and the subtitle are governed by the text
+       size control (hard rule 6: the control sits above each reading
+       surface) and are deliberately NOT touched here — shrinking the
+       words someone came to read would break the one thing this app
+       exists to do. In rem throughout, so a reader's own OS font setting
+       still scales all of it. */
+    .stButton button, .stCheckbox, [data-testid="stExpander"] summary {{
+      font-size: 0.82rem !important;
     }}
 
     .stApp, [data-testid="stAppViewContainer"] {{
@@ -335,7 +360,10 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        them better and gives a far larger target to press, which matters
        more here than the typography did. Corners are nearly square, so
        the row reads as a terminal table rather than a strip of pills. */
-    [class*="st-key-cmdrow_"] {{ margin-bottom: -0.5rem; }}
+    /* NO NEGATIVE MARGIN. This was -0.5rem, which pulled the command row
+       up against the box below it and left every other frame sitting in
+       more air — measured at 1.8px here against 17.6px under the deck.
+       The rhythm is --frame-gap and nothing opts out of it. */
     [class*="st-key-cmdrow_"] div[data-testid="stHorizontalBlock"] {{
       display: grid !important;
       /* FLEX, not grid-auto-flow: column. A column grid cannot wrap, so
@@ -542,8 +570,50 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        His spacing is tight: 4px inside a row, 6px between rows. Streamlit
        is far airier by default, which is what makes it look like a form
        rather than a panel. */
-    div[data-testid="stVerticalBlock"] {{ gap: 0.42rem; }}
+    div[data-testid="stVerticalBlock"] {{ gap: var(--frame-gap); }}
     div[data-testid="stHorizontalBlock"] {{ gap: 0.28rem !important; }}
+
+    /* EVERY FRAME ON THE SAME GAP.
+       The gap is set ONCE, by the vertical block's flex gap above. These
+       containers carry NO margin of their own — a margin here ADDS to
+       that gap instead of replacing it, which measured 17.6px under the
+       deck against 1.8px under the command row: the exact inequality
+       that was photographed. Anything that wants to sit closer or
+       further away has to change --frame-gap, not add a margin.
+
+       The component iframe is inline by default, which leaves a text
+       baseline gap underneath it that looks like padding nobody wrote. */
+    [class*="st-key-deckbox"], [class*="st-key-statusbox"],
+    [class*="st-key-archivebox"], [class*="st-key-langrow"],
+    [class*="st-key-cmdrow_"] {{
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+    }}
+    iframe {{ display: block; }}
+    [data-testid="stIFrame"] {{ margin-bottom: 0 !important; }}
+
+    /* THE ARCHIVE. Small type: it is a list to scan, not to read, and it
+       sits under the thing that matters. The rows are quiet so the
+       transcript above stays the loudest thing on screen. */
+    [class*="st-key-archivebox"] summary,
+    [class*="st-key-archivebox"] summary p {{
+      font-size: 0.74rem !important; color: var(--amber) !important;
+      letter-spacing: 0.04em;
+    }}
+    [class*="st-key-archivebox"] .stButton button {{
+      font-size: 0.70rem !important;
+      padding: 0.3rem 0.6rem !important;
+      text-align: left;
+      justify-content: flex-start;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }}
+    /* The tick keeps a full 44px target even though the row is small —
+       target size does not shrink with type (hard rule 6, WCAG 2.5.5 at
+       the AAA figure, because 24px is not enough for a shaking hand). */
+    [class*="st-key-archivebox"] [data-testid="stCheckbox"] {{
+      min-height: 44px; display: flex; align-items: center;
+    }}
 
     /* THE STATUS BOX. Small type, the same dim monospace as the deck's
        own line, so it reads as a continuation of it rather than as a new

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v86 (a) (paired drive archive)"
+APP_VERSION = "v87 (a) (one rhythm, smaller type, archive ticks)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -321,6 +321,9 @@ STRINGS = {
     "arc_load_help": {"en": "Put this back in the box",
                       "hr": "Vrati ovo u okvir"},
     "arc_del_help":  {"en": "Delete this one", "hr": "Obriši ovo"},
+    "arc_del_sel":   {"en": "delete ({n})", "hr": "obriši ({n})"},
+    "arc_sel_help":  {"en": "Tick to select for deleting",
+                      "hr": "Označi za brisanje"},
     "nothing_heard": {"en": "The audio arrived but no speech was found in it.",
                       "hr": "Zvuk je stigao ali u njemu nije pronađen govor."},
     "keeping_audio": {"en": "Saving the recording…",
@@ -2752,7 +2755,13 @@ if active == "transcribe":
     # chain, Whisper returns the same words as a WAV reference. 32 kbit was
     # NOT transparent, so the bitrate floor is real. See HANDOVER §22.
     rec_key = "mic_%d" % st.session_state.get("_mic_gen", 0)
-    audio = cassette_recorder(rec_key)
+    # A KEYED CONTAINER so the deck sits on the same frame rhythm as
+    # everything else. Rendered bare, the component's iframe carried its
+    # own spacing and nothing could reach it from the stylesheet, which
+    # is why there was visibly more room under the deck than between any
+    # other two frames.
+    with st.container(key="deckbox"):
+        audio = cassette_recorder(rec_key)
     # STORE IT UNDER A DIFFERENT KEY. rec_key belongs to the component
     # widget, and Streamlit refuses to let anything else write to a key a
     # widget owns — assigning to it raises StreamlitAPIException on the
@@ -2933,7 +2942,17 @@ if active == "transcribe":
     # deserve to see."
     _lr = st.session_state.get("_last_run")
     _errs = st.session_state.get("_stt_errors") or []
-    if _lr or _errs:
+    # ADMIN ONLY. Baba: "this status line you are hiding from users, only
+    # admins can see this." Codec names, convert seconds and Whisper's
+    # refusals are diagnostics, and this is an app for people who cannot
+    # read well — a line they cannot act on is noise in the way of the
+    # words they came for.
+    #
+    # Nothing is lost by hiding it: every one of these already goes to
+    # the L module through errlog, which is where it can be copied and
+    # sent on. And the things a USER can act on are separate and stay —
+    # the "nothing was heard" warning and the st.error paths above.
+    if (_lr or _errs) and is_admin():
         # FOLDED AWAY BY DEFAULT, so it costs no room on a phone. It opens
         # BY ITSELF when something went wrong, because an error nobody can
         # see is the thing that wastes an evening. Small type, the same
@@ -3135,23 +3154,62 @@ if active == "transcribe":
     # No new furniture: the same terminal row of cells as everywhere else.
     _arc = archive.items(st.session_state)
     if _arc:
+        # SELECT, THEN DELETE. Baba: "there should be check marks next to
+        # each of the archive items, and then delete, delete all... the
+        # principle is to select and delete."
+        #
+        # Deleting one row at a time meant a press per item and the list
+        # reflowing under the finger after each one. Ticking is reversible
+        # and costs nothing until the delete is pressed.
+        _sel_key = "_t1_arc_sel"
+        _sel = st.session_state.setdefault(_sel_key, set())
+        # Ids that no longer exist must not linger in the selection, or
+        # the count says 3 while two of them are already gone.
+        _live = {r["id"] for r in _arc}
+        if not _sel.issubset(_live):
+            _sel &= _live
+
+        def _delete_selected():
+            for _id in list(st.session_state.get(_sel_key, set())):
+                archive.remove(st.session_state, _id)
+            st.session_state[_sel_key] = set()
+
+        def _delete_all():
+            archive.clear(st.session_state)
+            st.session_state[_sel_key] = set()
+
+        def _toggle(item_id):
+            _s = st.session_state.setdefault(_sel_key, set())
+            if st.session_state.get(f"arcsel_{item_id}"):
+                _s.add(item_id)
+            else:
+                _s.discard(item_id)
+
         with st.container(key="archivebox"):
             with st.expander(f"{t('arc_title')}  ·  {len(_arc)}", expanded=False):
-                st.button(t("arc_clear_all"), key="arc_clear_all",
-                          on_click=lambda: archive.clear(st.session_state))
+                _b1, _b2 = st.columns([1, 1])
+                # Disabled with nothing ticked, rather than hidden: a
+                # control that appears and disappears moves everything
+                # under it, which is the rule from §49.
+                _b1.button(t("arc_del_sel").format(n=len(_sel)),
+                           key="arc_del_sel", disabled=not _sel,
+                           on_click=_delete_selected,
+                           use_container_width=True)
+                _b2.button(t("arc_clear_all"), key="arc_clear_all",
+                           on_click=_delete_all, use_container_width=True)
                 for _r in _arc:
-                    _c1, _c2 = st.columns([9, 1])
+                    _c0, _c1 = st.columns([1, 9])
+                    _c0.checkbox(" ", key=f"arcsel_{_r['id']}",
+                                 value=_r["id"] in _sel,
+                                 on_change=_toggle, args=(_r["id"],),
+                                 label_visibility="collapsed",
+                                 help=t("arc_sel_help"))
                     _c1.button(
                         f"{_r.get('at','')}  {archive.preview(_r)}".strip(),
                         key=f"arc_{_r['id']}",
                         help=t("arc_load_help"),
                         on_click=load_from_archive, args=(_r["id"],),
                         use_container_width=True)
-                    _c2.button("✕", key=f"arcdel_{_r['id']}",
-                               help=t("arc_del_help"),
-                               on_click=archive.remove,
-                               args=(st.session_state, _r["id"]),
-                               use_container_width=True)
 
     # The spoken language, at the very bottom: it is set once and then
     # left alone, so it does not belong above the thing people came for.
