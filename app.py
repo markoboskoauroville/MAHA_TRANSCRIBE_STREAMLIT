@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v67 (help tab)"
+APP_VERSION = "v68 (T1 / T2, modules)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -297,7 +297,7 @@ STRINGS = {
     # Single letters. The tab bar is the one row that is always on
     # screen, so it should cost the least. T transcribe, R read, TR
     # translate, and the gear.
-    "tab_transcribe":     {"en": "T",                "hr": "T"},
+    "tab_transcribe":     {"en": "T1",               "hr": "T1"},
     # The cassette deck transport. Words, not only symbols: the shapes
     # carry the meaning for anyone who knows a tape deck, and the word
     # carries it for everyone else.
@@ -369,6 +369,7 @@ STRINGS = {
     # leaving them pixel-identical on screen.
     "tab_looks":          {"en": "\u2699\u200b",      "hr": "\u2699\u200b"},
     "tab_help":           {"en": "H",                "hr": "H"},
+    "tab_tabaudio":       {"en": "T2",               "hr": "T2"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -1610,7 +1611,7 @@ def nav_tabs():
     one is engines and keys, and only the owner ever sees it. Colour does
     the explaining, so neither needs a word.
     """
-    tabs = ["transcribe", "talk", "translate", "looks", "help"]
+    tabs = ["transcribe", "tabaudio", "talk", "translate", "looks", "help"]
     if is_admin():
         tabs.append("settings")
     return tabs
@@ -3146,6 +3147,16 @@ elif active == "looks":
                  label_visibility="collapsed", value=t("looks_preview"))
 
     tab_signature(t("sig_looks"))
+
+
+elif active == "tabaudio":
+    # NOT BUILT. The tab exists so the shape of the app is honest about
+    # what is coming, and so the promise is written down where it can be
+    # checked rather than living in a chat log. Everything here is
+    # description, not a stub pretending to work — there is no rec key to
+    # press that quietly does nothing.
+    components.html(HELP_PAGE.soon(st.session_state.get("ui_lang", "hr")),
+                    height=560, scrolling=True)
 
 
 elif active == "help":

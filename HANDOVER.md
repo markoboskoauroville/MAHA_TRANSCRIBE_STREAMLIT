@@ -2069,3 +2069,43 @@ to the clipboard, then Ctrl+V into the deck, is exact and instant.
 
 **Before building: check Croatian law on recording conversations.** A
 meeting transcriber is exactly where consent rules bite.
+
+---
+
+## 37. T1 / T2, AND THE WORD "MODULE" (v68)
+
+**T is now T1**, and **T2** sits beside it. Baba's naming: each one is a
+MODULE, not a tab, and the help says so in both languages — the
+transcription module, the read module, the translate module, the looks
+module, the settings module, the help module.
+
+### T2 exists and does nothing, on purpose
+
+It is **not a stub**. There is no rec key that looks alive and quietly
+does nothing, because a control that appears to work and does not costs
+someone a real recording to discover. The module is description only: what
+it will do, what each platform will need, and what it can never do.
+
+Same bilingual component and the same instant HR/ENG toggle as the help
+module, so the two read as one piece of writing.
+
+It states plainly:
+
+* the interface will be identical to T1 — same four keys, same trace, same
+  clock, same single/multi, same status box; only the source of the sound
+  differs
+* **Windows** needs nothing, the browser can already share system audio
+* **macOS** needs the free BlackHole, which then appears as an ordinary
+  microphone
+* **Android is not possible at all** — the platform forbids it, and on the
+  phone T1 remains
+* check the law before recording a conversation; this is a transcription
+  tool, not a permission
+* and meanwhile, anything saveable as a file can be transcribed TODAY with
+  **open** in T1
+
+Tested, 18 checks across both modules: T2 opens in the right language,
+says it is upcoming, names BlackHole, says Android is impossible, warns
+about the law, points at the `open` key as today's answer, and **has
+exactly two buttons — the language toggle — and no fake controls**. The
+help module names every module by its new name in both languages.

@@ -57,14 +57,15 @@ HR = """
 <b>LLL</b> je <i>Look, Listen, Learn</i> — aplikacija čita naglas dok ti
 istu rečenicu vidiš na ekranu.</p>
 
-<h2>Kartice na vrhu</h2>
+<h2>Moduli</h2>
 <table>
-<tr><th>T</th><td>Snimanje i prijepis govora u tekst.</td></tr>
-<tr><th>R</th><td>Čitanje teksta naglas, uz označavanje riječi.</td></tr>
-<tr><th>TR</th><td>Prijevod.</td></tr>
-<tr><th>⚙ sivi</th><td>Izgled — font, veličina, boje.</td></tr>
-<tr><th>⚙ jantarni</th><td>Motori i ključevi. Vidi ga samo vlasnik.</td></tr>
-<tr><th>H</th><td>Ova stranica.</td></tr>
+<tr><th>T1</th><td><b>Modul za transkripciju.</b> Snima mikrofon i pretvara govor u tekst.</td></tr>
+<tr><th>T2</th><td><b>Modul za zvuk s računala.</b> Nadolazeće.</td></tr>
+<tr><th>R</th><td><b>Modul za čitanje.</b> Čita tekst naglas i označava riječ koju izgovara.</td></tr>
+<tr><th>TR</th><td><b>Modul za prijevod.</b></td></tr>
+<tr><th>⚙ sivi</th><td><b>Modul izgleda.</b> Font, veličina, boje.</td></tr>
+<tr><th>⚙ jantarni</th><td><b>Modul postavki.</b> Motori i ključevi. Vidi ga samo vlasnik.</td></tr>
+<tr><th>H</th><td><b>Modul pomoći.</b> Ova stranica.</td></tr>
 </table>
 
 <h2>Kasetofon</h2>
@@ -133,7 +134,7 @@ karticu prije nego što je poslana, izgubljena je.</b> Zato u lošoj vezi
 snimaj kraće dijelove u <b>multi</b> načinu.</div>
 
 <h2>T1 i T2</h2>
-<p><b>T1</b> je ono što sada radi: snima <b>mikrofon</b>. Radi svugdje —
+<p><b>T1</b>, modul za transkripciju, je ono što sada radi: snima <b>mikrofon</b>. Radi svugdje —
 Android, macOS, Windows, u pregledniku.</p>
 <div class="soon"><b>T2 — zvuk sustava. Još nije napravljeno.</b><br>
 Ideja: snimati ono što računalo <i>svira</i>, a ne ono što mikrofon čuje.
@@ -174,14 +175,15 @@ EN = """
 <b>LLL</b> is <i>Look, Listen, Learn</i> — the app reads aloud while you
 see the same sentence on screen.</p>
 
-<h2>The tabs along the top</h2>
+<h2>The modules</h2>
 <table>
-<tr><th>T</th><td>Record and turn speech into text.</td></tr>
-<tr><th>R</th><td>Read text aloud, highlighting each word.</td></tr>
-<tr><th>TR</th><td>Translate.</td></tr>
-<tr><th>⚙ grey</th><td>Looks — font, size, colours.</td></tr>
-<tr><th>⚙ amber</th><td>Engines and keys. Only the owner sees it.</td></tr>
-<tr><th>H</th><td>This page.</td></tr>
+<tr><th>T1</th><td><b>The transcription module.</b> Records the microphone and turns speech into text.</td></tr>
+<tr><th>T2</th><td><b>The computer-audio module.</b> Coming.</td></tr>
+<tr><th>R</th><td><b>The read module.</b> Reads text aloud and highlights the word being spoken.</td></tr>
+<tr><th>TR</th><td><b>The translate module.</b></td></tr>
+<tr><th>⚙ grey</th><td><b>The looks module.</b> Font, size, colours.</td></tr>
+<tr><th>⚙ amber</th><td><b>The settings module.</b> Engines and keys. Only the owner sees it.</td></tr>
+<tr><th>H</th><td><b>The help module.</b> This page.</td></tr>
 </table>
 
 <h2>The cassette deck</h2>
@@ -252,7 +254,7 @@ close the tab before it has been sent, it is lost.</b> On a weak connection,
 record shorter pieces in <b>multi</b> mode.</div>
 
 <h2>T1 and T2</h2>
-<p><b>T1</b> is what works today: it records the <b>microphone</b>. It works
+<p><b>T1</b>, the transcription module, is what works today: it records the <b>microphone</b>. It works
 everywhere — Android, macOS, Windows, in the browser.</p>
 <div class="soon"><b>T2 — system audio. NOT BUILT YET.</b><br>
 The idea: record what the computer is <i>playing</i> rather than what the
@@ -308,6 +310,123 @@ def page(lang: str = "hr") -> str:
 // one is shown, so it is instant and — the part Baba asked for — it does
 // not move you in the text. A Streamlit rerun would rebuild the page and
 // throw you back to the top.
+var cur = "{start}";
+function show(l){{
+  cur = l;
+  document.querySelectorAll('[data-lang]').forEach(function(d){{
+    d.classList.toggle('show', d.getAttribute('data-lang') === l);
+  }});
+  document.getElementById('bHR').classList.toggle('on', l === 'hr');
+  document.getElementById('bEN').classList.toggle('on', l === 'en');
+  try {{ localStorage.setItem('ttt_help_lang', l); }} catch(e) {{}}
+}}
+document.getElementById('bHR').onclick = function(){{ show('hr'); }};
+document.getElementById('bEN').onclick = function(){{ show('en'); }};
+try {{
+  var saved = localStorage.getItem('ttt_help_lang');
+  if (saved === 'hr' || saved === 'en') cur = saved;
+}} catch(e) {{}}
+show(cur);
+</script>"""
+
+
+# ---------------------------------------------------------------------
+#  T2 — the tab that says what it will be
+# ---------------------------------------------------------------------
+# Deliberately NOT a stub. There is no rec key here that quietly does
+# nothing: a control that looks alive and is not is worse than an empty
+# room, because it costs someone a real recording to find out. It says
+# what it will do, what it will need on each platform, and what it can
+# never do.
+
+SOON_HR = """
+<h2>T2 — modul za zvuk s računala</h2>
+<p class="lead">Nadolazeća mogućnost.</p>
+
+<p>Ovo će snimati ono što <b>računalo svira</b>, a ne ono što mikrofon čuje
+— pa ćeš moći prepisati:</p>
+<ul>
+<li>video poziv ili sastanak dok traje,</li>
+<li>snimku sastanka koju ti je netko poslao,</li>
+<li>podcast, predavanje ili video s interneta,</li>
+<li>bilo koji zvuk koji svira na uređaju, bez mikrofona u sobi.</li>
+</ul>
+
+<p>Sučelje će biti <b>isto kao u modulu T1</b>: iste četiri tipke, isti val, isti
+sat, isti <b>single</b> i <b>multi</b>, isti status. Razlika je samo odakle
+zvuk dolazi.</p>
+
+<h3>Što će trebati</h3>
+<table>
+<tr><th>Windows</th><td>Ništa. Preglednik to već može — pri dijeljenju
+zaslona označiš <i>dijeli zvuk sustava</i>.</td></tr>
+<tr><th>macOS</th><td>Besplatni <b>BlackHole</b>. Nakon instalacije se
+pojavi kao običan mikrofon i aplikacija ga jednostavno odabere.</td></tr>
+<tr><th>Android</th><td><b>Nije moguće.</b> Sustav ne dopušta snimanje
+zvuka drugih aplikacija. Na telefonu ostaje modul T1.</td></tr>
+</table>
+
+<div class="warn"><b>Prije snimanja razgovora provjeri zakon.</b>
+U Hrvatskoj snimanje razgovora bez pristanka sugovornika nije uvijek
+dopušteno. Ovo je alat za prijepis, a ne dozvola.</div>
+
+<div class="note">Do tada: sve što možeš spremiti kao datoteku možeš
+prepisati već sada — u modulu <b>T1</b> pritisni <b>open</b> i odaberi je.</div>
+"""
+
+SOON_EN = """
+<h2>T2 — the computer-audio module</h2>
+<p class="lead">An upcoming feature.</p>
+
+<p>This will record what the <b>computer is playing</b> rather than what
+the microphone hears — so you will be able to transcribe:</p>
+<ul>
+<li>a video call or meeting as it happens,</li>
+<li>a recorded meeting somebody sent you,</li>
+<li>a podcast, a lecture, or a video from the internet,</li>
+<li>any sound playing on the device, with no microphone in the room.</li>
+</ul>
+
+<p>The interface will be <b>the same as the T1 module</b>: the same four keys, the
+same trace, the same clock, the same <b>single</b> and <b>multi</b>, the
+same status box. Only where the sound comes from is different.</p>
+
+<h3>What it will need</h3>
+<table>
+<tr><th>Windows</th><td>Nothing. The browser can already do this — tick
+<i>share system audio</i> when sharing the screen.</td></tr>
+<tr><th>macOS</th><td>The free <b>BlackHole</b>. Once installed it appears
+as an ordinary microphone and the app simply selects it.</td></tr>
+<tr><th>Android</th><td><b>Not possible.</b> The system does not allow
+recording other apps' audio. On the phone, the T1 module remains.</td></tr>
+</table>
+
+<div class="warn"><b>Check the law before recording a conversation.</b>
+In Croatia, recording a conversation without the other person's consent is
+not always permitted. This is a transcription tool, not a permission.</div>
+
+<div class="note">Until then: anything you can save as a file can be
+transcribed today — in the <b>T1</b> module press <b>open</b> and choose it.</div>
+"""
+
+
+def soon(lang: str = "hr") -> str:
+    """The T2 tab: both languages, same instant toggle as the help page."""
+    start = "hr" if str(lang).lower().startswith("hr") else "en"
+    return f"""<!doctype html><meta charset="utf-8">
+<style>{CSS}
+.lead{{color:var(--amber);font-size:13px;letter-spacing:.08em;
+      text-transform:uppercase;margin:2px 0 14px}}
+</style>
+<div id="top">
+  <button class="lang" id="bHR" type="button">HR</button>
+  <button class="lang" id="bEN" type="button">ENG</button>
+</div>
+<div id="wrap">
+  <div data-lang="hr">{SOON_HR}</div>
+  <div data-lang="en">{SOON_EN}</div>
+</div>
+<script>
 var cur = "{start}";
 function show(l){{
   cur = l;
