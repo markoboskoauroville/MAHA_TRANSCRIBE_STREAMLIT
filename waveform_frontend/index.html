@@ -77,10 +77,16 @@
     <div id="page"></div>
     <div id="clock">0:00</div>
   </div>
+  <!-- FOUR CELLS, in the deck's order, because T1 is the master layout.
+       rec -> play, pause -> back a sentence, stop -> next sentence, and
+       the fourth cell is held EMPTY rather than removed: the two modules
+       must have the same shape, and a row of three beside a row of four
+       is two shapes. Baba: everything is already there, only greyed. -->
   <div id="row">
-    <button class="key" id="bBack" aria-label="previous sentence"><span class="bk"></span><span id="lBack">back</span></button>
     <button class="key" id="bPlay" aria-label="play"><span class="tri" id="gPlay"></span><span id="lPlay">play</span></button>
+    <button class="key" id="bBack" aria-label="previous sentence"><span class="bk"></span><span id="lBack">back</span></button>
     <button class="key" id="bFwd" aria-label="next sentence"><span class="fw"></span><span id="lFwd">next</span></button>
+    <button class="key" id="bSpare" aria-label="unused" disabled><span id="lSpare">&nbsp;</span></button>
   </div>
   <div id="sub" aria-live="polite"></div>
   <div id="msg" role="status" aria-live="polite"></div>

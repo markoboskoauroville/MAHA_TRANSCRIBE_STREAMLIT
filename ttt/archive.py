@@ -24,7 +24,16 @@ a separate piece of work — see the note in HANDOVER.
 import itertools
 import time
 
-KEY = "_archive"
+# NOT "_archive". The R module has owned that session key since long
+# before this module existed, holding a DIFFERENT shape with no "at"
+# field. Claiming it here meant that opening R replaced T1's archive with
+# R's, and T1 then crashed with a KeyError on the next render — a crash in
+# one module caused by visiting another, which is about the hardest kind
+# to trace back.
+#
+# Session state is one flat namespace shared by every module. A generic
+# name is a collision waiting to happen; prefix by owner.
+KEY = "_t1_archive"
 LIMIT = 60           # newest kept
 
 # A COUNTER, NOT A CLOCK. Two takes added in the same millisecond got the

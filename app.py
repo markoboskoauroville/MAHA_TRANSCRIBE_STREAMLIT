@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v83 (R redesign complete)"
+APP_VERSION = "v84 (R matches T1)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3111,7 +3111,7 @@ if active == "transcribe":
                 for _r in _arc:
                     _c1, _c2 = st.columns([9, 1])
                     _c1.button(
-                        f"{_r['at']}  {archive.preview(_r)}",
+                        f"{_r.get('at','')}  {archive.preview(_r)}".strip(),
                         key=f"arc_{_r['id']}",
                         help=t("arc_load_help"),
                         on_click=load_from_archive, args=(_r["id"],),
@@ -3256,6 +3256,21 @@ elif active == "talk":
 
     else:
         # ---- WRITING -------------------------------------------------
+        # THE PLAYER IS AT THE TOP, exactly as the deck is in T1. Baba:
+        # "we use T1 as the master designer, copy to R the same layout."
+        # One shape for both modules: the transport is the first thing
+        # under the tabs in each, so a hand goes to the same place without
+        # looking, whichever module is open.
+        if _wave_component is not None:
+            _wave_component(src="", cues=[], words=[], wtimes=[],
+                            labels={"play": t("wave_play"), "pause": t("wave_pause"),
+                                    "back": t("wave_back"), "next": t("wave_next")},
+                            part=0, parts=0,
+                            scale=a11y.clamp(st.session_state.get(
+                                "text_scale", a11y.DEFAULT_SCALE)),
+                            autoplay=False, key="talk_player_idle",
+                            default=None)
+
         if engine == "speechify":
             current_sp = st.session_state.get("sp_voice", "beatrice_32")
             quick = list(SP_CURATED)
@@ -3305,16 +3320,6 @@ elif active == "talk":
         # whole player bar appear and everything below it jumped down the
         # page. The bar is the tallest thing in this module; that jump was
         # the worst one in the app.
-        if _wave_component is not None:
-            _wave_component(src="", cues=[], words=[], wtimes=[],
-                            labels={"play": t("wave_play"), "pause": t("wave_pause"),
-                                    "back": t("wave_back"), "next": t("wave_next")},
-                            part=0, parts=0,
-                            scale=a11y.clamp(st.session_state.get(
-                                "text_scale", a11y.DEFAULT_SCALE)),
-                            autoplay=False, key="talk_player_idle",
-                            default=None)
-
         go = st.button(SYM["read"], key="read_btn", help=t("read_btn"))
 
         # The archive, brought over from the tab that was merged away.

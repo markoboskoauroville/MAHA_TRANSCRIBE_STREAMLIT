@@ -3137,3 +3137,46 @@ Waveform, paging playhead with instant turns, transport with sentence
 jumps, subtitle with the red word, player always present and greyed when
 idle, cues from one source of truth, and generate-ahead. What remains is
 Baba using it and telling me what is wrong.
+
+---
+
+## 57. THE ARCHIVE KEY COLLISION, AND R MATCHING T1 (v84)
+
+### KeyError in T1, caused by visiting R
+
+`ttt/archive.py` used `KEY = "_archive"`. **The R module has owned that
+session key since long before that module existed**, holding a different
+shape with no `at` field.
+
+So opening R replaced T1's archive with R's, and T1 then crashed with
+`KeyError: 'at'` on the next render. A crash in one module caused by
+visiting another — about the hardest kind to trace, because the two
+actions look unrelated.
+
+Now `_t1_archive`, and the render uses `_r.get('at','')` so a stray
+old-shaped row cannot crash it either.
+
+**SESSION STATE IS ONE FLAT NAMESPACE SHARED BY EVERY MODULE.** A generic
+name is a collision waiting to happen — prefix by owner. A sweep of every
+`st.session_state[...]` grouped by which `active ==` branch touches it
+now shows no other key used from more than one module.
+
+### R now has T1's layout
+
+Baba: *"we use T1 as the master designer, copy to R the same layout."*
+
+The transport is **four cells in the deck's order**: `play`, `back`,
+`next`, and a fourth held EMPTY and disabled. The empty cell is
+deliberate — the two modules must have the same SHAPE, and a row of three
+beside a row of four is two shapes.
+
+The player sits at the TOP of R in both states, playing and idle, exactly
+as the deck does in T1, so a hand goes to the same place without looking
+whichever module is open.
+
+8 checks: four cells, right order, spare disabled, four still when
+playing, play, back restarting the sentence, next advancing.
+
+**One failure was the test, not the code**: it measured `currentTime`
+while playback was still running from an earlier step. In isolation, back
+goes 7.0 → 5.0 correctly.
