@@ -12,6 +12,7 @@ import json
 import glob
 import hmac
 import html
+import threading
 import time
 import hashlib
 import io
@@ -22,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v78 (words first)"
+APP_VERSION = "v79 (both paths at once)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2331,6 +2332,62 @@ def drive_store():
         return DRIVE.DriveStore(enabled=False)
 
 
+def start_keeping(flac_path: str, seconds: float, language: str):
+    """Begin storing the audio IN THE BACKGROUND and return the worker.
+
+    The FLAC exists before transcription starts, so the upload and Whisper
+    can run at the same time. Measured: a two-minute take costs 9s to
+    store and several to transcribe; done one after the other that is the
+    sum, done together it is the larger of the two.
+
+    THE STORE IS BUILT ON THIS THREAD, ON PURPOSE. Building it reads
+    st.secrets and the sheet config, and a thread started by Streamlit has
+    no script context — touching session state from inside would raise or,
+    worse, silently read nothing. The worker only does network I/O with
+    values it was handed.
+    """
+    store = drive_store()
+    if not store.enabled or not flac_path:
+        return None
+    box = {"rec_id": None, "error": ""}
+
+    def _work():
+        try:
+            box["rec_id"] = store.store(flac_path, seconds=seconds,
+                                        language=language)
+            if not box["rec_id"]:
+                box["error"] = store.last_error or "no reason given"
+        except Exception as e:
+            box["error"] = f"{type(e).__name__}: {e}"
+
+    th = threading.Thread(target=_work, daemon=True)
+    th.start()
+    return (th, box)
+
+
+def finish_keeping(worker, wait: float = 90.0) -> str:
+    """Wait for the background store and report. Returns the rec_id or "".
+
+    A DEADLINE, because a thread that never finishes would otherwise hold
+    the run open forever. If it overruns, the words are already on screen
+    and the upload is simply abandoned — daemon threads die with the
+    process and Drive is left with an orphan part, which is the harmless
+    direction.
+    """
+    if not worker:
+        return ""
+    th, box = worker
+    th.join(timeout=wait)
+    if th.is_alive():
+        errlog.add(st.session_state, "drive",
+                   f"storing did not finish within {wait:.0f}s")
+        return ""
+    if box["error"]:
+        errlog.add(st.session_state, "drive",
+                   "could not store the recording", box["error"])
+    return box["rec_id"] or ""
+
+
 def keep_audio(flac_path: str, seconds: float, language: str) -> None:
     """Put a finished recording in Drive. Never raises, never blocks.
 
@@ -2376,9 +2433,14 @@ def deliver_text(new_text: str, keep: bool = True) -> None:
     # file, pasted text — so archiving here catches all of them and cannot
     # be forgotten when a fourth route is added later.
     if keep:
+        # THE REC_ID TRAVELS WITH THE TEXT. Session state dies on reload;
+        # Drive does not. An archive row that carries the rec_id can still
+        # be retranscribed or deleted in a session that starts tomorrow,
+        # which is the whole reason for storing the audio at all.
         archive.add(st.session_state, new_text,
                     language=st.session_state.get("speech_lang", ""),
-                    method=st.session_state.get("_transcribe_method", ""))
+                    method=st.session_state.get("_transcribe_method", ""),
+                    rec_id=st.session_state.get("_last_rec_id", ""))
     if st.session_state.get("append_mode"):
         old = (st.session_state.get("transcript_box") or "").rstrip()
         # A blank line between takes: they are separate sittings and read
@@ -2713,6 +2775,11 @@ if active == "transcribe":
                     stage["out"] = "16 kHz mono FLAC"
                     stage["out_kb"] = os.path.getsize(flac_path) // 1024
                     stage["mins"] = audio_seconds(flac_path) / 60.0
+                    # BOTH PATHS AT ONCE. The audio starts going to Drive
+                    # here, and Whisper gets it on the next line. Neither
+                    # waits for the other.
+                    _keeper = start_keeping(flac_path,
+                                            audio_seconds(flac_path), lang_code)
                     _t1 = time.time()
                     # ALWAYS through transcribe_any_size. This path used
                     # to call the provider directly, so a long take or a
@@ -2767,15 +2834,14 @@ if active == "transcribe":
                                    f"method {stage.get('method','?')}")
                         st.warning(t("nothing_heard"))
 
-                    # Only now, with the words delivered, keep the audio.
-                    # SAY THAT IT IS HAPPENING. Measured against the real
-                    # script: 5.8s for a 30-second take, 9.0s for two
-                    # minutes, and it grows with the recording. Silent
-                    # waiting after the text appears looks like the app
-                    # has hung — which is what silent waiting BEFORE the
-                    # text looked like, only worse.
+                    # The upload has been running all through the
+                    # transcription. Usually it is already done and this
+                    # returns at once.
                     with st.spinner(t("keeping_audio")):
-                        keep_audio(reusable, audio_seconds(reusable), lang_code)
+                        _rec_id = finish_keeping(_keeper)
+                    if _rec_id:
+                        st.session_state["_last_rec_id"] = _rec_id
+                        stage["rec_id"] = _rec_id
                     # And let the recording go: a 7 MB take is ~7 MB of
                     # bytes plus ~9 MB of base64 still held by the
                     # component, which is memory this instance cannot

@@ -38,7 +38,7 @@ def _now():
     return time.strftime("%H:%M")
 
 
-def add(state, text, language="", method="", note=""):
+def add(state, text, language="", method="", note="", rec_id=""):
     """Keep a transcript. Returns its id, or None if nothing was kept.
 
     The SAME TEXT TWICE IN A ROW IS NOT KEPT TWICE. Streamlit reruns the
@@ -63,6 +63,11 @@ def add(state, text, language="", method="", note=""):
             "language": str(language or ""),
             "method": str(method or ""),
             "note": str(note or ""),
+            # The Drive recording this text came from, when there is
+            # one. Session state dies on reload; Drive does not, so
+            # this is what lets a row still be retranscribed or
+            # deleted in a session that starts tomorrow.
+            "rec_id": str(rec_id or ""),
         }
         items.append(rec)
         if len(items) > LIMIT:

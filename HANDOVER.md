@@ -2799,3 +2799,49 @@ sit between a person and the result of the thing they asked for.
 
 Worth noting how it hid: a comment asserted the ordering was correct.
 **A comment is not a check.** It read as considered, and it was wrong.
+
+---
+
+## 51. BOTH PATHS AT ONCE (v79)
+
+Baba: *"Can we use two paths simultaneously? You upload a copy to the
+Drive and another copy goes to Whisper."*
+
+Yes, and the timing works because **the FLAC exists before transcription
+starts.** The upload begins the moment conversion finishes; Whisper gets
+the same file on the next line. Neither waits.
+
+Measured on a real 2-minute take, real script, real API:
+
+    one after the other   store 9.1s + transcribe 6.8s = 15.9s
+    both at once                                         9.3s
+
+**41% faster**, and the audio still stored correctly.
+
+### The thread rule that matters
+
+`start_keeping()` builds the store ON THE CALLING THREAD and hands the
+worker only plain values. A thread started under Streamlit has **no
+script context** — touching `st.secrets` or `st.session_state` inside it
+raises, or worse reads nothing and looks like a Drive failure. The worker
+does network I/O and nothing else.
+
+`finish_keeping()` has a 90-second deadline. A thread that never returns
+would hold the run open forever; if it overruns, the words are already on
+screen and the upload is abandoned. Daemon threads die with the process,
+leaving an orphan part in Drive — the harmless direction.
+
+### The archive now carries the rec_id
+
+Baba's reason, and it is the right one: *"when they restart session
+everything in this session of Streamlit app will be gone."*
+
+Session state dies on reload. Drive does not. An archive row now stores
+the `rec_id` it came from, so it can still be retranscribed or deleted in
+a session starting tomorrow. Defaults to `""`, so every existing caller
+keeps working.
+
+**What this unlocks, NOT built yet:** listing recordings from Drive
+instead of session state, retranscribing a stored recording in another
+language, and deleting from Drive through the interface. The data now
+exists for all three.
