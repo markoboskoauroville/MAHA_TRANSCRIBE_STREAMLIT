@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v66 (status box, Whisper errors)"
+APP_VERSION = "v67 (help tab)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -77,6 +77,7 @@ from ttt import a11y
 from ttt import speech as SPEECH
 from ttt import sheet as SHEET
 from ttt import intake
+from ttt import help_page as HELP_PAGE
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
 from ttt import theme
@@ -367,6 +368,7 @@ STRINGS = {
     # checked. A zero-width space makes the strings distinct while
     # leaving them pixel-identical on screen.
     "tab_looks":          {"en": "\u2699\u200b",      "hr": "\u2699\u200b"},
+    "tab_help":           {"en": "H",                "hr": "H"},
     "read_paste_ph":      {"en": "Paste a text here and press Read",
                             "hr": "Zalijepi tekst ovdje i pritisni Čitaj"},
     "read_start":         {"en": "Read",             "hr": "Čitaj"},
@@ -1608,7 +1610,7 @@ def nav_tabs():
     one is engines and keys, and only the owner ever sees it. Colour does
     the explaining, so neither needs a word.
     """
-    tabs = ["transcribe", "talk", "translate", "looks"]
+    tabs = ["transcribe", "talk", "translate", "looks", "help"]
     if is_admin():
         tabs.append("settings")
     return tabs
@@ -3144,6 +3146,16 @@ elif active == "looks":
                  label_visibility="collapsed", value=t("looks_preview"))
 
     tab_signature(t("sig_looks"))
+
+
+elif active == "help":
+    # The whole page is ONE component holding both languages, so the HR/ENG
+    # toggle inside it is instant and does not move you in the text. Doing
+    # it with Streamlit buttons would rerun the script, rebuild the page
+    # and throw you back to the top — which is the one thing Baba asked it
+    # not to do.
+    components.html(HELP_PAGE.page(st.session_state.get("ui_lang", "hr")),
+                    height=620, scrolling=True)
 
 
 elif active == "settings":

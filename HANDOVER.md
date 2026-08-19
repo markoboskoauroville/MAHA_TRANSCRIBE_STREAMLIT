@@ -1999,3 +1999,73 @@ restarts and the session is simply gone, which looks exactly like
 
 The status box is what will settle it. If the next 7 MB take shows
 `Whisper refused:` with a real message, it was never memory.
+
+---
+
+## 35. THE HELP TAB (v67)
+
+A sixth tab, **H**. One document holding BOTH languages, with an HR/ENG
+toggle inside it.
+
+### Why it is a component and not a Streamlit page
+
+Baba: *"switching is momentary, user can be anywhere in the text and just
+switch the language."* Streamlit buttons cannot do that — every click
+reruns the script, rebuilds the page and throws you back to the top.
+
+So both languages are in the page at once and the toggle only changes
+which is displayed. Switching is instant, keeps your scroll position, and
+the choice is remembered in localStorage so it reopens where you left it.
+The toggle bar is sticky so it stays reachable however far down you are.
+
+Content lives in `ttt/help_page.py`, both languages side by side in one
+file so they cannot drift apart.
+
+### What it covers
+
+The tabs, the cassette deck and its four keys, the flat-trace rule,
+pasting, single/multi with the elephant, HR/ENG being an instruction
+rather than a hint, the command row, the status box and what `0 chars`
+means, retry behaviour and the tab-closing warning, T1 vs T2 per
+platform, and a dictionary of every term the app uses — transcript,
+Whisper, Groq, FLAC, Opus/WebM, 16 kHz mono, loudnorm, chunk, API key,
+clipboard.
+
+Tested, 27 checks: opens in the right language, switches instantly,
+**keeps your place in the text**, remembers the choice across a reload,
+and both languages actually contain each promised section.
+
+---
+
+## 36. QUEUED: T2 — SYSTEM AUDIO (not built)
+
+Baba's request, recorded so it is not lost. A second transcribe tab with
+**the same interface as T1**, recording what the computer is PLAYING
+rather than what the microphone hears — for a video call, a recorded
+meeting, a podcast, a video.
+
+**Feasibility, checked before promising anything:**
+
+* **Windows** — `getDisplayMedia({audio:true})` offers "share system
+  audio" in Chrome and Edge. Native, no install. This is the easy one.
+* **macOS** — Chrome captures TAB audio only, not system audio. Needs a
+  virtual device (BlackHole, free and open source), which then appears as
+  an ordinary microphone and the existing deck can select it with no code
+  change at all.
+* **Android** — NOT POSSIBLE. The platform does not permit it.
+
+**OBS is not needed.** Its virtual device is a camera, not an audio input,
+so it cannot feed a browser microphone.
+
+**The screen-reader idea was considered and set aside.** Piping a screen
+reader's speech through Whisper is a lossy round trip of text we could
+have had exactly: measured in this project, "1947" comes back as
+"nineteen forty-seven" and "12 percent" as "12%", which is worst for
+email addresses, paths and names. Screen readers also announce the
+interface on purpose ("button", "heading level 2"), which is the opposite
+of what was wanted, and reading is real time — a 500-word page takes two
+minutes to speak. For reading text off the screen, the accessibility tree
+to the clipboard, then Ctrl+V into the deck, is exact and instant.
+
+**Before building: check Croatian law on recording conversations.** A
+meeting transcriber is exactly where consent rules bite.
