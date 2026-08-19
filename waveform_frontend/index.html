@@ -1,0 +1,298 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  THE WAVEFORM PLAYER.
+
+  Same four-cell transport as the cassette deck, the same amber, the same
+  black panel for the clock. Nothing new was invented to look at: Baba
+  builds in Auroville and recycles, and a second visual language in one
+  app is a second thing to learn.
+
+  THE PAGE TURN IS INSTANT. The playhead sweeps left to right; when it
+  reaches the edge the window jumps to the next block at once. It does not
+  slide. That is MA Reader's rule, learned there the hard way: "an
+  animation is a delay by another name — the line slides for a few hundred
+  milliseconds while the voice is already speaking it, so the eye arrives
+  after the ear."
+
+  The cues come from ttt/cues.py, so the subtitle, the word highlight and
+  the sentence jump all read the SAME timing and cannot drift apart.
+-->
+<style>
+  :root{--deck:#15181d;--face:#1d2127;--edge:#2b313a;--amber:#f59e0b;
+        --dark:#0b0d10;--text:#e5e7eb;--dim:#9aa3af;--wave:#3f4650;}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:transparent;
+    font:14px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);
+    -webkit-user-select:none;user-select:none}
+  #deck{background:var(--deck);border:1px solid var(--edge);border-radius:6px;
+        padding:10px}
+
+  #scopewrap{background:var(--dark);border:1px solid var(--edge);
+    border-radius:3px;height:82px;position:relative;overflow:hidden;
+    margin-bottom:8px}
+  #wave{display:block;width:100%;height:100%;cursor:pointer}
+  #clock{position:absolute;right:0;top:0;bottom:0;width:96px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--dark);border-left:1px solid var(--edge);
+    font-variant-numeric:tabular-nums;font-size:14px;color:var(--dim);z-index:2}
+  #clock.live{color:var(--amber)}
+  #page{position:absolute;left:6px;top:4px;font-size:10px;color:var(--dim);
+        z-index:2;letter-spacing:.06em}
+
+  #row{display:flex;gap:0}
+  .key{flex:1 1 0;height:44px;min-width:0;background:var(--face);
+    color:var(--text);border:1px solid var(--edge);border-right-width:0;
+    font:inherit;font-size:13px;cursor:pointer;display:flex;
+    align-items:center;justify-content:center;gap:5px;padding:0 2px}
+  .key:last-child{border-right-width:1px;border-radius:0 3px 3px 0}
+  .key:first-child{border-radius:3px 0 0 3px}
+  .key:disabled{color:#4b5563;cursor:default}
+  .key.on{background:var(--amber);color:var(--dark)}
+  .key:focus-visible{outline:3px solid var(--amber);outline-offset:-3px}
+  .tri{width:0;height:0;border-left:10px solid currentColor;
+    border-top:6px solid transparent;border-bottom:6px solid transparent;flex:none}
+  .par{width:10px;height:11px;flex:none;
+    border-left:3px solid currentColor;border-right:3px solid currentColor}
+  .bk,.fw{width:0;height:0;flex:none;
+    border-top:6px solid transparent;border-bottom:6px solid transparent}
+  .bk{border-right:9px solid currentColor}
+  .fw{border-left:9px solid currentColor}
+
+  /* The subtitle sits UNDER the transport: the controls are in the same
+     place every time, and the line that changes goes below the thing that
+     does not. */
+  #sub{margin-top:8px;min-height:42px;font-size:15px;line-height:1.45;
+       color:var(--text);white-space:normal;overflow-wrap:anywhere}
+  #sub .now{color:#ef4444}
+  #msg{margin-top:6px;min-height:15px;font-size:12px;color:var(--dim)}
+
+  body.idle #wave,body.idle #row{opacity:.38;pointer-events:none}
+  body.idle #sub{opacity:.5}
+</style>
+
+<div id="deck">
+  <div id="scopewrap">
+    <canvas id="wave"></canvas>
+    <div id="page"></div>
+    <div id="clock">0:00</div>
+  </div>
+  <div id="row">
+    <button class="key" id="bBack" aria-label="previous sentence"><span class="bk"></span><span id="lBack">back</span></button>
+    <button class="key" id="bPlay" aria-label="play"><span class="tri" id="gPlay"></span><span id="lPlay">play</span></button>
+    <button class="key" id="bFwd" aria-label="next sentence"><span class="fw"></span><span id="lFwd">next</span></button>
+  </div>
+  <div id="sub" aria-live="polite"></div>
+  <div id="msg" role="status" aria-live="polite"></div>
+</div>
+
+<script>
+function post(t, extra){ window.parent.postMessage(
+  Object.assign({isStreamlitMessage:true,type:t}, extra||{}), "*"); }
+function height(){
+  var h=document.getElementById('deck').getBoundingClientRect().height;
+  post("streamlit:setFrameHeight",{height:Math.ceil(h)+6});
+}
+
+var wave=document.getElementById('wave'), ctx=wave.getContext('2d'),
+    clock=document.getElementById('clock'), pageEl=document.getElementById('page'),
+    sub=document.getElementById('sub'), msg=document.getElementById('msg'),
+    bPlay=document.getElementById('bPlay'), bBack=document.getElementById('bBack'),
+    bFwd=document.getElementById('bFwd'), gPlay=document.getElementById('gPlay'),
+    lPlay=document.getElementById('lPlay');
+
+var CLOCK_W=96;
+// How much audio one screen shows. Long enough that the page does not
+// flick over constantly, short enough that a word is a visible distance.
+var PAGE_SECONDS=10;
+
+/* PAGES ARE EVEN, not ten-second slices with a stub at the end. An
+   11-second reading cut at a fixed 10 gives a second page 1.2s wide: a
+   sliver of waveform with the playhead tearing across it. Divided into
+   two pages of 5.6s it reads properly.
+   The fixed length is a MAXIMUM; the real page is the largest even
+   division that stays under it. */
+function pageSpan(){
+  if(!dur) return PAGE_SECONDS;
+  var n=Math.max(1,Math.ceil(dur/PAGE_SECONDS));
+  return dur/n;
+}
+function pageCount(){ return Math.max(1,Math.ceil(dur/PAGE_SECONDS)); }
+
+var audio=new Audio(), peaks=null, dur=0, cues=[], loaded="", raf=null;
+var words=[], wtimes=[];
+
+function mmss(s){ s=Math.max(0,s|0); return (s/60|0)+':'+('0'+(s%60)).slice(-2); }
+
+function fit(){
+  var r=wave.getBoundingClientRect(), d=window.devicePixelRatio||1;
+  wave.width=Math.max(1,Math.round(r.width*d));
+  wave.height=Math.max(1,Math.round(r.height*d));
+  ctx.setTransform(d,0,0,d,0,0);
+}
+
+/* Peaks, not samples. A canvas column cannot show 44100 numbers, so each
+   column keeps the loudest value in its slice — which is what every audio
+   editor draws and why a waveform looks like the sound rather than a blur. */
+function buildPeaks(buf, perSecond){
+  var ch=buf.getChannelData(0), n=Math.max(1,Math.round(buf.duration*perSecond));
+  var step=Math.floor(ch.length/n)||1, out=new Float32Array(n);
+  for(var i=0;i<n;i++){
+    var a=i*step, b=Math.min(ch.length,a+step), m=0;
+    for(var j=a;j<b;j+=2){ var v=ch[j]<0?-ch[j]:ch[j]; if(v>m) m=v; }
+    out[i]=m;
+  }
+  return {p:out, per:perSecond};
+}
+
+function draw(){
+  fit();
+  var w=wave.clientWidth-CLOCK_W, h=wave.clientHeight, mid=h/2;
+  ctx.clearRect(0,0,wave.clientWidth,h);
+  if(!peaks||!dur){ ctx.strokeStyle='#2b313a'; ctx.beginPath();
+    ctx.moveTo(0,mid); ctx.lineTo(w,mid); ctx.stroke(); return; }
+
+  var t=audio.currentTime||0;
+  var span0=pageSpan();
+  var page=Math.min(pageCount()-1, Math.floor(t/span0));
+  var t0=page*span0, t1=Math.min(dur,t0+span0);
+
+  // the waveform for THIS page only
+  ctx.fillStyle='var(--wave)'; ctx.fillStyle='#3f4650';
+  var span=t1-t0;
+  for(var x=0;x<w;x++){
+    var tt=t0+(x/w)*span, i=Math.floor(tt*peaks.per);
+    var v=peaks.p[i]||0, hh=Math.max(1,v*(mid-4));
+    ctx.fillRect(x,mid-hh,1,hh*2);
+  }
+
+  // spoken part of this page, in amber
+  if(t>t0){
+    var px=Math.min(w,((t-t0)/span)*w);
+    ctx.fillStyle='#f59e0b';
+    for(var x2=0;x2<px;x2++){
+      var tt2=t0+(x2/w)*span, i2=Math.floor(tt2*peaks.per);
+      var v2=peaks.p[i2]||0, h2=Math.max(1,v2*(mid-4));
+      ctx.fillRect(x2,mid-h2,1,h2*2);
+    }
+    // the playhead
+    ctx.fillStyle='#ef4444'; ctx.fillRect(Math.min(w-1,px),0,1.5,h);
+  }
+
+  pageEl.textContent=(page+1)+'/'+pageCount();
+  clock.textContent=mmss(t)+' / '+mmss(dur);
+}
+
+function cueAt(t){
+  for(var i=0;i<cues.length;i++) if(cues[i].start<=t && t<cues[i].end) return i;
+  if(cues.length && t>=cues[cues.length-1].end) return cues.length-1;
+  return -1;
+}
+
+/* The subtitle, with the spoken word in red. Word times are optional: with
+   none, the line simply shows without a lit word. */
+function paint(){
+  var t=audio.currentTime||0, i=cueAt(t);
+  if(i<0){ sub.textContent=''; return; }
+  var c=cues[i];
+  if(!words.length){ sub.textContent=c.text; return; }
+  var out='', lit=-1;
+  for(var k=c.first;k<=c.last && k<wtimes.length;k++)
+    if(wtimes[k][0]<=t && t<wtimes[k][1]) lit=k;
+  for(var k2=c.first;k2<=c.last && k2<words.length;k2++){
+    var w=words[k2].replace(/[&<>]/g,function(m){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;'}[m]; });
+    out += (k2===lit? '<span class="now">'+w+'</span>' : w) + ' ';
+  }
+  sub.innerHTML=out.trim();
+}
+
+function tick(){
+  raf=requestAnimationFrame(tick);
+  draw(); paint();
+}
+
+function setPlaying(on){
+  bPlay.className='key'+(on?' on':'');
+  gPlay.className=on?'par':'tri';
+  lPlay.textContent=on?LBL.pause:LBL.play;
+  clock.className=on?'live':'';
+}
+
+var LBL={play:'play',pause:'pause',back:'back',next:'next'};
+
+bPlay.onclick=function(){
+  if(!audio.src) return;
+  if(audio.paused){ audio.play().catch(function(){}); } else { audio.pause(); }
+};
+audio.onplay=function(){ setPlaying(true); if(!raf) tick(); };
+audio.onpause=function(){ setPlaying(false); };
+audio.onended=function(){ setPlaying(false); draw(); };
+
+/* BACK RESTARTS THIS SENTENCE FIRST and only steps to the previous one
+   when already near its start — the same rule as ttt/cues.py, and the same
+   as every music player, because the common wish is "say that again". */
+function jump(dir){
+  if(!cues.length){ audio.currentTime=Math.max(0,(audio.currentTime||0)+dir*5); return; }
+  var t=audio.currentTime||0, i=cueAt(t);
+  if(i<0){ audio.currentTime=cues[0].start; return; }
+  if(dir>0) audio.currentTime=(i+1<cues.length)?cues[i+1].start:Math.max(0,dur-0.01);
+  else if(t-cues[i].start>1.2) audio.currentTime=cues[i].start;
+  else audio.currentTime=cues[i>0?i-1:0].start;
+  draw(); paint();
+}
+bBack.onclick=function(){ jump(-1); };
+bFwd.onclick=function(){ jump(1); };
+
+/* Tapping the waveform seeks within the CURRENT page. */
+wave.onclick=function(e){
+  if(!dur) return;
+  var r=wave.getBoundingClientRect(), w=r.width-CLOCK_W, x=e.clientX-r.left;
+  if(x>w) return;
+  var sp=pageSpan();
+  var page=Math.min(pageCount()-1, Math.floor((audio.currentTime||0)/sp));
+  var t0=page*sp, span=Math.min(dur,t0+sp)-t0;
+  audio.currentTime=Math.max(0,Math.min(dur,t0+(x/w)*span));
+  draw(); paint();
+};
+
+function load(src){
+  loaded=src; audio.src=src; peaks=null; dur=0;
+  msg.textContent='reading the audio…';
+  fetch(src).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
+    var AC=window.AudioContext||window.webkitAudioContext;
+    return new AC().decodeAudioData(ab);
+  }).then(function(buf){
+    dur=buf.duration; peaks=buildPeaks(buf,200);
+    msg.textContent=''; document.body.classList.remove('idle');
+    draw(); paint(); height();
+  }).catch(function(){
+    // Decoding can fail on a format the browser will still PLAY. The
+    // waveform is then flat and everything else still works, which is a
+    // better outcome than refusing to play at all.
+    msg.textContent='no waveform for this audio';
+    dur=audio.duration||0; draw();
+  });
+}
+
+window.addEventListener("message", function(ev){
+  var m=ev.data; if(!m||m.type!=="streamlit:render") return;
+  var a=m.args||{};
+  if(a.labels){ LBL=Object.assign(LBL,a.labels);
+    document.getElementById('lBack').textContent=LBL.back;
+    document.getElementById('lFwd').textContent=LBL.next;
+    lPlay.textContent=audio.paused?LBL.play:LBL.pause; }
+  cues=a.cues||[]; words=a.words||[]; wtimes=a.wtimes||[];
+  document.body.classList.toggle('idle', !a.src);
+  if(a.src && a.src!==loaded) load(a.src);
+  if(!a.src){ sub.textContent=''; clock.textContent='0:00'; draw(); }
+  height();
+});
+
+window.addEventListener('resize', function(){ draw(); });
+document.body.classList.add('idle');
+setPlaying(false);
+fit(); draw();
+post("streamlit:componentReady",{apiVersion:1});
+height();
+</script>

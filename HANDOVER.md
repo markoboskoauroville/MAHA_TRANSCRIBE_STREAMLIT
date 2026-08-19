@@ -2970,3 +2970,65 @@ for the same reason; this confirms the approach the hard way.
 2. subtitle line — the cue text, already available
 3. generate-ahead — LAST, because it is new, it is the hard part, and it
    touches audio generation that works today
+
+---
+
+## 54. THE WAVEFORM PLAYER (v81) — step 1 of the R redesign
+
+`waveform_frontend/index.html`. Built and tested; **NOT yet wired into
+the R module.** Wiring is the next spoon.
+
+### What it does
+
+A canvas waveform of the current page, a playhead sweeping left to right,
+a three-cell transport (`back | play | next`), the sentence on a line
+under it with the spoken word in red, and a clock in the same black panel
+as the deck's.
+
+**No new visual language.** Same cells, same amber, same 44px row, same
+black clock panel. Baba recycles; a second look in one app is a second
+thing to learn.
+
+### THE PAGE TURN IS INSTANT
+
+MA Reader's rule, carried over rather than rediscovered: *"an animation is
+a delay by another name — the line slides for a few hundred milliseconds
+while the voice is already speaking it, so the eye arrives after the
+ear."* The window jumps at the boundary; there is no transition on the
+canvas and the test asserts `transitionDuration` is `0s`.
+
+### PAGES ARE EVEN, and this was a real find
+
+A fixed 10-second page over an 11.2-second reading gives a second page
+**1.2 seconds wide** — a sliver of waveform with the playhead tearing
+across it. The fixed length is now a MAXIMUM: the page is the largest
+even division that stays under it. The same clip becomes two pages of
+5.60s.
+
+### Peaks, not samples
+
+A column cannot show 44,100 numbers, so each keeps the loudest value in
+its slice — what every audio editor draws, and why a waveform looks like
+the sound rather than a grey blur. 200 peaks per second.
+
+### Degrading
+
+`decodeAudioData` can fail on a format the browser will still PLAY. The
+waveform then stays flat, the message says so, and everything else keeps
+working — better than refusing to play.
+
+### 14 checks, 0 failed
+
+Decode, even pages, a waveform actually drawn (counted lit pixels), the
+page turning at the boundary, no transition, the subtitle following the
+cue, EXACTLY ONE word red and it being the right one, back restarting the
+sentence then stepping to the previous, next moving on, play and pause.
+
+**One failure was my test, not the code**: it asserted the page turned at
+9.5s when `PAGE_SECONDS=10` puts the boundary at 10. Chasing it is what
+exposed the lopsided last page, so the wrong assertion earned its keep.
+
+### Left to do
+
+* wire it into R in place of the old player
+* the 30-second generate-ahead pipeline — still the hard part, still new
