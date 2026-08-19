@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v87 (a) (one rhythm, smaller type, archive ticks)"
+APP_VERSION = "v88 (a) (the box is no longer widget state)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2225,13 +2225,13 @@ def do_correct():
             raise RuntimeError(t("routing_none"))
         if stt_now.handles_big_files:
             corrected = stt_now.transcribe(path, lang, model=stt_now.accurate_model())
-            st.session_state["transcript_box"] = corrected
+            t1_set_text(corrected)
             st.session_state["flac_path"] = path
             st.session_state["_transcribe_method"] = "direct"
         else:
             corrected, method, reusable = transcribe_any_size(
                 path, stt_now.accurate_model() or CORRECTION_MODEL, lang)
-            st.session_state["transcript_box"] = corrected
+            t1_set_text(corrected)
             st.session_state["flac_path"] = reusable
             st.session_state["_transcribe_method"] = method
     except Exception as e:
@@ -2241,7 +2241,7 @@ def do_correct():
 def read_this():
     """Move to the Talk tab, carry the text over, pick the voice that matches
     the language just transcribed, and start reading — no popup, no extra tap."""
-    st.session_state["talk_text"] = st.session_state.get("transcript_box", "")
+    st.session_state["talk_text"] = t1_text()
     lang = st.session_state.get("last_lang", "hr")
     current = st.session_state.get("voice", "Gabrijela")
     if VOICE_LANG.get(current) != lang:
@@ -2428,6 +2428,93 @@ def keep_audio(flac_path: str, seconds: float, language: str) -> None:
                    f"{type(e).__name__}: {e}")
 
 
+def _lang_mode_row():
+    """HR / ENG / single / multi.
+
+    MOVED UP in v88, into the slot the status line used to occupy —
+    directly under the deck. Baba: "these buttons will not be anymore at
+    the bottom, they will be exactly where status line was before."
+
+    It belongs there: both pairs answer "what happens when I press
+    stop", so they are read BEFORE recording, not found afterwards at
+    the foot of the page.
+    """
+    with st.container(key="langrow"):
+        lcol1, lcol2, mcol1, mcol2, _ = st.columns([1, 1, 1.4, 1.4, 1.2])
+        speech_now = st.session_state.get("speech_lang", "hr")
+        lcol1.button(t("lang_hr"), key="tr_hr",
+                     type="primary" if speech_now == "hr" else "secondary",
+                     on_click=set_speech_lang, args=("hr",))
+        lcol2.button(t("lang_en"), key="tr_en",
+                     type="primary" if speech_now == "en" else "secondary",
+                     on_click=set_speech_lang, args=("en",))
+        # Single or multi, in the same row as the language, because both
+        # answer "what happens when I press stop".
+        appending = bool(st.session_state.get("append_mode"))
+        mcol1.button(t("mode_single"), key="tr_single",
+                     type="secondary" if appending else "primary",
+                     on_click=set_append_mode, args=(False,))
+        mcol2.button(t("mode_multi"), key="tr_multi",
+                     type="primary" if appending else "secondary",
+                     on_click=set_append_mode, args=(True,))
+
+
+# =====================================================================
+#  THE TRANSCRIPT IS NO LONGER WIDGET STATE  (v88)
+#
+#  For three sessions the transcript reached the archive and not the
+#  box. Every path was read and every path was correct, which is the
+#  signature of the CONTAINER being wrong rather than the code that
+#  fills it.
+#
+#  `transcript_box` was the text_area's own widget key. Streamlit owns a
+#  widget's key: it restores that slot from the frontend's copy on a
+#  rerun, and it garbage-collects the slot when the widget does not
+#  render on a run. The deck acknowledges every take by posting back,
+#  and each post is another rerun (§30) — so a value written by Python
+#  was competing with the browser's idea of what was in that box, on a
+#  component that reruns several times per recording.
+#
+#  §25 already learned the mirror image of this: "never reuse a widget's
+#  key as a place to keep the widget's output." This is the same lesson
+#  from the other side, and the fix is the same shape — keep the value
+#  somewhere Streamlit does not manage.
+#
+#  _t1_text is the truth. Nothing else is. The text_area is only a VIEW
+#  of it:
+#    * it is given the value explicitly, never through its key
+#    * its key carries a generation number, so delivering new text
+#      mounts a NEW widget, which is the one reliable way to make a
+#      text_area show a value it did not previously hold
+#    * typing in it syncs back through on_change, without bumping the
+#      generation, so a keystroke does not remount the box under the
+#      person's fingers
+# =====================================================================
+
+T1_TEXT = "_t1_text"
+T1_GEN = "_t1_text_gen"
+
+
+def t1_text() -> str:
+    """The transcript. The single source of truth for T1's box."""
+    return st.session_state.get(T1_TEXT, "") or ""
+
+
+def t1_set_text(value: str) -> None:
+    """Replace the transcript AND remount the box so it is shown.
+
+    Bumping the generation is not decoration. A text_area that already
+    exists keeps the value the browser last sent it; only a widget with
+    a key it has never seen takes a fresh `value=`.
+    """
+    st.session_state[T1_TEXT] = value or ""
+    st.session_state[T1_GEN] = int(st.session_state.get(T1_GEN, 0)) + 1
+
+
+def t1_area_key() -> str:
+    return "tx_area_%d" % int(st.session_state.get(T1_GEN, 0))
+
+
 def deliver_text(new_text: str, keep: bool = True) -> None:
     """Put a finished transcript into the box, honouring single/multi.
 
@@ -2456,13 +2543,13 @@ def deliver_text(new_text: str, keep: bool = True) -> None:
                     method=st.session_state.get("_transcribe_method", ""),
                     rec_id=st.session_state.get("_last_rec_id", ""))
     if st.session_state.get("append_mode"):
-        old = (st.session_state.get("transcript_box") or "").rstrip()
+        old = t1_text().rstrip()
         # A blank line between takes: they are separate sittings and read
         # as separate paragraphs. Joining them with a space would run two
         # thoughts together and there is no way to tell them apart after.
-        st.session_state["transcript_box"] = (old + "\n\n" + new_text) if old else new_text
+        t1_set_text((old + "\n\n" + new_text) if old else new_text)
     else:
-        st.session_state["transcript_box"] = new_text
+        t1_set_text(new_text)
 
     # WHAT ACTUALLY LANDED IN THE BOX. Baba reported text reaching the
     # archive but not the box, and reasoning about it from the source got
@@ -2471,7 +2558,7 @@ def deliver_text(new_text: str, keep: bool = True) -> None:
     errlog.add(st.session_state, "deliver",
                "delivered %d chars, box now %d chars, mode %s"
                % (len(new_text),
-                  len(st.session_state.get("transcript_box") or ""),
+                  len(t1_text()),
                   "multi" if st.session_state.get("append_mode") else "single"))
 
 
@@ -2779,7 +2866,7 @@ if active == "transcribe":
         # dead button, and is what Baba reported. In multi mode this is
         # also the only way to begin a fresh document.
         st.session_state["_mic_gen"] = st.session_state.get("_mic_gen", 0) + 1
-        st.session_state["transcript_box"] = ""
+        t1_set_text("")
         for k in ("_digest", "_pick_digest", "flac_path", "_transcript_prev",
                   "_transcribe_method", "_last_run", "_stt_errors"):
             st.session_state.pop(k, None)
@@ -2938,56 +3025,9 @@ if active == "transcribe":
                            if "stage" in dir() else "")
                 st.error(str(e))
 
-    # WHAT HAPPENED, kept on screen. Baba: "they are all good people, they
-    # deserve to see."
-    _lr = st.session_state.get("_last_run")
-    _errs = st.session_state.get("_stt_errors") or []
-    # ADMIN ONLY. Baba: "this status line you are hiding from users, only
-    # admins can see this." Codec names, convert seconds and Whisper's
-    # refusals are diagnostics, and this is an app for people who cannot
-    # read well — a line they cannot act on is noise in the way of the
-    # words they came for.
-    #
-    # Nothing is lost by hiding it: every one of these already goes to
-    # the L module through errlog, which is where it can be copied and
-    # sent on. And the things a USER can act on are separate and stay —
-    # the "nothing was heard" warning and the st.error paths above.
-    if (_lr or _errs) and is_admin():
-        # FOLDED AWAY BY DEFAULT, so it costs no room on a phone. It opens
-        # BY ITSELF when something went wrong, because an error nobody can
-        # see is the thing that wastes an evening. Small type, the same
-        # monospace as the line above it.
-        bad = bool(_errs or (_lr or {}).get("error") or
-                   ((_lr or {}).get("chars") == 0 and (_lr or {}).get("out")))
-        # EVERY KEY MUST BE UNIQUE WITHIN ONE RUN. Four containers shared
-        # key="statusbox" and two of them landed in the admin panel
-        # together, which is StreamlitDuplicateElementKey. The CSS matches
-        # on [class*="st-key-statusbox"], so a suffix costs nothing and
-        # the styling still applies to all of them.
-        with st.container(key="statusbox_run"):
-            with st.expander(t("status_word"), expanded=bad):
-                if _errs:
-                    st.text(t("stt_errors"))
-                    for _line in _errs:
-                        st.text("  " + _line)
-                if _lr and _lr.get("error"):
-                    st.text("⚠ " + str(_lr["error"])[:300])
-                elif _lr:
-                    _bits = []
-                    if _lr.get("in"):
-                        _bits.append(f"{_lr['in']} {_lr.get('in_kb',0):,} KB")
-                    if _lr.get("out"):
-                        _bits.append(f"→ {_lr['out']} {_lr.get('out_kb',0):,} KB")
-                    if _lr.get("mins"):
-                        _bits.append(f"{_lr['mins']:.1f} min")
-                    if _lr.get("convert_s"):
-                        _bits.append(f"convert {_lr['convert_s']:.1f}s")
-                    if _lr.get("transcribe_s"):
-                        _bits.append(f"transcribe {_lr['transcribe_s']:.1f}s")
-                    if _lr.get("method"):
-                        _bits.append(str(_lr["method"]))
-                    _bits.append(f"{_lr.get('chars',0):,} chars")
-                    st.text("  ·  ".join(_bits))
+    # THE LANGUAGE AND MODE ROW NOW SITS HERE, in the slot the status
+    # line used to hold — directly under the deck.
+    _lang_mode_row()
 
     # ONE upload, and the file decides what happens to it. Two pickers
     # meant choosing before doing, and choosing wrongly was possible;
@@ -3019,7 +3059,7 @@ if active == "transcribe":
                         text = read_picture(raw, picked.name)
                     save_rings()
                     if text.strip():
-                        st.session_state["transcript_box"] = text
+                        t1_set_text(text)
                         st.session_state["_transcribe_method"] = "picture"
                         st.session_state["flac_path"] = None
                         USAGE.log("picture", len(text), UNIT_CHARS, "groq")
@@ -3091,10 +3131,10 @@ if active == "transcribe":
     # interface are appearing and disappearing." A screen that grows new
     # sections as you use it is a screen you have to re-learn each time;
     # a box that is simply empty tells you where the words will land.
-    st.session_state.setdefault("transcript_box", "")
+    st.session_state.setdefault(T1_TEXT, "")
 
     def _clear_all():
-        st.session_state["transcript_box"] = ""
+        t1_set_text("")
         for k in ("_transcript_prev", "flac_path", "_digest", "_pick_digest",
                   "_transcribe_method"):
             st.session_state.pop(k, None)
@@ -3102,7 +3142,7 @@ if active == "transcribe":
         flash("tx_clear")
 
     def _apply_transform(preset="", instruction=""):
-        source = (st.session_state.get("transcript_box") or "").strip()
+        source = t1_text().strip()
         try:
             llm = llm_bridge()
             if llm is None:
@@ -3114,7 +3154,7 @@ if active == "transcribe":
             out = TR_.run(llm, source, instruction=instruction or custom,
                           preset="" if custom else preset)
             st.session_state["_transcript_prev"] = source
-            st.session_state["transcript_box"] = out
+            t1_set_text(out)
             USAGE.log("transform", len(source), UNIT_CHARS, llm.id)
         except Exception as e:
             st.session_state["_ai_error"] = f"{t('ai_fail')}: {e}"
@@ -3133,9 +3173,19 @@ if active == "transcribe":
         (t("grammar_word"), "tx_grammar", _grammar),
         (t("reshape_word"), "tx_reshape", _reshape),
         (t("clear_word"), "tx_clear", _clear_all),
-    ], copy_text=st.session_state.get("transcript_box", ""))
+    ], copy_text=t1_text())
 
-    st.text_area(t("transcript_label"), key="transcript_box", height=200,
+    # A VIEW OF _t1_text, never the owner of it. The key carries the
+    # generation, so delivering text mounts a new widget that takes the
+    # new `value=`; typing syncs back without bumping it, or the box
+    # would remount under the person's fingers on every keystroke.
+    _area_key = t1_area_key()
+
+    def _sync_typed():
+        st.session_state[T1_TEXT] = st.session_state.get(_area_key, "")
+
+    st.text_area(t("transcript_label"), value=t1_text(), key=_area_key,
+                 height=200, on_change=_sync_typed,
                  label_visibility="collapsed", placeholder=t("transcript_ph"))
 
     if st.session_state.get("_ai_error"):
@@ -3198,40 +3248,81 @@ if active == "transcribe":
                 _b2.button(t("arc_clear_all"), key="arc_clear_all",
                            on_click=_delete_all, use_container_width=True)
                 for _r in _arc:
-                    _c0, _c1 = st.columns([1, 9])
+                    # ONE ROW, TICK BESIDE THE NAME. Streamlit stacks
+                    # columns below ~640px, which put the tick on its own
+                    # line above the row on Baba's phone — the trap §7
+                    # names. The CSS forces this block to stay horizontal,
+                    # the same override the command row already uses.
+                    _c0, _c1 = st.columns([1, 8])
                     _c0.checkbox(" ", key=f"arcsel_{_r['id']}",
                                  value=_r["id"] in _sel,
                                  on_change=_toggle, args=(_r["id"],),
                                  label_visibility="collapsed",
                                  help=t("arc_sel_help"))
                     _c1.button(
-                        f"{_r.get('at','')}  {archive.preview(_r)}".strip(),
+                        f"{_r.get('at','')}  {archive.preview_words(_r)}".strip(),
                         key=f"arc_{_r['id']}",
                         help=t("arc_load_help"),
                         on_click=load_from_archive, args=(_r["id"],),
                         use_container_width=True)
 
-    # The spoken language, at the very bottom: it is set once and then
-    # left alone, so it does not belong above the thing people came for.
-    st.caption("")
-    with st.container(key="langrow"):
-        lcol1, lcol2, mcol1, mcol2, _ = st.columns([1, 1, 1.4, 1.4, 1.2])
-        speech_now = st.session_state.get("speech_lang", "hr")
-        lcol1.button(t("lang_hr"), key="tr_hr",
-                     type="primary" if speech_now == "hr" else "secondary",
-                     on_click=set_speech_lang, args=("hr",))
-        lcol2.button(t("lang_en"), key="tr_en",
-                     type="primary" if speech_now == "en" else "secondary",
-                     on_click=set_speech_lang, args=("en",))
-        # Single or multi, in the same row as the language, because both
-        # answer "what happens when I press stop".
-        appending = bool(st.session_state.get("append_mode"))
-        mcol1.button(t("mode_single"), key="tr_single",
-                     type="secondary" if appending else "primary",
-                     on_click=set_append_mode, args=(False,))
-        mcol2.button(t("mode_multi"), key="tr_multi",
-                     type="primary" if appending else "secondary",
-                     on_click=set_append_mode, args=(True,))
+    # THE STATUS BOX, MOVED TO THE FOOT OF THE MODULE (v88).
+    #
+    # Baba: "status line below the player must be removed, display
+    # collapsed." It no longer sits between the deck and the words, and
+    # it no longer opens by itself — §34 gave it the auto-open so an
+    # error could not be missed, but for a reader who cannot see well an
+    # expander springing open mid-screen moves everything under it,
+    # which is the worse failure. It is admin-only anyway, and every
+    # error is in L regardless.
+    _lr = st.session_state.get("_last_run")
+    _errs = st.session_state.get("_stt_errors") or []
+    # ADMIN ONLY. Baba: "this status line you are hiding from users, only
+    # admins can see this." Codec names, convert seconds and Whisper's
+    # refusals are diagnostics, and this is an app for people who cannot
+    # read well — a line they cannot act on is noise in the way of the
+    # words they came for.
+    #
+    # Nothing is lost by hiding it: every one of these already goes to
+    # the L module through errlog, which is where it can be copied and
+    # sent on. And the things a USER can act on are separate and stay —
+    # the "nothing was heard" warning and the st.error paths above.
+    if (_lr or _errs) and is_admin():
+        # FOLDED AWAY BY DEFAULT, so it costs no room on a phone. It opens
+        # BY ITSELF when something went wrong, because an error nobody can
+        # see is the thing that wastes an evening. Small type, the same
+        # monospace as the line above it.
+        # EVERY KEY MUST BE UNIQUE WITHIN ONE RUN. Four containers shared
+        # key="statusbox" and two of them landed in the admin panel
+        # together, which is StreamlitDuplicateElementKey. The CSS matches
+        # on [class*="st-key-statusbox"], so a suffix costs nothing and
+        # the styling still applies to all of them.
+        with st.container(key="statusbox_run"):
+            with st.expander(t("status_word"), expanded=False):
+                if _errs:
+                    st.text(t("stt_errors"))
+                    for _line in _errs:
+                        st.text("  " + _line)
+                if _lr and _lr.get("error"):
+                    st.text("⚠ " + str(_lr["error"])[:300])
+                elif _lr:
+                    _bits = []
+                    if _lr.get("in"):
+                        _bits.append(f"{_lr['in']} {_lr.get('in_kb',0):,} KB")
+                    if _lr.get("out"):
+                        _bits.append(f"→ {_lr['out']} {_lr.get('out_kb',0):,} KB")
+                    if _lr.get("mins"):
+                        _bits.append(f"{_lr['mins']:.1f} min")
+                    if _lr.get("convert_s"):
+                        _bits.append(f"convert {_lr['convert_s']:.1f}s")
+                    if _lr.get("transcribe_s"):
+                        _bits.append(f"transcribe {_lr['transcribe_s']:.1f}s")
+                    if _lr.get("method"):
+                        _bits.append(str(_lr["method"]))
+                    _bits.append(f"{_lr.get('chars',0):,} chars")
+                    st.text("  ·  ".join(_bits))
+
+
     tab_signature(t("sig_transcribe"))
 
 

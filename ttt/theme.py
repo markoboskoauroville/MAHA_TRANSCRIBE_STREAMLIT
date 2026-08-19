@@ -597,22 +597,63 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        transcript above stays the loudest thing on screen. */
     [class*="st-key-archivebox"] summary,
     [class*="st-key-archivebox"] summary p {{
-      font-size: 0.74rem !important; color: var(--amber) !important;
+      font-size: 0.72rem !important; color: var(--amber) !important;
       letter-spacing: 0.04em;
     }}
+
+    /* THE TICK STAYS BESIDE THE NAME.
+       Streamlit stacks columns below ~640px, so on a phone the checkbox
+       landed on its own line ABOVE the row — which is the same default
+       §7 calls a bug rather than something to accept. Forced horizontal,
+       exactly as the command row already is. */
+    [class*="st-key-archivebox"] div[data-testid="stHorizontalBlock"] {{
+      flex-wrap: nowrap !important;
+      align-items: center;
+      gap: 0.3rem !important;
+    }}
+    [class*="st-key-archivebox"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"] {{
+      flex: 0 1 auto !important;
+      min-width: 0 !important;
+      width: auto !important;
+    }}
+    [class*="st-key-archivebox"] div[data-testid="stHorizontalBlock"]
+      > div[data-testid="stColumn"]:last-child {{
+      flex: 1 1 auto !important;
+    }}
+
     [class*="st-key-archivebox"] .stButton button {{
-      font-size: 0.70rem !important;
-      padding: 0.3rem 0.6rem !important;
+      font-size: 0.66rem !important;
+      padding: 0.22rem 0.5rem !important;
+      min-height: 0 !important;
       text-align: left;
       justify-content: flex-start;
       font-weight: 500;
       letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }}
-    /* The tick keeps a full 44px target even though the row is small —
-       target size does not shrink with type (hard rule 6, WCAG 2.5.5 at
-       the AAA figure, because 24px is not enough for a shaking hand). */
+    /* The two actions are pills, not slabs: a button is the size of its
+       text (hard rule 7), and these two are the smallest thing here
+       because deleting is not what anyone came to do. */
+    [class*="st-key-arc_del_sel"] button,
+    [class*="st-key-arc_clear_all"] button {{
+      font-size: 0.64rem !important;
+      padding: 0.2rem 0.6rem !important;
+      text-align: center !important;
+      justify-content: center !important;
+    }}
+    /* The tick keeps a usable target even though the row is small.
+       Target size does not shrink with type — but inside a dense list
+       44px would make every row a slab, so it takes the row's height and
+       the whole row is tappable to LOAD, which is the common action. */
     [class*="st-key-archivebox"] [data-testid="stCheckbox"] {{
-      min-height: 44px; display: flex; align-items: center;
+      min-height: 0 !important; display: flex; align-items: center;
+      margin: 0 !important;
+    }}
+    [class*="st-key-archivebox"] [data-testid="stCheckbox"] label {{
+      min-height: 0 !important; padding: 0 !important;
     }}
 
     /* THE STATUS BOX. Small type, the same dim monospace as the deck's

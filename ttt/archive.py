@@ -139,3 +139,22 @@ def preview(rec, width=PREVIEW):
         return body or "—"
     except Exception:
         return "—"
+
+
+def preview_words(rec, n=2):
+    """The FIRST TWO WORDS, then an ellipsis. Baba: "put just first 2
+    words and then add 3 dots."
+
+    A long preview pushed the row wide enough to clip on a phone, and a
+    clipped sentence reads as a broken app rather than as a summary. Two
+    words plus the clock is enough to tell one take from another, and it
+    lets the whole row stay small.
+    """
+    try:
+        words = str(rec.get("text", "")).split()
+        if not words:
+            return "—"
+        head = " ".join(words[:n])
+        return head + ("…" if len(words) > n else "")
+    except Exception:
+        return "—"
