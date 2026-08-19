@@ -6,3 +6,7 @@ __pycache__/
 .DS_Store
 venv/
 .venv/
+
+# clasp: holds the id of YOUR script. Copy .clasp.json.example and fill it.
+.clasp.json
+apps_script/.clasp.json
