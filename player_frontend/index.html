@@ -46,13 +46,22 @@
   @media (prefers-reduced-motion: reduce) { .row button { transition:none; } }
 </style>
 
-<div class="sub" id="sub" aria-live="polite"></div>
+<!-- ORDER: PLAYER, THEN TRANSPORT, THEN SUBTITLE.
+     Baba: "the player is at the top of everything. Pair is the best at
+     the top." A reader looking up from the words wants the controls in
+     the same place every time; the subtitle moves and changes, so it
+     belongs under the thing that does not.
+
+     Only the ORDER changed. Same elements, same ids, same script — the
+     R module works today and reordering markup is the one change that
+     cannot break the audio path. -->
 <audio id="a" controls preload="auto"></audio>
 <div class="row">
   <button id="prev" aria-label="previous">&#9198;</button>
   <button id="next" aria-label="next">&#9197;</button>
   <span class="count" id="count"></span>
 </div>
+<div class="sub" id="sub" aria-live="polite"></div>
 
 <script>
 function post(type, extra) {

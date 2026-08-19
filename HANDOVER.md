@@ -2666,3 +2666,50 @@ carry on: *"I don't care about this, let it be the same."* It is his data
 and his call. Recorded so nobody later assumes it was rotated: **it was
 not.** If it ever is, it changes in `Code.gs` AND Streamlit secrets
 together, then push and deploy a New version.
+
+---
+
+## 48. R LAYOUT — PLAYER ON TOP (v76) — step 3, part one
+
+Baba: *"the player is at the top of everything. Pair is the best at the
+top."*
+
+`player_frontend/index.html` was `subtitle → audio → transport`. It is now
+`audio → transport → subtitle`.
+
+**Only the markup order changed.** Same elements, same ids, same script,
+no logic touched. Reordering markup is the one change that cannot break
+the audio path, and the R module works today — Baba asked for exactly
+this and no more: *"reorder R with already what is in the code so we do
+not bring a new breaking point here."*
+
+The reasoning is worth keeping: a reader looking up from the words wants
+the controls in the same place every time. The subtitle moves and
+changes, so it belongs under the thing that does not.
+
+Verified in a real browser at phone width: audio y=8, transport y=62,
+subtitle y=106, all elements present, no errors. 6 checks.
+
+### What is NOT done, and why it was stopped here
+
+The full R redesign is **~350 lines across two files** plus a voice grid
+and mid-reading regeneration. It was deliberately not started: the
+session was long, and a half-rebuilt R breaks reading, which currently
+works.
+
+That is Baba's own rule from the cassette deck — *"highest visual impact
+but the highest risk to recording, which currently works. Therefore
+last."*
+
+**Still to do in R:**
+* voice grid — 5 voices × languages, same shape as the translate grid
+* change voice mid-reading and regenerate from the CURRENT part, not the
+  beginning
+* oscilloscope, reusing the deck's — no new visual elements
+* full text below the subtitle
+
+**And the nonsense detector, still last on purpose.** It needs MEASURING
+rather than building: a corrector that rewrites correct Croatian is worse
+than none, so it needs a test set of known-good and known-mangled
+Croatian and a count of fixes versus breaks. Building it without that
+would be guessing dressed as a feature.
