@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v70 (interface fixes)"
+APP_VERSION = "v71 (coloured admin gear)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -358,12 +358,16 @@ STRINGS = {
     "tab_read":           {"en": "Read",             "hr": "Čitaonica"},
     # The gear is the tab label itself — a symbol everyone already
     # knows, and one less word in a row of words.
-    # TWO GEARS WERE INDISTINGUISHABLE. They differed only by a
-    # zero-width space, which is invisible by definition, so Baba
-    # could not tell which one he needed. The row is otherwise
-    # letters, so this is a letter: A for admin. No colour trick,
-    # nothing that can break, and it reads at a glance.
-    "tab_settings":       {"en": "A",                "hr": "A"},
+    # TWO GEARS WERE INDISTINGUISHABLE — they differed only by a
+    # zero-width space, which is invisible by definition. Baba wants the
+    # SAME gear in a brighter colour, not a different glyph.
+    #
+    # Streamlit renders markdown in segmented_control labels, so the
+    # colour comes from the label itself: no CSS, nothing positional to
+    # break when a module is added or removed. VERIFIED in a real browser
+    # — ":orange[⚙]" renders a coloured span at rgb(226,102,12) and the
+    # markdown does not leak through as literal text.
+    "tab_settings":       {"en": ":orange[\u2699]",  "hr": ":orange[\u2699]"},
     # Same glyph as the owner's gear on purpose: they are the same KIND
     # of thing, and only the colour says which is which.
     #

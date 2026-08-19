@@ -2263,3 +2263,40 @@ into a new deployment would deploy a dead credential.
 * There are NO API keys in the Apps Script and none should ever be added —
   they live in the k_ tabs. "Fill in my keys" does not apply to this file,
   and saying so is more useful than complying.
+
+---
+
+## 40. THE ADMIN GEAR IS COLOURED, NOT RENAMED (v71)
+
+Baba insisted on the SAME gear icon in a brighter colour. v70 had made it
+the letter "A", which solved the confusion by changing the thing rather
+than colouring it.
+
+**Streamlit renders markdown inside `segmented_control` labels**, so the
+colour lives in the label itself: `":orange[⚙]"`. No CSS, and nothing
+positional to break when a module is added or removed — which is what an
+`nth-child` rule would have been.
+
+**VERIFIED IN A REAL BROWSER**, by installing Streamlit into the sandbox
+and reading computed styles off the running widget:
+
+    ⚙ (looks)   rgb(49, 51, 63)
+    ⚙ (admin)   rgb(226, 102, 12)
+    H           rgb(49, 51, 63)   — identical to T1
+
+The markdown does not leak through as literal text, which was the risk
+worth checking before shipping it.
+
+### H was never a different colour
+
+Measured the same as T1. What Baba was seeing is the ACTIVE TAB
+highlight, which lands on whichever module is open. Worth knowing before
+someone hunts for a styling bug that is not there.
+
+### Streamlit can now be run in the sandbox
+
+`pip install streamlit` works, and a headless instance on a local port can
+be driven with Playwright. **Widget-level rendering questions no longer
+have to be guessed at** — this one was settled in minutes instead of
+shipped on hope. Note the server must be started detached (`setsid`) or it
+dies with the shell.
