@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v93 (a) (one T, source dropdown, computer audio)"
+APP_VERSION = "v94 (a) (source sits with the recorder)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2793,6 +2793,33 @@ def _voice_row(engine, sp_ring_talk):
     return synth_fn
 
 
+def _source_row():
+    """WHERE THE SOUND COMES FROM — directly under the deck.
+
+    Baba: *"input menu should go where it belongs, below the cassette
+    recorder."* It was under the language pills, which put it two rows
+    away from the thing it governs. The source is a property of the
+    RECORDER, so it reads with the recorder.
+
+    A dropdown rather than pills: the list will grow — a tab, a window, a
+    named virtual device — and more pills would push the row onto a
+    second line, which §27 settled as a bug.
+
+    On its own line, MEASURED: beside the four pills at 360px it fitted
+    the row and clipped the word "microphone". The type may shrink, but
+    no word may be cut.
+    """
+    with st.container(key="srcrow"):
+        _sc, _ = st.columns([2.2, 2.8])
+        _srcs = ["mic", "system"]
+        _sc.selectbox(
+            t("src_label"), _srcs,
+            index=_srcs.index(st.session_state.get("rec_source", "mic")),
+            format_func=lambda k: t("src_" + k),
+            key="rec_source", on_change=persist_settings,
+            label_visibility="collapsed")
+
+
 def _lang_mode_row():
     """HR / ENG / single / multi.
 
@@ -2822,25 +2849,6 @@ def _lang_mode_row():
         mcol2.button(t("mode_multi"), key="tr_multi",
                      type="primary" if appending else "secondary",
                      on_click=set_append_mode, args=(True,))
-
-    # WHERE THE SOUND COMES FROM.
-    #
-    # A dropdown rather than pills: the list will grow — a tab, a window,
-    # a named virtual device — and more pills would push the row onto a
-    # second line, which §27 settled as a bug.
-    #
-    # On its own line, MEASURED: put beside the four pills at 360px it
-    # fitted the row and clipped the word "microphone". The type may
-    # shrink, but no word may be cut.
-    with st.container(key="srcrow"):
-        _sc, _ = st.columns([2.2, 2.8])
-        _srcs = ["mic", "system"]
-        _sc.selectbox(
-            t("src_label"), _srcs,
-            index=_srcs.index(st.session_state.get("rec_source", "mic")),
-            format_func=lambda k: t("src_" + k),
-            key="rec_source", on_change=persist_settings,
-            label_visibility="collapsed")
 
 
 # =====================================================================
@@ -3247,13 +3255,17 @@ if active == "transcribe":
     # own spacing and nothing could reach it from the stylesheet, which
     # is why there was visibly more room under the deck than between any
     # other two frames.
-    if _t2:
-        # ONE LINE, and only what is different. What the browser will and
-        # will not offer is the component's job to report when it is
-        # pressed, not this line's job to guess in advance.
-        st.caption(t("t2_hint"))
     with st.container(key="deckbox"):
         audio = cassette_recorder(rec_key, source=_source)
+
+    # THE SOURCE SITS WITH THE RECORDER IT GOVERNS.
+    _source_row()
+    if _t2:
+        # UNDER the dropdown it explains, not above the deck. One line,
+        # and only what is different — what the browser will and will not
+        # offer is the component's job to report when rec is pressed, not
+        # this line's job to guess in advance.
+        st.caption(t("t2_hint"))
     # STORE IT UNDER A DIFFERENT KEY. rec_key belongs to the component
     # widget, and Streamlit refuses to let anything else write to a key a
     # widget owns — assigning to it raises StreamlitAPIException on the

@@ -4050,6 +4050,24 @@ A dropdown rather than pills because the list will grow — a tab, a
 window, a named virtual device — and more pills would push the row onto
 a second line.
 
+### The dropdown sits WITH THE RECORDER (v94)
+
+Baba: *"input menu should go where it belongs, below the cassette
+recorder."* It first landed under the language pills, two rows away from
+the thing it governs. The source is a property of the RECORDER, so it
+reads with the recorder.
+
+Order in T, top to bottom, measured in a browser at 360px:
+
+    deck      y=135
+    source    y=301
+    HR/ENG/single/multi   y=350
+    command row           y=403
+    the box               y=460
+
+The computer-audio hint moved with it, UNDER the dropdown it explains
+rather than above the deck.
+
 ### Platform reality, unchanged from §36
 
     Windows   works, nothing to install
