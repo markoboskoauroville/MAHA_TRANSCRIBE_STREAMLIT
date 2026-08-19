@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v90 (a) (engines, and check engine)"
+APP_VERSION = "v91 (a) (patch bay removed, engine lives in the sheet)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -119,63 +119,8 @@ st.markdown(
     }
     div[data-testid="stColumn"] div[data-testid="stVerticalBlock"] { gap: 0.4rem; }
 
-    /* --- PATCH BAY -------------------------------------------------
-       The pill rules above deliberately let columns size to their own
-       content, which is right everywhere else and WRONG here: a patch
-       bay whose columns do not line up between rows is not a grid, it is
-       jumbled text. Inside the bay, restore equal columns that never
-       wrap, so every crosspoint sits under its own heading. */
-    .st-key-patchbay div[data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-        gap: 0.2rem !important;
-    }
-    /* Must out-specify the global pill rule above, which is
-       div[stHorizontalBlock] > div[stColumn] — a child combinator of two
-       attribute selectors. !important alone does NOT win that; the
-       selector has to be at least as specific, hence the full path. */
-    .st-key-patchbay div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-        flex: 1 1 0 !important;
-        width: auto !important;
-        min-width: 0 !important;
-    }
-    /* The jack itself. The stButton wrapper is auto-width by the pill
-       rule above, so widening only the <button> leaves it a sliver — both
-       have to be told. Round, centred, and sized like something you press
-       with a finger, not a sliver of a pill. */
-    .st-key-patchbay div[data-testid="stButton"] {
-        width: 100% !important;
-        display: flex;
-        justify-content: center;
-    }
-    .st-key-patchbay .stButton button {
-        width: 38px !important;
-        height: 38px !important;
-        min-width: 38px !important;
-        padding: 0 !important;
-        border-radius: 50% !important;
-        font-size: 0.95rem;
-        line-height: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    /* Column headings and engine names centred over their own column so
-       the eye can run straight down a column and along a row. */
-    .st-key-patchbay div[data-testid="stCaptionContainer"] {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 38px;
-    }
-    .st-key-patchbay div[data-testid="stColumn"]:first-child
-        div[data-testid="stCaptionContainer"] { justify-content: flex-start; }
-    .st-key-patchbay div[data-testid="stCaptionContainer"] p {
-        font-size: 0.72rem;
-        margin: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
+    /* The patch bay's CSS lived here and is gone with it (v91). Engines
+       replaced it: two named presets instead of a nine-cell grid. */
 
     .stButton button {
         border-radius: 999px;
@@ -524,6 +469,11 @@ STRINGS = {
     "eng_task_tts":       {"en": "read aloud",         "hr": "čitanje"},
     "eng_task_llm":       {"en": "AI text",            "hr": "AI tekst"},
     "eng_mixed":          {"en": "mixed",              "hr": "miješano"},
+    "eng_saved":          {"en": "saved to the sheet for everyone",
+                           "hr": "spremljeno u tablicu za sve"},
+    "eng_notsaved":       {"en": "this session only — the sheet did not "
+                                 "take it (deploy a New version?)",
+                           "hr": "samo ova sesija — tablica nije primila"},
     "admin_off":          {"en": "Usage log not connected.",
                             "hr": "Zapis korištenja nije spojen."},
     # SHORT LABELS. Baba: "text size does not need to be text size, just
@@ -1637,6 +1587,40 @@ def sheet_prompt(key: str) -> str:
     return SHEET.prompt(sheet_config(), key, USER)
 
 
+def adopt_sheet_engine():
+    """Apply the engine the SHEET names, once per session.
+
+    Baba: *"we need to do this kind of settings inside the sheet."* The
+    engine is the app's, not one person's, so the sheet is where it
+    belongs — it is the only store that is shared, durable and editable
+    by hand without a deploy.
+
+    ONCE PER SESSION, and only when the person has not chosen for
+    themselves in this session. Re-applying it on every rerun would undo
+    a press the moment it was made, which reads as the buttons being
+    dead. So the sheet sets the starting point and a press wins from
+    then on, until the next session.
+
+    Never a dependency: an unreachable sheet, an empty row or a name
+    that is not an engine all leave the routes exactly as they were.
+    """
+    if st.session_state.get("_sheet_engine_done"):
+        return
+    cfg = sheet_config()
+    if not cfg:
+        return                      # no sheet is not an error
+    st.session_state["_sheet_engine_done"] = True
+    name = SHEET.setting(cfg, EN.SETTING_KEY, USER).strip().lower()
+    engine = EN.get(name)
+    if engine is None:
+        return                      # a typo must not switch anything
+    if st.session_state.get("_engine_chosen_here"):
+        return                      # this person already pressed a button
+    for key, value in EN.route_settings(engine).items():
+        st.session_state[key] = value
+    st.session_state[EN.SETTING_KEY] = engine.id
+
+
 def adopt_sheet_keys():
     """Take any keys the sheet holds that this session does not.
 
@@ -2540,8 +2524,33 @@ def pick_engine(engine_id):
     for key, value in EN.route_settings(engine).items():
         st.session_state[key] = value
     st.session_state[EN.SETTING_KEY] = engine.id
+    # A PRESS OUTRANKS THE SHEET for the rest of this session. Without
+    # this the sheet's value would be re-applied on the next rerun and
+    # the button would appear not to work.
+    st.session_state["_engine_chosen_here"] = True
     st.session_state.pop("_engine_check", None)
     persist_settings()
+
+    # AND WRITE IT TO THE SHEET, so it is the engine for everybody.
+    # Baba: "this is global settings for all users." Admin only — one
+    # person's press must not silently change what everyone else runs.
+    #
+    # The sheet is a convenience here as everywhere: if the write fails
+    # the choice still holds for this session, and the only loss is that
+    # it does not follow to the next one or to anyone else. Said plainly
+    # rather than swallowed, because a global setting that quietly did
+    # not save is worse than one that never claimed to.
+    if is_admin():
+        ok = SHEET.put_setting(
+            str(st.secrets.get("SHEETS_URL", "") or ""),
+            str(st.secrets.get("SHEETS_TOKEN", "") or ""),
+            EN.SETTING_KEY, engine.id)
+        st.session_state["_engine_saved"] = bool(ok)
+        # The cached config is now stale — drop it so the next read sees
+        # what was just written rather than what was there at login.
+        if ok:
+            st.session_state.pop("_sheet_config", None)
+            st.session_state.pop("_sheet_engine_done", None)
 
 
 def run_engine_check():
@@ -3003,6 +3012,7 @@ def lang_pills(prefix: str, which: str, current: str):
 # same ordering mistake that took every tab down in v33.
 try:
     adopt_sheet_keys()
+    adopt_sheet_engine()
 except Exception:
     pass          # the sheet is never allowed to break startup
 
@@ -4019,6 +4029,12 @@ elif active == "settings":
                            help=eng.note,
                            on_click=pick_engine, args=(eng.id,),
                            use_container_width=True)
+
+            # Did the global save land? A global setting that quietly
+            # did not save is worse than one that never claimed to.
+            if "_engine_saved" in st.session_state:
+                st.caption(t("eng_saved") if st.session_state["_engine_saved"]
+                           else t("eng_notsaved"))
 
             # CHECK ENGINE. Baba: "it will just check if it can connect,
             # it means keys are good, engine can work."

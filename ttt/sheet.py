@@ -36,8 +36,13 @@ DEFAULTS = {
     "prompt_reshape": ("Tidy this into clear paragraphs. Remove filler and "
                        "repetition. Keep every fact and the speaker's own voice."),
     "allow_user_keys": "TRUE",
-    "allow_patch_bay": "FALSE",
     "store_audio": "TRUE",
+    # WHICH ENGINE EVERYONE RUNS. Global on purpose: it is the app's
+    # engine, not a personal preference, so it belongs in the one store
+    # that is shared and editable by hand. "allow_patch_bay" sat here
+    # until v91 and was never read by anything — the patch bay it
+    # governed had already been replaced by engines.
+    "engine": "free",
 }
 
 # A prompt from the sheet is untrusted text: it is typed by a person and
@@ -61,6 +66,38 @@ def fetch(url: str, token: str) -> dict:
         return data
     except Exception:
         return {}
+
+
+def put_setting(url: str, token: str, key: str, value: str,
+                scope: str = "global") -> bool:
+    """Write one setting back to the sheet. True when it landed.
+
+    The read side of this file is a convenience; so is this. It NEVER
+    raises and it is never a dependency — a failed write leaves the
+    person's own session on the value they chose, and the sheet simply
+    does not learn about it.
+
+    Note the deployed script must actually have the `set_put` branch. An
+    older deployment answers ok for anything it does not recognise,
+    because the request falls through to the usage-logging appendRow —
+    the same trap as §47. So success is only believed when the reply
+    names the key back.
+    """
+    if not url or not token or not key:
+        return False
+    try:
+        payload = json.dumps({"token": token, "what": "set_put",
+                              "scope": scope, "key": key,
+                              "value": str(value)}).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json",
+                     "User-Agent": "TTT-LLL/1.0"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            out = json.loads(r.read().decode("utf-8", "replace"))
+        return bool(out.get("ok")) and out.get("key") == key
+    except Exception:
+        return False
 
 
 def settings_map(config: dict) -> dict:

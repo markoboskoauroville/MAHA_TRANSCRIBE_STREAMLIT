@@ -3772,3 +3772,110 @@ Every settings-touching test must clear that file first.
 The check has never run against real keys — the sandbox has none for
 Speechify, AssemblyAI or Anthropic, and the Groq key in the test secrets
 is a stub. **The first real press of `check engine` is the real test.**
+
+---
+
+## 66. THE PATCH BAY IS GONE, AND THE ENGINE LIVES IN THE SHEET (v91)
+
+Baba: *"remove the patch bay setting and the patch bay in general. We
+just switch between these 2 engines and that's it."*
+
+### What was actually still there
+
+The patch bay UI had ALREADY been removed from `app.py` before this
+session — §18 recorded `routing.py` as "the patch bay model (hidden in
+UI, still used)". What remained was scattered residue, and all of it is
+now gone:
+
+    app.py            57 lines of .st-key-patchbay CSS for a container
+                      that no longer existed
+    ttt/routing.py    matrix(), crosspoint(), PATCHED/OPEN/NOKEY/BLANK —
+                      dead, referenced by nothing
+    ttt/sheet.py      allow_patch_bay in DEFAULTS, read by nothing
+    Code.gs           a seed row writing that flag into the sheet
+
+**What routing.py KEEPS**, because engines are built on it: `TASKS`,
+`options()`, `resolve()`, `all_routes()`. Removing the grid removed a
+screen, not a mechanism — `resolve()`'s fallback (a provider whose keys
+all died stops being chosen) is exactly as load-bearing as before.
+
+### The engine is a sheet setting now
+
+`allow_patch_bay` was replaced in the same row of the same tab by
+`engine`, which is the setting that actually matters:
+
+    scope    key      value
+    global   engine   free        # Edge / Groq
+    global   engine   studio      # Speechify / AssemblyAI / Claude
+
+`adopt_sheet_engine()` applies it ONCE per session. Not on every rerun:
+re-applying would undo a press the instant it was made, which reads as
+the buttons being dead. So the sheet sets the starting point and a press
+wins from then on — `_engine_chosen_here` marks that.
+
+A name that is not an engine switches nothing, and an unreachable sheet
+is not an error. Same rule as everywhere: **the sheet is a convenience,
+never a dependency.**
+
+### AND IT CAN NOW BE WRITTEN BACK — this is new
+
+Until v91 the sheet was **read-only from the app**. `doPost` had audio
+and text branches and nothing for settings, so "settings live in the
+sheet" was only true for things Baba edited by hand.
+
+`putSetting_` in `Code.gs` and `SHEET.put_setting()` close that. Choosing
+an engine as ADMIN writes the global row, so it is the engine for
+everybody rather than for one browser.
+
+Deliberately narrow: `WRITABLE_SETTINGS = ['engine']`. A web app that
+will store any key under any name is a free database for anyone holding
+the URL. It updates in place when `(scope, key)` exists — appending
+would leave two rows for one setting and the app keeps the last one it
+reads.
+
+**The §47 trap again, and guarded against again.** A deployment without
+the `set_put` branch does not reject the request: it falls through to
+the usage-logging `appendRow` and answers `{ok:true}`. So `put_setting`
+only believes success when the reply NAMES THE KEY BACK, and the screen
+says plainly whether the global save landed or whether the choice is
+this session only.
+
+### WHERE USER SETTINGS ACTUALLY LIVE — checked, not assumed
+
+Baba: *"I hope that user settings are stored in the sheet file."*
+
+**They are not, and this is worth being exact about.** Per-user settings
+— voice, text scale, scheme, single/multi, speech language — go
+`st.session_state` → browser localStorage → a server-side JSON in
+`tempfile.gettempdir()`. localStorage is the layer that really survives,
+and it is **per browser**: the same person on a different phone gets
+defaults.
+
+The sheet holds only what is global or per-user CONFIG: the two prompts,
+`allow_user_keys`, `store_audio`, spare API keys, and now `engine`.
+
+Moving all per-user settings into the sheet is a real piece of work
+(a read on login, a write on every change, a cache, and a decision about
+what wins when two devices disagree) and it is NOT done. `put_setting`
+is the first half of the mechanism if it is ever wanted.
+
+### Test status
+
+`tests/test_engine_sheet.py` — **27 passed.** The patch bay is really
+gone from all four files; routing keeps what engines need; the sheet's
+engine is applied at startup; a press outranks the sheet; nonsense in
+the sheet switches nothing; the write path works, refuses a bad token,
+refuses a non-writable key, and **does not believe an old deployment's
+bare `ok`**.
+
+Whole suite after the change: 28, 15, 27, 15, 16, 10 in Python, 44 in
+the GAS harness, 20 on the Drive client. Browser-checked at 360px, clean
+log.
+
+### THE DEPLOY DEBT IS NOW TWO CHANGES
+
+`Code.gs` in the repo is ahead of the deployment by BOTH v86 (putText_ /
+getText_ / the two columns) and v91 (putSetting_). One deploy covers
+both: Deploy → Manage deployments → pencil → Version: New version.
+Until then the paired archive stores nothing and the engine cannot be
+saved globally.

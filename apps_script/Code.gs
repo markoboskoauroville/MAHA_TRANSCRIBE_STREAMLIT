@@ -197,6 +197,7 @@ function doPost(e) {
     if (body.what === 'audio_del')  return json(deleteRec_(body));
     if (body.what === 'text_put')   return json(putText_(body));
     if (body.what === 'text_get')   return json(getText_(body));
+    if (body.what === 'set_put')    return json(putSetting_(body));
     if (body.what === 'audio_list') {
       return json({ ok: true, recordings: listRecs_(body.user) });
     }
@@ -332,9 +333,54 @@ var DEFAULT_SETTINGS = [
   ['global', 'prompt_reshape',
    'Tidy this into clear paragraphs. Remove filler and repetition. Keep every fact and the speaker\'s own voice.'],
   ['global', 'allow_user_keys', 'TRUE'],
-  ['global', 'allow_patch_bay', 'FALSE'],
+  ['global', 'engine', 'free'],   // 'free' = Edge/Groq, 'studio' = Speechify/AssemblyAI/Claude
   ['global', 'store_audio', 'TRUE']
 ];
+
+/** Write one settings row. The app's engine choice comes through here,
+ *  so the sheet is the shared store rather than something that has to be
+ *  hand-edited to change what everybody runs.
+ *
+ *  UPDATES IN PLACE when (scope, key) already exists. Appending instead
+ *  would leave two rows for one setting, and settings_map() in the app
+ *  keeps the LAST one it reads — so the sheet would look like it held a
+ *  value it no longer used.
+ *
+ *  Deliberately narrow: only keys the app already understands may be
+ *  written. A web app that will store any key under any name is a free
+ *  database for anyone holding the URL.
+ */
+var WRITABLE_SETTINGS = ['engine'];
+
+function putSetting_(body) {
+  var scope = String(body.scope || 'global').trim().toLowerCase();
+  var key = String(body.key || '').trim();
+  var value = String(body.value == null ? '' : body.value);
+
+  if (!key) return { ok: false, error: 'key required' };
+  if (WRITABLE_SETTINGS.indexOf(key) < 0) {
+    return { ok: false, error: 'not a writable setting: ' + key };
+  }
+  if (value.length > 200) return { ok: false, error: 'value too long' };
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = ss.getSheetByName('settings');
+  if (!s) return { ok: false, error: 'no settings tab — run setupConfig()' };
+
+  var last = s.getLastRow();
+  if (last > 1) {
+    var vals = s.getRange(2, 1, last - 1, 2).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]).trim().toLowerCase() === scope &&
+          String(vals[i][1]).trim() === key) {
+        s.getRange(i + 2, 3).setValue(value);
+        return { ok: true, updated: true, scope: scope, key: key };
+      }
+    }
+  }
+  s.appendRow([scope, key, value]);
+  return { ok: true, updated: false, scope: scope, key: key };
+}
 
 function setupConfig() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();

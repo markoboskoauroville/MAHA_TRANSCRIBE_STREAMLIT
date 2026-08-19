@@ -85,51 +85,15 @@ def all_routes(providers, is_usable, settings: dict) -> dict:
 
 
 # ---------------------------------------------------------------------
-# The patch bay
+# THE PATCH BAY IS GONE (v91)
 # ---------------------------------------------------------------------
-# Engines down the side, functions across the top, and a crosspoint where
-# they meet — the way an X32 routes buses. Reading a row tells you what one
-# engine is doing; reading a column tells you who is doing one job.
+# `matrix()` and `crosspoint()` modelled a nine-cell grid of engines
+# against functions. Baba: "remove the patch bay, we just switch between
+# these 2 engines and that's it."
 #
-# A crosspoint is in exactly one of four states, and the UI shows each
-# differently rather than hiding any of them, because "why can I not
-# choose this?" should be answerable by looking:
-#
-#   patched     this engine is doing this job now
-#   open        it could, and a key exists — press to patch
-#   nokey       it could, but there is no working key for it yet
-#   blank       this engine cannot do this job at all
-#
-# Patching is radio, not a toggle: one engine per function. Pressing an
-# open point patches it and unpatches whatever held that column, so the
-# grid can never end up with two engines claiming one job or with a
-# function patched to nothing.
-
-PATCHED, OPEN, NOKEY, BLANK = "patched", "open", "nokey", "blank"
-
-
-def crosspoint(task, provider, is_usable, active_id: str) -> str:
-    if task.capability not in provider.capabilities:
-        return BLANK
-    if not is_usable(provider):
-        return NOKEY
-    return PATCHED if provider.id == active_id else OPEN
-
-
-def matrix(providers, is_usable, settings: dict):
-    """Rows of (provider, [(task, state), ...]) plus the resolved routes.
-
-    Every registered provider gets a row, including ones that can only do
-    one job — an engine with a single crosspoint still belongs on the
-    panel, the same way an unused bus still has a strip.
-    """
-    routes = all_routes(providers, is_usable, settings)
-    rows = []
-    for provider in providers.REGISTRY.values():
-        cells = []
-        for task in TASKS:
-            active = routes.get(task.id)
-            cells.append((task, crosspoint(task, provider, is_usable,
-                                           active.id if active else "")))
-        rows.append((provider, cells))
-    return rows, routes
+# What is left here is the part engines are BUILT ON and still need:
+# TASKS, options(), resolve() and all_routes(). An engine in
+# ttt/engines.py is a named set of these routes, so removing the grid
+# removed a screen, not a mechanism — the fallback behaviour in
+# resolve() (a provider whose keys all died stops being chosen) is
+# exactly as load-bearing as it was.
