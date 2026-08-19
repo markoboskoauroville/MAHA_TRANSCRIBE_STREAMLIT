@@ -43,6 +43,13 @@
   .row button:focus-visible { outline:3px solid #f59e0b; outline-offset:2px; }
   .count { margin-left:auto; color:#b1a389; font-size:0.85rem;
            font-variant-numeric:tabular-nums; }
+  /* IDLE. The bar is always on screen so nothing jumps when reading
+     starts; with no audio it simply goes quiet. Dimmed, not hidden, and
+     not removed — Baba: "everything is already there, only greyed out."
+     Opacity and pointer-events change nothing about layout, so the bar
+     occupies the same space idle as it does playing. */
+  body.idle audio, body.idle .row { opacity:0.38; pointer-events:none; }
+  body.idle .sub { opacity:0.55; }
   @media (prefers-reduced-motion: reduce) { .row button { transition:none; } }
 </style>
 
@@ -118,6 +125,12 @@ window.addEventListener("message", function (event) {
   var scale = args.scale || 1;
   sub.style.fontSize = (1.35 * scale) + 'rem';
   sub.style.minHeight = (4.4 * 1.35 * scale) + 'rem';
+  // No source yet: sit quietly. The element stays exactly where it is.
+  document.body.classList.toggle('idle', !args.src);
+  if (!args.src) {
+    sub.textContent = args.idle_hint || '';
+    count.textContent = '';
+  }
   if (args.src && args.src !== loaded) {
     loaded = args.src;
     a.src = args.src;

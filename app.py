@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v76 (R: player on top)"
+APP_VERSION = "v77 (player always there)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3162,6 +3162,21 @@ elif active == "talk":
 
         st.text_area(t("tab_talk"), key="talk_text", height=150,
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
+
+        # THE PLAYER IS ALWAYS HERE, greyed until there is something to
+        # play. Baba's rule from the start: "no new elements appearing on
+        # the screen. Everything is already there, only greyed out."
+        #
+        # It used to exist only inside `if job:`, so pressing read made a
+        # whole player bar appear and everything below it jumped down the
+        # page. The bar is the tallest thing in this module; that jump was
+        # the worst one in the app.
+        if _player_component is not None:
+            _player_component(src="", marks=[], part=0, parts=0,
+                              scale=a11y.clamp(st.session_state.get(
+                                  "text_scale", a11y.DEFAULT_SCALE)),
+                              autoplay=False, key="talk_player_idle",
+                              default=None)
 
         go = st.button(SYM["read"], key="read_btn", help=t("read_btn"))
 

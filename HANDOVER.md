@@ -2713,3 +2713,50 @@ rather than building: a corrector that rewrites correct Croatian is worse
 than none, so it needs a test set of known-good and known-mangled
 Croatian and a count of fixes versus breaks. Building it without that
 would be guessing dressed as a feature.
+
+---
+
+## 49. THE PLAYER IS ALWAYS THERE (v77)
+
+Baba, on seeing R unchanged: *"there are no new elements appearing on the
+screen. Everything is already there, it is just not activated... I do not
+want the user interface jumps. You cannot play anything with it until you
+paste the text, but GIVE ME THE PLAYER."*
+
+This is the rule from the very first handover — *one unchanging interface
+across phases, player always present, greyed when idle* — and it had never
+actually been done.
+
+### What was wrong
+
+`_player_component` rendered only inside `if job:`. Before pressing read
+there was no player at all; pressing read made a whole bar appear and
+everything below it jumped down the page. It is the tallest element in
+the module, so that was the worst jump in the app.
+
+### What it does now
+
+The bar renders idle too, with `src=""`. The component adds `body.idle`,
+which **dims it and stops it being pressed** — opacity and
+`pointer-events`, neither of which touches layout, so the bar occupies
+exactly the same space quiet as playing.
+
+Measured in a real browser, idle then playing:
+
+    bar position   identical, moves 0.0 px
+    strip height   identical
+    idle           opacity 0.38, pointer-events none
+    playing        opacity 1, live
+
+**7 checks, 0 failed.**
+
+### The general rule, now demonstrated
+
+**Do not add and remove elements between phases — add them once and
+change how they look.** Anything conditional on state and taller than a
+line will move the page under someone's finger. On a phone, for a reader
+who has just found the button, that is the difference between usable and
+not.
+
+Still to do in R: the voice grid, mid-reading regeneration, the
+oscilloscope, and the full text below the subtitle.
