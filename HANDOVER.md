@@ -3032,3 +3032,50 @@ exposed the lopsided last page, so the wrong assertion earned its keep.
 
 * wire it into R in place of the old player
 * the 30-second generate-ahead pipeline — still the hard part, still new
+
+---
+
+## 55. THE WAVEFORM PLAYER IS IN R (v82) — step 2
+
+Swapped in exactly where the old one stood. Baba: *"you just remove that
+player and put at the same place the other player."* Both the reading
+state and the idle state use it, so the bar is still always present and
+still greyed when there is nothing to play.
+
+### No new timing was computed
+
+`wave_cues()` converts the reader's existing SENTENCE marks — text,
+character offsets, start and end times — into the player's cue shape.
+That is already what `ttt/cues.py` produces, so the subtitle, the
+highlight and the sentence jump read the SAME numbers and cannot drift
+apart.
+
+`first`/`last` stay -1 because these are sentences, not words: the player
+shows the line without a lit word when it has no word times, which is
+honest degradation rather than a guessed highlight.
+
+### THE BUG THAT WOULD HAVE LOOKED LIKE A BROKEN READER
+
+The old player posted a value back when a block finished, and Python used
+it to move to the next part. **The waveform player posted nothing at
+all.** Wired in as it was, reading would have stopped dead after the first
+block — and that reads as the READER being broken, not as the player
+missing one line.
+
+Caught by asking what the old component DID that the new one did not,
+before trusting the swap. `audio.onended` now posts `{at, ended}`, and a
+new `src` with `autoplay` starts itself, or every part after the first
+would need a tap.
+
+**When replacing a component, list what the old one SENT, not just what
+it showed.** A player is judged by its pixels; this one was also a
+message bus.
+
+5 checks on the finish signal, 14 on the player itself, no duplicate keys,
+app boots clean.
+
+### Left
+
+The 30-second generate-ahead pipeline. Still the hard part, still new:
+the reader builds the next block when the previous ENDS, so there is a
+pause between parts. Generating while the current one plays removes it.

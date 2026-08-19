@@ -89,6 +89,7 @@
 <script>
 function post(t, extra){ window.parent.postMessage(
   Object.assign({isStreamlitMessage:true,type:t}, extra||{}), "*"); }
+function setValue(v){ post("streamlit:setComponentValue",{value:v,dataType:"json"}); }
 function height(){
   var h=document.getElementById('deck').getBoundingClientRect().height;
   post("streamlit:setFrameHeight",{height:Math.ceil(h)+6});
@@ -227,7 +228,15 @@ bPlay.onclick=function(){
 };
 audio.onplay=function(){ setPlaying(true); if(!raf) tick(); };
 audio.onpause=function(){ setPlaying(false); };
-audio.onended=function(){ setPlaying(false); draw(); };
+audio.onended=function(){
+  setPlaying(false); draw();
+  // TELL PYTHON THE BLOCK FINISHED, or reading stops after the first one.
+  // The old player did this and the waveform player did not; wiring it in
+  // without this would have looked like the reader breaking rather than
+  // the player missing a line. The stamp lets Python ignore repeats: one
+  // finish must move on exactly one part.
+  setValue({at: Date.now(), ended: true});
+};
 
 /* BACK RESTARTS THIS SENTENCE FIRST and only steps to the previous one
    when already near its start — the same rule as ttt/cues.py, and the same
@@ -284,7 +293,12 @@ window.addEventListener("message", function(ev){
     lPlay.textContent=audio.paused?LBL.play:LBL.pause; }
   cues=a.cues||[]; words=a.words||[]; wtimes=a.wtimes||[];
   document.body.classList.toggle('idle', !a.src);
-  if(a.src && a.src!==loaded) load(a.src);
+  if(a.src && a.src!==loaded){
+    load(a.src);
+    // A new block: play it without waiting to be pressed, the same as the
+    // old player, or every part after the first needs a tap.
+    if(a.autoplay) audio.play().catch(function(){});
+  }
   if(!a.src){ sub.textContent=''; clock.textContent='0:00'; draw(); }
   height();
 });

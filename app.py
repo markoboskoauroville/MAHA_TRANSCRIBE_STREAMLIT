@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v81 (waveform player)"
+APP_VERSION = "v82 (waveform player in R)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -309,6 +309,10 @@ STRINGS = {
     "rec_pause": {"en": "pause", "hr": "pauza"},
     "rec_stop":  {"en": "stop",  "hr": "stop"},
     "rec_upload": {"en": "open",   "hr": "otvori"},
+    "wave_play":  {"en": "play",  "hr": "sviraj"},
+    "wave_pause": {"en": "pause", "hr": "pauza"},
+    "wave_back":  {"en": "back",  "hr": "natrag"},
+    "wave_next":  {"en": "next",  "hr": "dalje"},
     "rec_retry":   {"en": "retry",   "hr": "ponovi"},
     "mode_single": {"en": "single", "hr": "jedan"},
     "mode_multi":  {"en": "multi",  "hr": "više"},
@@ -668,6 +672,13 @@ try:
         "ttt_cassette", path=_CASSETTE_FRONTEND)
 except Exception:
     _cassette_component = None
+
+_WAVE_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "waveform_frontend")
+try:
+    _wave_component = components.declare_component("ttt_wave", path=_WAVE_FRONTEND)
+except Exception:
+    _wave_component = None
 
 _PLAYER_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "player_frontend")
@@ -2456,6 +2467,34 @@ def set_append_mode(on: bool):
     persist_settings()
 
 
+def wave_cues(marks):
+    """Turn the reader's sentence marks into the waveform player's cues.
+
+    The reader has always produced SENTENCE marks — text plus character
+    offsets plus start and end times — which is already the shape
+    ttt/cues.py produces. So no new timing is computed here: the two views
+    read the SAME numbers, which is the only way the subtitle, the red
+    word and the sentence jump can be guaranteed not to drift apart.
+
+    `first`/`last` are left at -1 because these are sentences, not words;
+    the player shows the line without a lit word when it has no word
+    times, and that is the honest degradation.
+    """
+    out = []
+    for m in (marks or []):
+        try:
+            t0 = m.get("start_time")
+            t1 = m.get("end_time")
+            if t0 is None or t1 is None:
+                continue
+            out.append({"text": str(m.get("text", "")),
+                        "start": float(t0), "end": float(max(t1, t0)),
+                        "first": -1, "last": -1})
+        except Exception:
+            continue
+    return out
+
+
 def _drop_take():
     """Forget the recording that is being held.
 
@@ -3160,10 +3199,16 @@ elif active == "talk":
             save_rings()
 
         scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-        if _player_component is not None:
-            ev = _player_component(
+        if _wave_component is not None:
+            # THE WAVEFORM PLAYER, in the same place the old one stood.
+            # Baba: "you just remove that player and put at the same place
+            # the other player."
+            ev = _wave_component(
                 src="data:audio/mpeg;base64," + base64.b64encode(cached["audio"]).decode(),
-                marks=cached["marks"], part=idx + 1, parts=len(parts),
+                cues=wave_cues(cached["marks"]), words=[], wtimes=[],
+                labels={"play": t("wave_play"), "pause": t("wave_pause"),
+                        "back": t("wave_back"), "next": t("wave_next")},
+                part=idx + 1, parts=len(parts),
                 scale=scale, autoplay=True, key="talk_player", default=None)
             # The part finished: move to the next one and let the spinner
             # above make it. Guarded by a stamp so one finish is one move.
@@ -3260,12 +3305,15 @@ elif active == "talk":
         # whole player bar appear and everything below it jumped down the
         # page. The bar is the tallest thing in this module; that jump was
         # the worst one in the app.
-        if _player_component is not None:
-            _player_component(src="", marks=[], part=0, parts=0,
-                              scale=a11y.clamp(st.session_state.get(
-                                  "text_scale", a11y.DEFAULT_SCALE)),
-                              autoplay=False, key="talk_player_idle",
-                              default=None)
+        if _wave_component is not None:
+            _wave_component(src="", cues=[], words=[], wtimes=[],
+                            labels={"play": t("wave_play"), "pause": t("wave_pause"),
+                                    "back": t("wave_back"), "next": t("wave_next")},
+                            part=0, parts=0,
+                            scale=a11y.clamp(st.session_state.get(
+                                "text_scale", a11y.DEFAULT_SCALE)),
+                            autoplay=False, key="talk_player_idle",
+                            default=None)
 
         go = st.button(SYM["read"], key="read_btn", help=t("read_btn"))
 
