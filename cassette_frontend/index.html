@@ -112,6 +112,9 @@ function post(type, extra) {
     Object.assign({ isStreamlitMessage:true, type:type }, extra || {}), "*");
 }
 function setValue(v) { post("streamlit:setComponentValue", { value:v, dataType:"json" }); }
+var L_NOAUDIO='no sound was shared — tick "share audio" in the box',
+    L_NOSYS='this browser cannot capture computer audio',
+    L_SYSREFUSED='sharing was cancelled';
 function height() {
   // Measure, never assume. A fixed number was 126 and the deck grew past
   // it the moment the status line had anything to say.
@@ -223,14 +226,83 @@ function keys(state){
   clock.className  = (state==='rec') ? 'live' : '';
 }
 
-async function start(){
-  try {
-    media = await navigator.mediaDevices.getUserMedia({
+/* WHERE THE SOUND COMES FROM.
+   'mic'    the microphone, as it always was
+   'system' what the computer is PLAYING — a call, a video, a recording
+
+   ONE COMPONENT, NOT TWO. Everything after acquisition is identical:
+   MediaRecorder, the analyser, the one-second chunking, the
+   acknowledgement and retry. A second copy of this file would drift from
+   this one the first time either was fixed, and the module map (rule 2)
+   says shared machinery lives in one place and is used by everyone. */
+var SOURCE = 'mic';
+
+async function grab(){
+  if (SOURCE !== 'system') {
+    return await navigator.mediaDevices.getUserMedia({
       audio: { channelCount:1, echoCancellation:false, noiseSuppression:false,
                autoGainControl:false }
     });
+  }
+
+  /* CHROME WILL NOT OFFER SYSTEM AUDIO FOR AN AUDIO-ONLY REQUEST.
+     getDisplayMedia({audio:true}) alone throws or returns no audio
+     track; the "share tab audio" / "share system audio" checkbox only
+     appears when video is asked for too. So video is requested and then
+     dropped — we record a stream built from the audio track alone. */
+  if (!navigator.mediaDevices.getDisplayMedia) {
+    throw new Error('nodisplay');
+  }
+  var full = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: { echoCancellation:false, noiseSuppression:false,
+             autoGainControl:false }
+  });
+
+  var tracks = full.getAudioTracks();
+  if (!tracks.length) {
+    /* They shared a screen or window but did not tick the audio box.
+       Recording anyway would capture perfect silence and look like a
+       broken app twenty minutes later. Stop everything and say so. */
+    full.getTracks().forEach(function(t){ t.stop(); });
+    throw new Error('noaudio');
+  }
+
+  /* The picture is not wanted and must not be held: an unused video
+     track keeps the browser's "sharing" bar alive and, on some
+     machines, the capture hardware with it. */
+  full.getVideoTracks().forEach(function(t){ t.stop(); });
+
+  /* IF THEY PRESS THE BROWSER'S OWN "STOP SHARING", the track ends and
+     no more sound will ever arrive. Finish the take rather than let the
+     clock run on over silence. */
+  tracks[0].addEventListener('ended', function(){
+    // The same path the stop key takes, not a second one — a take ended
+    // by the browser's bar must arrive at Python exactly like any other.
+    if (running && rec) {
+      if (!paused) acc += Date.now()-t0;
+      paused=false;
+      try { rec.stop(); } catch(e){ finish(); }
+    }
+  });
+
+  return new MediaStream([tracks[0]]);
+}
+
+async function start(){
+  try {
+    media = await grab();
   } catch (e) {
-    say('microphone refused — check the browser permission', true);
+    var why = String((e && e.message) || '');
+    if (why === 'noaudio') {
+      say(L_NOAUDIO, true);
+    } else if (why === 'nodisplay') {
+      say(L_NOSYS, true);
+    } else if (SOURCE === 'system') {
+      say(L_SYSREFUSED, true);
+    } else {
+      say('microphone refused — check the browser permission', true);
+    }
     return;
   }
   var mime=pick();
@@ -505,8 +577,12 @@ window.addEventListener("message", function(ev){
   // proof a send arrived.
   var ackStamp=(m.args||{}).ack;
   if (ackStamp) acked(ackStamp);
+  if ((m.args||{}).source) SOURCE=(m.args||{}).source;
   var a=(m.args||{}).labels;
   if (a) {
+    if (a.noaudio)    L_NOAUDIO=a.noaudio;
+    if (a.nosystem)   L_NOSYS=a.nosystem;
+    if (a.sysrefused) L_SYSREFUSED=a.sysrefused;
     document.getElementById('lRec').textContent   = a.rec   || 'rec';
     document.getElementById('lPause').textContent = a.pause || 'pause';
     document.getElementById('lStop').textContent  = a.stop  || 'stop';

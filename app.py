@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v92 (a) (users in the sheet, engine each, save button)"
+APP_VERSION = "v93 (a) (one T, source dropdown, computer audio)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -247,7 +247,7 @@ STRINGS = {
     # Single letters. The tab bar is the one row that is always on
     # screen, so it should cost the least. T transcribe, R read, TR
     # translate, and the gear.
-    "tab_transcribe":     {"en": "T1",               "hr": "T1"},
+    "tab_transcribe":     {"en": "T",                "hr": "T"},
     # The cassette deck transport. Words, not only symbols: the shapes
     # carry the meaning for anyone who knows a tape deck, and the word
     # carries it for everyone else.
@@ -342,7 +342,7 @@ STRINGS = {
     # leaving them pixel-identical on screen.
     "tab_looks":          {"en": "\u2699\u200b",      "hr": "\u2699\u200b"},
     "tab_help":           {"en": "H",                "hr": "H"},
-    "tab_tabaudio":       {"en": "T2",               "hr": "T2"},
+
     "tab_log":            {"en": "L",                "hr": "L"},
     "log_title":          {"en": "Error log",        "hr": "Zapis grešaka"},
     "log_empty":          {"en": "Nothing has gone wrong yet.",
@@ -468,6 +468,25 @@ STRINGS = {
     "eng_task_stt":       {"en": "transcribe",         "hr": "transkripcija"},
     "eng_task_tts":       {"en": "read aloud",         "hr": "čitanje"},
     "eng_task_llm":       {"en": "AI text",            "hr": "AI tekst"},
+    "src_label":          {"en": "Source",             "hr": "Izvor"},
+    "src_mic":            {"en": "microphone",         "hr": "mikrofon"},
+    "src_system":         {"en": "computer audio",     "hr": "zvuk računala"},
+    "t2_hint":            {"en": "Press rec, then choose a tab or window "
+                                 "and TICK THE AUDIO BOX. Windows shares "
+                                 "system sound; macOS needs BlackHole; "
+                                 "Android cannot do this at all.",
+                           "hr": "Pritisni rec, odaberi karticu ili prozor "
+                                 "i OZNAČI KUĆICU ZA ZVUK. Windows dijeli "
+                                 "zvuk sustava; macOS treba BlackHole; "
+                                 "Android ovo ne može."},
+    "sys_noaudio":        {"en": "no sound was shared — tick the audio box "
+                                 "in the sharing window and try again",
+                           "hr": "zvuk nije podijeljen — označi kućicu za "
+                                 "zvuk i pokušaj ponovno"},
+    "sys_nosystem":       {"en": "this browser cannot capture computer audio",
+                           "hr": "ovaj preglednik ne može snimiti zvuk računala"},
+    "sys_refused":        {"en": "sharing was cancelled",
+                           "hr": "dijeljenje je otkazano"},
     "wave_save":          {"en": "save",               "hr": "spremi"},
     "eng_nousers":        {"en": "no users tab yet — run TTT-LLL ▸ Set up "
                                  "users tab in the sheet, then deploy a "
@@ -662,7 +681,7 @@ except Exception:
     _player_component = None
 
 
-def cassette_recorder(key: str):
+def cassette_recorder(key: str, source: str = "mic"):
     """The transport row. Returns the recording once, or None.
 
     Returns a BytesIO so the caller can keep using .getvalue() exactly as
@@ -683,7 +702,10 @@ def cassette_recorder(key: str):
         val = _cassette_component(
             labels={"rec": t("rec_btn"), "pause": t("rec_pause"),
                     "stop": t("rec_stop"), "upload": t("rec_upload"),
-                    "retry": t("rec_retry"), "sending": t("rec_sending")},
+                    "retry": t("rec_retry"), "sending": t("rec_sending"),
+                    "noaudio": t("sys_noaudio"), "nosystem": t("sys_nosystem"),
+                    "sysrefused": t("sys_refused")},
+            source=source,
             ack=st.session_state.get(f"_cassette_seen_{key}"),
             key=key, default=None)
     except Exception:
@@ -1213,10 +1235,12 @@ def transcribe_any_size(path: str, model: str, language: str, progress_cb=None,
 # localStorage is the one that really survives.
 # ----------------------------------------------------------------------
 DEFAULT_SETTINGS = {"ui_lang": "en", "engine": EN.DEFAULT,
+                    "rec_source": "mic",
                     "speech_lang": "hr", "voice": "Gabrijela",
                     "voice_engine": "edge", "sp_voice": "beatrice_32",
                     "transcribe_engine": "groq", "text_scale": a11y.DEFAULT_SCALE}
-SETTINGS_KEYS = ("ui_lang", "engine", "speech_lang", "voice", "voice_engine", "sp_voice",
+SETTINGS_KEYS = ("ui_lang", "engine", "rec_source",
+                 "speech_lang", "voice", "voice_engine", "sp_voice",
                  "transcribe_engine",
                  "route_stt", "route_tts", "route_llm", "text_scale",
                  "scheme", "font_family", "append_mode")
@@ -1780,7 +1804,12 @@ def nav_tabs():
     one is engines and keys, and only the owner ever sees it. Colour does
     the explaining, so neither needs a word.
     """
-    tabs = ["transcribe", "tabaudio", "talk", "translate", "looks"]
+    # ONE T, NOT TWO. T2 was a second tab for computer audio; it is a
+    # SOURCE now, chosen in a dropdown inside T. Baba: "we just have one
+    # T and there will be dropdown for the source." Everything after
+    # capture was already identical, so a second tab was a second place
+    # to keep the same screen in step.
+    tabs = ["transcribe", "talk", "translate", "looks"]
     if is_admin():
         tabs.append("settings")
         tabs.append("log")
@@ -2794,6 +2823,25 @@ def _lang_mode_row():
                      type="primary" if appending else "secondary",
                      on_click=set_append_mode, args=(True,))
 
+    # WHERE THE SOUND COMES FROM.
+    #
+    # A dropdown rather than pills: the list will grow — a tab, a window,
+    # a named virtual device — and more pills would push the row onto a
+    # second line, which §27 settled as a bug.
+    #
+    # On its own line, MEASURED: put beside the four pills at 360px it
+    # fitted the row and clipped the word "microphone". The type may
+    # shrink, but no word may be cut.
+    with st.container(key="srcrow"):
+        _sc, _ = st.columns([2.2, 2.8])
+        _srcs = ["mic", "system"]
+        _sc.selectbox(
+            t("src_label"), _srcs,
+            index=_srcs.index(st.session_state.get("rec_source", "mic")),
+            format_func=lambda k: t("src_" + k),
+            key="rec_source", on_change=persist_settings,
+            label_visibility="collapsed")
+
 
 # =====================================================================
 #  THE TRANSCRIPT IS NO LONGER WIDGET STATE  (v88)
@@ -3155,7 +3203,15 @@ active = st.session_state.get("active_tab") or "transcribe"
 name_the_symbols()
 
 
+# ONE MODULE, TWO SOURCES.
+#
+# Everything after capture is identical — the router, ffmpeg, chunking,
+# Whisper, the archive, Drive, the box — so the microphone and the
+# computer's own sound differ in exactly one thing: which stream the
+# deck opens. That is a dropdown, not a second tab.
 if active == "transcribe":
+    _source = st.session_state.get("rec_source", "mic")
+    _t2 = _source == "system"
     # Recorder, then Sound, then Picture, then the language switch at the
     # bottom. Baba's order, and the right one: the thing people came to do
     # is first, and the setting they rarely change is last.
@@ -3178,14 +3234,26 @@ if active == "transcribe":
     # WAV in any browser. Measured transparent: through this app's ffmpeg
     # chain, Whisper returns the same words as a WAV reference. 32 kbit was
     # NOT transparent, so the bitrate floor is real. See HANDOVER §22.
-    rec_key = "mic_%d" % st.session_state.get("_mic_gen", 0)
+    # SEPARATE KEYS PER SOURCE. Session state is one flat namespace
+    # shared by every module (§57), and the held take lives under
+    # "_take_" + rec_key — so a microphone take and a computer-audio take
+    # must not be able to overwrite one another.
+    rec_key = ("sys_%d" if _t2 else "mic_%d") % st.session_state.get("_mic_gen", 0)
+    # The key changes with the source, so switching mid-session gives the
+    # component a key it has never seen and it starts clean rather than
+    # holding a take captured from the other input.
     # A KEYED CONTAINER so the deck sits on the same frame rhythm as
     # everything else. Rendered bare, the component's iframe carried its
     # own spacing and nothing could reach it from the stylesheet, which
     # is why there was visibly more room under the deck than between any
     # other two frames.
+    if _t2:
+        # ONE LINE, and only what is different. What the browser will and
+        # will not offer is the component's job to report when it is
+        # pressed, not this line's job to guess in advance.
+        st.caption(t("t2_hint"))
     with st.container(key="deckbox"):
-        audio = cassette_recorder(rec_key)
+        audio = cassette_recorder(rec_key, source=_source)
     # STORE IT UNDER A DIFFERENT KEY. rec_key belongs to the component
     # widget, and Streamlit refuses to let anything else write to a key a
     # widget owns — assigning to it raises StreamlitAPIException on the
@@ -4013,14 +4081,10 @@ elif active == "looks":
     tab_signature(t("sig_looks"))
 
 
-elif active == "tabaudio":
-    # NOT BUILT. The tab exists so the shape of the app is honest about
-    # what is coming, and so the promise is written down where it can be
-    # checked rather than living in a chat log. Everything here is
-    # description, not a stub pretending to work — there is no rec key to
-    # press that quietly does nothing.
-    components.html(HELP_PAGE.soon(st.session_state.get("ui_lang", "hr")),
-                    height=560, scrolling=True)
+# T2 IS BUILT NOW and is handled by the shared branch above. The
+# description-only module it used to be is gone: it existed so the shape
+# of the app was honest about what was coming, and keeping it beside a
+# working deck would have been two answers to one question.
 
 
 elif active == "help":

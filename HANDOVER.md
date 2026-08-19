@@ -3983,3 +3983,101 @@ deployments → pencil → Version: New version. Until then: the paired
 archive stores nothing, the engine cannot be saved globally, and login
 falls back to APP_PASSWORDS — which is exactly what it is designed to
 do, so nothing breaks in the meantime.
+
+---
+
+## 68. COMPUTER AUDIO IS A SOURCE, NOT A TAB (v93)
+
+Baba: *"We just have one T and there will be dropdown for the source.
+Source dropdown solves everything."*
+
+He is right, and it is worth recording why. T2 was designed as a second
+tab (§36, §37) whose interface would be *identical* to T1 — same four
+keys, same trace, same clock, same single/multi, same status box. Two
+screens that must stay identical is two places to keep in step. **The
+only thing that actually differs is which stream the deck opens.**
+
+So: **T2 is gone from the tab bar**, T1 is now just **T**, and the
+source is a dropdown inside it. The whole pipeline below capture — the
+router, ffmpeg, chunking, Whisper, the archive, Drive, the box — was
+already shared and is untouched.
+
+### One component, one extra argument
+
+`cassette_frontend` takes `source` = `mic` | `system`. A second deck
+file would have drifted from this one the first time either was fixed;
+rule 2 says shared machinery lives in one place.
+
+    mic      getUserMedia, exactly as before
+    system   getDisplayMedia
+
+### What had to be got right about getDisplayMedia
+
+**Chrome will not offer system audio for an audio-only request.**
+`getDisplayMedia({audio:true})` alone throws or returns no audio track —
+the "share tab audio" / "share system audio" checkbox only appears when
+VIDEO is asked for too. So video is requested and then dropped: the
+recorder is built from a new `MediaStream` holding the audio track
+alone, and the video track is stopped, because an unused video track
+keeps the browser's sharing bar (and on some machines the capture
+hardware) alive.
+
+**SHARING WITHOUT TICKING THE AUDIO BOX IS REFUSED, not recorded.** If
+the person shares a window but leaves the checkbox alone there is no
+audio track, and recording anyway would capture perfect silence and look
+like a broken app twenty minutes later. Everything is stopped and the
+deck says what to do. This is the §22 rule again — *the scope must not
+be able to lie* — applied to the capture rather than the display.
+
+**Pressing the browser's own "stop sharing" ends the take** through the
+same path the stop key uses, so a take ended from the sharing bar
+arrives at Python exactly like any other rather than leaving the clock
+running over silence.
+
+The held take is keyed per source (`sys_N` / `mic_N`), because session
+state is one flat namespace (§57) and a microphone take must not be able
+to overwrite a computer-audio one.
+
+### The dropdown is on its own line, and that was measured
+
+Put beside the four pills at 360px it fitted the row and **clipped the
+word "microphone"** at the right edge. §27's rule is that the type may
+shrink but no word may be cut, because a half-word reads as a broken
+app. It is a narrow control on its own line instead: one row, nothing
+hidden.
+
+A dropdown rather than pills because the list will grow — a tab, a
+window, a named virtual device — and more pills would push the row onto
+a second line.
+
+### Platform reality, unchanged from §36
+
+    Windows   works, nothing to install
+    macOS     Chrome captures TAB audio only; system audio needs
+              BlackHole, which then appears as an ordinary microphone
+    Android   NOT POSSIBLE — the platform forbids it
+
+**Baba tests on an Android phone, so he cannot test this himself.** The
+component reports it honestly when `getDisplayMedia` is missing rather
+than failing obscurely, but the first real test of computer audio has to
+happen on a computer.
+
+### Still true from §36, and NOT done
+
+**Croatian law on recording conversations has not been checked.** A
+meeting transcriber is exactly where consent rules bite. The help module
+already carries the warning; the check itself is Baba's to make.
+
+### Test status
+
+`tests/test_source.py` — **19 passed.** T2 gone from the tab list, the
+tab renamed, the dropdown present with both options, switching works,
+the hint appears only for computer audio, the setting persists, and the
+component's contract: getDisplayMedia used, video requested and stopped,
+no-audio refused, the ended track handled, and only ONE deck file.
+
+Mutations: accepting silence when no audio was shared fails 1; restoring
+the T2 tab fails 1.
+
+Whole suite green: 19, 32, 7, 28, 15, 27, 15, 16, 10 in Python, 44 GAS,
+20 Drive. Browser-checked at 320 and 360px.
