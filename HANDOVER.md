@@ -2300,3 +2300,41 @@ be driven with Playwright. **Widget-level rendering questions no longer
 have to be guessed at** — this one was settled in minutes instead of
 shipped on hope. Note the server must be started detached (`setsid`) or it
 dies with the shell.
+
+---
+
+## 41. DUPLICATE ELEMENT KEY — AND HOW TO NEVER SHIP ONE AGAIN (v72)
+
+`StreamlitDuplicateElementKey` on the admin panel. My bug from v70: four
+containers shared `key="statusbox"`, and two of them landed in the admin
+panel in the SAME run. Keys must be unique per run.
+
+Now `statusbox_run`, `statusbox_log`, `statusbox_admin`, `statusbox_lang`.
+The CSS matches on `[class*="st-key-statusbox"]`, so a suffix costs
+nothing and every one is still styled.
+
+### The check that would have caught it
+
+Two things, and both are cheap:
+
+**1. Sweep the literal keys.** Every `key="..."` in app.py, grouped by
+which `active ==` branch it sits in. Two of the same key in the SAME
+branch will crash; the same key in different branches is fine, because
+only one module renders per run. Currently 32 literal keys, all distinct.
+
+**2. BOOT THE APP.** Streamlit installs in the sandbox now, so:
+
+    mkdir -p .streamlit  # write a stub secrets.toml
+    setsid streamlit run app.py --server.port 8810 --server.headless true
+    curl http://127.0.0.1:8810/healthz
+
+A duplicate key throws on first render, so a 200 from `/healthz` plus a
+clean log would have caught this before it ever reached a phone.
+**Do this before every push from now on.** It takes about thirty seconds.
+
+Two traps when doing it:
+* start the server DETACHED (`setsid`) or it dies with the shell
+* the stub `.streamlit/secrets.toml` must be deleted afterwards — and
+  `git checkout -- .streamlit/` restores the repo's real `config.toml`
+  and `secrets.toml.example`, which a plain `rm -rf .streamlit` removes
+  along with the stub. That nearly went into this commit.

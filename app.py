@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v71 (coloured admin gear)"
+APP_VERSION = "v72 (fix duplicate key)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2692,7 +2692,12 @@ if active == "transcribe":
         # monospace as the line above it.
         bad = bool(_errs or (_lr or {}).get("error") or
                    ((_lr or {}).get("chars") == 0 and (_lr or {}).get("out")))
-        with st.container(key="statusbox"):
+        # EVERY KEY MUST BE UNIQUE WITHIN ONE RUN. Four containers shared
+        # key="statusbox" and two of them landed in the admin panel
+        # together, which is StreamlitDuplicateElementKey. The CSS matches
+        # on [class*="st-key-statusbox"], so a suffix costs nothing and
+        # the styling still applies to all of them.
+        with st.container(key="statusbox_run"):
             with st.expander(t("status_word"), expanded=bad):
                 if _errs:
                     st.text(t("stt_errors"))
@@ -3243,7 +3248,7 @@ elif active == "log":
             height=copybtn.HEIGHT)
         st.button(t("log_clear"), key="log_clear",
                   on_click=lambda: errlog.clear(st.session_state))
-        with st.container(key="statusbox"):
+        with st.container(key="statusbox_log"):
             _day = None
             for _e in _rows:
                 if _e.get("day") != _day:
@@ -3274,7 +3279,7 @@ elif active == "settings":
         # heading — it was sitting among the controls in body type, which
         # is why the panel read as cluttered.
         _u = USAGE.status()
-        with st.container(key="statusbox"):
+        with st.container(key="statusbox_admin"):
             st.text(f"{t('admin_sent')}: {_u['sent']}  ·  "
                     f"{t('admin_failed')}: {_u['failed']}"
                     if _u["enabled"] else t("admin_off"))
@@ -3318,7 +3323,7 @@ elif active == "settings":
         # The label sat ABOVE the pills and the pills rose into it. Put on
         # the same row, in the small dim type, it reads as a label instead
         # of a heading and costs no vertical space.
-        with st.container(key="statusbox"):
+        with st.container(key="statusbox_lang"):
             llab, lcol1, lcol2, _ = st.columns([1.6, 1, 1, 2.4])
             llab.text(t("settings_lang"))
             lang_now = st.session_state.get("ui_lang", "en")
