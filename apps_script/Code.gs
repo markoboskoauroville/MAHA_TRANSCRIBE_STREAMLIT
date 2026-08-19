@@ -24,7 +24,7 @@
 /** A password shared with the app so strangers cannot write to the sheet.
  *  Make up any long random string and put the SAME one in the Streamlit
  *  secrets as SHEETS_TOKEN. */
-var SHARED_TOKEN = 'CHANGE_ME_to_a_long_random_string';
+var SHEETS_TOKEN = 'CHANGE_ME_to_a_long_random_string';
 
 /** Everyone who can log in. Used by setup() to pre-build a tab for each.
  *  A user who is not listed still gets a tab automatically on first use,
@@ -57,7 +57,7 @@ function setup() {
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
-    if (body.token !== SHARED_TOKEN) {
+    if (body.token !== SHEETS_TOKEN) {
       return json({ ok: false, error: 'bad token' });
     }
 

@@ -15,7 +15,7 @@ part is base64 in the JSON, decoded here, and passed to Whisper by this
 process. Checked against the ContentService docs before building; it is a
 platform limit, not a preference.
 
-WHY TWO SECRETS. SHARED_TOKEN unlocks the settings and the API keys.
+WHY TWO SECRETS. SHEETS_TOKEN unlocks the settings and the API keys.
 Download links are the part most likely to end up in a log, so they carry
 a separate short-lived signature made with DRIVE_SECRET. Losing one must
 never cost the other.

@@ -38,7 +38,7 @@ and when.
 4. Near the top, change this line:
 
    ```js
-   var SHARED_TOKEN = 'CHANGE_ME_to_a_long_random_string';
+   var SHEETS_TOKEN = 'CHANGE_ME_to_a_long_random_string';
    ```
 
    Put any long random string between the quotes — 20+ characters, letters
@@ -78,7 +78,7 @@ and when.
    `https://script.google.com/macros/s/AKfy...long.../exec`
 
 > "Anyone" sounds alarming but is correct here: the app has to be able to
-> reach it without a Google login. The `SHARED_TOKEN` is what actually
+> reach it without a Google login. The `SHEETS_TOKEN` is what actually
 > protects it — without the token the script refuses to write anything.
 
 **Check it works:** paste that URL into a browser. You should see

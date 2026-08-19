@@ -8,11 +8,11 @@
 //
 //  WHAT YOU MUST CHANGE — three lines, marked CHANGE ME below:
 //    DRIVE_ROOT_ID    the folder you already made
-//    DOWNLOAD_SECRET  a NEW long random string, NOT the same as
-//                     SHARED_TOKEN
-//  Put DOWNLOAD_SECRET in Streamlit secrets too, as DRIVE_SECRET.
+//    DRIVE_SECRET  a NEW long random string, NOT the same as
+//                     SHEETS_TOKEN
+//  Put DRIVE_SECRET in Streamlit secrets too, as DRIVE_SECRET.
 //
-//  WHY A SECOND SECRET. SHARED_TOKEN unlocks doGet, which returns your
+//  WHY A SECOND SECRET. SHEETS_TOKEN unlocks doGet, which returns your
 //  settings AND your API keys. The download link is the part most likely
 //  to end up in a log somewhere, so it gets its own credential and its
 //  own expiry. Losing the download secret must never cost you the keys.
@@ -29,8 +29,8 @@
  *  its URL: drive.google.com/drive/folders/THIS_PART */
 var DRIVE_ROOT_ID = 'PUT_YOUR_FOLDER_ID_HERE';
 
-/** CHANGE ME — a NEW long random string. NOT SHARED_TOKEN. */
-var DOWNLOAD_SECRET = 'CHANGE_ME_to_a_different_long_random_string';
+/** CHANGE ME — a NEW long random string. NOT SHEETS_TOKEN. */
+var DRIVE_SECRET = 'CHANGE_ME_to_a_different_long_random_string';
 
 /** How long a download link stays valid. Short on purpose: the app signs
  *  one the moment it needs it, so it never needs to last. */
@@ -58,14 +58,14 @@ function setupDrive() {
     msg = 'CANNOT OPEN THE DRIVE FOLDER.\n\n' +
           'Check DRIVE_ROOT_ID is the id from the folder URL.\n\n' + err;
   }
-  if (DOWNLOAD_SECRET === SHARED_TOKEN) {
+  if (DRIVE_SECRET === SHEETS_TOKEN) {
     ok = false;
-    msg += '\n\nDOWNLOAD_SECRET IS THE SAME AS SHARED_TOKEN. ' +
+    msg += '\n\nDRIVE_SECRET IS THE SAME AS SHEETS_TOKEN. ' +
            'Change it — the whole point is that they are different.';
   }
-  if (String(DOWNLOAD_SECRET).indexOf('CHANGE_ME') === 0) {
+  if (String(DRIVE_SECRET).indexOf('CHANGE_ME') === 0) {
     ok = false;
-    msg += '\n\nDOWNLOAD_SECRET is still the placeholder.';
+    msg += '\n\nDRIVE_SECRET is still the placeholder.';
   }
   SpreadsheetApp.getUi().alert(
     (ok ? 'Drive storage ready.\n\n' : 'NOT READY.\n\n') + msg);
@@ -101,7 +101,7 @@ function recSheet_(ss) {
  *  in practice. */
 function signPart_(recId, part, exp) {
   var msg = String(recId) + '|' + String(part) + '|' + String(exp);
-  var raw = Utilities.computeHmacSha256Signature(msg, DOWNLOAD_SECRET);
+  var raw = Utilities.computeHmacSha256Signature(msg, DRIVE_SECRET);
   return raw.map(function (b) {
     return ('0' + (b & 0xFF).toString(16)).slice(-2);
   }).join('');

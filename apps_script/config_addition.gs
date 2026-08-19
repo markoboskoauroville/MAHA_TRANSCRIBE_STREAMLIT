@@ -99,8 +99,8 @@ function doGet(e) {
     var p = (e && e.parameter) || {};
 
     // --- Audio download ------------------------------------------------
-    // Deliberately ABOVE the SHARED_TOKEN check. This branch carries its
-    // own short-lived signature made with DOWNLOAD_SECRET, so a download
+    // Deliberately ABOVE the SHEETS_TOKEN check. This branch carries its
+    // own short-lived signature made with DRIVE_SECRET, so a download
     // link that leaks into a log cannot be replayed to read the settings
     // and API keys below. Moving this under the token check would undo
     // the entire reason there are two secrets.
@@ -109,7 +109,7 @@ function doGet(e) {
     }
     // --------------------------------------------------------------------
 
-    if (p.token !== SHARED_TOKEN) {
+    if (p.token !== SHEETS_TOKEN) {
       return json({ ok: false, error: 'bad token' });
     }
     if (p.what !== 'config') {

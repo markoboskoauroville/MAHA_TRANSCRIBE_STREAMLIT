@@ -18,8 +18,8 @@
  *  to read or scroll through the rest of this file.
  *
  *  Three that matter:
- *      SHARED_TOKEN      -> Streamlit secrets as SHEETS_TOKEN
- *      DOWNLOAD_SECRET   -> Streamlit secrets as DRIVE_SECRET
+ *      SHEETS_TOKEN      -> Streamlit secrets as SHEETS_TOKEN
+ *      DRIVE_SECRET   -> Streamlit secrets as DRIVE_SECRET
  *      DRIVE_ROOT_ID     -> only for audio storage; leave it otherwise
  *
  *  Two you may want:
@@ -86,18 +86,18 @@
 // IF IT EVER APPEARS IN A MESSAGE, A SCREENSHOT OR A LOG, REPLACE IT.
 // It unlocks doGet, which hands back every API key in the k_ tabs. A
 // message cannot be unsent.
-var SHARED_TOKEN = 'CHANGE_ME_to_a_long_random_string';
+var SHEETS_TOKEN = 'CHANGE_ME_to_a_long_random_string';
 
 
 // ─── 2 ─── THE DOWNLOAD SECRET ───────────────────────────────────────
 // A DIFFERENT long random string. The same one goes into Streamlit
 // secrets as DRIVE_SECRET. Run the openssl line a second time.
 //
-// It must not equal SHARED_TOKEN, and setupDrive() refuses to run if it
+// It must not equal SHEETS_TOKEN, and setupDrive() refuses to run if it
 // does. The reason: the token above unlocks your settings AND your API
 // keys, while a download link is the part most likely to end up in a log
 // somewhere. Losing one must never cost you the other.
-var DOWNLOAD_SECRET = 'CHANGE_ME_to_a_different_long_random_string';
+var DRIVE_SECRET = 'CHANGE_ME_to_a_different_long_random_string';
 
 
 // ─── 3 ─── THE DRIVE FOLDER ──────────────────────────────────────────
@@ -170,7 +170,7 @@ function setup() {
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
-    if (body.token !== SHARED_TOKEN) {
+    if (body.token !== SHEETS_TOKEN) {
       return json({ ok: false, error: 'bad token' });
     }
 
@@ -406,8 +406,8 @@ function doGet(e) {
     var p = (e && e.parameter) || {};
 
     // --- Audio download ------------------------------------------------
-    // Deliberately ABOVE the SHARED_TOKEN check. This branch carries its
-    // own short-lived signature made with DOWNLOAD_SECRET, so a download
+    // Deliberately ABOVE the SHEETS_TOKEN check. This branch carries its
+    // own short-lived signature made with DRIVE_SECRET, so a download
     // link that leaks into a log cannot be replayed to read the settings
     // and API keys below. Moving this under the token check would undo
     // the entire reason there are two secrets.
@@ -416,7 +416,7 @@ function doGet(e) {
     }
     // --------------------------------------------------------------------
 
-    if (p.token !== SHARED_TOKEN) {
+    if (p.token !== SHEETS_TOKEN) {
       return json({ ok: false, error: 'bad token' });
     }
     if (p.what !== 'config') {
@@ -478,14 +478,14 @@ function setupDrive() {
     msg = 'CANNOT OPEN THE DRIVE FOLDER.\n\n' +
           'Check DRIVE_ROOT_ID is the id from the folder URL.\n\n' + err;
   }
-  if (DOWNLOAD_SECRET === SHARED_TOKEN) {
+  if (DRIVE_SECRET === SHEETS_TOKEN) {
     ok = false;
-    msg += '\n\nDOWNLOAD_SECRET IS THE SAME AS SHARED_TOKEN. ' +
+    msg += '\n\nDRIVE_SECRET IS THE SAME AS SHEETS_TOKEN. ' +
            'Change it — the whole point is that they are different.';
   }
-  if (String(DOWNLOAD_SECRET).indexOf('CHANGE_ME') === 0) {
+  if (String(DRIVE_SECRET).indexOf('CHANGE_ME') === 0) {
     ok = false;
-    msg += '\n\nDOWNLOAD_SECRET is still the placeholder.';
+    msg += '\n\nDRIVE_SECRET is still the placeholder.';
   }
   SpreadsheetApp.getUi().alert(
     (ok ? 'Drive storage ready.\n\n' : 'NOT READY.\n\n') + msg);
@@ -521,7 +521,7 @@ function recSheet_(ss) {
  *  in practice. */
 function signPart_(recId, part, exp) {
   var msg = String(recId) + '|' + String(part) + '|' + String(exp);
-  var raw = Utilities.computeHmacSha256Signature(msg, DOWNLOAD_SECRET);
+  var raw = Utilities.computeHmacSha256Signature(msg, DRIVE_SECRET);
   return raw.map(function (b) {
     return ('0' + (b & 0xFF).toString(16)).slice(-2);
   }).join('');

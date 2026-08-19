@@ -2444,3 +2444,49 @@ common case, not against losing the session.
 
 30 checks: 20 on the store, 10 on the wiring. App booted headless before
 pushing, 34 literal keys all distinct.
+
+---
+
+## 44. ONE NAME PER THING (v74a)
+
+Baba: *"Everything must apply word by word, letter by letter. Don't
+confuse the user with different terminology."*
+
+The same value had two names depending on which file you were reading:
+
+    Apps Script          Streamlit secrets
+    SHARED_TOKEN    <->  SHEETS_TOKEN
+    DOWNLOAD_SECRET <->  DRIVE_SECRET
+
+Somebody setting this up had to know they were the same thing. Now the
+script uses `SHEETS_TOKEN` and `DRIVE_SECRET` — the secrets names — so a
+name can be read in one file and searched for in the other.
+
+Renamed across all four `.gs` files, `ttt/drive.py`, `apps_script/
+SETUP.md`, and the test harness. Grep for the old names returns nothing
+outside this handover.
+
+### A gap found while checking
+
+`secrets.toml.example` listed only `APP_PASSWORDS` and `GROQ_API_KEYS`.
+`SHEETS_URL`, `SHEETS_TOKEN`, `ADMIN_USER` and `DRIVE_SECRET` were
+missing entirely, and its header was pasted in twice. Anyone following it
+would have built a secrets file the app could not use. It now carries all
+six, each with a line saying what it is and which script variable it must
+equal.
+
+### The check, worth repeating after any rename
+
+Parse the three sides and compare, rather than reading them:
+
+* `^var ([A-Z_]+)` out of the .gs
+* `tomllib.loads()` on the example
+* `st.secrets["..."]` out of app.py
+
+Then assert that the shared names appear in both, that nothing Python
+reads is missing from the example, and that the old names are gone. That
+is what found the stragglers in `drive.py` and `SETUP.md` after the bulk
+rename looked finished.
+
+Re-verified: **41 passed, 0 failed** both as separate files and as the
+merged one, app boots headless with a clean log.
