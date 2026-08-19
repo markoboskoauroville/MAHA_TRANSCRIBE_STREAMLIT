@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v74 (archive)"
+APP_VERSION = "v75 (drive storage live)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -79,6 +79,7 @@ from ttt import sheet as SHEET
 from ttt import intake
 from ttt import errlog
 from ttt import archive
+from ttt import drive as DRIVE
 from ttt import help_page as HELP_PAGE
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
@@ -2300,6 +2301,60 @@ def load_from_archive(item_id: str) -> None:
         deliver_text(rec.get("text", ""), keep=False)
 
 
+@st.cache_resource(show_spinner=False)
+def _drive_store(url: str, token: str, secret: str, user: str, on: bool):
+    """One store per user per configuration. Cached because building it is
+    cheap but doing it on every rerun is noise."""
+    return DRIVE.DriveStore(url=url, token=token, secret=secret,
+                            user=user, enabled=on)
+
+
+def drive_store():
+    """The Drive store, or a disabled one. NEVER None, so callers do not
+    need an `if` around every use.
+
+    Off unless ALL of these are true: the sheet says store_audio, the
+    secrets carry DRIVE_SECRET, and the sheet URL and token exist. Any one
+    missing and it is simply disabled — a half-configured store that
+    half-works is worse than one that plainly does not.
+    """
+    try:
+        secret = str(st.secrets.get("DRIVE_SECRET", "") or "")
+        on = bool(secret) and SHEET.flag(sheet_config(), "store_audio", USER)
+        return _drive_store(
+            str(st.secrets.get("SHEETS_URL", "") or ""),
+            str(st.secrets.get("SHEETS_TOKEN", "") or ""),
+            secret, USER, on)
+    except Exception:
+        return DRIVE.DriveStore(enabled=False)
+
+
+def keep_audio(flac_path: str, seconds: float, language: str) -> None:
+    """Put a finished recording in Drive. Never raises, never blocks.
+
+    STORAGE MUST NOT BE ABLE TO COST A TRANSCRIPT. The words are already
+    on screen by the time this runs; if Drive is down, or the folder is
+    wrong, or the script was never redeployed, the only consequence is
+    that this take cannot be transcribed again later without re-uploading.
+    That is a small loss and it is never worth an error message over the
+    thing the person actually came for.
+    """
+    store = drive_store()
+    if not store.enabled or not flac_path:
+        return
+    try:
+        rec_id = store.store(flac_path, seconds=seconds, language=language)
+        if rec_id:
+            st.session_state["_last_rec_id"] = rec_id
+        else:
+            errlog.add(st.session_state, "drive",
+                       "could not store the recording",
+                       store.last_error or "no reason given")
+    except Exception as e:
+        errlog.add(st.session_state, "drive",
+                   f"{type(e).__name__}: {e}")
+
+
 def deliver_text(new_text: str, keep: bool = True) -> None:
     """Put a finished transcript into the box, honouring single/multi.
 
@@ -2682,6 +2737,9 @@ if active == "transcribe":
                     stage["chars"] = len((text or "").strip())
                     stage["method"] = method
                     st.session_state["_last_run"] = stage
+                    # Keep the audio BEFORE the bytes are released, and
+                    # after the words are safe.
+                    keep_audio(reusable, audio_seconds(reusable), lang_code)
                     # Let the recording go. A 7 MB take is ~7 MB of bytes,
                     # ~9 MB of base64 still held by the component, and a
                     # BytesIO on top; keeping all of it after the words are

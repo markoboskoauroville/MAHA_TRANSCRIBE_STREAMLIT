@@ -137,8 +137,22 @@ class DriveStore:
             # HTTP 400 after pushing 40 MB up a phone connection.
             self.last_error = "part too large: {} bytes as base64".format(len(b64))
             return None
-        return self._post({"what": "audio_put", "rec_id": safe_name(rec_id),
-                           "part": int(part), "data": b64}, TIMEOUT_PART)
+        out = self._post({"what": "audio_put", "rec_id": safe_name(rec_id),
+                          "part": int(part), "data": b64}, TIMEOUT_PART)
+        # PROVE IT WAS ACTUALLY STORED, do not settle for ok:true.
+        #
+        # A deployment WITHOUT the audio routing does not reject an
+        # audio_put — it falls through to the usage-logging appendRow and
+        # answers {ok:true}. So the app believed a recording was safe in
+        # Drive while the script had written a junk usage row and thrown
+        # the audio away. Measured against the live script, 19.8.2026.
+        #
+        # A real store returns a file_id. Nothing else does.
+        if out is not None and not out.get("file_id"):
+            self.last_error = ("the deployed script has no audio storage — "
+                               "push and deploy a New version")
+            return None
+        return out
 
     def get_part(self, rec_id: str, part: int):
         """Returns the part's bytes, or None."""

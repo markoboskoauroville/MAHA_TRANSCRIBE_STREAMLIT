@@ -2592,3 +2592,50 @@ Or the next `git add -A` publishes it.
 write, a folder per recording inside it, one file per ten-minute part.
 Nothing appears yet: Drive is still paused on the app side and
 `ttt/drive.py` is not wired into `app.py`.
+
+---
+
+## 47. DRIVE STORAGE, WIRED (v75) — and a silent failure it exposed
+
+`ttt/drive.py` had passed 41 tests and had never been called by the app:
+no import, no `DRIVE_SECRET`, no `store_audio` check. Now `keep_audio()`
+runs after every successful transcription.
+
+**Storage cannot cost a transcript.** The words are on screen before this
+runs; if Drive fails the only loss is that the take cannot be transcribed
+again later without re-uploading. Never an error message over the thing
+the person came for — it goes to the log instead.
+
+**Off unless everything is present:** the sheet says `store_audio`,
+`DRIVE_SECRET` exists, and the sheet URL and token exist. Any one missing
+and the store is disabled. `drive_store()` never returns None, so callers
+need no `if`.
+
+### THE SILENT FAILURE — found by testing against the real deployment
+
+Storing against Baba's live script **reported success and stored
+nothing.**
+
+His deployment does not yet have the audio routing. An `audio_put` is
+therefore not rejected — it falls straight through to the usage-logging
+`appendRow`, which answers `{ok: true}`. The app believed a recording was
+safe in Drive while the script had written a junk usage row and dropped
+the audio.
+
+This is exactly the failure predicted in §39 when the routing edits were
+missing, now confirmed with a real recording against the real script.
+
+**`put_part` now requires a `file_id` in the response.** A real store
+returns one; nothing else does. `ok: true` is no longer accepted as proof
+that anything was kept. The message says what to do: *"the deployed script
+has no audio storage — push and deploy a New version."*
+
+**The general rule: when a failure path and a success path can both
+answer `ok`, check for something only success can produce.**
+
+### Still not tested
+
+The actual round trip — store, list, fetch back — because the deployment
+does not support it yet. What IS tested: the disabled store is a silent
+no-op, a full configuration enables it, and an undeployed script is
+refused with a clear reason rather than believed.
