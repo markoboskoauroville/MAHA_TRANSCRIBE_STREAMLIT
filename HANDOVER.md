@@ -3218,7 +3218,11 @@ must use it; a direct assignment beside it is a slow leak.**
 
 ---
 
-## 59. WHERE THIS SESSION ENDS — start here
+## 59. WHERE THE 19.8 SESSION ENDED — SUPERSEDED, see §62
+
+**Do not start here.** Its second item, the paired Drive archive, was
+built in v86; its first, the box, is narrowed further in §62. Kept
+because its ruled-out list is still correct and still saves an hour.
 
 Two things are open. One is small and blocking; one is designed and not
 built.
@@ -3302,3 +3306,251 @@ It is the one that reached a chat twice. Baba was told twice, understood,
 and chose to carry on. **It was not rotated.** If it ever is, it changes
 in `Code.gs` AND Streamlit secrets together, then push and deploy a New
 version.
+
+---
+
+## 60. THE PAIRED DRIVE ARCHIVE (v86)
+
+Baba: *"they go in pairs always."* Audio and transcript are stored
+together, deleted together, and pullable without retranscribing.
+
+**The sheet is the index; Drive is the store. Do NOT scan Drive.** One
+request returns every row of `recordings`. Scanning would mean an API
+call per user folder, then per recording, then per file — dozens of
+round trips through Apps Script, which is the slowest part of the stack.
+
+### The transcript is a FILE, not a cell
+
+    USERS/<user>/<rec_id>/
+        part_0000.flac
+        text.txt
+
+Two reasons, both load-bearing. A folder trash removes both at once so
+the pair cannot come apart — and this came free, because `deleteRec_`
+already trashed every file in the recording's folder before the folder
+itself. And a sheet cell tops out at 50,000 characters, so a long
+transcript would be silently truncated, which is the worst way to lose
+text. Verified with a 120,000-character transcript.
+
+### What was already built, and was NOT rebuilt
+
+Read before inventing, including this repo (§56). Already present and
+reused untouched: `deleteRec_`'s file-then-folder trashing, `putAudio_`'s
+replace-never-add, `registerRec_`'s idempotency by `(user, rec_id)`,
+`listRecs_` newest-first, and all of `ttt/drive.py`'s transport, signing
+and proof-of-storage. The actual new work was four small pieces.
+
+### New
+
+    Code.gs     putText_ / getText_, dispatched ABOVE the usage appendRow
+                has_text and chars on the recordings tab
+                findRecRow_ — one place that knows how a row is matched
+                recSheet_ migrates an existing eight-column tab
+    drive.py    put_text / get_text, and store(..., text=)
+    app.py      the pair completed after finish_keeping
+
+**No signature on the text calls, unlike `get_part`.** A signed link
+exists because a download URL is the thing most likely to end up in a
+log. Text goes through `doPost` under `SHEETS_TOKEN` like every other
+write, so losing `DRIVE_SECRET` still cannot open anyone's transcript.
+
+### THE REAL BUG, caught by test F1
+
+`recFolder_` CREATES the folder when it is missing. That is right for
+`putAudio_` — the first part is what brings a recording into existence —
+and wrong for text: writing text for an unknown `rec_id` minted a folder
+holding a transcript and no audio, with no row in the index. Exactly the
+half-pair that must never exist. `putText_` now requires the sheet row.
+
+### Two rules that fell out
+
+**Re-registering must not wipe the text flags.** Registration runs
+before the transcript is written and a retranscribe re-registers, so
+blindly writing `has_text=FALSE` would tell the list there is no text
+for a recording whose `text.txt` is sitting in Drive — and the row would
+offer retranscribe for something that could simply be pulled.
+
+**The pair is completed after `finish_keeping`, never earlier.** The
+audio upload runs alongside Whisper (§51), so at the moment it starts
+there is no transcript yet. And it goes after `deliver_text`: storage is
+a convenience for later and must never stand between someone and the
+words they just spoke (§50).
+
+### Test status
+
+**Test 1: 44 passed, 0 failed, all six mutations caught.**
+**Client half: 20 passed, 0 failed** over real HTTP.
+
+`tests/gastest/` HAD TO BE REBUILT — the harness behind §19's "41
+passed" was never committed, and neither was `TTT_LLL_Complete.gs`
+(that one was merged into `Code.gs` by `40aa843`, so §39's filename is
+stale but nothing was lost). The real `Code.gs` runs untouched inside a
+fake runtime; only Google's services are faked, and the token is
+substituted BY PATTERN, never by replacing a `CHANGE_ME` placeholder
+(§46).
+
+**Two bugs in my own harness, both of which had let a mutation
+survive.** The fake cascaded `setTrashed` from a folder to its files, so
+`deleteRec_`'s explicit loop was untestable. And the mutation scenario
+built a fresh ten-column sheet, so the migration branch was never
+reached — a mutation proves nothing unless the scenario contains the
+thing being mutated.
+
+### NOT YET TRUE ON THE DEPLOYMENT
+
+**Baba must push and deploy a New version.** Until then `text_put` falls
+through to the usage-logging `appendRow` and answers `ok` — the exact
+silent failure of §47. `put_text` refuses anything without a `file_id`,
+so it logs rather than lies, but nothing stores.
+
+Still to build: T1's archive list reading from the sheet instead of
+`ttt/archive.py`, with pull / retranscribe / delete per row. That is
+what makes the archive survive a reload.
+
+---
+
+## 61. ONE RHYTHM, SMALLER TYPE, TICKS ON THE ARCHIVE (v87)
+
+Four corrections from one phone screenshot.
+
+### The spacing was measured, not judged
+
+    deck    → cmdrow    17.6 px
+    cmdrow  → textarea   1.8 px
+
+Baba: *"the space between all these frames is not equal."* Two causes.
+**A container margin ADDS to the vertical block's flex gap rather than
+replacing it** — so the frames now carry no margin of their own. And
+`cmdrow` had a deliberate `-0.5rem` pulling it against the box while
+everything else sat in air.
+
+`--frame-gap` sets the rhythm once and nothing opts out. Anything
+wanting to sit closer changes that token, not its own margin. After:
+**8.8 px and 9.8 px**, equal within the renderer's rounding.
+
+The deck also needed a keyed container (`deckbox`) before the stylesheet
+could reach it at all — rendered bare, a component iframe carries its
+own spacing, and an iframe is `inline` by default, which leaves a text
+baseline gap underneath that looks like padding nobody wrote.
+
+### The status line is ADMIN ONLY
+
+Baba: *"this status line you are hiding from users, only admins can see
+this."* Codec names, convert seconds and Whisper's refusals are
+diagnostics, and this is an app for people who cannot read well.
+
+Nothing is lost: every one of them already goes to **L** through
+`errlog`, which is where it can be copied and handed on. The things a
+USER can act on are separate and stay — the "nothing was heard" warning
+and the `st.error` paths.
+
+### Smaller type, on the CHROME only
+
+The reading surfaces are governed by the text size control (hard rule 6)
+and were deliberately left alone. **The transcript still measures
+16.8 px, and the test asserts it.** Shrinking the words someone came to
+read would break the one thing this app exists to do.
+
+### Select, then delete
+
+*"There should be check marks next to each of the archive items, and
+then delete, delete all... the principle is to select and delete."*
+
+A tick per row, `delete (n)` beside `delete all`. Deleting one at a time
+meant a press per item with the list reflowing under the finger after
+each one; ticking is reversible and costs nothing until the delete.
+
+* The tick keeps a full **44 px target** though the row type is
+  0.70rem. **Target size does not shrink with type.**
+* Stale ids are swept out of the selection, or the count says 3 while
+  two of them are already gone.
+* Disabled, not hidden, with nothing ticked — a control that appears and
+  disappears moves everything under it (§49).
+* Deleting still never touches the box.
+
+### Test status
+
+**tests/test_layout.py — 7 passed.** Real Chromium at 360 px: gaps
+measured BETWEEN frames, no sideways scroll at 320 px (WCAG 1.4.10), the
+transcript confirmed not shrunk. The screenshot was looked at, not
+assumed.
+
+**tests/test_archive_select.py — 16 passed.** AppTest with a seeded
+archive, because the block does not render on a fresh session at all.
+
+**Three of my own test bugs**, roughly the half-in-the-test rate §0
+predicts: a stale id carried between two seeded apps; a font measured on
+a cmdrow cell that clamps with viewport width BY DESIGN (§27), so it
+said nothing about the type scale; and `.get()` on AppTest's
+`session_state`, which §6 documents and I forgot anyway — there is now
+one `sget()` helper so it cannot be forgotten again.
+
+### `/healthz` 200 DOES NOT MEAN THE APP IS ALIVE
+
+**It answered 200 with the script dead on `ModuleNotFoundError`.** The
+endpoint is served by Streamlit's static server and never touches
+`app.py`. §41's boot habit is only meaningful once a browser has
+actually CONNECTED and the log has been read afterwards — the error does
+not appear in the log until a client triggers a render.
+
+Also: the sandbox needs `pip install -r requirements.txt`, not just
+streamlit, or every boot check is measuring an app that cannot import.
+
+---
+
+## 62. WHERE THIS SESSION ENDS — start here
+
+### BLOCKING: text reaches the archive but not the box
+
+**One branch of §59's table is now dead, from a screenshot alone.**
+`archive.add` has exactly ONE call site, inside `deliver_text`. So an
+archive row is PROOF that `deliver_text` ran — "the archive entry came
+from elsewhere" has nowhere to come from. Baba's status box was also
+collapsed, which per §34 means the app saw a non-empty transcript and no
+error.
+
+Two possibilities remain, and the `deliver` line from **L** separates
+them in one read:
+
+| what it says | what it means | where to look |
+|---|---|---|
+| `delivered N, box now N` | the box WAS set and something later loses it | the rerun after the component ack |
+| `delivered N, box now 0` | the assignment itself is refused | a Streamlit widget-state behaviour to learn |
+
+**Still ruled out, do not re-check:** `deliver_text` itself, the
+set-before-widget pattern, `setdefault`, `cmd_row`, `flash`, every
+assignment between delivery and the text area, `st.rerun()`, session-key
+collisions. The writes at lines ~3078 and ~3098 are inside callbacks,
+not on the render path.
+
+**GET THE LINE.** It is one recording and one tap on L.
+
+### The deployment is behind the repo
+
+`Code.gs` in the repo has `putText_`/`getText_` and the two new columns.
+**The deployed script does not.** Deploy → Manage deployments → pencil →
+Version: New version. Not "New deployment", which makes a second web app
+at a different URL (§46).
+
+### Next, in order
+
+1. **T1's archive list reads from the sheet**, not `ttt/archive.py`:
+   pull (reads `text.txt`, instant and free), retranscribe (fetches the
+   audio, another language), delete (trashes the folder AND the row).
+   This is what makes the archive survive a reload. The data is all
+   there — `has_text` and `chars` exist so the row can choose between
+   pull and retranscribe without fetching anything.
+2. **`st.components.v1.html` is removed after 2026-06-01** — a date now
+   in the past, and Streamlit is warning on every run. The deck, the
+   player, the copy button and the LS bridge all ride on it. This is a
+   session's work and it will stop being a warning.
+3. `read_picture` — still dead since `92c4cbb`, still blocking picture
+   upload, pasted images and the router's `ocr` branch.
+4. The nonsense detector — LAST on purpose, and it needs MEASURING
+   rather than building.
+
+### Smaller, found while working and not fixed
+
+`admin_off` is a **repeated dictionary key with different values** in
+`STRINGS` (app.py ~432 and ~510), so one of the two strings can never
+appear. pyflakes finds it; it is not mine and predates this session.
