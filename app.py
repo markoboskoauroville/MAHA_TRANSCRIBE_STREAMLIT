@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v73 (red word highlight)"
+APP_VERSION = "v74 (archive)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -78,6 +78,7 @@ from ttt import speech as SPEECH
 from ttt import sheet as SHEET
 from ttt import intake
 from ttt import errlog
+from ttt import archive
 from ttt import help_page as HELP_PAGE
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
@@ -309,6 +310,11 @@ STRINGS = {
     "rec_retry":   {"en": "retry",   "hr": "ponovi"},
     "mode_single": {"en": "single", "hr": "jedan"},
     "mode_multi":  {"en": "multi",  "hr": "više"},
+    "arc_title":     {"en": "archive",  "hr": "arhiva"},
+    "arc_clear_all": {"en": "delete all", "hr": "obriši sve"},
+    "arc_load_help": {"en": "Put this back in the box",
+                      "hr": "Vrati ovo u okvir"},
+    "arc_del_help":  {"en": "Delete this one", "hr": "Obriši ovo"},
     "nothing_heard": {"en": "The audio arrived but no speech was found in it.",
                       "hr": "Zvuk je stigao ali u njemu nije pronađen govor."},
     "status_word": {"en": "status", "hr": "status"},
@@ -2279,7 +2285,22 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
     doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
 
 
-def deliver_text(new_text: str) -> None:
+def load_from_archive(item_id: str) -> None:
+    """Put a kept transcript back in the box, honouring single/multi.
+
+    In MULTI it appends, which is the whole point: a piece can be built
+    from several sittings in whatever order they are wanted. In SINGLE it
+    replaces.
+
+    It must NOT be re-archived on the way in — otherwise loading an item
+    makes a copy of it, and loading three times makes three.
+    """
+    rec = archive.get(st.session_state, item_id)
+    if rec:
+        deliver_text(rec.get("text", ""), keep=False)
+
+
+def deliver_text(new_text: str, keep: bool = True) -> None:
     """Put a finished transcript into the box, honouring single/multi.
 
     SINGLE overwrites. MULTI appends, so a long piece of work can be done
@@ -2294,6 +2315,13 @@ def deliver_text(new_text: str) -> None:
     new_text = (new_text or "").strip()
     if not new_text:
         return
+    # KEPT BEFORE IT IS SHOWN. Every route arrives here — recorder, opened
+    # file, pasted text — so archiving here catches all of them and cannot
+    # be forgotten when a fourth route is added later.
+    if keep:
+        archive.add(st.session_state, new_text,
+                    language=st.session_state.get("speech_lang", ""),
+                    method=st.session_state.get("_transcribe_method", ""))
     if st.session_state.get("append_mode"):
         old = (st.session_state.get("transcript_box") or "").rstrip()
         # A blank line between takes: they are separate sittings and read
@@ -2876,6 +2904,37 @@ if active == "transcribe":
 
     if st.session_state.get("_ai_error"):
         st.error(st.session_state.pop("_ai_error"))
+
+    # ---- the archive -------------------------------------------------
+    # A second frame under the recording frame, as Baba described it.
+    # Everything transcribed lands here by itself; before this, the only
+    # copy of a take was whatever happened to be in the box, and `new` or
+    # another recording lost it.
+    #
+    # Tapping a row puts it back in the box, THROUGH deliver_text — so in
+    # multi it appends and in single it replaces, and one archive item is
+    # what gets operated on, which is what Baba asked for.
+    #
+    # No new furniture: the same terminal row of cells as everywhere else.
+    _arc = archive.items(st.session_state)
+    if _arc:
+        with st.container(key="archivebox"):
+            with st.expander(f"{t('arc_title')}  ·  {len(_arc)}", expanded=False):
+                st.button(t("arc_clear_all"), key="arc_clear_all",
+                          on_click=lambda: archive.clear(st.session_state))
+                for _r in _arc:
+                    _c1, _c2 = st.columns([9, 1])
+                    _c1.button(
+                        f"{_r['at']}  {archive.preview(_r)}",
+                        key=f"arc_{_r['id']}",
+                        help=t("arc_load_help"),
+                        on_click=load_from_archive, args=(_r["id"],),
+                        use_container_width=True)
+                    _c2.button("✕", key=f"arcdel_{_r['id']}",
+                               help=t("arc_del_help"),
+                               on_click=archive.remove,
+                               args=(st.session_state, _r["id"]),
+                               use_container_width=True)
 
     # The spoken language, at the very bottom: it is set once and then
     # left alone, so it does not belong above the thing people came for.

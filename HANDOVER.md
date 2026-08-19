@@ -2391,3 +2391,56 @@ reversed range survives, and a zero-width range produces no empty span.
 
 Per §41: stub secrets, headless run, `/healthz` returned 200, no errors
 in the log. **This is now the habit.**
+
+---
+
+## 43. THE ARCHIVE (v74) — step 2 of 4
+
+A second frame under the recording frame. Everything transcribed is kept
+automatically; before this the only copy of a take was whatever happened
+to be in the box, and `new` or another recording lost it.
+
+### One place archives, so a fourth route cannot be forgotten
+
+`deliver_text()` is where every transcript arrives — recorder, opened
+file, pasted text — so the archive is written there. When a fifth route
+appears it is archived for free.
+
+`deliver_text(text, keep=True)`. Loading FROM the archive passes
+`keep=False`, or tapping an item would copy it, and tapping three times
+would make three. Tested: **loading three times adds nothing.**
+
+### Tapping a row goes through deliver_text
+
+So it obeys single/multi: in MULTI it appends, which is what Baba meant
+by "operate on one archive item" — a piece can be built from several
+sittings in any order. In SINGLE it replaces. `✕` deletes one, `delete
+all` sits at the top of the list.
+
+Deleting never touches the box. Someone tidying the archive is not asking
+to lose what they are working on.
+
+### Two bugs the tests caught before shipping
+
+**Ids collided.** They were built from the millisecond clock, and two
+takes added in the same millisecond shared an id — so deleting one
+deleted both. That is not exotic: Streamlit reruns constantly and
+delivery can be reached twice for one recording. Now a monotonic counter;
+verified unique across 200 rapid adds.
+
+**Consecutive duplicates.** The same text delivered twice in a row is not
+kept twice, or reruns would fill the list with copies of the last take and
+scroll the real history away. The same text LATER is still kept — it is
+consecutive repeats that are noise, not repetition itself.
+
+### THE LIMIT OF THIS VERSION, plainly
+
+**It lives in session state, so a page reload empties it.** It survives
+`new`, switching modules, recording again, and clearing the box — but not
+a reload or the tab closing. Making it durable means localStorage through
+`ls_bridge`, or the sheet, and that is its own piece of work. Until then
+the archive protects against losing a take to the NEXT take, which is the
+common case, not against losing the session.
+
+30 checks: 20 on the store, 10 on the wiring. App booted headless before
+pushing, 34 literal keys all distinct.
