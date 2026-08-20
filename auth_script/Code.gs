@@ -538,3 +538,98 @@ function userList_() {
              hashed: !!(cell_(r, C_SALT) && cell_(r, C_HASH)) };
   }).filter(function (r) { return r.user; });
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  THE MIGRATION — run ONCE, from the editor
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * NOT AN ENDPOINT, ON PURPOSE. There is no `what` that reaches this.
+ * A one-way, whole-table rewrite should need somebody sitting in the
+ * Apps Script editor deciding to do it, not a JSON body arriving from
+ * the internet with the right token in it.
+ *
+ * WHAT IT DOES, per row:
+ *   reads the plaintext password in column 2
+ *   makes a salt, hashes THAT SAME PASSWORD with it
+ *   writes salt, hash, rounds, and the folder name (= today's username)
+ *   empties column 2
+ *
+ * NOBODY'S PASSWORD CHANGES. What they type tomorrow is what they typed
+ * yesterday; only the way the sheet remembers it changes. That is why
+ * this is a migration and not a mass reset.
+ *
+ * IT IS ONE-WAY. After it runs, no one — you included — can read a
+ * password out of the sheet again. Write them down first if you want
+ * them; afterwards the only repair is a reset.
+ *
+ * IT IS SAFE TO RUN TWICE. A row that already has a salt and a hash is
+ * left alone, so a half-finished run can simply be run again.
+ */
+
+function migrateReport_(commit) {
+  var s = usersSheet_();
+  var rows = userRows_();
+  var done = [], already = [], stuck = [], blank = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = i + 2;
+    var name = cell_(rows[i], C_USER).trim().toLowerCase();
+    if (!name) { blank++; continue; }
+
+    if (cell_(rows[i], C_SALT) && cell_(rows[i], C_HASH)) { already.push(name); continue; }
+
+    var plain = cell_(rows[i], C_PASS);
+    if (!plain) {
+      // No password to carry over and no hash yet. This person cannot be
+      // migrated and cannot log in — they need a reset, which is a
+      // decision, not something a migration should make silently.
+      stuck.push(name);
+      continue;
+    }
+
+    if (commit) {
+      var salt = makeSalt_();
+      s.getRange(row, C_SALT).setValue(salt);
+      s.getRange(row, C_HASH).setValue(hashPw_(plain, salt, ROUNDS));
+      s.getRange(row, C_ROUNDS).setValue(ROUNDS);
+      if (!cell_(rows[i], C_FOLDER)) s.getRange(row, C_FOLDER).setValue(name);
+      // LAST. If anything above threw, the plaintext is still there and
+      // the row is simply not migrated yet — rather than a person with
+      // no password at all.
+      s.getRange(row, C_PASS).setValue('');
+    }
+    done.push(name);
+  }
+
+  return { ok: true, committed: !!commit,
+           migrated: done, already_hashed: already,
+           no_password: stuck, blank_rows: blank, rounds: ROUNDS };
+}
+
+/** Changes NOTHING. Says what a real run would do. Run this first. */
+function migratePreview() {
+  var r = migrateReport_(false);
+  Logger.log([
+    'DRY RUN — nothing was changed.',
+    'would migrate (' + r.migrated.length + '): ' + (r.migrated.join(', ') || '-'),
+    'already hashed (' + r.already_hashed.length + '): ' + (r.already_hashed.join(', ') || '-'),
+    'CANNOT migrate, no password (' + r.no_password.length + '): ' + (r.no_password.join(', ') || '-'),
+    'blank rows skipped: ' + r.blank_rows,
+    'rounds to be used: ' + r.rounds
+  ].join('\n'));
+  return r;
+}
+
+/** The real thing. One way. Run migratePreview() first. */
+function migrateRun() {
+  var r = withLock_(function () { return migrateReport_(true); });
+  Logger.log([
+    'DONE — the plaintext column is now empty for these people.',
+    'migrated (' + r.migrated.length + '): ' + (r.migrated.join(', ') || '-'),
+    'already hashed (' + r.already_hashed.length + '): ' + (r.already_hashed.join(', ') || '-'),
+    'CANNOT log in until reset (' + r.no_password.length + '): ' + (r.no_password.join(', ') || '-')
+  ].join('\n'));
+  return r;
+}
