@@ -313,6 +313,28 @@ STRINGS = {
     "settings_voice":     {"en": "Default voice",    "hr": "Zadani glas"},
     "help_title":         {"en": "Help",             "hr": "Pomoć"},
     "forget_me":          {"en": "Forget me on this phone", "hr": "Zaboravi me na ovom telefonu"},
+    "account_title":      {"en": "Your account",     "hr": "Tvoj račun"},
+    "log_out":            {"en": "Log out",          "hr": "Odjavi se"},
+    "logged_out":         {"en": "Logged out.",      "hr": "Odjavljen."},
+    "pw_current":         {"en": "Current password", "hr": "Trenutna lozinka"},
+    "pw_new":             {"en": "New password",     "hr": "Nova lozinka"},
+    "pw_repeat":          {"en": "Repeat the new password",
+                           "hr": "Ponovi novu lozinku"},
+    "pw_change":          {"en": "Change password",  "hr": "Promijeni lozinku"},
+    "pw_changed":         {"en": "Password changed. Every other device has "
+                                 "been logged out.",
+                           "hr": "Lozinka promijenjena. Svi drugi uređaji su "
+                                 "odjavljeni."},
+    "pw_mismatch":        {"en": "The two new passwords are not the same.",
+                           "hr": "Dvije nove lozinke nisu iste."},
+    "pw_short":           {"en": "At least 8 characters.",
+                           "hr": "Najmanje 8 znakova."},
+    "pw_wrong":           {"en": "That is not your current password.",
+                           "hr": "To nije tvoja trenutna lozinka."},
+    "pw_unreachable":     {"en": "Could not reach the accounts script. "
+                                 "Nothing was changed.",
+                           "hr": "Nije moguće doći do skripte za račune. "
+                                 "Ništa nije promijenjeno."},
     "forgotten":          {"en": "Forgotten.",       "hr": "Zaboravljeno."},
     "no_password_secret": {"en": "No password set in Secrets. Add APP_PASSWORDS (a list) in Streamlit Cloud → Settings → Secrets.",
                             "hr": "Lozinka nije postavljena u Secrets. Dodaj APP_PASSWORDS (listu) u Streamlit Cloud → Settings → Secrets."},
@@ -627,6 +649,17 @@ if not PASSWORDS:
     st.stop()
 
 
+def auth_url() -> str:
+    return str(st.secrets.get("AUTH_URL", "") or "")
+
+
+def auth_token() -> str:
+    """THE LOGIN TOKEN, never the admin one. It may ask whether a pair is
+    right, hand back a remembered session, and change a password when the
+    current one is supplied. It cannot make, rename or delete anybody."""
+    return str(st.secrets.get("AUTH_LOGIN_TOKEN", "") or "")
+
+
 def _digest(pw: str) -> str:
     return hashlib.sha256(("maha|" + pw).encode("utf-8")).hexdigest()
 
@@ -832,9 +865,49 @@ def queue_ls(writes=None, removes=None):
 # Password gate. The matched password also names the settings profile.
 # ----------------------------------------------------------------------
 def _try_remembered():
+    """Log somebody in without them typing, if their browser can prove it.
+
+    TWO SHAPES, because there are two kinds of person.
+
+    The owner's is unchanged: sha256 of a built-in password, compared
+    here against APP_PASSWORDS. That only ever worked because the app
+    knows those passwords by heart.
+
+    IT NEVER KNOWS THE FAMILY'S. So for every one of them the old code
+    compared their digest against a list it could not possibly be in, and
+    Remember me silently did nothing — they retyped every time. The fix
+    is not a bigger list: it is a token the SCRIPT can check. The browser
+    holds it, the sheet holds only its hash, and one round trip says yes
+    or no.
+
+    Never raises. A remembered login that cannot be checked is simply not
+    a login, and the person meets the login screen as usual.
+    """
     token = LS_DATA.get(AUTH_LS_KEY)
     if not token:
         return
+
+    if str(token).startswith("{"):
+        try:
+            blob = json.loads(token)
+            who, tok = str(blob.get("u") or ""), str(blob.get("t") or "")
+        except Exception:
+            return
+        if not who or not tok:
+            return
+        try:
+            got = ACCOUNTS.remember_login(auth_url(), auth_token(), who, tok)
+        except Exception:
+            got = None            # never a dependency, never a crash
+        if got:
+            st.session_state["_authed"] = True
+            st.session_state["_user"] = got["user"]
+            st.session_state["_via_accounts"] = True
+            st.session_state["_remember_token"] = tok
+            if EN.get(got.get("engine", "")):
+                st.session_state["_assigned_engine"] = got["engine"]
+        return
+
     for p in PASSWORDS:
         if hmac.compare_digest(token, _digest(p)):
             st.session_state["_authed"] = True
@@ -944,14 +1017,17 @@ def check_password() -> bool:
         name = (st.session_state.get("_user_input") or "").strip()
         if name:
             try:
-                got = ACCOUNTS.login(str(st.secrets.get("AUTH_URL", "") or ""),
-                                     str(st.secrets.get("AUTH_LOGIN_TOKEN", "") or ""),
-                                     name, entered)
+                got = ACCOUNTS.login(
+                    auth_url(), auth_token(), name, entered,
+                    remember=bool(st.session_state.get("_remember_me")))
             except Exception:
                 got = None            # never a dependency, never a crash
             if got:
                 matched = entered
                 who = got["user"]
+                st.session_state["_via_accounts"] = True
+                if got.get("remember"):
+                    st.session_state["_remember_token"] = got["remember"]
                 # Their own engine, if the sheet gives them one. A blank
                 # cell means "use the global engine", so it is not an
                 # override and must not be treated as one.
@@ -969,7 +1045,14 @@ def check_password() -> bool:
             st.session_state.pop("_gate_wait", None)
             st.session_state["_user"] = who
             if st.session_state.get("_remember_me"):
-                queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
+                # THE NAME AND A TOKEN for an accounts user; the old
+                # digest for the owner's built-in password. Never the
+                # password itself, in either shape.
+                tok = st.session_state.get("_remember_token")
+                if tok and st.session_state.get("_via_accounts"):
+                    queue_ls(writes={AUTH_LS_KEY: json.dumps({"u": who, "t": tok})})
+                else:
+                    queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
         else:
             gate.record_failure(tstate, time.time())
             _, wait = gate.check(tstate, time.time())
@@ -2386,6 +2469,88 @@ def pick_sp_voice(voice_id: str):
 def forget_me():
     queue_ls(removes=[AUTH_LS_KEY])
     st.session_state["_forgotten"] = True
+
+
+def log_out():
+    """Hand the phone over.
+
+    Three things, and the ORDER matters. The script is told first, while
+    the session still knows which token to revoke; then the session is
+    emptied; then the browser's copy is queued for removal — queued
+    AFTER the clear, or the clear would throw the queue away with
+    everything else.
+
+    Telling the script is best effort. If it cannot be reached the
+    browser's copy still goes, so the person is out on this phone either
+    way — the revocation is merely delayed, not cancelled.
+    """
+    who = st.session_state.get("_user", "")
+    tok = st.session_state.get("_remember_token", "")
+    if who and tok:
+        try:
+            ACCOUNTS.remember_forget(auth_url(), auth_token(), who, tok)
+        except Exception:
+            pass
+
+    st.session_state.clear()
+    queue_ls(removes=[AUTH_LS_KEY])
+    st.session_state["_authed"] = False
+    st.session_state["_logged_out"] = True
+
+
+def change_own_password():
+    """The current password is the proof, not the token. See ttt/accounts.
+
+    Checked HERE as well as in the script — not because the script is
+    trusted less, but because a mismatch or a short password should cost
+    nobody a network round trip and half a second of hashing.
+    """
+    cur = st.session_state.get("_pw_cur", "")
+    new = st.session_state.get("_pw_new", "")
+    rep = st.session_state.get("_pw_rep", "")
+    st.session_state["_pw_msg"] = ""
+
+    if not cur or not new:
+        return
+    if new != rep:
+        st.session_state["_pw_msg"] = ("bad", t("pw_mismatch"))
+        return
+    if len(new) < 8:
+        st.session_state["_pw_msg"] = ("bad", t("pw_short"))
+        return
+
+    ok, err = ACCOUNTS.change_password(auth_url(), auth_token(),
+                                       st.session_state.get("_user", ""),
+                                       cur, new)
+    if ok:
+        # Every device was just forgotten, including this one. Mint a
+        # fresh token so the person who just changed their password is
+        # not the one it logs out.
+        st.session_state["_remember_token"] = ""
+        if st.session_state.get("_remember_me"):
+            try:
+                got = ACCOUNTS.login(auth_url(), auth_token(),
+                                     st.session_state.get("_user", ""), new,
+                                     remember=True)
+            except Exception:
+                got = None
+            if got and got.get("remember"):
+                st.session_state["_remember_token"] = got["remember"]
+                queue_ls(writes={AUTH_LS_KEY: json.dumps(
+                    {"u": st.session_state.get("_user", ""), "t": got["remember"]})})
+        else:
+            queue_ls(removes=[AUTH_LS_KEY])
+        st.session_state["_pw_msg"] = ("good", t("pw_changed"))
+    elif err == "unreachable":
+        st.session_state["_pw_msg"] = ("bad", t("pw_unreachable"))
+    elif err.startswith("too short"):
+        st.session_state["_pw_msg"] = ("bad", t("pw_short"))
+    else:
+        st.session_state["_pw_msg"] = ("bad", t("pw_wrong"))
+
+    # NEVER LEFT LYING IN THE SESSION, whether it worked or not.
+    for k in ("_pw_cur", "_pw_new", "_pw_rep"):
+        st.session_state[k] = ""
 
 
 def voice_picker(prefix: str, on_pick=None):
@@ -4091,6 +4256,32 @@ elif active == "looks":
 
     st.text_area("preview", key="looks_preview", height=110,
                  label_visibility="collapsed", value=t("looks_preview"))
+
+    # YOUR ACCOUNT — everyone, not the owner. The amber gear is engines
+    # and keys and belongs to Baba; this is the two things that are a
+    # person's own: getting out, and their own password.
+    st.divider()
+    st.subheader(t("account_title"))
+
+    # LOG OUT IS UNCONDITIONAL. Whatever got you in — a password, a
+    # remembered token, the emergency door — must have a way out, or a
+    # shared phone cannot be handed over. It is the one control on this
+    # page that must never be hidden by a condition.
+    st.button(t("log_out"), key="log_out_btn", on_click=log_out,
+              use_container_width=True)
+
+    # The password half only for people who HAVE one here. Somebody who
+    # came through APP_PASSWORDS has no row to change, and the script
+    # would answer a flat no that reads like a bug.
+    if st.session_state.get("_via_accounts") and auth_url():
+        st.text_input(t("pw_current"), type="password", key="_pw_cur")
+        st.text_input(t("pw_new"), type="password", key="_pw_new")
+        st.text_input(t("pw_repeat"), type="password", key="_pw_rep")
+        st.button(t("pw_change"), key="pw_change_btn",
+                  on_click=change_own_password, use_container_width=True)
+        _msg = st.session_state.get("_pw_msg")
+        if _msg:
+            (st.success if _msg[0] == "good" else st.error)(_msg[1])
 
     tab_signature(t("sig_looks"))
 

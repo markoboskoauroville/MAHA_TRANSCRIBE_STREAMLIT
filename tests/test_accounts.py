@@ -38,6 +38,10 @@ def fresh(**secrets):
         default_timeout=90)
     at.secrets["APP_PASSWORDS"] = ["stub"]
     at.secrets["ADMIN_USER"] = "stub"
+    # Without a Groq key app.py stops at "no Groq key in Secrets" before
+    # it ever draws the tab bar, and every check past the login screen
+    # sees an empty page.
+    at.secrets["GROQ_API_KEYS"] = ["gsk_test"]
     for k, v in secrets.items():
         at.secrets[k] = v
     return at
@@ -88,7 +92,9 @@ accounts._post = fake_post
 
 fake_post.reply = {"ok": True, "user": "Admin", "engine": "studio", "note": "me"}
 got = accounts.login("http://x", "LOGIN-TOK", "Admin", "pw")
-check("3 a good reply is understood", got == {"user": "admin", "engine": "studio", "note": "me"}, got)
+check("3 a good reply is understood",
+      got == {"user": "admin", "engine": "studio", "note": "me", "remember": ""}, got)
+check("3b a plain login carries no token", got.get("remember") == "")
 check("4 it asks the login question", sent["payload"].get("what") == "login", sent)
 check("5 it sends the token it was given", sent["token"] == "LOGIN-TOK")
 check("6 THE PASSWORD GOES OUT AND NOTHING COMES BACK — no hash, no salt",
@@ -118,7 +124,9 @@ accounts._post = real_post
 
 SEEN = []
 MODE = {"dead": False, "no_user": False}
-ACCOUNT = ("admin", "moje-lozinka-9", "studio")
+ACCOUNT = {"user": "admin", "pw": "moje-lozinka-9", "engine": "studio"}
+TOKENS = set()
+MINT = {"n": 0}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -145,16 +153,46 @@ class Handler(BaseHTTPRequestHandler):
 
         if body.get("token") != "LOGIN-TOK":
             return self._reply({"ok": False, "error": "bad token"})
-        if body.get("what") != "login":
+        if body.get("what") not in ("login", "remember_login",
+                                    "remember_forget", "password_change"):
             return self._reply({"ok": False, "error": "unknown request"})
 
-        user, pw, engine = ACCOUNT
+        user, pw, engine = ACCOUNT["user"], ACCOUNT["pw"], ACCOUNT["engine"]
+        who = str(body.get("username", "")).strip().lower()
+        what = body.get("what")
+
+        if what == "remember_login":
+            if who == user and body.get("remember") in TOKENS:
+                return self._reply({"ok": True, "user": user,
+                                    "engine": engine, "note": "me"})
+            return self._reply({"ok": False, "error": "no"})
+
+        if what == "remember_forget":
+            TOKENS.discard(body.get("remember"))
+            return self._reply({"ok": True})
+
+        if what == "password_change":
+            new = str(body.get("new_password") or "")
+            if len(new) < 8:
+                return self._reply({"ok": False, "error": "too short"})
+            if new == pw:
+                return self._reply({"ok": False, "error": "that is the same password"})
+            if who != user or body.get("old_password") != pw:
+                return self._reply({"ok": False, "error": "no"})
+            ACCOUNT["pw"] = new
+            TOKENS.clear()                 # every device forgotten
+            return self._reply({"ok": True, "user": user})
+
         if MODE["no_user"]:
             return self._reply({"ok": True})          # an old deployment
-        if str(body.get("username", "")).strip().lower() == user \
-                and body.get("password") == pw:
-            return self._reply({"ok": True, "user": user,
-                                "engine": engine, "note": "me"})
+        if who == user and body.get("password") == pw:
+            out = {"ok": True, "user": user, "engine": engine, "note": "me"}
+            if body.get("remember"):
+                MINT["n"] += 1
+                tok = "tok-%d" % MINT["n"]
+                TOKENS.add(tok)
+                out["remember"] = tok
+            return self._reply(out)
         return self._reply({"ok": False, "error": "no"})
 
 
@@ -234,6 +272,114 @@ for _ in range(6):
     box(at, "_pw_input").set_value("wrong").run()
 check("25 repeated wrong passwords still trigger the throttle",
       bool(sget(at, "_gate_wait")), sget(at, "_gate_wait"))
+
+# ── REMEMBER ME, which never worked for the family ────────────────────
+from ttt import accounts as AC  # noqa: E402
+
+TOKENS.clear()
+r = AC.login(URL, "LOGIN-TOK", "admin", "moje-lozinka-9", remember=True)
+check("26 ticking the box mints a token", bool(r and r.get("remember")), r)
+TOK = r["remember"]
+check("27 the token logs in without a password",
+      (AC.remember_login(URL, "LOGIN-TOK", "admin", TOK) or {}).get("user") == "admin")
+check("28 a made-up token does not",
+      AC.remember_login(URL, "LOGIN-TOK", "admin", "nonsense") is None)
+check("29 an unreachable script is a no, not a crash",
+      AC.remember_login("http://127.0.0.1:1/", "t", "admin", TOK) is None)
+check("30 logging out revokes it",
+      AC.remember_forget(URL, "LOGIN-TOK", "admin", TOK) is True
+      and AC.remember_login(URL, "LOGIN-TOK", "admin", TOK) is None)
+
+# ── the login screen stores name+token, never the password ────────────
+at = live()
+at.run()
+box(at, "_user_input").set_value("admin").run()
+box(at, "_pw_input").set_value("moje-lozinka-9").run()
+check("31 logged in with Remember me ticked by default",
+      sget(at, "_authed") is True and bool(sget(at, "_remember_token")))
+# _pending_ls cannot be watched from out here: app.py POPS it at the top
+# of the very run that queued it (line ~844), so it is gone before the
+# test can look. What IS observable is what the session keeps — and the
+# rule is that the password is not among it.
+check("32 the session holds the NAME and a token, never the password",
+      sget(at, "_user") == "admin"
+      and sget(at, "_remember_token") not in ("", "moje-lozinka-9", None)
+      and sget(at, "_pw_input", "") == "",
+      (sget(at, "_user"), sget(at, "_pw_input", "")))
+
+# ── log out ───────────────────────────────────────────────────────────
+at.session_state["active_tab"] = "looks"
+at.run()
+btn = [b for b in at.button if b.key == "log_out_btn"]
+check("33 there is a visible Log out", len(btn) == 1)
+
+# A WATERMARK, because SEEN is cumulative. Searching the whole list found
+# the remember_forget from check 30 and went green even when log out sent
+# nothing at all — a mutation that removed the revocation survived. Only
+# what arrives AFTER the click counts, and it must carry THIS token.
+was = len(SEEN)
+mine = sget(at, "_remember_token")
+btn[0].click().run()
+check("34 logging out ends the session", sget(at, "_authed") is not True)
+check("35 and TELLS THE SCRIPT to revoke THIS token",
+      any(b.get("what") == "remember_forget" and b.get("remember") == mine
+          for b in SEEN[was:]),
+      [b.get("what") for b in SEEN[was:]])
+check("36 the token is gone from the session", not sget(at, "_remember_token"))
+
+# ── changing your own password ────────────────────────────────────────
+def logged_in():
+    a = live()
+    a.run()
+    box(a, "_user_input").set_value("admin").run()
+    box(a, "_pw_input").set_value(ACCOUNT["pw"]).run()
+    a.session_state["active_tab"] = "looks"
+    a.run()
+    return a
+
+
+def fields(a, cur, new, rep):
+    box(a, "_pw_cur").set_value(cur)
+    box(a, "_pw_new").set_value(new)
+    box(a, "_pw_rep").set_value(rep)
+    [b for b in a.button if b.key == "pw_change_btn"][0].click().run()
+    return sget(a, "_pw_msg") or ("", "")
+
+
+a = logged_in()
+check("37 the password section is there for an accounts user",
+      any(x.key == "_pw_cur" for x in a.text_input))
+
+check("38 two different new passwords are refused before any request",
+      fields(a, "moje-lozinka-9", "abcdefgh", "abcdefgX")[0] == "bad")
+check("39 a short new password is refused",
+      fields(a, "moje-lozinka-9", "short", "short")[0] == "bad")
+check("40 the WRONG current password is refused",
+      fields(a, "not-my-password", "abcdefghij", "abcdefghij")[0] == "bad")
+check("41 nothing changed after those refusals",
+      ACCOUNT["pw"] == "moje-lozinka-9", ACCOUNT["pw"])
+
+kind, _ = fields(a, "moje-lozinka-9", "nova-lozinka-77", "nova-lozinka-77")
+check("42 the right current password changes it", kind == "good", kind)
+check("43 the script has the new one", ACCOUNT["pw"] == "nova-lozinka-77")
+check("44 THE BOXES ARE EMPTIED — no password left in the session",
+      not sget(a, "_pw_cur") and not sget(a, "_pw_new") and not sget(a, "_pw_rep"))
+check("45 no password is anywhere in the session state",
+      not any("nova-lozinka-77" == str(sget(a, k))
+              for k in ("_pw_cur", "_pw_new", "_pw_rep", "_user")))
+check("46 the old password no longer logs in",
+      AC.login(URL, "LOGIN-TOK", "admin", "moje-lozinka-9") is None)
+check("47 the new one does",
+      (AC.login(URL, "LOGIN-TOK", "admin", "nova-lozinka-77") or {}).get("user") == "admin")
+
+# ── the emergency door user has no password section ───────────────────
+at = sign_in(live(), "", "stub")
+at.session_state["active_tab"] = "looks"
+at.run()
+check("48 APP_PASSWORDS user still gets Log out",
+      any(b.key == "log_out_btn" for b in at.button))
+check("49 but NOT a change-password box — there is no row to change",
+      not any(x.key == "_pw_cur" for x in at.text_input))
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

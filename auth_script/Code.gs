@@ -202,6 +202,13 @@ function doPost(e) {
 
     if (body.what === 'login') return json_(login_(body));
 
+    // Reachable with the LOGIN token, all three. None of them can be
+    // used without something the caller must already know: a valid
+    // remember token, or the current password.
+    if (body.what === 'remember_login')  return json_(rememberLogin_(body));
+    if (body.what === 'remember_forget') return json_(rememberForget_(body));
+    if (body.what === 'password_change') return json_(passwordChange_(body));
+
     // EVERYTHING BELOW NEEDS THE ADMIN TOKEN. The login token can
     // reach exactly one thing, above, and it cannot change anything.
     if (body.what === 'users')         { return isAdmin ? json_({ ok: true, users: userList_() })
@@ -260,7 +267,7 @@ function doPost(e) {
  */
 var C_USER = 1, C_PASS = 2, C_ENGINE = 3, C_NOTE = 4;
 var C_SALT = 5, C_HASH = 6, C_ROUNDS = 7;
-var N_COLS = 7;
+var N_COLS = 9;
 
 function userRows_() {
   var s = sheet_().getSheetByName('users');
@@ -321,10 +328,21 @@ function login_(body) {
     if (!sameHash_(hashPw_(p, salt, rounds), hash)) {
       return { ok: false, error: 'no' };
     }
-    return { ok: true,
-             user:   name,
-             engine: cell_(rows[i], C_ENGINE).trim().toLowerCase(),
-             note:   cell_(rows[i], C_NOTE) };
+    var out = { ok: true,
+                user:   name,
+                engine: cell_(rows[i], C_ENGINE).trim().toLowerCase(),
+                note:   cell_(rows[i], C_NOTE) };
+
+    // A remember token, ONLY when the tick-box asked for one. Wrapped
+    // because a login must never fail over a convenience: if minting
+    // throws, they are still logged in, just not remembered.
+    if (body.remember) {
+      try {
+        out.remember = rememberMint_(sheet_().getSheetByName('users'),
+                                     i + 2, cell_(rows[i], C_REMEMBER));
+      } catch (err) { /* logged in anyway */ }
+    }
+    return out;
   }
 
   // NOBODY OF THAT NAME — and it must not come back faster than a real
@@ -351,7 +369,8 @@ function login_(body) {
 // Wiring the main script to READ this column is a separate change. Until
 // then it is written and unused, which is harmless.
 var C_FOLDER = 8;
-var HEADERS_ADDED = { 5: 'salt', 6: 'hash', 7: 'rounds', 8: 'folder' };
+var HEADERS_ADDED = { 5: 'salt', 6: 'hash', 7: 'rounds', 8: 'folder',
+                      9: 'remember' };
 
 // Which name may change users. NOT a secret and NOT hardcoded — the app
 // should no more contain a specific person's name than a password, and
@@ -524,6 +543,9 @@ function userPassword_(body) {
     s.getRange(row, C_HASH).setValue(hashPw_(pw, salt, ROUNDS));
     s.getRange(row, C_ROUNDS).setValue(ROUNDS);
     s.getRange(row, C_PASS).setValue('');   // never plaintext, ever again
+    // A reset exists to get somebody OUT as much as to let them back in.
+    // Leaving their old phone logged in would defeat half of that.
+    rememberClear_(s, row);
     return { ok: true, user: u, password: pw };
   });
 }
@@ -640,7 +662,7 @@ function migrateRun() {
 // ═══════════════════════════════════════════════════════════════════
 
 var ALL_HEADERS = ['username', 'password', 'engine', 'note',
-                   'salt', 'hash', 'rounds', 'folder'];
+                   'salt', 'hash', 'rounds', 'folder', 'remember'];
 
 // Where you put your chosen password for ONE run.
 //
@@ -662,6 +684,7 @@ function ensureUsersSheet_() {
     s.setColumnWidth(3, 110); s.setColumnWidth(4, 240);
     s.setColumnWidth(5, 260); s.setColumnWidth(6, 300);
     s.setColumnWidth(7, 80);  s.setColumnWidth(8, 140);
+    s.setColumnWidth(9, 300);
   }
   for (var i = 0; i < ALL_HEADERS.length; i++) {
     if (!String(s.getRange(1, i + 1).getValue() || '').trim()) {
@@ -740,4 +763,175 @@ function setupAdmin() {
     'This log keeps it. Clear the execution log if that bothers you.'
   ].join('\n'));
   return { ok: true, user: who };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  REMEMBER ME
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * A NINTH COLUMN, and why it has to exist.
+ *
+ * The old Remember me stored sha256(password) in the browser and
+ * compared it against APP_PASSWORDS — which only ever worked because the
+ * app knows those passwords by heart. It does not know the family's, so
+ * for every one of them the tick-box silently did nothing.
+ *
+ * The two obvious shortcuts are both password-equivalents:
+ *   * keep the password in the browser — plainly no.
+ *   * keep the stored hash and let it stand in for the password — then
+ *     anyone who reads the sheet can log in as anybody, and the pepper
+ *     stops being worth anything.
+ *
+ * So the browser holds a long random token, and the sheet holds only its
+ * hash. Reading the sheet gets you nothing you can use; losing the phone
+ * costs one token, revoked by logging out or by changing the password.
+ *
+ * Up to REMEMBER_MAX of them, comma-separated: a phone AND a laptop is
+ * ordinary, and one column per device would be a column per device.
+ */
+var C_REMEMBER = 9;
+var REMEMBER_MAX = 5;
+
+/**
+ * Fast on purpose — ONE round, not ROUNDS.
+ *
+ * Slow hashing exists to make guessing a human-chosen password
+ * expensive. This token is 256 bits of randomness that nobody typed and
+ * nobody can guess, so the slow loop would buy nothing and cost half a
+ * second on every page load.
+ */
+function hashTok_(token) {
+  return Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(
+      Utilities.newBlob('rt|' + String(token)).getBytes(),
+      Utilities.newBlob(prop_(P_PEPPER)).getBytes()));
+}
+
+function tokList_(cellValue) {
+  return String(cellValue || '').split(',')
+    .map(function (x) { return x.trim(); })
+    .filter(function (x) { return !!x; });
+}
+
+/** Mint one, remember its hash, hand the token back exactly once. */
+function rememberMint_(sheet, row, existing) {
+  var token = makeSalt_() + makeSalt_();
+  var list = tokList_(existing);
+  list.push(hashTok_(token));
+  // Newest kept. An old phone falls off the end rather than the list
+  // growing without limit.
+  if (list.length > REMEMBER_MAX) list = list.slice(list.length - REMEMBER_MAX);
+  sheet.getRange(row, C_REMEMBER).setValue(list.join(','));
+  return token;
+}
+
+/** Every device forgotten. Used when a password changes, either way. */
+function rememberClear_(sheet, row) {
+  sheet.getRange(row, C_REMEMBER).setValue('');
+}
+
+/**
+ * Log in with a token instead of a password.
+ *
+ * Answers exactly like login_ does — same shape, same flat 'no' for
+ * every kind of failure — so the caller cannot tell a stale token from
+ * an unknown name from a sheet that would not open.
+ */
+function rememberLogin_(body) {
+  var u = String(body.username || '').trim().toLowerCase();
+  var tok = String(body.remember || '');
+  if (!u || !tok) return { ok: false, error: 'no' };
+
+  var rows;
+  try { rows = userRows_(); } catch (err) { return { ok: false, error: 'no' }; }
+
+  for (var i = 0; i < rows.length; i++) {
+    if (cell_(rows[i], C_USER).trim().toLowerCase() !== u) continue;
+    var want = hashTok_(tok);
+    var have = tokList_(cell_(rows[i], C_REMEMBER));
+    for (var j = 0; j < have.length; j++) {
+      if (sameHash_(have[j], want)) {
+        return { ok: true, user: u,
+                 engine: cell_(rows[i], C_ENGINE).trim().toLowerCase(),
+                 note: cell_(rows[i], C_NOTE) };
+      }
+    }
+    return { ok: false, error: 'no' };
+  }
+  return { ok: false, error: 'no' };
+}
+
+/** Log out on THIS device. The others keep working. */
+function rememberForget_(body) {
+  return withLock_(function () {
+    var u = String(body.username || '').trim().toLowerCase();
+    var tok = String(body.remember || '');
+    var s, row;
+    try {
+      s = usersSheet_();
+      row = rowOf_(userRows_(), u);
+    } catch (err) { return { ok: true };  }   // nothing to forget is fine
+    if (!row) return { ok: true };
+    if (tok) {
+      var gone = hashTok_(tok);
+      var keep = tokList_(s.getRange(row, C_REMEMBER).getValue())
+                   .filter(function (h) { return !sameHash_(h, gone); });
+      s.getRange(row, C_REMEMBER).setValue(keep.join(','));
+    }
+    return { ok: true };
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  CHANGING YOUR OWN PASSWORD
+// ═══════════════════════════════════════════════════════════════════
+
+var MIN_PASSWORD = 8;
+
+/**
+ * THE OLD PASSWORD IS THE ONLY THING PROVING IT IS REALLY THEM.
+ *
+ * This is reachable with the LOGIN token, which every phone in the house
+ * carries — so the token cannot be the authorisation. Knowing the
+ * current password is. That is the same proof the login screen asks for
+ * and no weaker, and a leaked login token on its own still changes
+ * nothing.
+ *
+ * EVERY REMEMBERED DEVICE IS FORGOTTEN. ADMIN.md §3.2 complains that a
+ * changed password does not evict a browser that ticked Remember me;
+ * after this it does, for the person's own change and for the
+ * administrator's reset alike.
+ */
+function passwordChange_(body) {
+  return withLock_(function () {
+    var u = String(body.username || '').trim().toLowerCase();
+    var oldPw = String(body.old_password == null ? '' : body.old_password);
+    var newPw = String(body.new_password == null ? '' : body.new_password);
+
+    if (newPw.length < MIN_PASSWORD) {
+      return { ok: false, error: 'too short: at least ' + MIN_PASSWORD + ' characters' };
+    }
+    if (newPw === oldPw) return { ok: false, error: 'that is the same password' };
+
+    // The same check the login screen makes, and the same flat 'no'.
+    var proved = login_({ username: u, password: oldPw });
+    if (!proved.ok) return { ok: false, error: 'no' };
+
+    var s = usersSheet_();
+    var row = rowOf_(userRows_(), u);
+    if (!row) return { ok: false, error: 'no' };
+
+    var salt = makeSalt_();
+    s.getRange(row, C_SALT).setValue(salt);
+    s.getRange(row, C_HASH).setValue(hashPw_(newPw, salt, ROUNDS));
+    s.getRange(row, C_ROUNDS).setValue(ROUNDS);
+    s.getRange(row, C_PASS).setValue('');
+    rememberClear_(s, row);
+
+    // NOTHING COMES BACK. Not the new password, not a hash, not a token.
+    return { ok: true, user: u };
+  });
 }

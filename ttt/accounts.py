@@ -26,7 +26,8 @@ from ttt.sheet import _post
 TIMEOUT = 12
 
 
-def login(url: str, token: str, username: str, password: str):
+def login(url: str, token: str, username: str, password: str,
+          remember: bool = False):
     """Ask the accounts script whether this pair is right.
 
     Returns `{"user":…, "engine":…, "note":…}` or None.
@@ -38,7 +39,8 @@ def login(url: str, token: str, username: str, password: str):
     """
     out = _post(url, token, {"what": "login",
                              "username": str(username or ""),
-                             "password": str(password or "")}, timeout=TIMEOUT)
+                             "password": str(password or ""),
+                             "remember": bool(remember)}, timeout=TIMEOUT)
     if not out or not out.get("ok"):
         return None
     user = str(out.get("user") or "").strip().lower()
@@ -48,7 +50,10 @@ def login(url: str, token: str, username: str, password: str):
         return None
     return {"user": user,
             "engine": str(out.get("engine") or "").strip().lower(),
-            "note": str(out.get("note") or "")}
+            "note": str(out.get("note") or ""),
+            # Present only when Remember me asked for one. The token
+            # itself, once — the sheet keeps nothing but its hash.
+            "remember": str(out.get("remember") or "")}
 
 
 def ping(url: str, token: str):
@@ -57,3 +62,63 @@ def ping(url: str, token: str):
     if not out or not out.get("ok"):
         return None
     return {"admin": bool(out.get("admin")), "rounds": int(out.get("rounds") or 0)}
+
+
+def remember_login(url: str, token: str, username: str, remember: str):
+    """Log in with a remembered token instead of a password.
+
+    The browser holds the token; the sheet holds only its hash. So a
+    stolen spreadsheet cannot log in as anybody, and a lost phone costs
+    exactly one token — revoked by logging out, or by changing the
+    password, which forgets every device at once.
+
+    None means no, exactly as `login` does, and the caller must fall back
+    to the login screen rather than treating it as an error.
+    """
+    out = _post(url, token, {"what": "remember_login",
+                             "username": str(username or ""),
+                             "remember": str(remember or "")}, timeout=TIMEOUT)
+    if not out or not out.get("ok"):
+        return None
+    user = str(out.get("user") or "").strip().lower()
+    if not user:
+        return None
+    return {"user": user,
+            "engine": str(out.get("engine") or "").strip().lower(),
+            "note": str(out.get("note") or "")}
+
+
+def remember_forget(url: str, token: str, username: str, remember: str):
+    """Forget THIS device. The other ones keep working.
+
+    Best effort by design: the browser's copy is removed either way, so a
+    script that cannot be reached delays the revocation, it does not
+    cancel the log-out.
+    """
+    out = _post(url, token, {"what": "remember_forget",
+                             "username": str(username or ""),
+                             "remember": str(remember or "")}, timeout=TIMEOUT)
+    return bool(out and out.get("ok"))
+
+
+def change_password(url: str, token: str, username: str,
+                    old_password: str, new_password: str):
+    """Change your own password. Returns (ok, error).
+
+    THE OLD PASSWORD IS THE AUTHORISATION, not the token — this endpoint
+    is reachable with the login token that every phone in the house
+    carries, so knowing the current password is the only thing that
+    proves it is really them.
+
+    NOTHING COMES BACK but a yes or a no. No password, no hash, no token.
+    """
+    out = _post(url, token, {"what": "password_change",
+                             "username": str(username or ""),
+                             "old_password": str(old_password or ""),
+                             "new_password": str(new_password or "")},
+                timeout=TIMEOUT + 8)   # two hashings, not one
+    if out is None:
+        return False, "unreachable"
+    if out.get("ok"):
+        return True, ""
+    return False, str(out.get("error") or "no")
