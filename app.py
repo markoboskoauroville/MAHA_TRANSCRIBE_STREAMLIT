@@ -78,6 +78,7 @@ from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
 from ttt import sheet as SHEET
+from ttt import accounts as ACCOUNTS
 from ttt import intake
 from ttt import errlog
 from ttt import archive
@@ -918,7 +919,13 @@ def check_password() -> bool:
             st.session_state["_gate_wait"] = wait
             return
 
-        # THE SHEET IS ASKED FIRST, when a username was given.
+        # THE ACCOUNTS SCRIPT IS ASKED FIRST, when a username was given.
+        #
+        # NOT the main sheet script any more. That one compared the
+        # password as PLAIN TEXT against column 2, and leaving it in the
+        # chain would mean anyone who typed a password back into that
+        # column had a way in that skipped the hashing entirely — the
+        # whole point, quietly undone by a spreadsheet edit.
         #
         # Baba: "Username, password, I am defining in the sheet. These
         # users are my family." So identity is a NAME now, not the
@@ -937,9 +944,9 @@ def check_password() -> bool:
         name = (st.session_state.get("_user_input") or "").strip()
         if name:
             try:
-                got = SHEET.login(str(st.secrets.get("SHEETS_URL", "") or ""),
-                                  str(st.secrets.get("SHEETS_TOKEN", "") or ""),
-                                  name, entered)
+                got = ACCOUNTS.login(str(st.secrets.get("AUTH_URL", "") or ""),
+                                     str(st.secrets.get("AUTH_LOGIN_TOKEN", "") or ""),
+                                     name, entered)
             except Exception:
                 got = None            # never a dependency, never a crash
             if got:
