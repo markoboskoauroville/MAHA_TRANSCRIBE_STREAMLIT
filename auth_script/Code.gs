@@ -633,3 +633,111 @@ function migrateRun() {
   ].join('\n'));
   return r;
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  FIRST RUN — the tab, and the administrator
+// ═══════════════════════════════════════════════════════════════════
+
+var ALL_HEADERS = ['username', 'password', 'engine', 'note',
+                   'salt', 'hash', 'rounds', 'folder'];
+
+// Where you put your chosen password for ONE run.
+//
+// Not a constant in this file: this file is committed to git, and a
+// password typed into it would be committed with it and stay in the
+// history afterwards even if deleted. A script property is not part of
+// the source, and setupAdmin() removes it as soon as it has been used.
+var SETUP_PW_PROP = 'AUTH_SETUP_PASSWORD';
+
+/** The tab, with all eight headers. Made if missing, repaired if partial. */
+function ensureUsersSheet_() {
+  var ss = sheet_();
+  var s = ss.getSheetByName('users');
+  if (!s) {
+    s = ss.insertSheet('users');
+    s.appendRow(ALL_HEADERS);
+    s.setFrozenRows(1);
+    s.setColumnWidth(1, 140); s.setColumnWidth(2, 160);
+    s.setColumnWidth(3, 110); s.setColumnWidth(4, 240);
+    s.setColumnWidth(5, 260); s.setColumnWidth(6, 300);
+    s.setColumnWidth(7, 80);  s.setColumnWidth(8, 140);
+  }
+  for (var i = 0; i < ALL_HEADERS.length; i++) {
+    if (!String(s.getRange(1, i + 1).getValue() || '').trim()) {
+      s.getRange(1, i + 1).setValue(ALL_HEADERS[i]);
+    }
+  }
+  s.getRange(1, 1, 1, ALL_HEADERS.length).setFontWeight('bold');
+  return s;
+}
+
+/**
+ * RUN THIS ONCE, FROM THE EDITOR. It makes the users tab and your own
+ * account, and nothing else.
+ *
+ * BEFORE RUNNING, in Project Settings -> Script Properties:
+ *   AUTH_SETUP_PASSWORD  = the password you want
+ *
+ * Leave it out and one is generated for you instead. Either way the
+ * password is printed to the log ONCE, and the property is deleted as
+ * soon as it has been used — so it does not sit in the project settings
+ * afterwards waiting to be read by whoever opens them next.
+ *
+ * The account is named after AUTH_ADMIN_USER, not a name written here,
+ * so the administrator and the person who may delete users are by
+ * construction the same person.
+ *
+ * It will NOT overwrite an existing account. If you already have one and
+ * have lost the password, reset it instead — that is what a reset is for.
+ */
+function setupAdmin() {
+  var props = PropertiesService.getScriptProperties();
+
+  var who = String(props.getProperty(P_ADMIN_USER) || '').trim().toLowerCase();
+  if (!who) { Logger.log('AUTH_ADMIN_USER is not set. Set it first.'); return; }
+  if (!okName_(who)) { Logger.log('AUTH_ADMIN_USER is not a usable name: ' + who); return; }
+
+  // Fail before touching the sheet if the pepper is missing, rather than
+  // making a tab and then dying halfway through the account.
+  prop_(P_PEPPER);
+
+  var chosen = String(props.getProperty(SETUP_PW_PROP) || '');
+  var generated = !chosen;
+  var pw = generated ? makePassword_() : chosen;
+
+  var s = ensureUsersSheet_();
+  if (rowOf_(userRows_(), who)) {
+    Logger.log([
+      'There is already an account called "' + who + '". Nothing was changed.',
+      'If you have lost the password, reset it rather than making a second one.'
+    ].join('\n'));
+    props.deleteProperty(SETUP_PW_PROP);
+    return;
+  }
+
+  var salt = makeSalt_();
+  s.appendRow([who, '', '', 'administrator',
+               salt, hashPw_(pw, salt, ROUNDS), ROUNDS, who]);
+
+  // Used, and gone. It existed in the project settings for one run.
+  props.deleteProperty(SETUP_PW_PROP);
+
+  Logger.log([
+    'Made the users tab and one account.',
+    '',
+    '    username:  ' + who,
+    '    password:  ' + pw,
+    '',
+    (generated ? 'That password was generated for you — nothing was set in'
+               + ' AUTH_SETUP_PASSWORD.'
+               : 'That is the password you chose. AUTH_SETUP_PASSWORD has been'
+               + ' deleted.'),
+    '',
+    'WRITE IT DOWN NOW. It is stored only as a hash and cannot be read',
+    'back — not by you, not by this script. Losing it means a reset.',
+    '',
+    'This log keeps it. Clear the execution log if that bothers you.'
+  ].join('\n'));
+  return { ok: true, user: who };
+}
