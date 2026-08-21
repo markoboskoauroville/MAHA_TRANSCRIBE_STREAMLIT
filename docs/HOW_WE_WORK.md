@@ -22,33 +22,35 @@ five things at once.
 
 ---
 
-## THE ONE RULE THAT IS NEVER BENT
+## The one rule that is never bent
 
-    ┌────────────────────────────────────────────────────────────┐
-    │                                                            │
-    │   NEVER  "New deployment"                                  │
-    │                                                            │
-    │   ALWAYS  Deploy -> Manage deployments -> pencil ->         │
-    │           Version: New version -> Deploy                    │
-    │                                                            │
-    └────────────────────────────────────────────────────────────┘
+Never `New deployment`.
+Always `Deploy` → `Manage deployments` → ✏️ → Version: `New version`.
 
-Baba asked for this to be stated once, plainly, and obeyed every time —
+Baba asked for this stated once, plainly, and obeyed every time —
 *"not sometimes I skip, not and then I do it."*
 
-**Why it matters more than it looks.** "New deployment" creates a
-SECOND web app at a DIFFERENT URL. The first one keeps running, and
+**Why it matters more than it looks.** `New deployment` creates a second
+web app at a different URL. The first one keeps running, and
 `SHEETS_URL` in Streamlit still points at it. So the old code goes on
-answering, the new code sits there unreached, and **nothing appears to
-change** — which sends you looking for a bug in code that was correct
-all along.
+answering, the new code sits there unreached, and nothing appears to
+change — which sends you hunting a bug in code that was correct all
+along.
 
 It applies to every Apps Script project in every one of Baba's repos,
-not only this one. The only exception is the very first deployment of a
-brand-new script, when there is nothing to update yet.
+not only this one. The single exception is the very first deployment of
+a brand-new script, when there is nothing yet to update.
 
-If a deploy seems to have done nothing, check this before anything else:
-open Manage deployments and count them. Two means it happened.
+**How to check.** Open `Manage deployments` and count the entries. One
+means it was done right. Two means a second web app exists and Streamlit
+is still talking to the old one.
+
+**A note on how to write warnings for Baba.** He asked for this rule to
+stand out and it was first written with a red ⛔ and a drawn box. He read
+the symbol as *"something is broken"* and it frightened him. Use
+`code style` for the thing being named, plain sentences for the reason,
+and no alarm symbols. A warning that reads like a fault report makes him
+look for damage that is not there.
 
 ---
 
