@@ -3498,7 +3498,12 @@ streamlit, or every boot check is measuring an app that cannot import.
 
 ---
 
-## 62. WHERE THIS SESSION ENDS — start here
+## 62. WHERE THE 20.8 MORNING ENDED — SUPERSEDED, see §72
+
+**Do not start here.** Its blocking bug — text reaching the archive but
+not the box — was solved that same day in §63: the box was widget state
+and had to stop being. Kept because its reasoning about how the bug was
+narrowed is still worth reading.
 
 ### BLOCKING: text reaches the archive but not the box
 
@@ -4416,3 +4421,129 @@ for the first time in this project.**
 
 Every one of those had at least one mutation applied to it and observed
 going red.
+
+---
+
+## 72. WHERE THIS SESSION ENDS — START HERE
+
+Written 21.8.2026, end of a long session. **v86 → v99, fourteen
+versions, all pushed.** Read §0 first, then this.
+
+### The one thing that changed about how we work
+
+**Baba runs Claude Code on his Mac now.** Chat Claude plans and hands
+him ONE prompt at a time to paste; Claude Code does the file work. See
+`docs/HOW_WE_WORK.md` — it is short and it is the difference between a
+session that moves and one that grinds.
+
+The rules that matter: **one spoon at a time, then stop and wait.**
+Every command block is **one chain**, one paste, one Enter — he has
+carpal syndrome and every extra paste costs him. **Real paths, never
+placeholders** (`~/Developer/MAHA_TRANSCRIBE_STREAMLIT`). And if he
+starts describing another project, say so at once: *"Baba, you are in
+the wrong chat."* He asked for that explicitly and he means it.
+
+### THE DEPLOY DEBT — nothing else matters until this is done
+
+`apps_script/Code.gs` in the repo is **at least four functional changes
+ahead of what is deployed** (the exact last-deployed version is not
+knowable from here — check the deployment's version number against
+`git log -- apps_script/Code.gs`): v86 (`putText_`/`getText_`, two columns), v91
+(`putSetting_`), v92 (the users tab, `login_`, `listUsers_`,
+`setUserEngine_`), v97 (all four setups on the menu).
+
+**One deploy covers all four.** Deploy → Manage deployments → pencil →
+Version: **New version**. Never "New deployment" — that makes a second
+web app at a different URL while `SHEETS_URL` still points at the first.
+
+Symptoms while it waits, all of them designed and none of them damage:
+the paired archive stores nothing, the engine says *"this session
+only"*, the amber gear says *"no users tab yet"* even though the tab
+exists, and login falls back to `APP_PASSWORDS`.
+
+His `Code.gs` is `assume-unchanged`, so **`git pull` will not update
+it** — `docs/ADMIN.md` §1.1 has the un-hide / stash / pull / re-fill /
+re-hide routine written out.
+
+### THE ACCOUNTS WORK — steps 9, 10, 11 remain
+
+A second, standalone Apps Script (`auth_script/`, its own token) now
+holds real accounts: salted hashes at 1000 rounds ≈ 497 ms, a pepper in
+Script Properties and nowhere else, split login/admin tokens,
+constant-time compare, and an unknown username costing the same half
+second as a real one so the family list cannot be read off the login
+screen. **Deployed and working** — Baba logged in as `admin` against
+the live sheet.
+
+Also done and live: **log out**, **change your own password** (current
+password required — the login token alone changes nothing), and a
+**Remember me that works for everyone** via a remember token whose hash
+alone is stored, up to five devices.
+
+    step 9   the admin dashboard: create, delete, rename, reset,
+             see who exists. THE THING HE ASKED FOR AT THE START.
+    step 10  tests mirroring test_login.py and test_users.py
+    step 11  rewrite ADMIN.md §3.2, §3.6 and §6
+
+**Step 6 is half done.** The frozen-folder column is written at creation
+and **nothing reads it** — `apps_script/Code.gs` still builds
+`USERS/<user>/` from the login name. So **do not rename anyone who has
+recordings** until the main script is fixed and redeployed.
+
+### THE NOTES — what T is now
+
+The archive became a notebook (§70): a search field, cards, and a note
+that **takes over the module** when opened. Speak with a note open and
+the words join that note. The editor is a component because Streamlit's
+`text_area` cannot report the cursor, and selection is entirely about
+the cursor.
+
+**Notes still live in session state and do not survive a reload.** This
+is the next piece and it is well set up: §60's paired Drive archive
+already stores audio and `text.txt` together, and every note carries its
+`rec_id`. It was deliberately left until the shape of a note settled,
+which it now has.
+
+### Smaller things, honestly listed
+
+* `st.components.v1.html` is **removed after 2026-06-01**, a date now
+  past, and Streamlit warns on every run. Counted, not guessed: **five
+  `components.html` call sites** in `app.py` (the copy button, the LS
+  bridge, the help page and two more) and **six `declare_component`
+  declarations** (deck, waveform, player, paste, ls_bridge, note). The
+  replacement is `st.iframe`. A session's work, and one day it stops
+  being a warning and starts being an outage.
+* `SHEETS_TOKEN` and `DRIVE_SECRET` were printed into a terminal and
+  should be rotated. Baba knows and has chosen to leave it; it is his
+  call. `AUTH_PEPPER` and the two auth tokens were partly visible in a
+  screenshot — same decision, and **the pepper cannot be rotated later
+  without resetting every password.**
+* Croatian law on recording conversations (§36) is still unchecked, and
+  computer audio is a meeting transcriber.
+* Baba tests on **Android**, where system audio is impossible. The first
+  real test of that feature has to happen on a computer.
+
+### How to know the tests are real
+
+Every suite in this repo has had a mutation applied and been observed
+going red. **Do not trust a green number that has never been seen to
+fail** — §71 documents a check that could not fail and stayed green
+under a mutation for exactly that reason.
+
+    notes 39 · ugly 19 · notes UI 18 · box 16 · source 19
+    engines 28 · engine UI 15 · engine sheet 27
+    users 32 · login 7 · reader 10 · accounts 50
+    GAS 44 · drive 20
+    plus editor arrows and accessibility, driven in real Chromium
+
+`pyflakes` is clean across `app.py` and all of `ttt/`. It was not
+before; keep it that way.
+
+### What this is for
+
+Baba: *"When it is done I can give the app to my brother, my father and
+my mother, so they can transcribe their voice, listen to their text, and
+translate."*
+
+Three people who do not read easily. That is the whole reason rule 6 is
+not negotiable, and why "it works on my screen" is never the answer.
