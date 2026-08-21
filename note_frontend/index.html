@@ -99,7 +99,29 @@
      same red as the cassette deck's, because it means the same thing in
      both places. Colour is reserved for state, and this is the only
      state loud enough to earn it. */
-  #rec { flex: 0 0 auto; padding: 0 1rem; }
+  /* The red key takes the room the two small ones give up. */
+  #rec { flex: 3 1 auto; padding: 0 0.6rem; gap: 0.4rem; }
+  .wee { flex: 1 1 auto; font-size: 0.72rem !important; }
+
+  /* The clock only exists while recording, so it does not sit there
+     reading 0:00 and inviting the question "is it on?" */
+  #clk { font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+         display: none; }
+  #rec.on #clk { display: inline; }
+
+  /* THE METER IS VERTICAL and tiny, as asked. It is the one thing on
+     this bar that must not be able to lie: if it moves, sound is
+     arriving. Driven from a real AnalyserNode, never from a timer. */
+  #vu { display: none; width: 0.28rem; height: 1.15rem;
+        background: #2a1517; border-radius: 2px; overflow: hidden;
+        position: relative; flex: none; }
+  #rec.on #vu { display: block; }
+  #vu i { position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
+          background: var(--rec); display: block; }
+
+  /* Recording is the loudest state in the app, so it is the only one
+     that gets the red fill rather than a red outline. */
+  #rec.on { background: rgba(217, 72, 75, 0.14); }
   .dot {
     width: 0.7rem; height: 0.7rem; border-radius: 50%;
     background: var(--rec); flex: none;
@@ -111,6 +133,8 @@
     #rec.on .dot { animation: none; opacity: .8 }
   }
 
+  #msg { color: var(--dim); font-size: 0.7rem; min-height: 0; }
+  #msg.bad { color: var(--rec); }
   #meta {
     color: var(--dim); font-size: 0.7rem;
     display: flex; justify-content: space-between; gap: 0.5rem;
@@ -132,13 +156,22 @@
     <button type="button" id="bAll" title="select everything">▣</button>
   </div>
 
+  <!-- THE DECK, IN MINIATURE. Baba: "imagine this bar as a smaller
+       version of the recorder... it means the recording is also a Stop
+       button." Same idea as the big deck upstairs, in one row: the red
+       key is wide because it is the thing you reach for, and cut and
+       line are small because they are not. -->
   <div class="bar" id="acts">
-    <button type="button" id="rec"><span class="dot"></span><span id="lRec">rec</span></button>
-    <button type="button" id="bCut" title="delete what is selected">✕ <span id="lCut">cut</span></button>
-    <button type="button" id="bLine" title="delete this line">⌫ <span id="lLine">line</span></button>
+    <button type="button" id="rec" title="record into this note">
+      <span class="dot"></span><span id="lRec">rec</span>
+      <span id="clk"></span><span id="vu"><i></i></span>
+    </button>
+    <button type="button" id="bCut" class="wee" title="delete what is selected">✕ <span id="lCut">cut</span></button>
+    <button type="button" id="bLine" class="wee" title="delete this line">⌫ <span id="lLine">line</span></button>
   </div>
 
   <div id="meta"><span id="mLeft"></span><span id="mRight"></span></div>
+  <div id="msg"></div>
 </div>
 
 <script>
@@ -254,6 +287,13 @@ function cutLine() {
 
 /* ------------------------------------------------------------------ */
 
+function say(text, bad) {
+  var el = document.getElementById('msg');
+  el.textContent = text || '';
+  el.classList.toggle('bad', !!bad);
+  height();
+}
+
 function words(s) {
   var m = String(s || '').trim().match(/\S+/g);
   return m ? m.length : 0;
@@ -294,12 +334,174 @@ ta.addEventListener('select', report);
 ta.addEventListener('keyup', report);
 ta.addEventListener('click', report);
 
-/* The red dot only ASKS. Recording belongs to the deck, which already
-   does chunking, the analyser and the retry — building a second recorder
-   in here would be a second thing to keep right. */
-document.getElementById('rec').addEventListener('click', function (e) {
+/* ------------------------------------------------------------------ */
+/*  RECORDING, INSIDE THE NOTE                                         */
+/*                                                                     */
+/*  The red key used to only ASK, and Python did the recording through  */
+/*  the big deck. That could not give Baba what he asked for: a clock   */
+/*  and a level meter need to update thirty times a second from the     */
+/*  audio stream itself, and Streamlit cannot push anything at that     */
+/*  rate. A meter fed by Python would be a decoration, and §22 is       */
+/*  explicit that a scope which is not reading real sound is worse than */
+/*  no scope.                                                          */
+/*                                                                     */
+/*  So this frame captures. It deliberately does NOT reimplement the    */
+/*  deck: no chunking, no offline queue, no retry ladder. It takes one  */
+/*  short take, hands the bytes to Python in the SAME shape the deck    */
+/*  uses — b64 / mime / seconds / bytes — and the whole pipeline below  */
+/*  that is shared. Long recordings still belong upstairs.             */
+/* ------------------------------------------------------------------ */
+
+/* Labels, overridable from Python. Declared HERE, above the first
+   function that reads them — they were originally added at the top of
+   the OTHER component by a careless edit, so setRecording() threw
+   "L_STOP is not defined" on the first press and took the meter, the
+   clock and the message line down with it. The button still toggled,
+   which is why it looked like it worked. */
+var L_REC = 'rec', L_STOP = 'stop',
+    L_MICNO = 'microphone refused — check the browser permission',
+    L_NOTHING = 'nothing was recorded',
+    L_TOOBIG = 'too long for a note — use the deck above',
+    L_SENDING = 'transcribing…',
+    L_SENDFAIL = 'could not send that take';
+
+var MAX_SEND = 30 * 1024 * 1024;   // the websocket ceiling, base64'd
+var mediaRec = null, mediaStream = null, chunks = [], recT0 = 0;
+var actx = null, analyser = null, vuRaf = null, clockT = null;
+
+var recBtn = document.getElementById('rec');
+var vuBar  = document.querySelector('#vu i');
+var clkEl  = document.getElementById('clk');
+
+function mmss(ms) {
+  var s = Math.floor(ms / 1000);
+  return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+}
+
+function paintVU() {
+  if (!analyser) return;
+  var buf = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(buf);
+  /* Peak, not average. An average of a waveform centred on 128 barely
+     moves for speech and the meter looks dead while somebody is
+     talking — which is exactly the lie this must not tell. */
+  var peak = 0;
+  for (var i = 0; i < buf.length; i++) {
+    var d = Math.abs(buf[i] - 128);
+    if (d > peak) peak = d;
+  }
+  var pct = Math.min(100, (peak / 90) * 100);
+  vuBar.style.height = pct.toFixed(0) + '%';
+}
+
+function setRecording(on) {
+  RECORDING = on;
+  recBtn.classList.toggle('on', on);
+  document.getElementById('lRec').textContent = on ? L_STOP : L_REC;
+  if (!on) {
+    if (vuRaf) { clearInterval(vuRaf); vuRaf = null; }
+    if (clockT) { clearInterval(clockT); clockT = null; }
+    vuBar.style.height = '0%';
+    clkEl.textContent = '';
+  }
+  height();
+}
+
+function stopTracks() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(function (t) { t.stop(); });
+    mediaStream = null;
+  }
+  if (actx) { try { actx.close(); } catch (e) {} actx = null; }
+  analyser = null;
+}
+
+async function startRec() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: false,
+               noiseSuppression: false, autoGainControl: false }
+    });
+  } catch (e) {
+    say(L_MICNO, true);
+    return;
+  }
+
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    var src = actx.createMediaStreamSource(mediaStream);
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 1024;
+    src.connect(analyser);
+  } catch (e) {
+    analyser = null;           // no meter is fine; no recording is not
+  }
+
+  chunks = [];
+  try {
+    mediaRec = new MediaRecorder(mediaStream);
+  } catch (e) {
+    stopTracks();
+    say(L_MICNO, true);
+    return;
+  }
+  mediaRec.ondataavailable = function (ev) {
+    if (ev.data && ev.data.size) chunks.push(ev.data);
+  };
+  mediaRec.onstop = function () { console.log('ONSTOP fired'); finishRec(); };
+  mediaRec.start();
+
+  recT0 = Date.now();
+  setRecording(true);
+  clkEl.textContent = '0:00';
+  clockT = setInterval(function () {
+    clkEl.textContent = mmss(Date.now() - recT0);
+  }, 250);
+  /* AN INTERVAL, NOT requestAnimationFrame. rAF is throttled to nothing
+     when the tab is in the background or the browser is headless, and a
+     level meter that has stopped moving says "no sound is arriving" —
+     the exact lie §22 forbids. 20 fps is plenty for a level bar and it
+     keeps running wherever the page is. */
+  if (analyser) vuRaf = setInterval(paintVU, 50);
+}
+
+function finishRec() {
+  console.log('FINISHREC entered, chunks=' + chunks.length);
+  var secs = (Date.now() - recT0) / 1000;
+  var type = (chunks[0] && chunks[0].type) || 'audio/webm';
+  var blob = new Blob(chunks, { type: type });
+  chunks = [];
+  stopTracks();
+  setRecording(false);
+
+  if (!blob.size) { say(L_NOTHING, true); return; }
+  if (blob.size > MAX_SEND) { say(L_TOOBIG, true); return; }
+
+  say(L_SENDING);
+  var fr = new FileReader();
+  fr.onerror = function () { say(L_SENDFAIL, true); };
+  fr.onload = function () {
+    var str = String(fr.result || ''), i = str.indexOf(',');
+    /* The SAME shape the deck posts, so Python's existing path takes it
+       without a second branch to keep in step. */
+    setValue({ at: Date.now(), text: ta.value,
+               b64: i < 0 ? str : str.slice(i + 1),
+               mime: type, seconds: secs, bytes: blob.size });
+  };
+  fr.readAsDataURL(blob);
+}
+
+/* ONE KEY, TWO JOBS. Baba: "when I press Record, then it turns to Stop,
+   and when I press Stop, it is set text." A separate stop key would sit
+   dead most of the time and be the wrong one to reach for in a hurry. */
+recBtn.addEventListener('click', function (e) {
   e.preventDefault();
-  setValue({ at: Date.now(), text: ta.value, rec: true });
+  if (RECORDING) {
+    console.log('STOP path, state=' + (mediaRec && mediaRec.state));
+    try { mediaRec.stop(); } catch (err) { console.log('stop threw '+err); finishRec(); }
+  } else {
+    startRec();
+  }
 });
 
 window.addEventListener('message', function (ev) {
@@ -329,12 +531,16 @@ window.addEventListener('message', function (ev) {
     ta.style.fontSize = (Number(a.scale) * 1.05).toFixed(3) + 'rem';
   }
   if (a.labels) {
-    if (a.labels.rec)  document.getElementById('lRec').textContent = a.labels.rec;
+    if (a.labels.rec)  { L_REC = a.labels.rec;
+                         if (!RECORDING)
+                           document.getElementById('lRec').textContent = L_REC; }
+    if (a.labels.stop) L_STOP = a.labels.stop;
     if (a.labels.cut)  document.getElementById('lCut').textContent = a.labels.cut;
     if (a.labels.line) document.getElementById('lLine').textContent = a.labels.line;
   }
-  RECORDING = !!a.recording;
-  document.getElementById('rec').classList.toggle('on', RECORDING);
+  /* RECORDING IS OWNED HERE NOW, not by Python. A render arriving
+     mid-take must not switch the key back to "rec" while the microphone
+     is still open. */
 
   document.getElementById('mLeft').textContent =
     words(ta.value) + ' words · ' + ta.value.length;

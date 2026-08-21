@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v100 (a) (readable notes, a calm login, language for the family)"
+APP_VERSION = "v101 (a) (a deck inside the note)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -515,6 +515,7 @@ STRINGS = {
     "notes_search_ph":    {"en": "search your notes",  "hr": "traži po bilješkama"},
     "notes_found":        {"en": "{n} of {all}",       "hr": "{n} od {all}"},
     "notes_none":         {"en": "nothing matches",    "hr": "nema pogodaka"},
+    "note_working":       {"en": "transcribing…",      "hr": "prepisujem…"},
     "note_close":         {"en": "close",              "hr": "zatvori"},
     "note_cut":           {"en": "cut",                "hr": "reži"},
     "note_line":          {"en": "line",               "hr": "redak"},
@@ -3135,6 +3136,72 @@ def note_from_transcript(text):
                      rec_id=st.session_state.get("_last_rec_id", ""))
 
 
+def transcribe_note_take():
+    """A take recorded inside a note. Transcribe it and add it there.
+
+    Runs OUTSIDE the component's own render, on a rerun, because
+    transcription takes seconds and the editor must not be held open
+    mid-frame waiting for it.
+
+    Everything below capture is the shared path — the router chooses the
+    engine, ffmpeg makes the FLAC, the bridge transcribes. Only the
+    destination is different, and the destination is the whole point:
+    the words join the note that is open.
+    """
+    take = st.session_state.pop("_note_take", None)
+    if not take:
+        return
+    note_id = take.get("note_id")
+    if not NOTES.get(st.session_state, note_id):
+        return                       # the note went away; drop it quietly
+
+    try:
+        raw = base64.b64decode(take["b64"])
+    except Exception:
+        errlog.add(st.session_state, "note", "take could not be decoded", "")
+        return
+    if not raw:
+        return
+
+    buf = io.BytesIO(raw)
+    buf.name = "note-take.webm"
+    st.session_state["_take_mime"] = take.get("mime", "")
+
+    lang = st.session_state.get("speech_lang", "hr")
+    seconds = float(take.get("seconds") or 0)
+    try:
+        with st.spinner(t("note_working")):
+            stt = stt_bridge()
+            if stt is None:
+                raise RuntimeError(t("routing_none"))
+            # The SAME two branches the rest of the app uses: an engine
+            # that takes big files gets the file, and one that does not
+            # goes through the chunking wrapper. Written once in
+            # ttt/audio.py and reached from here rather than copied —
+            # §"one implementation, in the module, used from here".
+            flac = to_flac16k(raw)
+            if stt.handles_big_files:
+                text = stt.transcribe(flac, lang)
+            else:
+                # No model named: "" means the engine's own default,
+                # which is the fast pass. A note take is a short spoken
+                # line, not the Correct button's careful second reading.
+                text, _method, _reusable = transcribe_any_size(
+                    flac, "", lang)
+    except Exception as e:
+        errlog.add(st.session_state, "note", "take failed", str(e))
+        st.session_state["_note_error"] = str(e)
+        return
+
+    body = (text or "").strip()
+    if not body:
+        st.session_state["_note_error"] = t("nothing_heard")
+        return
+
+    NOTES.append(st.session_state, note_id, body)
+    USAGE.log("transcribe", seconds, UNIT_SECONDS, stt.id)
+
+
 def notes_panel():
     """The list: a search field, then the notes."""
     all_notes = NOTES.items(st.session_state)
@@ -3208,8 +3275,8 @@ def note_open_view():
                 text=note.get("text", ""),
                 scale=a11y.clamp(st.session_state.get("text_scale",
                                                       a11y.DEFAULT_SCALE)),
-                labels={"rec": t("rec_btn"), "cut": t("note_cut"),
-                        "line": t("note_line")},
+                labels={"rec": t("rec_btn"), "stop": t("rec_stop"),
+                        "cut": t("note_cut"), "line": t("note_line")},
                 recording=False,
                 key="note_ed_%s" % note_id, default=None)
 
@@ -3220,8 +3287,20 @@ def note_open_view():
                     st.session_state["_note_seen"] = ev.get("at")
                     if isinstance(ev.get("text"), str):
                         NOTES.update(st.session_state, note_id, text=ev["text"])
-                    if ev.get("rec"):
-                        st.session_state["_note_wants_rec"] = True
+
+                    # A TAKE RECORDED INSIDE THE NOTE. It arrives in the
+                    # same shape the deck posts, so it goes down the same
+                    # pipeline — router, ffmpeg, Whisper — and only the
+                    # destination differs: it joins THIS note instead of
+                    # making a new one.
+                    if ev.get("b64"):
+                        st.session_state["_note_take"] = {
+                            "b64": ev["b64"],
+                            "mime": ev.get("mime", ""),
+                            "seconds": ev.get("seconds", 0),
+                            "note_id": note_id,
+                        }
+                        st.rerun()
         else:
             # No component: still editable, only without the arrows.
             st.text_area("note", value=note.get("text", ""),
@@ -3706,6 +3785,7 @@ if active == "transcribe":
     # the note's own record button — speak, and the words land in the
     # note that is open rather than in a new one.
     if _note_is_open:
+        transcribe_note_take()
         note_open_view()
         # STOP HERE. Everything below — the command row, the box, the
         # card list — belongs to the module's own writing surface, and a

@@ -4635,3 +4635,80 @@ pyflakes still clean across `app.py` and all of `ttt/`.
 
 The deploy debt, step 9's admin dashboard, notes that do not survive a
 reload, and the frozen-folder column that is written but not read.
+
+---
+
+## 74. A DECK INSIDE THE NOTE (v101)
+
+Baba: *"imagine this bar as a smaller version of the recorder... the
+recording is also a Stop button. When I press Record it turns to Stop,
+and it shows me the time passage and the tiny meter, vertical one, so I
+see I am recording and my voice level."*
+
+### Why the note had to capture for itself
+
+The red key used to only ASK, and the big deck did the recording. That
+could never give what he asked for: **a clock and a level meter update
+thirty times a second from the audio stream**, and Streamlit cannot push
+anything at that rate. A meter fed from Python would be a decoration —
+and §22 is explicit that a scope not reading real sound is worse than no
+scope.
+
+So the frame captures. It deliberately does **not** reimplement the deck:
+no chunking, no offline queue, no retry ladder. One short take, handed to
+Python in the **same shape the deck posts** — `b64` / `mime` / `seconds`
+/ `bytes` — and everything below that is shared: router, ffmpeg,
+`transcribe_any_size`, the same two big-file branches. Only the
+destination differs, and the destination is the point: the words join the
+note that is open.
+
+Long recordings still belong upstairs, and the frame says so rather than
+failing at 30 MB.
+
+### One key, two jobs
+
+`rec` becomes `stop` while running. A separate stop key would sit dead
+most of the time and be the wrong one to reach for in a hurry. The red
+key is wide because it is what you reach for; `cut` and `line` shrank to
+make room.
+
+The clock and the meter **do not exist at rest** — a transport reading
+`0:00` invites the question "is it on?".
+
+### THE BUG THIS ALMOST SHIPPED WITH
+
+`setRecording()` read `L_STOP`, and the label block had been inserted
+into the WRONG COMPONENT by a careless edit — the replace targeted text
+that only exists in `cassette_frontend`, matched nothing, and reported
+success anyway.
+
+So the first press threw `L_STOP is not defined` and took the meter, the
+clock and the message line down with it. **The button still toggled**,
+which is exactly why it looked like it worked. Only a browser console
+listener found it.
+
+**Two rules earned.** Every scripted edit asserts its anchor matched
+before writing — three edits this session silently did nothing and
+printed "done". And a component gets a `pageerror` listener in its test,
+because a JavaScript exception does not fail anything; it just quietly
+removes half the feature.
+
+### The meter runs on an interval, not requestAnimationFrame
+
+rAF is throttled to nothing in a background tab and in headless
+Chromium. A level meter that has stopped moving says *"no sound is
+arriving"* — the exact lie §22 forbids. 20 fps on a `setInterval` is
+plenty for a level bar and it keeps running wherever the page is.
+
+It reads **peak, not average**: an average of a waveform centred on 128
+barely moves for speech, so the meter would look dead while somebody was
+talking.
+
+### Test status
+
+Driven in real Chromium with a fake microphone — **10 checks**: recording
+starts, the key says stop, the clock runs, **the meter actually paints**,
+stopping restores the key, the take is posted in the deck's shape with
+the note's text, and **no page errors at all**.
+
+Suite unchanged and green elsewhere.
