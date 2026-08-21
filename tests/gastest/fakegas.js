@@ -121,6 +121,10 @@ class FakeRange {
     return this;
   }
   setValue(v) { this.sheet._set(this.row, this.col, v); return this; }
+  // The single-cell read. The main script only ever reads in blocks, so
+  // this was never needed until the auth script's ensureUsersSheet_
+  // checked one header cell at a time.
+  getValue() { return this.sheet._cell(this.row, this.col); }
   setFontWeight() { return this; }
   setNumberFormat() { return this; }
 }
@@ -163,6 +167,9 @@ let SS = new FakeSpreadsheet();
 
 const SpreadsheetApp = {
   getActiveSpreadsheet: () => SS,
+  // The auth script opens its sheet BY ID rather than being bound to
+  // it. There is one fake spreadsheet, so any id reaches it.
+  openById: () => SS,
   getUi: () => ({ alert: () => {}, createMenu: () => ({
     addItem() { return this; }, addToUi() {} }) }),
 };
@@ -189,12 +196,30 @@ const Utilities = {
   },
   computeHmacSha256Signature(msg, key) {
     const crypto = require('crypto');
-    const buf = crypto.createHmac('sha256', String(key))
-                      .update(String(msg)).digest();
+    // BYTE ARRAYS, NOT JUST STRINGS. hashPw_ feeds its own signed-byte
+    // output back in as the next message a thousand times over; passing
+    // that through String() would hash the text "12,-34,..." instead of
+    // the bytes, and the harness would agree with itself while agreeing
+    // with Google about nothing.
+    const bin = (v) => (Array.isArray(v)
+      ? Buffer.from(v.map((b) => b & 0xFF))
+      : Buffer.from(String(v), 'utf8'));
+    const buf = crypto.createHmac('sha256', bin(key))
+                      .update(bin(msg)).digest();
     // GAS hands back SIGNED bytes, -128..127. Reproducing that is the
     // whole point: without & 0xFF on the other side the hex conversion
     // emits literal '-' characters and every signature is wrong.
     return Array.from(buf).map((b) => (b > 127 ? b - 256 : b));
+  },
+  // A version-4 UUID. The auth script builds salts out of two of these
+  // BECAUSE Math.random() is not made for the job — so the fake must be
+  // a real random source too, or every salt in a test run collides and
+  // the suite would prove the opposite of what it claims.
+  getUuid() {
+    return require('crypto').randomUUID();
+  },
+  base64EncodeWebSafe(bytes) {
+    return Utilities.base64Encode(bytes).replace(/\+/g, '-').replace(/\//g, '_');
   },
   formatDate(d, tz, fmt) {
     const p = (n) => String(n).padStart(2, '0');
@@ -211,6 +236,37 @@ const ContentService = {
   },
 };
 
+// ------------------------------------------------- Properties and locks
+
+let PROPS = {};
+
+const PropertiesService = {
+  getScriptProperties: () => ({
+    getProperty: (k) => (k in PROPS ? PROPS[k] : null),
+    setProperty(k, v) { PROPS[k] = String(v); return this; },
+    deleteProperty(k) { delete PROPS[k]; return this; },
+    getProperties: () => Object.assign({}, PROPS),
+  }),
+};
+
+// The lock always grants. A fake that could refuse would only be
+// testing the fake — Apps Script runs one execution at a time here, and
+// what the suite checks is that the code ASKS for it, which it does by
+// going through withLock_ at all.
+const LockService = {
+  getScriptLock: () => ({
+    tryLock: () => true,
+    releaseLock: () => {},
+  }),
+};
+
+const Logger = { log: () => {} };
+
+function resetProps(props) {
+  PROPS = Object.assign({}, props || {});
+  return PROPS;
+}
+
 function resetWorld(rootId) {
   SS = new FakeSpreadsheet();
   DRIVE.roots = {};
@@ -221,5 +277,6 @@ function resetWorld(rootId) {
 
 module.exports = {
   DriveApp, SpreadsheetApp, Utilities, ContentService,
-  resetWorld, get SS() { return SS; }, DRIVE,
+  PropertiesService, LockService, Logger,
+  resetWorld, resetProps, get SS() { return SS; }, DRIVE,
 };

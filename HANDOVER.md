@@ -4712,3 +4712,162 @@ stopping restores the key, the take is posted in the deck's shape with
 the note's text, and **no page errors at all**.
 
 Suite unchanged and green elsewhere.
+
+---
+
+## 75. THE PEOPLE PANEL, AND A LOGIN THAT LET YOU IN (v102)
+
+Step 9 of the accounts work, plus two things Baba found by looking at
+his own screen — one of which had been shipping since v100.
+
+### THE LOGIN LET YOU IN WITHOUT ASKING
+
+Baba: *"the login lets me in without asking."*
+
+`check_password`'s `_entered()` had an empty-password branch. Its
+reasoning was sound as far as it went: a person filling the form top to
+bottom fires the handler when they finish the NAME, with the password
+still empty, and treating that as an attempt spent one of the throttle's
+tries — so a person could throttle themselves simply by filling in a
+form. An empty password is not an attempt.
+
+Then it went one step further and added *unless somebody is remembered
+here, in which case an empty password IS their press.*
+
+**BOTH BOXES FIRE THAT HANDLER.** So typing a USERNAME and pressing
+Enter — the most ordinary thing anybody does on a login screen — entered
+as the remembered user. No password. No button. **And without reading
+the name that had just been typed**: the mutation logs in as `baba`
+while the box says `somebody-else`.
+
+Which undoes exactly what §73 built the calm login FOR. *"Maybe I am
+logged in as Marko, maybe I am admin, I do not know who I am. Then it
+just brings me in."* v100 made the remembered login PREPARE rather than
+enter, and this branch quietly put the old behaviour back through a
+different door.
+
+`enter_remembered()` now has exactly one caller in the file: the
+**Continue as {name}** button. The empty branch returns and does nothing
+else. That is the invariant — one caller — and it is easier to check
+than any amount of reasoning about which widget fired.
+
+### THE THIRD FALSE-GREEN IN THREE SESSIONS
+
+`test_calm_login` check 12 asserted this exact thing and **passed
+anyway, for the whole time the bug was live.**
+
+    at3.run()
+    box(at3, "_pw_input").set_value("").run()      # already ""
+
+Streamlit fires no `on_change` when a value has not changed, so the
+handler never ran and the branch was never reached. The check was green
+because nothing happened at all. The old 12b was worse: it assigned
+`session_state` by hand and then asserted on a key that nothing had
+written.
+
+The fix is not to call the closure. **The username box fires the same
+handler and its value really does change**, so 12b now drives that — the
+real trigger, through the widget, doing what a person does. Restoring
+the auto-entry fails 12b, 12c and 12d.
+
+§71 was a check that could not fail. §73 was a check that seeded state
+by hand and never tested the function. This is the same family:
+
+> **A check that never reaches the branch it is named after is not a
+> weak test, it is a green light wired to nothing.** Before trusting a
+> check, ask what would have to happen for it to run at all — and if the
+> answer is "an event Streamlit does not fire", it never has.
+
+### WHY THE SIGNATURE LINE DOES NOT PRINT `USER`
+
+Baba: *"show me who I am."* The foot of every page now reads
+
+    transcribe  ·  Edge / Groq  ·  marko
+
+and it shows the name **only when it is a name.**
+
+`_user` does not always hold one. In the `APP_PASSWORDS` fallback,
+`check_password` does `who = matched` — `matched` being the PASSWORD
+THAT MATCHED — and stores it in the same session key an account name
+lives in. `USER` is built from that key. So the obvious one-liner,
+`who = USER`, puts the owner's password at the foot of every page, in
+every screenshot, for the whole session.
+
+    accounts login   the account name
+    no name at all   "shared"
+    password login   nothing
+
+The mutation is worth keeping in mind because it looks so reasonable:
+replacing the three-line guard with `who = USER` renders
+`correct-horse-staple` straight into the signature div, and
+`test_engine_ui` check 17 catches it.
+
+**THE WART UNDERNEATH IS STILL THERE AND IS NOT SMALL.** `_user` holding
+a password also means that person's Drive folder is `USERS/<password>/`
+and their usage rows are labelled with it. Fixing it moves an existing
+folder, so it is not a thing to do in passing — but it should be done,
+and it belongs with §72's frozen-folder work rather than on its own.
+
+### STEP 9 — THE PEOPLE PANEL
+
+`user_engine_panel` is gone; `user_admin_panel` replaces it in the same
+amber gear, behind `is_admin()`. Create, delete, reset, the engine
+buttons that were already there, and rename — built and **disabled**.
+
+**It reads the ACCOUNTS script, not the main one.** The old panel asked
+the main script and said *"no users tab yet"* whenever that deployment
+was behind: true about the deploy, a lie about the tab, and unactionable
+either way. `accounts.users()` now answers `None` for *could not ask*
+and `[]` for *there and empty*, and the panel says which. Those being
+the same value is what made the old message wrong.
+
+Almost all of step 9 was already written — `user_create`, `user_delete`,
+`user_rename`, `user_password` and `users` have been in
+`auth_script/Code.gs` since v92. Two things were added:
+
+  * **`user_engine`**, so ONE script and ONE token own the users tab end
+    to end. Two writers to the same column, with a lock in only one of
+    them, is a race waiting for a Sunday.
+  * **`adminProved_` on `userPassword_`**, the second factor delete and
+    rename already had. A reset locks somebody out AND signs their
+    remembered devices out; the token alone should not do that, because
+    a token can leak into a screenshot and a password typed at the
+    moment of the act cannot.
+
+**Rename is disabled on purpose, with the reason in its tooltip.** The
+accounts script freezes a folder column at creation; the main script
+still builds `USERS/<user>/` from the login name. Renaming today walks
+away from somebody's recordings. It loses `disabled` and nothing else
+changes, the day the main script reads that column.
+
+A new password renders at the TOP of the panel, above the list — under
+it, it is below the fold on a phone — and stays until *I have written it
+down*. It is the one thing on that screen that cannot be fetched again.
+
+### WHAT IS NOT TESTED, SAID PLAINLY
+
+**Nothing has ever executed `auth_script/Code.gs`.** The `fakegas`
+runtime only ever ran the main script, and it has no
+`PropertiesService`, no `LockService` and no `getUuid`. So the hashing,
+`adminProved_`, the delete and rename guards, and both changes above are
+unexecuted code in the script that guards every login. The panel has no
+tests either. That is step 10, and it is where the next session starts.
+
+    calm login 30 (was 27) · engine UI 18 (was 15)
+    everything else unchanged and green · GAS 44 · pyflakes clean
+
+`tests/test_reader.py` check 8 fails — confirmed by stashing, it fails
+on v101 as pushed and is not from this session. `test_layout` and
+`test_shake` need playwright, which is not installed on Baba's Mac.
+
+### STILL WAITING
+
+The main script's deploy debt (§72) is untouched. **The ACCOUNTS script
+now needs a deploy of its own** — New version, never New deployment —
+and `AUTH_ADMIN_TOKEN` must be added to the Streamlit Cloud secrets.
+
+Until both are done the panel degrades, but not evenly: the engine
+buttons say `unknown request`, which is honest, while **reset asks for
+the administrator password and the old deployed script ignores it.**
+That is the one place the screen would be lying, and it is worth doing
+the deploy for that reason alone.
