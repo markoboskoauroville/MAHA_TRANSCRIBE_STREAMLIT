@@ -4300,3 +4300,119 @@ until the shape of a note had settled.
 
 Also still open: the admin dashboard (step 9 of the accounts work), and
 §67's frozen-folder column, which is written but not yet read.
+
+---
+
+## 71. THE INTEGRITY PASS (v99)
+
+Baba: *"do one more pass of integrity check and bug and optimization…
+you test, you test the test, and test the test."*
+
+Rule 4 applied properly. **Five real bugs, one false-green in my own
+test, one 85× optimisation.** Nothing here was reported by a person —
+all of it came from mutating working code and watching what stayed
+green.
+
+### The five bugs
+
+**`read_picture` was never written.** pyflakes has reported it undefined
+since `92c4cbb` and three handover sections list it as "still dead".
+`ttt/vision.py` has had `read_image` all along and app.py has imported
+`vision` all along — the whole fault was twelve lines of missing
+plumbing. It could not crash the app because the call sits inside a
+`try`, so what a person actually saw was *"picture failed: name
+'read_picture' is not defined"* — an error that reads like a bug in
+Python rather than a feature nobody connected.
+
+It needed two small provider methods: `raw_models()` and `raw_chat()`.
+`models()` classifies into `Model` objects and throws away
+`input_modalities`, which is the field `find_vision_models` reads. The
+model is **discovered, never hardcoded**, and when none is available it
+says so rather than guessing a name that returns a confusing 404.
+
+**`admin_off` was a repeated dictionary key** with two different values,
+so one of the strings could never appear. Flagged twice, never fixed.
+The usage panel's string is `usage_off` now.
+
+**A local named `archive` shadowed the imported module** for the rest of
+the R block. Nothing called `archive.*` there yet — this closed the trap
+before somebody did.
+
+**The archive was a second store of the same words.** `archive.add()`
+went on running after v98, filling a sixty-item list nothing displayed:
+the same text kept twice, which is the classic way two copies drift
+apart. `adopt_archive` still reads anything a previous session left, so
+nothing is lost. `load_from_archive()` was dead and is gone.
+
+**The note editor broke WCAG 1.4.10 at 250% text** — 29px of sideways
+scroll, because the arrow bars were `nowrap`. Rule 6 calls that as
+serious as losing a recording. They wrap now: a second row of arrows
+costs one line, and sideways scrolling costs someone the control
+entirely. **This is the opposite call from §27's command row**, and
+deliberately: there the cells may shrink their type, here the target
+must not shrink at all.
+
+Also in the editor: every textual `px` became `rem`, so the reader's own
+OS font setting scales it. `44px` stays px on purpose — it is a physical
+target for a shaking hand, not text, and must not shrink when someone
+turns their font size down. A visible focus ring was missing entirely.
+
+Measured after: **no sideways scroll at 100/150/200/250%**, targets never
+below 44px, growing to 51px at 250%.
+
+### The false-green — this is the one worth reading
+
+`test_notes.py` check 11 asserted that editing a note does not reorder
+the list. A mutation that reordered on every edit **stayed green**.
+
+The check measured `pos_before` *after* an earlier update in the same
+test had already run. Under the mutation the note had moved before the
+baseline was taken, so it compared the mutated order against itself. **A
+test that could not fail.**
+
+Rewritten against a fresh list with a note that is not already at the
+top, plus a check that appending does not reorder either. Both now go
+red under the mutation.
+
+The cache invalidation had no test at all — a mutation removing it also
+stayed green. Four checks added; all four now bite.
+
+### The optimisation
+
+Search folds Croatian diacritics so `cekaj` finds `čekaj`. It ran on the
+full text of every note **on every keystroke**, and Streamlit reruns the
+whole script besides.
+
+Measured on a full notebook — 200 notes, 915,490 characters:
+
+    before   22.6 ms per keystroke
+    after     0.26 ms
+
+The folded haystack is cached on the note and dropped explicitly by
+`update()` and `append()`, the only two things that can change what a
+note says. Invalidation is **not** left to a guess about lengths or
+timestamps: a stale cache is a wrong answer, and a wrong answer is worse
+than a slow one.
+
+Also removed: `"dž": "d"` from the fold table. It could never fire — by
+the time it was reached `ž` had already become `z` — and it was the
+wrong answer anyway, since `dz` is what a person types.
+
+### Housekeeping
+
+`tests/test_archive_select.py` deleted. It tested a UI v98 removed, so
+it would have failed forever and trained the reader to ignore red.
+
+**pyflakes is now completely clean across `app.py` and all of `ttt/`,
+for the first time in this project.**
+
+### Where it stands
+
+    notes 39 · ugly 19 · notes UI 18 · box 16 · source 19
+    engines 28 · engine UI 15 · engine sheet 27
+    users 32 · login 7 · reader 10 · accounts 50
+    GAS 44 · drive 20
+    editor arrows 11 and accessibility 5, driven in real Chromium
+
+Every one of those had at least one mutation applied to it and observed
+going red.

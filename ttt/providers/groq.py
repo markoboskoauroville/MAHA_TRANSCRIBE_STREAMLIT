@@ -97,6 +97,34 @@ class Groq(Provider):
             return out, True, None
         return _fallback(task), False, last
 
+    # ---- raw, for callers that need the API's own shapes --------------
+    #
+    # models() classifies and returns Model objects, which is right for
+    # the dropdowns but throws away `input_modalities` — the very field
+    # vision.find_vision_models reads to discover which models accept a
+    # picture. These two hand back what Groq actually said, still through
+    # the key ring, so no caller ever touches a key.
+
+    def raw_models(self):
+        """Groq's model list, unclassified. [] if it cannot be reached."""
+        for key in self.keys:
+            data, err, _ = http_json(
+                API + "/models",
+                {"Authorization": "Bearer " + key, "User-Agent": "TTT-LLL/1.0"},
+                timeout=30, classify=classify_standard)
+            if not err:
+                return data.get("data", []) or []
+        return []
+
+    def raw_chat(self, payload):
+        """A chat payload the caller built. Returns (data, error), which
+        is the contract ttt/vision.py expects."""
+        return self._rotate(lambda key: http_json(
+            API + "/chat/completions",
+            {"Authorization": "Bearer " + key, "User-Agent": "TTT-LLL/1.0"},
+            payload=payload, method="POST", timeout=120,
+            classify=classify_standard))
+
     # ---- speech to text ----------------------------------------------
     def transcribe(self, path: str, language: str = "hr", model: str = None):
         """Rotates over the ring (or the key list) exactly like everything

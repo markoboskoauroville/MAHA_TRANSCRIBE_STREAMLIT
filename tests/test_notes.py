@@ -57,11 +57,52 @@ N.update(s, a, text="promijenjeno")
 check("9 the text can be changed", N.get(s, a)["text"] == "promijenjeno")
 check("10 and the note remembers it was edited", bool(N.get(s, a)["edited"]))
 
-pos_before = [n["id"] for n in N.items(s)]
-N.update(s, a, text="opet promijenjeno")
+# A FRESH LIST, and a note that is NOT already at the top.
+#
+# The first version of this check measured `pos_before` AFTER an earlier
+# update in the same test had already run — so under a mutation that
+# reorders on edit, the note had moved BEFORE the baseline was taken and
+# the check compared the mutated order against itself. It could not fail.
+# Caught by mutating the code and watching it stay green.
+s_ord = {}
+first = N.add(s_ord, "prva")
+middle = N.add(s_ord, "druga")
+last = N.add(s_ord, "treca")
+expected = [last, middle, first]          # newest first, and it must stay
+check("11a the starting order is newest first",
+      [n["id"] for n in N.items(s_ord)] == expected,
+      [n["id"] for n in N.items(s_ord)])
+
+N.update(s_ord, first, text="prva, promijenjena")
 check("11 EDITING DOES NOT REORDER THE LIST — the list must not reshuffle "
-      "under someone's hand", [n["id"] for n in N.items(s)] == pos_before,
-      [n["id"] for n in N.items(s)])
+      "under someone's hand",
+      [n["id"] for n in N.items(s_ord)] == expected,
+      [n["id"] for n in N.items(s_ord)])
+
+N.append(s_ord, middle, "jos nesto")
+check("11b APPENDING does not reorder it either",
+      [n["id"] for n in N.items(s_ord)] == expected,
+      [n["id"] for n in N.items(s_ord)])
+
+# --- the search cache must not be able to go stale --------------------
+#
+# Nothing tested this and a mutation that removed the invalidation stayed
+# green. The cache is an optimisation; a stale one is a wrong answer.
+s_cache = {}
+c1 = N.add(s_cache, "zebra u zoo")
+N.search(s_cache, "zebra")                       # warm the cache
+N.update(s_cache, c1, text="slon u dzungli")
+check("11c after editing, the OLD word is no longer found",
+      N.search(s_cache, "zebra") == [], N.search(s_cache, "zebra"))
+check("11d and the NEW word is", len(N.search(s_cache, "slon")) == 1)
+
+N.append(s_cache, c1, "i jos jedna rijec: tigar")
+check("11e after appending, the appended word is found",
+      len(N.search(s_cache, "tigar")) == 1)
+
+N.update(s_cache, c1, title="Naslov Zirafa")
+check("11f a changed TITLE is searchable too",
+      len(N.search(s_cache, "zirafa")) == 1, N.search(s_cache, "zirafa"))
 
 # --- talking into a note ---------------------------------------------
 N.update(s, a, text="prvi red")

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v98 (a) (notes: search, open, speak into, select)"
+APP_VERSION = "v99 (a) (integrity pass: five real bugs, one false-green)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -82,7 +82,6 @@ from ttt import sheet as SHEET
 from ttt import accounts as ACCOUNTS
 from ttt import intake
 from ttt import errlog
-from ttt import archive
 from ttt import drive as DRIVE
 from ttt import help_page as HELP_PAGE
 from ttt import wordtimes as WORDTIMES
@@ -451,6 +450,8 @@ STRINGS = {
     "img_working":        {"en": "Reading the picture…", "hr": "Čitam sliku…"},
     "img_none":           {"en": "No text found in that picture.",
                             "hr": "U toj slici nije pronađen tekst."},
+    "img_nomodel":        {"en": "no model here can read a picture right now",
+                           "hr": "nijedan model trenutno ne može čitati sliku"},
     "img_fail":           {"en": "Could not read the picture",
                             "hr": "Nije uspjelo čitanje slike"},
     "img_no_model":       {"en": "No engine here can read pictures.",
@@ -539,7 +540,7 @@ STRINGS = {
     "eng_notsaved":       {"en": "this session only — the sheet did not "
                                  "take it (deploy a New version?)",
                            "hr": "samo ova sesija — tablica nije primila"},
-    "admin_off":          {"en": "Usage log not connected.",
+    "usage_off":          {"en": "Usage log not connected.",
                             "hr": "Zapis korištenja nije spojen."},
     # SHORT LABELS. Baba: "text size does not need to be text size, just
     # write TXT. Typeface, shorten it. Colour, put just one letter — as we
@@ -2690,19 +2691,43 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
     doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
 
 
-def load_from_archive(item_id: str) -> None:
-    """Put a kept transcript back in the box, honouring single/multi.
+def read_picture(raw: bytes, filename: str = "") -> str:
+    """Read the words out of a photograph.
 
-    In MULTI it appends, which is the whole point: a piece can be built
-    from several sittings in whatever order they are wanted. In SINGLE it
-    replaces.
+    THE FUNCTION WAS MISSING, NOT THE CAPABILITY. `ttt/vision.py` has had
+    `read_image` since it was written, and app.py has imported `vision`
+    all along — but the call site named `read_picture`, which existed
+    nowhere. pyflakes has been reporting it since 92c4cbb and it has been
+    listed as "still dead" in three handover sections. The whole fault
+    was a missing twelve lines of plumbing.
 
-    It must NOT be re-archived on the way in — otherwise loading an item
-    makes a copy of it, and loading three times makes three.
+    It could not crash the app because the call sits inside a `try`, so
+    what a person actually saw was "picture failed: name 'read_picture'
+    is not defined" — an error that reads like a bug in Python rather
+    than a feature that was never connected.
+
+    vision.py never touches a key: it is handed a `call` that does.
     """
-    rec = archive.get(st.session_state, item_id)
-    if rec:
-        deliver_text(rec.get("text", ""), keep=False)
+    prov = PROVIDERS.get("groq")
+    if prov is None:
+        raise RuntimeError(t("routing_none"))
+
+    # Ask the provider which of ITS models take an image, rather than
+    # naming one here. vision.py is emphatic about this — "THE MODEL IS
+    # DISCOVERED, NEVER HARDCODED" — because a name written into a file
+    # goes stale the day Groq retires it, and then pictures break for
+    # everyone at once with no warning.
+    names = vision.find_vision_models(prov.raw_models())
+    if not names:
+        # No fallback name on purpose. Guessing one would turn a clear
+        # "none available" into a confusing 404 from the API.
+        raise RuntimeError(t("img_nomodel"))
+
+    return vision.read_image(prov.raw_chat, names[0], raw, filename)
+
+# load_from_archive() lived here and is gone with the archive UI (v98).
+# A note is opened and edited in place now; "to the box" inside an open
+# note is what putting one back looks like.
 
 
 @st.cache_resource(show_spinner=False)
@@ -3272,11 +3297,12 @@ def deliver_text(new_text: str, keep: bool = True) -> None:
         # Drive does not. An archive row that carries the rec_id can still
         # be retranscribed or deleted in a session that starts tomorrow,
         # which is the whole reason for storing the audio at all.
+        # ONE STORE, NOT TWO. archive.add() went on running here after
+        # v98 replaced the archive with notes, filling a sixty-item list
+        # nothing displayed — the same words kept twice, and the classic
+        # way for two copies to drift apart. adopt_archive still reads
+        # anything a previous session left behind, so nothing is lost.
         note_from_transcript(new_text)
-        archive.add(st.session_state, new_text,
-                    language=st.session_state.get("speech_lang", ""),
-                    method=st.session_state.get("_transcribe_method", ""),
-                    rec_id=st.session_state.get("_last_rec_id", ""))
     if st.session_state.get("append_mode"):
         old = t1_text().rstrip()
         # A blank line between takes: they are separate sittings and read
@@ -3992,7 +4018,8 @@ if active == "transcribe":
     # This replaced the archive, which could only put a transcript back
     # in the box. See ttt/notes.py for why a note is a different thing
     # from a take, and note_frontend/ for why the editor is a component.
-    NOTES.adopt_archive(st.session_state)
+    # adopt_archive already ran at the top of this module — it is cheap
+    # and marker-guarded, but calling it twice per render is noise.
     notes_panel()
 
     # THE STATUS BOX, MOVED TO THE FOOT OF THE MODULE (v88).
@@ -4263,10 +4290,14 @@ elif active == "talk":
 
 
 
-        archive = st.session_state.get("_archive", [])
-        if archive:
-            with st.expander(f"{t('read_archive')} ({len(archive)})"):
-                for piece in archive:
+        # NOT named `archive`: that shadowed the imported module for the
+        # rest of this block, so any archive.* call here would have hit a
+        # list and raised. Nothing called one yet — this is closing the
+        # trap before somebody does.
+        read_pieces = st.session_state.get("_archive", [])
+        if read_pieces:
+            with st.expander(f"{t('read_archive')} ({len(read_pieces)})"):
+                for piece in read_pieces:
                     acol1, acol2, acol3 = st.columns([4, 1, 1])
                     acol1.caption(piece["title"])
 
@@ -4509,7 +4540,7 @@ elif active == "settings":
         with st.container(key="statusbox_admin"):
             st.text(f"{t('admin_sent')}: {_u['sent']}  ·  "
                     f"{t('admin_failed')}: {_u['failed']}"
-                    if _u["enabled"] else t("admin_off"))
+                    if _u["enabled"] else t("usage_off"))
 
         # ---- who the app talks to ---------------------------------
         rings = load_keys()

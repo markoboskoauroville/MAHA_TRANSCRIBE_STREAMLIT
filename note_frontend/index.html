@@ -32,8 +32,8 @@
 
   #wrap {
     background: var(--dark); border: 1px solid var(--edge);
-    border-radius: 12px; padding: 10px; display: flex;
-    flex-direction: column; gap: 8px;
+    border-radius: 12px; padding: 0.6rem; display: flex;
+    flex-direction: column; gap: 0.5rem;
   }
 
   /* ---- the writing surface -------------------------------------- */
@@ -41,41 +41,64 @@
      control, because this is a READING SURFACE and hard rule 6 says the
      control governs those. Baking a size in would silently break it. */
   #ta {
-    width: 100%; min-height: 240px; resize: vertical;
+    width: 100%; min-height: 15rem; resize: vertical;
     background: var(--face); color: var(--ink);
     border: 1px solid var(--edge); border-radius: 10px;
-    padding: 12px; line-height: 1.55;
+    padding: 0.75rem; line-height: 1.55;
+    /* overflow-wrap, never word-break: ordinary prose keeps its shape
+       and only a genuinely oversized word is broken (rule 6). */
+    overflow-wrap: break-word;
     font-family: inherit;
   }
   #ta:focus { outline: none; border-color: var(--amber); }
 
   /* ---- the bars --------------------------------------------------- */
-  .bar { display: flex; gap: 5px; flex-wrap: nowrap; }
+  /* WRAPS, and that is deliberate. nowrap held the five arrows on one
+     line and pushed 29px off the right edge at 250% text — a WCAG 1.4.10
+     failure, and rule 6 says that is as serious as losing a recording.
+     A second row of arrows costs one line; sideways scrolling costs
+     someone the control entirely. This is the opposite call from the
+     command row (§27), because there the cells could shrink their type
+     and here the target must not shrink at all. */
+  .bar { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+  .bar button { flex: 1 1 auto; min-width: 3.2rem; }
   .bar button {
     flex: 1 1 auto; min-width: 0;
     background: var(--face); color: var(--ink);
     border: 1px solid var(--edge); border-radius: 9px;
     /* 44px, and it does NOT shrink with the type. A shaking hand needs
        the target whatever size the letters are. */
+    /* 44px stays px ON PURPOSE. It is a physical target for a shaking
+       hand (WCAG 2.5.5 at the AAA figure), not text, and it must not
+       shrink when someone turns their font size down. */
     min-height: 44px;
-    font-family: inherit; font-size: 13px;
+    font-family: inherit;
+    /* Everything TEXTUAL is rem, so the reader's own OS and browser font
+       setting still scales it — rule 6, and the first thing a person
+       with low vision will already have turned up. */
+    font-size: 0.82rem;
     cursor: pointer; display: flex; align-items: center;
-    justify-content: center; gap: 5px; padding: 0 8px;
+    justify-content: center; gap: 0.3rem; padding: 0 0.5rem;
   }
   .bar button:hover { border-color: var(--amber); }
   .bar button:active { background: #1d232c; }
+  /* A VISIBLE FOCUS RING. Rule 6 asks for one and these buttons had
+     none: a keyboard user could not see which arrow they were on. */
+  .bar button:focus-visible, #ta:focus-visible {
+    outline: 2px solid var(--amber); outline-offset: 2px;
+  }
 
   /* The selection arrows are a set, so they read as one control. */
-  #sel button { font-size: 17px; letter-spacing: 0; }
+  #sel button { font-size: 1.05rem; letter-spacing: 0; }
 
   /* ---- the red dot ------------------------------------------------ */
   /* Baba: "at the bottom of the note is a record button, red dot" — the
      same red as the cassette deck's, because it means the same thing in
      both places. Colour is reserved for state, and this is the only
      state loud enough to earn it. */
-  #rec { flex: 0 0 auto; padding: 0 16px; }
+  #rec { flex: 0 0 auto; padding: 0 1rem; }
   .dot {
-    width: 11px; height: 11px; border-radius: 50%;
+    width: 0.7rem; height: 0.7rem; border-radius: 50%;
     background: var(--rec); flex: none;
   }
   #rec.on { border-color: var(--rec); color: var(--rec); }
@@ -86,8 +109,8 @@
   }
 
   #meta {
-    color: var(--dim); font-size: 11px;
-    display: flex; justify-content: space-between; gap: 8px;
+    color: var(--dim); font-size: 0.7rem;
+    display: flex; justify-content: space-between; gap: 0.5rem;
   }
 </style>
 </head>
