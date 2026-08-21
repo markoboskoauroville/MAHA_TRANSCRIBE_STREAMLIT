@@ -4547,3 +4547,91 @@ translate."*
 
 Three people who do not read easily. That is the whole reason rule 6 is
 not negotiable, and why "it works on my screen" is never the answer.
+
+---
+
+## 73. READABLE NOTES, A CALM LOGIN, AND THE FAMILY'S LANGUAGE (v100)
+
+Three things Baba found by using the app, none of which any test caught.
+
+### The note editor was showing text at 0.16px
+
+*"The text is so small I cannot see it even when I put my nose on the
+screen."*
+
+`a11y.py`'s scale is a **MULTIPLIER** — `MIN 0.8`, `DEFAULT 1.0`,
+`MAX 2.5`. The editor read it as a percentage, so the default `1.0`
+became `font-size: 1%` — one hundredth of 16px.
+
+Fixed to `scale × BASE_REM` (a11y's own 1.05 floor), in `rem` so the
+reader's OS setting still multiplies it. Now 16.8px at normal and 42px
+at maximum. The CSS also carries `font-size: 1.05rem` of its own, so a
+missing or broken scale can never again leave somebody squinting.
+
+**Worth sitting with: this was a reading surface in an accessibility
+app, and it shipped.** The browser tests measured overflow and target
+size and never asked whether the words could be READ. Baba found it in
+a minute. Reading surfaces get LOOKED at, not asserted about.
+
+### The login threw you inside before you knew who you were
+
+*"Maybe I am logged in as Marko, maybe I am admin, I do not know who I
+am. Then it just brings me in."*
+
+A remembered login now **prepares** rather than enters:
+`_try_remembered()` records `_remembered` and nothing else, the login
+screen fills in the name, and `enter_remembered()` — reached only by a
+press — is the single place `_authed` is set. There is a
+**Continue as {name}** button and a **Not me** beside it, which is what
+a shared phone actually needs.
+
+**An honest limit, recorded rather than papered over.** Baba asked to
+press Enter. Streamlit fires no `on_change` when a value has not
+changed, so Enter in an EMPTY password box fires nothing — in a real
+browser as much as in a test. Making it work means wrapping the login in
+`st.form`, which changes how every callback on that screen behaves, and
+the login screen is the one place a mistake locks out everybody (§1).
+The button is the press. `test_calm_login.py` check 12 records the limit
+so nobody "fixes" it by accident.
+
+### The interface language came back, in the user gear
+
+It was removed in v91 on the reasoning that the interface would simply
+be English. That was wrong for the people this app is FOR — *"this is
+for the users, my grandfather and mother, they do not speak English."*
+
+It is a personal setting like text size, so it belongs in the grey gear
+beside Log out, not in the owner's amber panel.
+
+### A second false-green, caught the same way as §71
+
+The first four mutations were run and **the most important one
+survived**: putting the auto-login back left all 24 checks green.
+
+The checks seeded `_remembered` by hand, so they tested what happens
+AFTER `_try_remembered` and never tested the function itself. And it
+cannot be tested from AppTest at all — the value it reads comes from the
+**ls_bridge component**, and components return their `default` under
+test, so `LS_DATA` is always empty and the branch is unreachable.
+
+Three source-level checks were added, labelled as such and with the
+reason. The mutation now fails one. **The general rule this earns:
+anything downstream of a component cannot be reached by AppTest, so
+either drive a real browser or assert on the source — but never let a
+seeded shortcut pass for a test of the path.**
+
+### Test status
+
+`tests/test_calm_login.py` — **27 passed**, four mutations applied and
+all four caught.
+
+    calm login 27 · login 7 · notes 39 · ugly 19 · notes UI 18
+    box 16 · source 19 · accounts 50 · users 32
+    engines 28 · engine UI 15 · engine sheet 27 · reader 10 · GAS 44
+
+pyflakes still clean across `app.py` and all of `ttt/`.
+
+### Unchanged and still waiting
+
+The deploy debt, step 9's admin dashboard, notes that do not survive a
+reload, and the frozen-folder column that is written but not read.

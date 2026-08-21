@@ -37,10 +37,13 @@
   }
 
   /* ---- the writing surface -------------------------------------- */
-  /* NO font-size SET HERE. It comes from Python, from the text size
-     control, because this is a READING SURFACE and hard rule 6 says the
-     control governs those. Baking a size in would silently break it. */
+  /* THE SIZE COMES FROM PYTHON, but a readable floor is set here so a
+     missing or broken scale can never leave someone squinting. This is a
+     READING SURFACE and hard rule 6 says the text-size control governs
+     it — but "governs" must not mean "is the only thing standing between
+     the reader and 0.16px". */
   #ta {
+    font-size: 1.05rem;
     width: 100%; min-height: 15rem; resize: vertical;
     background: var(--face); color: var(--ink);
     border: 1px solid var(--edge); border-radius: 10px;
@@ -312,7 +315,19 @@ window.addEventListener('message', function (ev) {
     ta.value = a.text;
     try { ta.setSelectionRange(keepA, keepB); } catch (err) {}
   }
-  if (a.scale) ta.style.fontSize = a.scale + '%';
+  if (a.scale) {
+    /* a11y.py's scale is a MULTIPLIER (0.8 … 2.5), not a percentage.
+       Reading it as a percent made "1.0" into "1%" — one hundredth of
+       16px — and the note was unreadable with a nose against the screen.
+       Baba found it before any test did, which is the whole reason
+       reading surfaces get looked at rather than asserted about.
+
+       BASE_REM (1.05) is a11y.py's own floor, applied here so the
+       smallest setting is still readable and the largest is genuinely
+       large. rem, not px, so the reader's own OS font setting still
+       multiplies it. */
+    ta.style.fontSize = (Number(a.scale) * 1.05).toFixed(3) + 'rem';
+  }
   if (a.labels) {
     if (a.labels.rec)  document.getElementById('lRec').textContent = a.labels.rec;
     if (a.labels.cut)  document.getElementById('lCut').textContent = a.labels.cut;

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v99 (a) (integrity pass: five real bugs, one false-green)"
+APP_VERSION = "v100 (a) (readable notes, a calm login, language for the family)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -504,6 +504,13 @@ STRINGS = {
                                  "i OZNAČI KUĆICU ZA ZVUK. Windows dijeli "
                                  "zvuk sustava; macOS treba BlackHole; "
                                  "Android ovo ne može."},
+    "login_remembered":   {"en": "Remembered on this device — press Enter, "
+                                 "or the button",
+                           "hr": "Zapamćeno na ovom uređaju — pritisni Enter "
+                                 "ili gumb"},
+    "login_continue":     {"en": "Continue as {who}", "hr": "Nastavi kao {who}"},
+    "login_notme":        {"en": "Not me — sign in as someone else",
+                           "hr": "Nisam ja — prijavi se kao netko drugi"},
     "notes_search":       {"en": "Search notes",       "hr": "Traži bilješke"},
     "notes_search_ph":    {"en": "search your notes",  "hr": "traži po bilješkama"},
     "notes_found":        {"en": "{n} of {all}",       "hr": "{n} od {all}"},
@@ -919,19 +926,51 @@ def _try_remembered():
         except Exception:
             got = None            # never a dependency, never a crash
         if got:
-            st.session_state["_authed"] = True
-            st.session_state["_user"] = got["user"]
-            st.session_state["_via_accounts"] = True
-            st.session_state["_remember_token"] = tok
-            if EN.get(got.get("engine", "")):
-                st.session_state["_assigned_engine"] = got["engine"]
+            # PREPARED, NOT ENTERED. Baba: "wait, here be calm, no rush.
+            # Then I press Enter, and I am in... otherwise maybe I am
+            # logged in as Marko, maybe I am admin, I do not know who I
+            # am." A shared phone makes that a real question, and being
+            # thrown straight inside answers it too late.
+            st.session_state["_remembered"] = {
+                "user": got["user"], "token": tok,
+                "engine": got.get("engine", ""), "kind": "accounts",
+            }
         return
 
     for p in PASSWORDS:
         if hmac.compare_digest(token, _digest(p)):
-            st.session_state["_authed"] = True
-            st.session_state["_user"] = p
+            st.session_state["_remembered"] = {
+                "user": p, "token": token, "kind": "password",
+            }
             return
+
+
+def forget_remembered():
+    """"Not me." Clear the remembered login and show an empty form.
+
+    A shared phone is exactly why this button exists: the next person
+    must be able to get to their own name without knowing what "forget
+    me" in a settings screen means.
+    """
+    st.session_state.pop("_remembered", None)
+    st.session_state["_user_input"] = ""
+    queue_ls(removes=[AUTH_LS_KEY])
+
+
+def enter_remembered():
+    """Complete a remembered login. Only ever called by a press."""
+    r = st.session_state.get("_remembered") or {}
+    if not r.get("user"):
+        return False
+    st.session_state["_authed"] = True
+    st.session_state["_user"] = r["user"]
+    if r.get("kind") == "accounts":
+        st.session_state["_via_accounts"] = True
+        st.session_state["_remember_token"] = r.get("token", "")
+        if EN.get(r.get("engine", "")):
+            st.session_state["_assigned_engine"] = r["engine"]
+    st.session_state.pop("_remembered", None)
+    return True
 
 
 if not st.session_state.get("_authed"):
@@ -998,7 +1037,14 @@ def check_password() -> bool:
         #
         # An empty password is not an attempt. Nothing to compare, no
         # verdict, no failure recorded.
+        #
+        # UNLESS somebody is remembered here — then an empty password IS
+        # the press that lets them in, which is the whole point of being
+        # remembered. Their browser already proved who they are; they are
+        # only being asked to look at the name and agree.
         if not entered:
+            if st.session_state.get("_remembered"):
+                enter_remembered()
             return
 
         # Refuse to even compare while the throttle is running, so a
@@ -1108,9 +1154,30 @@ def check_password() -> bool:
     # A NAME ABOVE THE PASSWORD. Optional on purpose: leave it empty and
     # the old password-only login still works, so nobody who already has
     # a password has to learn anything on the day this ships.
+    _rem = st.session_state.get("_remembered") or {}
+    if _rem.get("user") and not st.session_state.get("_user_input"):
+        # Fill the name in, so the first thing they see is WHO they are
+        # about to be. Set before the widget is created, never after —
+        # §63's lesson about widget keys.
+        st.session_state["_user_input"] = _rem["user"]
+
     st.text_input(labels.get("username", "Username"), key="_user_input",
                   on_change=_entered)
-    st.text_input(labels["password"], type="password", key="_pw_input", on_change=_entered)
+    st.text_input(labels["password"], type="password", key="_pw_input",
+                  placeholder="••••••••" if _rem.get("user") else "",
+                  on_change=_entered)
+
+    if _rem.get("user"):
+        # SAID, NOT IMPLIED. The dots in the box are a placeholder, not a
+        # stored password — the app never keeps one. What it holds is a
+        # token the script can check, and this line says so rather than
+        # letting the dots pretend otherwise.
+        st.caption(t("login_remembered").format(who=_rem["user"]))
+        st.button(t("login_continue").format(who=_rem["user"]),
+                  key="login_go", type="primary",
+                  use_container_width=True, on_click=enter_remembered)
+        st.button(t("login_notme"), key="login_notme",
+                  use_container_width=True, on_click=forget_remembered)
     st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
         wait = st.session_state.get("_gate_wait", 0)
@@ -4438,6 +4505,28 @@ elif active == "looks":
     # person's own: getting out, and their own password.
     st.divider()
     st.subheader(t("account_title"))
+
+    # THE INTERFACE LANGUAGE BELONGS HERE, not in the owner's panel.
+    #
+    # It was moved into the amber gear in v90 and then removed in v91 on
+    # the reasoning that the interface would simply be English. That was
+    # wrong for the people this app is FOR — Baba: "this is for the
+    # users, my grandfather and mother, they do not speak English."
+    #
+    # It is a personal setting, like text size, so it sits in the grey
+    # gear where a person can reach their own things. The owner's panel
+    # keeps engines and keys.
+    st.caption(t("settings_lang"))
+    _lc1, _lc2, _ = st.columns([1, 1, 3])
+    _lang_now = st.session_state.get("ui_lang", "en")
+    _lc1.button("HR", key="ui_hr",
+                type="primary" if _lang_now == "hr" else "secondary",
+                on_click=set_ui_lang, args=("hr",),
+                use_container_width=True)
+    _lc2.button("ENG", key="ui_en",
+                type="primary" if _lang_now == "en" else "secondary",
+                on_click=set_ui_lang, args=("en",),
+                use_container_width=True)
 
     # LOG OUT IS UNCONDITIONAL. Whatever got you in — a password, a
     # remembered token, the emergency door — must have a way out, or a
