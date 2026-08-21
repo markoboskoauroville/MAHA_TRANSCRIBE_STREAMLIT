@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v97 (a) (admin guide, all setups on the menu)"
+APP_VERSION = "v98 (a) (notes: search, open, speak into, select)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -72,6 +72,7 @@ from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR_
 from ttt import vision
+from ttt import notes as NOTES
 from ttt import routing as RO
 from ttt import engines as EN
 from ttt import audio as ttt_audio
@@ -502,6 +503,19 @@ STRINGS = {
                                  "i OZNAČI KUĆICU ZA ZVUK. Windows dijeli "
                                  "zvuk sustava; macOS treba BlackHole; "
                                  "Android ovo ne može."},
+    "notes_search":       {"en": "Search notes",       "hr": "Traži bilješke"},
+    "notes_search_ph":    {"en": "search your notes",  "hr": "traži po bilješkama"},
+    "notes_found":        {"en": "{n} of {all}",       "hr": "{n} od {all}"},
+    "notes_none":         {"en": "nothing matches",    "hr": "nema pogodaka"},
+    "note_close":         {"en": "close",              "hr": "zatvori"},
+    "note_cut":           {"en": "cut",                "hr": "reži"},
+    "note_line":          {"en": "line",               "hr": "redak"},
+    "note_del":           {"en": "delete",             "hr": "obriši"},
+    "note_del_sure":      {"en": "delete — sure?",     "hr": "obriši — sigurno?"},
+    "note_to_box":        {"en": "to the box",         "hr": "u okvir"},
+    "note_new":           {"en": "new note",           "hr": "nova bilješka"},
+    "note_made":          {"en": "made",               "hr": "nastalo"},
+    "note_edited":        {"en": "edited",             "hr": "uređeno"},
     "sys_busy":           {"en": "stop the recording before changing the source",
                            "hr": "zaustavi snimanje prije promjene izvora"},
     "sys_noaudio":        {"en": "no sound was shared — tick the audio box "
@@ -713,8 +727,12 @@ _PLAYER_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "player_frontend")
 try:
     _player_component = components.declare_component("ttt_player", path=_PLAYER_FRONTEND)
+    _NOTE_FRONTEND = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "note_frontend")
+    _note_component = components.declare_component("ttt_note", path=_NOTE_FRONTEND)
 except Exception:
     _player_component = None
+    _note_component = None
 
 
 def cassette_recorder(key: str, source: str = "mic"):
@@ -2989,6 +3007,161 @@ def _voice_row(engine, sp_ring_talk):
 # borrowed from somewhere else.
 
 
+# =====================================================================
+#  THE NOTES
+# =====================================================================
+
+OPEN_KEY = "_open_note"
+
+
+def open_note(note_id):
+    st.session_state[OPEN_KEY] = note_id
+    st.session_state.pop("_note_seen", None)
+
+
+def close_note():
+    st.session_state.pop(OPEN_KEY, None)
+    st.session_state.pop("_note_seen", None)
+
+
+def note_from_transcript(text):
+    """Every finished transcript becomes a note.
+
+    When a note is OPEN the words go into it instead of making another —
+    that is what "talk directly to the note" means. The deck neither
+    knows nor cares which of the two is happening.
+    """
+    body = (text or "").strip()
+    if not body:
+        return None
+    open_id = st.session_state.get(OPEN_KEY)
+    if open_id and NOTES.get(st.session_state, open_id):
+        NOTES.append(st.session_state, open_id, body)
+        return open_id
+    return NOTES.add(st.session_state, body,
+                     language=st.session_state.get("last_lang", ""),
+                     rec_id=st.session_state.get("_last_rec_id", ""))
+
+
+def notes_panel():
+    """The list: a search field, then the notes."""
+    all_notes = NOTES.items(st.session_state)
+    if not all_notes:
+        return                      # nothing yet, and no empty furniture
+
+    with st.container(key="notesbox"):
+        # THE SEARCH FIELD IS ALWAYS AT THE TOP — Keep's arrangement, and
+        # the right one: it is how you reach a note, so it comes before
+        # the notes.
+        st.text_input(t("notes_search"), key="notes_q",
+                      placeholder=t("notes_search_ph"),
+                      label_visibility="collapsed")
+        q = st.session_state.get("notes_q", "")
+        shown = NOTES.search(st.session_state, q) if q.strip() else all_notes
+
+        if q.strip():
+            st.caption(t("notes_found").format(n=len(shown), all=len(all_notes)))
+        if not shown:
+            st.caption(t("notes_none"))
+            return
+
+        for n in shown:
+            # ONE CARD, ONE PRESS, WHOLE WIDTH. A card with a tick, a
+            # title and a menu is three targets in a row on a phone. Here
+            # the card IS the target, and everything else lives inside
+            # the note once it is open.
+            st.button(
+                "%s\n\n%s" % (NOTES.heading(n), NOTES.body_preview(n, 70)),
+                key="note_%s" % n["id"], use_container_width=True,
+                on_click=open_note, args=(n["id"],))
+
+
+def note_open_view():
+    """One note, taking over the module.
+
+    Baba: "the note is taking over the user interface, like opening a new
+    document in Word." So the list, the command row and the main box are
+    not drawn at all while a note is open — not hidden with CSS, not
+    drawn. Two writing surfaces on one screen is two places the words
+    might have gone.
+    """
+    note_id = st.session_state.get(OPEN_KEY)
+    note = NOTES.get(st.session_state, note_id)
+    if note is None:
+        close_note()
+        return False
+
+    def _save_title():
+        NOTES.update(st.session_state, note_id,
+                     title=st.session_state.get("note_title_%s" % note_id, ""))
+
+    def _del_arm():
+        st.session_state["_note_del_armed"] = note_id
+
+    def _del_do():
+        NOTES.remove(st.session_state, note_id)
+        st.session_state.pop("_note_del_armed", None)
+        close_note()
+
+    with st.container(key="noteopen"):
+        head, back = st.columns([4, 1.3])
+        head.text_input("title", key="note_title_%s" % note_id,
+                        value=NOTES.heading(note),
+                        label_visibility="collapsed", on_change=_save_title)
+        back.button(t("note_close"), key="note_close",
+                    on_click=close_note, use_container_width=True)
+
+        if _note_component is not None:
+            ev = _note_component(
+                text=note.get("text", ""),
+                scale=a11y.clamp(st.session_state.get("text_scale",
+                                                      a11y.DEFAULT_SCALE)),
+                labels={"rec": t("rec_btn"), "cut": t("note_cut"),
+                        "line": t("note_line")},
+                recording=False,
+                key="note_ed_%s" % note_id, default=None)
+
+            if isinstance(ev, dict):
+                # The editor sends on every keystroke, so the stamp is
+                # what stops one edit being re-applied on every rerun.
+                if st.session_state.get("_note_seen") != ev.get("at"):
+                    st.session_state["_note_seen"] = ev.get("at")
+                    if isinstance(ev.get("text"), str):
+                        NOTES.update(st.session_state, note_id, text=ev["text"])
+                    if ev.get("rec"):
+                        st.session_state["_note_wants_rec"] = True
+        else:
+            # No component: still editable, only without the arrows.
+            st.text_area("note", value=note.get("text", ""),
+                         key="note_plain_%s" % note_id, height=260,
+                         label_visibility="collapsed",
+                         on_change=lambda: NOTES.update(
+                             st.session_state, note_id,
+                             text=st.session_state.get(
+                                 "note_plain_%s" % note_id, "")))
+
+        c1, c2, c3 = st.columns([1, 1, 1])
+        c1.button(t("note_to_box"), key="note_to_box",
+                  use_container_width=True,
+                  on_click=lambda: t1_set_text(note.get("text", "")))
+        c2.button(t("note_new"), key="note_new_from",
+                  use_container_width=True, on_click=close_note)
+        # DELETE IS TWO PRESSES. One press on a whole note, in an app
+        # with no undo anywhere, is not a risk worth taking.
+        if st.session_state.get("_note_del_armed") == note_id:
+            c3.button(t("note_del_sure"), key="note_del2", type="primary",
+                      use_container_width=True, on_click=_del_do)
+        else:
+            c3.button(t("note_del"), key="note_del",
+                      use_container_width=True, on_click=_del_arm)
+
+        st.caption("%s %s   %s" % (
+            t("note_made"), note.get("made", note.get("at", "")),
+            ("·  " + t("note_edited") + " " + note["edited"])
+            if note.get("edited") else ""))
+    return True
+
+
 def _lang_mode_row():
     """HR / ENG / single / multi.
 
@@ -3099,6 +3272,7 @@ def deliver_text(new_text: str, keep: bool = True) -> None:
         # Drive does not. An archive row that carries the rec_id can still
         # be retranscribed or deleted in a session that starts tomorrow,
         # which is the whole reason for storing the audio at all.
+        note_from_transcript(new_text)
         archive.add(st.session_state, new_text,
                     language=st.session_state.get("speech_lang", ""),
                     method=st.session_state.get("_transcribe_method", ""),
@@ -3389,6 +3563,14 @@ name_the_symbols()
 if active == "transcribe":
     _source = st.session_state.get("rec_source", "mic")
     _t2 = _source == "system"
+
+    # A NOTE TAKES OVER THE MODULE. The deck still renders — the whole
+    # point is talking INTO the note — but the list, the command row and
+    # the main box do not. Two writing surfaces on one screen is two
+    # places the words might have gone, and for someone who cannot see
+    # well that is the difference between an app and a puzzle.
+    NOTES.adopt_archive(st.session_state)
+    _note_is_open = bool(st.session_state.get(OPEN_KEY))
     # Recorder, then Sound, then Picture, then the language switch at the
     # bottom. Baba's order, and the right one: the thing people came to do
     # is first, and the setting they rarely change is last.
@@ -3426,6 +3608,21 @@ if active == "transcribe":
     # other two frames.
     with st.container(key="deckbox"):
         audio = cassette_recorder(rec_key, source=_source)
+
+    # THE OPEN NOTE SITS DIRECTLY UNDER THE DECK, because the deck is now
+    # the note's own record button — speak, and the words land in the
+    # note that is open rather than in a new one.
+    if _note_is_open:
+        note_open_view()
+        # STOP HERE. Everything below — the command row, the box, the
+        # card list — belongs to the module's own writing surface, and a
+        # note has taken the module over. Not hidden with CSS: not drawn.
+        # The first attempt put this stop AFTER the command row was
+        # built, so grammar and clear were still on screen underneath an
+        # open note, pointed at text that was no longer in front of
+        # anybody.
+        tab_signature(t("sig_transcribe"))
+        st.stop()
 
     if _t2:
         # UNDER the dropdown it explains, not above the deck. One line,
@@ -3786,69 +3983,17 @@ if active == "transcribe":
     # what gets operated on, which is what Baba asked for.
     #
     # No new furniture: the same terminal row of cells as everywhere else.
-    _arc = archive.items(st.session_state)
-    if _arc:
-        # SELECT, THEN DELETE. Baba: "there should be check marks next to
-        # each of the archive items, and then delete, delete all... the
-        # principle is to select and delete."
-        #
-        # Deleting one row at a time meant a press per item and the list
-        # reflowing under the finger after each one. Ticking is reversible
-        # and costs nothing until the delete is pressed.
-        _sel_key = "_t1_arc_sel"
-        _sel = st.session_state.setdefault(_sel_key, set())
-        # Ids that no longer exist must not linger in the selection, or
-        # the count says 3 while two of them are already gone.
-        _live = {r["id"] for r in _arc}
-        if not _sel.issubset(_live):
-            _sel &= _live
-
-        def _delete_selected():
-            for _id in list(st.session_state.get(_sel_key, set())):
-                archive.remove(st.session_state, _id)
-            st.session_state[_sel_key] = set()
-
-        def _delete_all():
-            archive.clear(st.session_state)
-            st.session_state[_sel_key] = set()
-
-        def _toggle(item_id):
-            _s = st.session_state.setdefault(_sel_key, set())
-            if st.session_state.get(f"arcsel_{item_id}"):
-                _s.add(item_id)
-            else:
-                _s.discard(item_id)
-
-        with st.container(key="archivebox"):
-            with st.expander(f"{t('arc_title')}  ·  {len(_arc)}", expanded=False):
-                _b1, _b2 = st.columns([1, 1])
-                # Disabled with nothing ticked, rather than hidden: a
-                # control that appears and disappears moves everything
-                # under it, which is the rule from §49.
-                _b1.button(t("arc_del_sel").format(n=len(_sel)),
-                           key="arc_del_sel", disabled=not _sel,
-                           on_click=_delete_selected,
-                           use_container_width=True)
-                _b2.button(t("arc_clear_all"), key="arc_clear_all",
-                           on_click=_delete_all, use_container_width=True)
-                for _r in _arc:
-                    # ONE ROW, TICK BESIDE THE NAME. Streamlit stacks
-                    # columns below ~640px, which put the tick on its own
-                    # line above the row on Baba's phone — the trap §7
-                    # names. The CSS forces this block to stay horizontal,
-                    # the same override the command row already uses.
-                    _c0, _c1 = st.columns([1, 8])
-                    _c0.checkbox(" ", key=f"arcsel_{_r['id']}",
-                                 value=_r["id"] in _sel,
-                                 on_change=_toggle, args=(_r["id"],),
-                                 label_visibility="collapsed",
-                                 help=t("arc_sel_help"))
-                    _c1.button(
-                        f"{_r.get('at','')}  {archive.preview_words(_r)}".strip(),
-                        key=f"arc_{_r['id']}",
-                        help=t("arc_load_help"),
-                        on_click=load_from_archive, args=(_r["id"],),
-                        use_container_width=True)
+    # ---- THE NOTES ----------------------------------------------
+    #
+    # Baba: "imagine the first tab is Keep from Google, with the ability
+    # to talk to create a note, and once the note is created the user can
+    # talk directly to the note. He does not need to edit with fingers."
+    #
+    # This replaced the archive, which could only put a transcript back
+    # in the box. See ttt/notes.py for why a note is a different thing
+    # from a take, and note_frontend/ for why the editor is a component.
+    NOTES.adopt_archive(st.session_state)
+    notes_panel()
 
     # THE STATUS BOX, MOVED TO THE FOOT OF THE MODULE (v88).
     #

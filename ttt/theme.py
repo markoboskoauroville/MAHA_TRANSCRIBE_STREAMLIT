@@ -613,6 +613,52 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       width: 100%;
     }}
 
+    /* THE NOTES — cards, in the app's own quiet register.
+       Baba asked for Keep, but "dull colours, not too bright". So the
+       card is the same surface as every other panel and gets NO colour
+       of its own: colour is reserved for state, and a note at rest has
+       no state. The heading is gold only because it is the thing the eye
+       is looking for. */
+    [class*="st-key-notesbox"] .stButton button {{
+      text-align: left;
+      justify-content: flex-start;
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.6rem 0.7rem !important;
+      min-height: 0 !important;
+      border-radius: 12px !important;
+      white-space: pre-line;         /* the heading and the taste, two lines */
+      line-height: 1.45;
+      font-size: 0.72rem !important;
+      font-weight: 400;
+    }}
+    /* The first line is the heading. :first-line is the only way to
+       reach it — the two lines are one text node, deliberately, so the
+       whole card stays a single press. */
+    [class*="st-key-notesbox"] .stButton button p::first-line {{
+      color: var(--amber);
+      font-weight: 600;
+      font-size: 0.82rem;
+    }}
+    [class*="st-key-notesbox"] .stButton button:hover {{
+      border-color: var(--amber) !important;
+    }}
+    /* The search field is a field, not a shout. */
+    [class*="st-key-notesbox"] input {{
+      font-size: 0.8rem !important;
+    }}
+
+    /* THE OPEN NOTE. It has taken the module over, so it gets the room:
+       no extra frame around the component, which draws its own. */
+    [class*="st-key-noteopen"] [data-testid="stIFrame"] {{
+      margin: 0 !important;
+    }}
+    [class*="st-key-noteopen"] input {{
+      font-size: 0.95rem !important;
+      color: var(--amber) !important;
+    }}
+
     /* THE ARCHIVE. Small type: it is a list to scan, not to read, and it
        sits under the thing that matters. The rows are quiet so the
        transcript above stays the loudest thing on screen. */

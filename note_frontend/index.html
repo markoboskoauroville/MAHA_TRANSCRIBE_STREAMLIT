@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* THE NOTE, OPEN.
+     Baba: "the note is taking over the user interface, like opening a
+     new document in Microsoft Word."
+
+     Everything lives in this frame — the text, the selection arrows, the
+     line controls. It has to: Streamlit's own text_area gives Python no
+     way to see where the cursor is, and selection is entirely about the
+     cursor. A component owns its own textarea and therefore its own
+     selection. */
+
+  :root {
+    --ink:   #e8e2d6;
+    --dim:   #8b8375;
+    --amber: #E8A64B;
+    --dark:  #0e1116;
+    --face:  #161b22;
+    --edge:  #2a3038;
+    --rec:   #d9484b;   /* the one red in the app, and only for recording */
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; background: transparent;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--ink);
+  }
+
+  #wrap {
+    background: var(--dark); border: 1px solid var(--edge);
+    border-radius: 12px; padding: 10px; display: flex;
+    flex-direction: column; gap: 8px;
+  }
+
+  /* ---- the writing surface -------------------------------------- */
+  /* NO font-size SET HERE. It comes from Python, from the text size
+     control, because this is a READING SURFACE and hard rule 6 says the
+     control governs those. Baking a size in would silently break it. */
+  #ta {
+    width: 100%; min-height: 240px; resize: vertical;
+    background: var(--face); color: var(--ink);
+    border: 1px solid var(--edge); border-radius: 10px;
+    padding: 12px; line-height: 1.55;
+    font-family: inherit;
+  }
+  #ta:focus { outline: none; border-color: var(--amber); }
+
+  /* ---- the bars --------------------------------------------------- */
+  .bar { display: flex; gap: 5px; flex-wrap: nowrap; }
+  .bar button {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--face); color: var(--ink);
+    border: 1px solid var(--edge); border-radius: 9px;
+    /* 44px, and it does NOT shrink with the type. A shaking hand needs
+       the target whatever size the letters are. */
+    min-height: 44px;
+    font-family: inherit; font-size: 13px;
+    cursor: pointer; display: flex; align-items: center;
+    justify-content: center; gap: 5px; padding: 0 8px;
+  }
+  .bar button:hover { border-color: var(--amber); }
+  .bar button:active { background: #1d232c; }
+
+  /* The selection arrows are a set, so they read as one control. */
+  #sel button { font-size: 17px; letter-spacing: 0; }
+
+  /* ---- the red dot ------------------------------------------------ */
+  /* Baba: "at the bottom of the note is a record button, red dot" — the
+     same red as the cassette deck's, because it means the same thing in
+     both places. Colour is reserved for state, and this is the only
+     state loud enough to earn it. */
+  #rec { flex: 0 0 auto; padding: 0 16px; }
+  .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--rec); flex: none;
+  }
+  #rec.on { border-color: var(--rec); color: var(--rec); }
+  #rec.on .dot { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  @media (prefers-reduced-motion: reduce) {
+    #rec.on .dot { animation: none; opacity: .8 }
+  }
+
+  #meta {
+    color: var(--dim); font-size: 11px;
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <textarea id="ta" spellcheck="false"></textarea>
+
+  <!-- SELECTION. Baba: "the sign is less than and greater than, and they
+       select the word automatically — like a Shift arrow." Left and
+       right take a word at a time; up and down take a line. -->
+  <div class="bar" id="sel">
+    <button type="button" id="bWL" title="select the word before">‹</button>
+    <button type="button" id="bWR" title="select the word after">›</button>
+    <button type="button" id="bLU" title="select the line above">⌃</button>
+    <button type="button" id="bLD" title="select the line below">⌄</button>
+    <button type="button" id="bAll" title="select everything">▣</button>
+  </div>
+
+  <div class="bar" id="acts">
+    <button type="button" id="rec"><span class="dot"></span><span id="lRec">rec</span></button>
+    <button type="button" id="bCut" title="delete what is selected">✕ <span id="lCut">cut</span></button>
+    <button type="button" id="bLine" title="delete this line">⌫ <span id="lLine">line</span></button>
+  </div>
+
+  <div id="meta"><span id="mLeft"></span><span id="mRight"></span></div>
+</div>
+
+<script>
+var ta = document.getElementById('ta');
+var LAST = null, RECORDING = false;
+
+function post(t, o) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: t }, o), '*');
+}
+function ready() { post('streamlit:componentReady', { apiVersion: 1 }); }
+function height() {
+  post('streamlit:setFrameHeight', { height: document.body.scrollHeight + 6 });
+}
+function setValue(v) {
+  post('streamlit:setComponentValue', { value: v, dataType: 'json' });
+}
+
+/* ------------------------------------------------------------------ */
+/*  SELECTION                                                          */
+/*                                                                     */
+/*  Word boundaries are computed here rather than leaning on the        */
+/*  browser's own word-select, because that varies between browsers and */
+/*  treats Croatian diacritics inconsistently. A word is a run of       */
+/*  letters, digits, apostrophes and hyphens; everything else is a      */
+/*  boundary.                                                          */
+/* ------------------------------------------------------------------ */
+
+function isWordChar(c) {
+  return c && /[^\s.,;:!?()\[\]{}"“”„'`\/\\—–-]/.test(c);
+}
+
+function extendWord(dir) {
+  var v = ta.value;
+  /* GROW FROM THE FAR END, so pressing › twice takes two words rather
+     than re-taking the first. The anchor is whichever end is not moving. */
+  var a = ta.selectionStart, b = ta.selectionEnd;
+  var i = dir > 0 ? b : a;
+
+  if (dir > 0) {
+    while (i < v.length && !isWordChar(v[i])) i++;
+    while (i < v.length && isWordChar(v[i])) i++;
+    ta.setSelectionRange(a, i);
+  } else {
+    while (i > 0 && !isWordChar(v[i - 1])) i--;
+    while (i > 0 && isWordChar(v[i - 1])) i--;
+    ta.setSelectionRange(i, b);
+  }
+  ta.focus();
+  report();
+}
+
+function lineBounds(pos) {
+  var v = ta.value;
+  var s = v.lastIndexOf('\n', pos - 1) + 1;
+  var e = v.indexOf('\n', pos);
+  if (e < 0) e = v.length;
+  return [s, e];
+}
+
+function extendLine(dir) {
+  /* FINISH THE LINE YOU ARE ON BEFORE TAKING THE NEXT.
+     The first version jumped straight to the end of the FOLLOWING line,
+     so one press from the start of the text selected two lines. Caught
+     by clicking it in a browser: from the cursor, one press should give
+     the line the cursor is in, and only then should a second press take
+     another. */
+  var v = ta.value;
+  var a = ta.selectionStart, b = ta.selectionEnd;
+
+  if (dir > 0) {
+    var endHere = lineBounds(b)[1];
+    if (b < endHere) {              // not yet at the end of this line
+      ta.setSelectionRange(a, endHere);
+    } else if (endHere >= v.length) {
+      ta.setSelectionRange(a, v.length);
+    } else {
+      ta.setSelectionRange(a, lineBounds(endHere + 1)[1]);
+    }
+  } else {
+    var startHere = lineBounds(a)[0];
+    if (a > startHere) {            // not yet at the start of this line
+      ta.setSelectionRange(startHere, b);
+    } else if (startHere <= 0) {
+      ta.setSelectionRange(0, b);
+    } else {
+      ta.setSelectionRange(lineBounds(startHere - 1)[0], b);
+    }
+  }
+  ta.focus();
+  report();
+}
+
+function cutSelection() {
+  var a = ta.selectionStart, b = ta.selectionEnd;
+  if (a === b) return;                       // nothing chosen, do nothing
+  ta.value = ta.value.slice(0, a) + ta.value.slice(b);
+  ta.setSelectionRange(a, a);
+  ta.focus();
+  changed();
+}
+
+function cutLine() {
+  var p = ta.selectionStart;
+  var lb = lineBounds(p);
+  var s = lb[0], e = lb[1];
+  if (e < ta.value.length) e += 1;           // take the newline with it
+  else if (s > 0) s -= 1;                    // last line: take the one before
+  ta.value = ta.value.slice(0, s) + ta.value.slice(e);
+  ta.setSelectionRange(s, s);
+  ta.focus();
+  changed();
+}
+
+/* ------------------------------------------------------------------ */
+
+function words(s) {
+  var m = String(s || '').trim().match(/\S+/g);
+  return m ? m.length : 0;
+}
+
+function report() {
+  var a = ta.selectionStart, b = ta.selectionEnd;
+  var picked = b - a;
+  document.getElementById('mRight').textContent =
+    picked > 0 ? (picked + ' selected') : '';
+}
+
+function changed() {
+  document.getElementById('mLeft').textContent =
+    words(ta.value) + ' words · ' + ta.value.length;
+  report();
+  height();
+  /* The text goes back on every change, stamped, so Python holds the
+     truth and a rerun cannot lose what was typed. */
+  setValue({ at: Date.now(), text: ta.value });
+}
+
+['bWL','bWR','bLU','bLD','bAll','bCut','bLine'].forEach(function (id) {
+  document.getElementById(id).addEventListener('click', function (e) {
+    e.preventDefault();
+    if (id === 'bWL')  extendWord(-1);
+    if (id === 'bWR')  extendWord(1);
+    if (id === 'bLU')  extendLine(-1);
+    if (id === 'bLD')  extendLine(1);
+    if (id === 'bAll') { ta.select(); ta.focus(); report(); }
+    if (id === 'bCut')  cutSelection();
+    if (id === 'bLine') cutLine();
+  });
+});
+
+ta.addEventListener('input', changed);
+ta.addEventListener('select', report);
+ta.addEventListener('keyup', report);
+ta.addEventListener('click', report);
+
+/* The red dot only ASKS. Recording belongs to the deck, which already
+   does chunking, the analyser and the retry — building a second recorder
+   in here would be a second thing to keep right. */
+document.getElementById('rec').addEventListener('click', function (e) {
+  e.preventDefault();
+  setValue({ at: Date.now(), text: ta.value, rec: true });
+});
+
+window.addEventListener('message', function (ev) {
+  var m = ev.data;
+  if (!m || m.type !== 'streamlit:render') return;
+  var a = m.args || {};
+
+  if (typeof a.text === 'string' && a.text !== LAST) {
+    /* Only when Python's copy really differs — writing on every render
+       would drag the cursor to the end while somebody is typing. */
+    LAST = a.text;
+    var keepA = ta.selectionStart, keepB = ta.selectionEnd;
+    ta.value = a.text;
+    try { ta.setSelectionRange(keepA, keepB); } catch (err) {}
+  }
+  if (a.scale) ta.style.fontSize = a.scale + '%';
+  if (a.labels) {
+    if (a.labels.rec)  document.getElementById('lRec').textContent = a.labels.rec;
+    if (a.labels.cut)  document.getElementById('lCut').textContent = a.labels.cut;
+    if (a.labels.line) document.getElementById('lLine').textContent = a.labels.line;
+  }
+  RECORDING = !!a.recording;
+  document.getElementById('rec').classList.toggle('on', RECORDING);
+
+  document.getElementById('mLeft').textContent =
+    words(ta.value) + ' words · ' + ta.value.length;
+  height();
+});
+
+ready();
+height();
+</script>
+</body>
+</html>

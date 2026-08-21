@@ -4195,3 +4195,108 @@ would be small; the risk is not. **A bug in a user panel can lock
 everybody out, including the owner** — a spreadsheet cannot. If it is
 built later, §1 still governs: `APP_PASSWORDS` stays as the door that
 always opens.
+
+---
+
+## 70. NOTES — THE ARCHIVE BECAME A NOTEBOOK (v98)
+
+Baba: *"Imagine the first tab is Keep from Google, with the ability to
+talk to create a note, and once the note is created the user can talk
+directly to the note. He does not need to edit with the fingers."*
+
+### Why a note is not an archive item
+
+The archive's record was a **take**: one recording, immutable, named by
+when it arrived, and the only thing you could do with it was put it back
+in the box. A note is a **document** — it has a title, it changes, and
+its changing is the point.
+
+`ttt/notes.py` is therefore a new file rather than more functions in
+`archive.py`, where `add()` would have come to mean two different
+things. **Old archive items become notes on first use** (`adopt_archive`,
+which runs once and is marked so a second pass cannot resurrect notes
+somebody has since deleted), so nothing anybody recorded is lost.
+
+### What the module does now
+
+    search field                 always at the top — it is how you reach
+                                 a note, so it comes before the notes
+    cards                        heading + a taste, one press, full width
+    open a note                  it TAKES OVER the module
+    speak while it is open       the words join THAT note
+    speak with none open         a new note is made
+
+**The takeover is real, not cosmetic.** With a note open the command
+row, the box and the card list are *not drawn* — not hidden with CSS.
+Two writing surfaces on one screen is two places the words might have
+gone, and for someone who cannot see well that is the difference between
+an app and a puzzle.
+
+The deck still renders, because the deck is now the note's own record
+button.
+
+### The editor is a component, and had to be
+
+Streamlit's `text_area` gives Python **no way to see the cursor**, and
+selection is entirely about the cursor. So `note_frontend/` owns its own
+textarea and therefore its own selection.
+
+    ‹ ›    a word at a time, growing from the far end
+    ⌃ ⌄    a line at a time
+    ▣      everything
+    ✕      delete the selection
+    ⌫      delete this line
+
+Word boundaries are computed in the component rather than leaning on the
+browser's own word-select, which varies between browsers and treats
+Croatian diacritics inconsistently.
+
+**No font-size is set on the editor's textarea.** It comes from Python,
+from the text size control, because it is a reading surface and hard
+rule 6 governs those.
+
+The red dot is the same red as the deck's, and it only **asks** — it
+posts a request and the deck does the recording. A second recorder in
+the editor would be a second thing to keep right.
+
+### Search
+
+Every word must match, not any: typing a second word to narrow a list
+and getting MORE back is what makes people stop using a search box. It
+is case-insensitive and **accent-blind for Croatian** — `cekaj` finds
+`čekaj` — because nobody dictating should have to produce a diacritic to
+find their own note.
+
+### Three bugs found, all by running the thing
+
+**Adoption put the oldest archive item on top.** `archive` stores
+oldest-first and `items()` reverses on the way out; reading the raw list
+and reversing it again inverted the order. Use the documented order, not
+the storage order.
+
+**The first ⌄ selected two lines.** It jumped to the end of the
+*following* line instead of finishing the line the cursor was in. Only
+found by clicking it in a real browser — the arrows cannot be tested any
+other way.
+
+**The command row rendered underneath an open note**, because the guard
+that stops the module drawing sat *after* the row was built. Grammar and
+clear were on screen pointing at text nobody could see.
+
+### Test status
+
+`tests/test_notes.py` — **33**, the model alone.
+`tests/test_notes_ui.py` — **18**, the panel and the takeover.
+The editor's arrows — **11 checks driven in real Chromium**, which is the
+only place they exist.
+
+### NOT DONE, and the next piece
+
+**Notes still live in session state, so they do not survive a reload.**
+The Drive half already exists — §60's paired archive stores audio and
+`text.txt` together — and a note carries its `rec_id`. Wiring a note to
+push and pull through that is the next step, and was deliberately left
+until the shape of a note had settled.
+
+Also still open: the admin dashboard (step 9 of the accounts work), and
+§67's frozen-folder column, which is written but not yet read.
