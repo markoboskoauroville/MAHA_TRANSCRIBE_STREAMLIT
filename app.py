@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v101 (a) (a deck inside the note)"
+APP_VERSION = "v102 (a) (the people panel, and a login that asks)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -536,12 +536,59 @@ STRINGS = {
     "sys_refused":        {"en": "sharing was cancelled",
                            "hr": "dijeljenje je otkazano"},
     "wave_save":          {"en": "save",               "hr": "spremi"},
-    "eng_nousers":        {"en": "no users tab yet — run TTT-LLL ▸ Set up "
-                                 "users tab in the sheet, then deploy a "
-                                 "New version",
-                           "hr": "nema kartice korisnika"},
     "eng_global_word":    {"en": "global",              "hr": "globalno"},
-    "eng_users_title":    {"en": "Engine per user",     "hr": "Motor po korisniku"},
+    # ---- THE PEOPLE PANEL (step 9) --------------------------------
+    # Said in the fewest words that are still true. Every one of these
+    # is read by the one person who can lock everybody out, so none of
+    # them may be cheerful about something that did not happen.
+    "adm_title":          {"en": "People",            "hr": "Ljudi"},
+    "adm_noconn":         {"en": "the accounts script is not connected — "
+                                 "add AUTH_URL and AUTH_ADMIN_TOKEN to "
+                                 "Secrets",
+                           "hr": "skripta računa nije spojena — dodaj "
+                                 "AUTH_URL i AUTH_ADMIN_TOKEN u Secrets"},
+    "adm_noanswer":       {"en": "the accounts script did not answer. "
+                                 "Nobody is locked out — the app still "
+                                 "opens with APP_PASSWORDS",
+                           "hr": "skripta računa nije odgovorila. Nitko "
+                                 "nije zaključan — aplikacija se i dalje "
+                                 "otvara s APP_PASSWORDS"},
+    "adm_nobody":         {"en": "the users tab is there and it is empty",
+                           "hr": "kartica korisnika postoji i prazna je"},
+    "adm_newpw":          {"en": "Write this down NOW. It is shown once "
+                                 "and can never be read again.",
+                           "hr": "Zapiši ovo SADA. Prikazuje se jednom i "
+                                 "više se nikada ne može pročitati."},
+    "adm_written":        {"en": "I have written it down",
+                           "hr": "Zapisao sam"},
+    "adm_add_title":      {"en": "Add a person",      "hr": "Dodaj osobu"},
+    "adm_name":           {"en": "name",              "hr": "ime"},
+    "adm_note":           {"en": "note (optional)",   "hr": "bilješka (nije obavezno)"},
+    "adm_add":            {"en": "add",               "hr": "dodaj"},
+    "adm_reset":          {"en": "reset",             "hr": "nova lozinka"},
+    "adm_delete":         {"en": "delete",            "hr": "obriši"},
+    "adm_rename":         {"en": "rename",            "hr": "preimenuj"},
+    # The reason is written where the dead button is, not in a document
+    # nobody has open at the moment they wonder.
+    "adm_rename_why":     {"en": "rename waits until the main script "
+                                 "reads the frozen folder column — doing "
+                                 "it now would leave this person's "
+                                 "recordings under the old name",
+                           "hr": "preimenovanje čeka da glavna skripta "
+                                 "čita zamrznuti stupac mape — sada bi "
+                                 "snimke ostale pod starim imenom"},
+    "adm_yourpw":         {"en": "your own password",
+                           "hr": "tvoja vlastita lozinka"},
+    "adm_ask_delete":     {"en": "Delete %s? Their recordings are kept.",
+                           "hr": "Obrisati %s? Snimke ostaju."},
+    "adm_ask_reset":      {"en": "New password for %s? Their remembered "
+                                 "devices are signed out.",
+                           "hr": "Nova lozinka za %s? Zapamćeni uređaji "
+                                 "se odjavljuju."},
+    "adm_yes":            {"en": "confirm",           "hr": "potvrdi"},
+    "adm_cancel":         {"en": "cancel",            "hr": "odustani"},
+    "adm_nopw":           {"en": "no password yet",   "hr": "još nema lozinku"},
+    "adm_gone":           {"en": "%s is gone",        "hr": "%s je obrisan"},
     "eng_mixed":          {"en": "mixed",              "hr": "miješano"},
     "eng_saved":          {"en": "saved to the sheet for everyone",
                            "hr": "spremljeno u tablicu za sve"},
@@ -681,6 +728,18 @@ def auth_token() -> str:
     right, hand back a remembered session, and change a password when the
     current one is supplied. It cannot make, rename or delete anybody."""
     return str(st.secrets.get("AUTH_LOGIN_TOKEN", "") or "")
+
+
+def auth_admin_token() -> str:
+    """THE ADMIN TOKEN, read in exactly one place: the people panel.
+
+    It can make, rename, delete and re-password anybody, so it is kept
+    apart from the token every phone in the house carries. Missing is not
+    an error — it means the panel says so and does nothing, which is the
+    §1 behaviour: no credential may ever be the reason the app fails to
+    open.
+    """
+    return str(st.secrets.get("AUTH_ADMIN_TOKEN", "") or "")
 
 
 def _digest(pw: str) -> str:
@@ -1037,15 +1096,20 @@ def check_password() -> bool:
         # themselves simply by filling the form top to bottom.
         #
         # An empty password is not an attempt. Nothing to compare, no
-        # verdict, no failure recorded.
+        # verdict, no failure recorded — AND NO WAY IN.
         #
-        # UNLESS somebody is remembered here — then an empty password IS
-        # the press that lets them in, which is the whole point of being
-        # remembered. Their browser already proved who they are; they are
-        # only being asked to look at the name and agree.
+        # It used to enter a remembered person here, on the reasoning
+        # that an empty password was their press. It is not: BOTH BOXES
+        # FIRE THIS HANDLER, so typing a USERNAME and pressing Enter —
+        # the most ordinary thing anybody does on a login screen — went
+        # straight through with no password and nothing confirmed. The
+        # v100 login exists precisely so that nobody is thrown inside
+        # before they know who they are, and this branch was quietly
+        # undoing it.
+        #
+        # `enter_remembered()` is now reachable from ONE place: the
+        # Continue as {name} button. A press, and only a press.
         if not entered:
-            if st.session_state.get("_remembered"):
-                enter_remembered()
             return
 
         # Refuse to even compare while the throttle is running, so a
@@ -1866,59 +1930,173 @@ def sheet_prompt(key: str) -> str:
     return SHEET.prompt(sheet_config(), key, USER)
 
 
-def user_engine_panel():
-    """The owner assigns each person their engine.
+def user_admin_panel():
+    """WHO EXISTS — make, unmake, re-password, and give each an engine.
 
-    Baba: *"I want in this panel to have list of all users and assign
-    them engines. Your normal user doesn't have these settings. He is
-    working with engine which I assign."*
+    Baba asked for this at the very start: *"I want in this panel to have
+    list of all users and assign them engines. Your normal user doesn't
+    have these settings."* It grew into the rest of it — adding a person
+    used to mean opening a spreadsheet.
 
-    Owner only, and the list comes from the sheet's users tab —
-    usernames and engines, never passwords, because the script has no
-    endpoint that returns them.
+    IT TALKS TO THE ACCOUNTS SCRIPT, NOT THE MAIN ONE. That script owns
+    the users tab now, holds the hashes, and answers with its own admin
+    token. The old version of this panel asked the main script and said
+    "no users tab yet" whenever that script was behind, which was true
+    about the deployment and a lie about the tab.
+
+    NOTHING HERE MAY BE A DEPENDENCY (§1). Every call returns rather than
+    raises, an unreachable script is a sentence on the screen, and the
+    door that always opens — APP_PASSWORDS — is untouched by all of it.
     """
-    url = str(st.secrets.get("SHEETS_URL", "") or "")
-    token = str(st.secrets.get("SHEETS_TOKEN", "") or "")
-    if "_users_list" not in st.session_state:
-        try:
-            st.session_state["_users_list"] = SHEET.list_users(url, token)
-        except Exception:
-            st.session_state["_users_list"] = []
-    people = st.session_state.get("_users_list") or []
-
-    if not people:
-        # Said plainly rather than showing an empty panel that looks
-        # broken. The two likely causes are both actionable.
-        st.caption(t("eng_nousers"))
+    url, token = auth_url(), auth_admin_token()
+    if not url or not token:
+        st.caption(t("adm_noconn"))
         return
 
-    def _assign(username, engine_id):
-        ok = SHEET.set_user_engine(url, token, username, engine_id)
-        st.session_state["_users_msg"] = username + (
-            " → " + engine_id if ok else "  " + t("eng_notsaved"))
-        if ok:
-            st.session_state.pop("_users_list", None)
+    # THE NEW PASSWORD GOES FIRST, above everything, because it is the
+    # one thing on this screen that cannot be fetched again. Under the
+    # list it would arrive below the fold on a phone.
+    shown = st.session_state.get("_adm_shown")
+    if shown:
+        st.text(shown[0])
+        st.code(shown[1], language=None)
+        st.text(t("adm_newpw"))
+        st.button(t("adm_written"), key="adm_written",
+                  on_click=lambda: st.session_state.pop("_adm_shown", None))
 
+    if "_adm_people" not in st.session_state:
+        st.session_state["_adm_people"] = ACCOUNTS.users(url, token)
+    people = st.session_state["_adm_people"]
+
+    def forget():
+        """The list is stale the moment anything changes it."""
+        st.session_state.pop("_adm_people", None)
+
+    def proof():
+        """The administrator's own password, taken and not kept."""
+        return st.session_state.get("_adm_proof", "")
+
+    # ---- the five actions, each ending in a sentence ----------------
+    def do_engine(who, engine_id):
+        ok, err = ACCOUNTS.user_engine(url, token, who, engine_id)
+        st.session_state["_adm_msg"] = who + (" → " + (engine_id or
+                                      t("eng_global_word")) if ok else "  " + err)
+        if ok:
+            forget()
+
+    def do_create():
+        name = str(st.session_state.get("_adm_name", "")).strip().lower()
+        note = str(st.session_state.get("_adm_note", ""))
+        if not name:
+            return
+        pw, err = ACCOUNTS.user_create(url, token, name, "", note)
+        if pw:
+            st.session_state["_adm_shown"] = (name, pw)
+            st.session_state["_adm_msg"] = ""
+            st.session_state.pop("_adm_name", None)
+            st.session_state.pop("_adm_note", None)
+            forget()
+        else:
+            st.session_state["_adm_msg"] = err
+
+    def do_reset(who):
+        pw, err = ACCOUNTS.user_password(url, token, who, USER, proof())
+        if pw:
+            st.session_state["_adm_shown"] = (who, pw)
+            st.session_state["_adm_msg"] = ""
+        else:
+            st.session_state["_adm_msg"] = err
+        close_ask()
+
+    def do_delete(who):
+        ok, err = ACCOUNTS.user_delete(url, token, who, USER, proof())
+        st.session_state["_adm_msg"] = (t("adm_gone") % who) if ok else err
+        if ok:
+            forget()
+        close_ask()
+
+    def open_ask(kind, who):
+        st.session_state["_adm_ask"] = (kind, who)
+
+    def close_ask():
+        st.session_state.pop("_adm_ask", None)
+        # The password box unmounts with the strip, so the typed value
+        # must go with it rather than waiting in state for next time.
+        st.session_state.pop("_adm_proof", None)
+
+    # ---- who exists -------------------------------------------------
+    if people is None:
+        # NOT THE SAME AS NOBODY, and the difference is the whole reason
+        # this reads from `None` rather than an empty list.
+        st.caption(t("adm_noanswer"))
+        return
+    if not people:
+        st.caption(t("adm_nobody"))
+
+    ask = st.session_state.get("_adm_ask") or ("", "")
     for person in people:
         who = person.get("user", "")
         theirs = (person.get("engine") or "").strip().lower()
-        cols = st.columns([1.6, 1.4, 2.0, 1.0])
-        cols[0].text(who)
-        for col, eng in zip(cols[1:3], EN.ENGINES):
+        st.text(who + ("" if person.get("hashed") else "  ·  " + t("adm_nopw")))
+
+        cols = st.columns([1.4, 1.4, 1.2])
+        for col, eng in zip(cols[:2], EN.ENGINES):
             col.button(eng.label, key="ue_%s_%s" % (who, eng.id),
                        type="primary" if theirs == eng.id else "secondary",
-                       on_click=_assign, args=(who, eng.id),
+                       on_click=do_engine, args=(who, eng.id),
                        use_container_width=True)
         # A BLANK ENGINE IS NOT AN ENGINE — it means "use the global
         # one", so it needs its own way back rather than being an
         # unreachable state once anything has been assigned.
-        cols[3].button(t("eng_global_word"), key="ue_%s_none" % who,
+        cols[2].button(t("eng_global_word"), key="ue_%s_none" % who,
                        type="primary" if not theirs else "secondary",
-                       on_click=_assign, args=(who, ""),
+                       on_click=do_engine, args=(who, ""),
                        use_container_width=True)
 
-    if st.session_state.get("_users_msg"):
-        st.caption(st.session_state.pop("_users_msg"))
+        acts = st.columns([1.4, 1.4, 1.2])
+        acts[0].button(t("adm_reset"), key="ad_reset_%s" % who,
+                       on_click=open_ask, args=("reset", who),
+                       use_container_width=True)
+        # DISABLED ON PURPOSE, with the reason beside it rather than in
+        # a document nobody has open. The accounts script freezes a
+        # folder column at creation; the MAIN script still builds
+        # USERS/<user>/ out of the login name, so a rename today would
+        # walk away from somebody's recordings. The day the main script
+        # reads that column, this line loses `disabled` and nothing else
+        # about it changes.
+        acts[1].button(t("adm_rename"), key="ad_rename_%s" % who,
+                       disabled=True, help=t("adm_rename_why"),
+                       use_container_width=True)
+        acts[2].button(t("adm_delete"), key="ad_del_%s" % who,
+                       on_click=open_ask, args=("delete", who),
+                       use_container_width=True)
+
+        # THE CONFIRM STRIP SITS UNDER THE PERSON IT IS ABOUT. A dialog
+        # elsewhere on the page is how the wrong row gets deleted.
+        if ask[1] == who and ask[0] in ("delete", "reset"):
+            st.text((t("adm_ask_delete") if ask[0] == "delete"
+                     else t("adm_ask_reset")) % who)
+            # The script checks this password itself (`adminProved_`).
+            # Delete, rename and reset all need the person, not just the
+            # token — a token can leak into a screenshot; a password
+            # typed at the moment of the act cannot be lying around.
+            st.text_input(t("adm_yourpw"), type="password", key="_adm_proof")
+            yn = st.columns([1.4, 1.4])
+            yn[0].button(t("adm_yes"), key="ad_yes_%s" % who, type="primary",
+                         on_click=do_delete if ask[0] == "delete" else do_reset,
+                         args=(who,), use_container_width=True)
+            yn[1].button(t("adm_cancel"), key="ad_no_%s" % who,
+                         on_click=close_ask, use_container_width=True)
+
+    # ---- add a person ------------------------------------------------
+    st.text(t("adm_add_title"))
+    st.text_input(t("adm_name"), key="_adm_name")
+    st.text_input(t("adm_note"), key="_adm_note")
+    st.button(t("adm_add"), key="ad_add", on_click=do_create,
+              use_container_width=True)
+
+    if st.session_state.get("_adm_msg"):
+        st.caption(st.session_state.pop("_adm_msg"))
 
 
 def adopt_sheet_engine():
@@ -2126,7 +2304,26 @@ def tab_signature(name: str):
     mark = ""
     if eng and res.get("engine") == eng.id:
         mark = " ✓" if res.get("state") == EN.OK else " ✗"
-    bits = [x for x in (html.escape(name), html.escape(label) + mark) if x]
+    # AND WHO YOU ARE. Baba: "show me who I am." On a shared phone the
+    # question "am I Marko or am I admin" has no other answer on the
+    # screen once the login is behind you.
+    #
+    # ONLY WHEN IT IS ACTUALLY A NAME. `_user` holds the ACCOUNT name for
+    # an accounts login — but the APP_PASSWORDS fallback stores the
+    # PASSWORD THAT MATCHED in the same slot (see check_password: `who =
+    # matched`). Printing it here would put the owner's password at the
+    # foot of every page, in every screenshot, for as long as the session
+    # lasts. So the name is shown when the accounts script named them,
+    # "shared" when nobody is named, and NOTHING when the value is a
+    # password wearing a name's clothes. Do not "simplify" this to USER.
+    who = ""
+    if st.session_state.get("_via_accounts"):
+        who = USER
+    elif not st.session_state.get("_user"):
+        who = USER            # the "shared" default, which names nobody
+
+    bits = [x for x in (html.escape(name), html.escape(label) + mark,
+                        html.escape(who)) if x]
     st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
                 unsafe_allow_html=True)
 
@@ -4808,8 +5005,8 @@ elif active == "settings":
                             _mark, _name, _jobs, _row.get("detail", "")))
 
             # ---- ONE ENGINE PER PERSON ----------------------------
-            st.text(t("eng_users_title"))
-            user_engine_panel()
+            st.text(t("adm_title"))
+            user_admin_panel()
 
         # Help lived here as an expander AND as its own module. Two copies
         # of the same text drift apart, and the module is the one people

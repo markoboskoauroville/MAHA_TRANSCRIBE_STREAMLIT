@@ -221,6 +221,8 @@ function doPost(e) {
                                                        : json_({ ok: false, error: 'admin token required' }); }
     if (body.what === 'user_password') { return isAdmin ? json_(userPassword_(body))
                                                        : json_({ ok: false, error: 'admin token required' }); }
+    if (body.what === 'user_engine')   { return isAdmin ? json_(userEngine_(body))
+                                                       : json_({ ok: false, error: 'admin token required' }); }
 
     if (body.what === 'ping') {
       return json_({ ok: true, admin: isAdmin, rounds: ROUNDS });
@@ -530,6 +532,11 @@ function userRename_(body) {
 /** A new password, shown once. The old one cannot be recovered. */
 function userPassword_(body) {
   return withLock_(function () {
+    // THE SAME SECOND FACTOR AS DELETE AND RENAME. A reset is not the
+    // gentle one of the three: it locks the person out of their own
+    // account and signs every remembered device out below. The token
+    // alone is a string that can leak; this needs the person.
+    if (!adminProved_(body)) return { ok: false, error: 'administrator password required' };
     var u = String(body.username || '').trim().toLowerCase();
     var s = usersSheet_();
     var row = rowOf_(userRows_(), u);
@@ -549,6 +556,38 @@ function userPassword_(body) {
     return { ok: true, user: u, password: pw };
   });
 }
+
+/**
+ * Give one person their own engine, or take it away.
+ *
+ * THIS SCRIPT OWNS THE USERS TAB NOW. The main script's `set_user_engine`
+ * writes the same column, and two writers with a lock between them in
+ * only one of the scripts is a race waiting for a Sunday. It also has a
+ * plainer benefit: the owner's panel needs ONE token and ONE reachable
+ * script to do all five things, so a half-deployed main script can no
+ * longer make the list of people look empty.
+ *
+ * AN EMPTY STRING IS A REAL ANSWER, not a missing one: it means "use the
+ * global engine", and it is the way back from a choice.
+ */
+function userEngine_(body) {
+  return withLock_(function () {
+    var u = String(body.username || '').trim().toLowerCase();
+    var e = String(body.engine || '').trim().toLowerCase();
+    if (e && e !== 'free' && e !== 'studio') return { ok: false, error: 'not an engine: ' + e };
+
+    var s = usersSheet_();
+    var row = rowOf_(userRows_(), u);
+    if (!row) return { ok: false, error: 'no such user' };
+
+    s.getRange(row, C_ENGINE).setValue(e);
+    // The reply NAMES THE USER BACK on purpose. §47: a deployment
+    // without this branch falls through and still answers ok, so the
+    // caller must have something to check other than the word ok.
+    return { ok: true, user: u, engine: e };
+  });
+}
+
 
 /** Names, engines and notes. No passwords, no hashes, no salts. */
 function userList_() {

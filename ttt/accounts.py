@@ -122,3 +122,162 @@ def change_password(url: str, token: str, username: str,
     if out.get("ok"):
         return True, ""
     return False, str(out.get("error") or "no")
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  THE ADMIN SIDE — everything below needs AUTH_ADMIN_TOKEN
+# ══════════════════════════════════════════════════════════════════════
+#
+# A DIFFERENT TOKEN FROM EVERYTHING ABOVE, and it is only ever read
+# inside the owner's panel. The login token rides in every phone in the
+# house; this one answers questions about who exists and can unmake
+# them, so it should be somewhere far fewer runs ever touch.
+#
+# DELETE, RENAME AND RESET ALSO NEED THE ADMINISTRATOR'S OWN PASSWORD.
+# The script checks it (`adminProved_`), not this module — a client-side
+# check would be a suggestion. It is passed through and never kept.
+#
+# A NEW PASSWORD COMES BACK EXACTLY ONCE, from create and from reset.
+# It is not stored here, not logged, and not returned twice. If it is
+# lost between this line and the person reading it, the only repair is
+# another reset.
+
+ADMIN_TIMEOUT = TIMEOUT + 12   # a proof hashing, then often a second one
+
+
+def users(url: str, token: str):
+    """Everyone, for the owner's panel. `None` when it could not ask.
+
+    NONE AND [] ARE DIFFERENT ANSWERS and the caller must keep them
+    apart: `None` is "the script did not answer", `[]` is "the tab is
+    there and it is empty". The old engine panel conflated them and told
+    the owner there was no users tab when there plainly was one.
+
+    Never passwords, never hashes, never salts — the script has no
+    endpoint that returns them.
+    """
+    out = _post(url, token, {"what": "users"}, timeout=TIMEOUT)
+    if not out or not out.get("ok"):
+        return None
+    rows = out.get("users")
+    if not isinstance(rows, list):
+        return None
+    return [r for r in rows if isinstance(r, dict) and r.get("user")]
+
+
+def user_create(url: str, token: str, username: str,
+                engine: str = "", note: str = ""):
+    """Make a person. Returns (password, error).
+
+    THE PASSWORD IS THE SUCCESS SIGNAL. There is no (True, "") to
+    misread: either a password came back and the person exists, or it
+    did not. That shape is deliberate — a create that half-succeeded
+    would otherwise show an empty box under the word "done".
+    """
+    out = _post(url, token, {"what": "user_create",
+                             "username": str(username or ""),
+                             "engine": str(engine or ""),
+                             "note": str(note or "")}, timeout=ADMIN_TIMEOUT)
+    if out is None:
+        return "", "unreachable"
+    if not out.get("ok"):
+        return "", str(out.get("error") or "no")
+    pw = str(out.get("password") or "")
+    if not pw:
+        # ok with no password is a reply we do not understand — an older
+        # deployment, or something that is not our script. §47: do not
+        # believe the word ok on its own.
+        return "", "no password came back"
+    return pw, ""
+
+
+def user_password(url: str, token: str, username: str,
+                  admin_user: str, admin_password: str):
+    """A new password for somebody. Returns (password, error).
+
+    IT SIGNS THEIR DEVICES OUT TOO. The script clears their remember
+    tokens, because a reset exists to get somebody OUT as much as to let
+    them back in, and a phone that stayed logged in would defeat half of
+    that. Say so where the button is.
+    """
+    out = _post(url, token, {"what": "user_password",
+                             "username": str(username or ""),
+                             "admin_user": str(admin_user or ""),
+                             "admin_password": str(admin_password or "")},
+                timeout=ADMIN_TIMEOUT)
+    if out is None:
+        return "", "unreachable"
+    if not out.get("ok"):
+        return "", str(out.get("error") or "no")
+    pw = str(out.get("password") or "")
+    if not pw:
+        return "", "no password came back"
+    return pw, ""
+
+
+def user_delete(url: str, token: str, username: str,
+                admin_user: str, admin_password: str):
+    """Unmake a person. Returns (ok, error).
+
+    THEIR RECORDINGS ARE LEFT ALONE by the script, on purpose. Losing
+    somebody's audio because a spreadsheet was tidied is the wrong
+    direction to fail in.
+    """
+    out = _post(url, token, {"what": "user_delete",
+                             "username": str(username or ""),
+                             "admin_user": str(admin_user or ""),
+                             "admin_password": str(admin_password or "")},
+                timeout=ADMIN_TIMEOUT)
+    if out is None:
+        return False, "unreachable"
+    if not out.get("ok"):
+        return False, str(out.get("error") or "no")
+    # §47 again: the reply must name the person back, or an older
+    # deployment falling through to something else answers ok and we
+    # would tell the owner a person was deleted who is still there.
+    if str(out.get("user") or "").strip().lower() != str(username or "").strip().lower():
+        return False, "the script did not confirm the name"
+    return True, ""
+
+
+def user_rename(url: str, token: str, username: str, new_username: str,
+                admin_user: str, admin_password: str):
+    """Change the name shown. Returns (ok, error).
+
+    THE DRIVE FOLDER KEEPS ITS BIRTH NAME — the script writes a frozen
+    folder column and does not touch it here. The MAIN script does not
+    read that column yet, so a renamed person's existing recordings stay
+    under the old name until it does. That is why the panel does not
+    offer this button yet.
+    """
+    out = _post(url, token, {"what": "user_rename",
+                             "username": str(username or ""),
+                             "new_username": str(new_username or ""),
+                             "admin_user": str(admin_user or ""),
+                             "admin_password": str(admin_password or "")},
+                timeout=ADMIN_TIMEOUT)
+    if out is None:
+        return False, "unreachable"
+    if not out.get("ok"):
+        return False, str(out.get("error") or "no")
+    if str(out.get("user") or "").strip().lower() != str(new_username or "").strip().lower():
+        return False, "the script did not confirm the name"
+    return True, ""
+
+
+def user_engine(url: str, token: str, username: str, engine: str):
+    """Give one person their own engine, or "" for the global one.
+
+    Returns (ok, error). No administrator password: this one is
+    reversible and changes nothing about who can get in.
+    """
+    out = _post(url, token, {"what": "user_engine",
+                             "username": str(username or ""),
+                             "engine": str(engine or "")}, timeout=TIMEOUT)
+    if out is None:
+        return False, "unreachable"
+    if not out.get("ok"):
+        return False, str(out.get("error") or "no")
+    if str(out.get("user") or "").strip().lower() != str(username or "").strip().lower():
+        return False, "the script did not confirm the name"
+    return True, ""

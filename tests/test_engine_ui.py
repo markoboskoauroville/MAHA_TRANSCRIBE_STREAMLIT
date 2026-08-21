@@ -155,5 +155,32 @@ at5.run()
 check("15 switching engine FORGETS the old verdict",
       sget(at5, "_engine_check") is None, sget(at5, "_engine_check"))
 
+# --- WHO YOU ARE, at the foot of the page -----------------------------
+#
+# Baba: "show me who I am." And the one thing this line must never say:
+# the APP_PASSWORDS fallback stores the PASSWORD THAT MATCHED in the same
+# session key that holds an account name, so a corner that simply printed
+# _user would print his password on every page.
+
+at6 = app()
+at6.session_state["_user"] = "marko"
+at6.session_state["_via_accounts"] = True
+at6.run()
+check("16 the corner says who is signed in", "marko" in corner(at6),
+      corner(at6))
+
+at7 = app()
+at7.session_state["_user"] = "correct-horse-staple"   # a PASSWORD, not a name
+at7.run()
+check("17 A PASSWORD LOGIN NEVER PRINTS THE PASSWORD — _user holds the "
+      "matched password, not a name, when nobody logged in by name",
+      "correct-horse-staple" not in corner(at7), corner(at7))
+
+at8 = app()
+at8.session_state["_user"] = ""       # nobody logged in by name
+at8.run()
+check("18 and an unnamed session says shared rather than nothing",
+      "shared" in corner(at8), corner(at8))
+
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

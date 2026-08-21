@@ -100,14 +100,33 @@ check("12 Enter on an EMPTY password does nothing — Streamlit fires no "
       "event when a value has not changed, so the button is the press",
       sget(at3, "_authed") is not True, sget(at3, "_authed"))
 
-# But the guard behind it is real: if an empty submit ever does arrive,
-# it completes the remembered login rather than counting as a failure.
+# AND THE PATH IS DRIVEN FOR REAL, because the check above cannot fail.
+#
+# 12 sets the password box to the value it already has, so Streamlit
+# fires no event and the branch is never reached — a green that proves
+# nothing, which is exactly the false-green §71 and §73 describe. The
+# old 12b was worse: it assigned session_state by hand and asserted on a
+# key nothing had written.
+#
+# THE USERNAME BOX FIRES THE SAME HANDLER. That is the real trigger, it
+# changes value, and it is what a person actually does: type their name,
+# press Enter, password box still empty. Under the code this replaces,
+# that logged them straight in as the remembered user — without a
+# password, without the button, and WITHOUT EVEN READING THE NAME THEY
+# TYPED. Driven through the widget, not by poking at state.
 at3b = fresh(dict(rem))
 at3b.run()
-at3b.session_state["_pw_input"] = ""
-check("12b and the empty-password path, when it is reached, does not "
-      "burn a throttle attempt", not sget(at3b, "_gate_wait"),
-      sget(at3b, "_gate_wait"))
+box(at3b, "_user_input").set_value("somebody-else").run()
+check("12b typing a USERNAME and pressing Enter does not log anybody in "
+      "— an empty password is not a press",
+      sget(at3b, "_authed") is not True, sget(at3b, "_authed"))
+check("12c and the remembered login is still waiting to be confirmed",
+      (sget(at3b, "_remembered") or {}).get("user") == "baba",
+      sget(at3b, "_remembered"))
+check("12d and nobody has been signed in under a name they did not type",
+      not sget(at3b, "_user"), sget(at3b, "_user"))
+check("12e and it does not burn a throttle attempt",
+      not sget(at3b, "_gate_wait"), sget(at3b, "_gate_wait"))
 
 # --- "not me" clears it ------------------------------------------------
 at4 = fresh(dict(rem))
