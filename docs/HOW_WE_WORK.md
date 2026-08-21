@@ -22,6 +22,36 @@ five things at once.
 
 ---
 
+## THE ONE RULE THAT IS NEVER BENT
+
+    ┌────────────────────────────────────────────────────────────┐
+    │                                                            │
+    │   NEVER  "New deployment"                                  │
+    │                                                            │
+    │   ALWAYS  Deploy -> Manage deployments -> pencil ->         │
+    │           Version: New version -> Deploy                    │
+    │                                                            │
+    └────────────────────────────────────────────────────────────┘
+
+Baba asked for this to be stated once, plainly, and obeyed every time —
+*"not sometimes I skip, not and then I do it."*
+
+**Why it matters more than it looks.** "New deployment" creates a
+SECOND web app at a DIFFERENT URL. The first one keeps running, and
+`SHEETS_URL` in Streamlit still points at it. So the old code goes on
+answering, the new code sits there unreached, and **nothing appears to
+change** — which sends you looking for a bug in code that was correct
+all along.
+
+It applies to every Apps Script project in every one of Baba's repos,
+not only this one. The only exception is the very first deployment of a
+brand-new script, when there is nothing to update yet.
+
+If a deploy seems to have done nothing, check this before anything else:
+open Manage deployments and count them. Two means it happened.
+
+---
+
 ## Starting a session — the exact command
 
 ```bash
