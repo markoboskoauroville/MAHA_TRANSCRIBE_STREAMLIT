@@ -288,9 +288,13 @@ field(at, "_adm_note").set_value("djed")
 press(at, "ad_add")
 check("11 a new person is created", "deda" in PEOPLE, list(PEOPLE))
 check("12 THE PASSWORD IS SHOWN, once", "made-pw-1" in page(at), page(at)[:300])
+# ABOVE THE LIST, measured against the list itself rather than against
+# the "Add a person" heading — v110 replaced that heading with a plain
+# rule, and a check anchored to a label is a check that breaks when the
+# wording changes. The list is the thing it must come before.
 check("13 and it is shown ABOVE the list, not under it — under it, it is "
       "below the fold on a phone",
-      page(at).index("made-pw-1") < page(at).index("Add a person"),
+      page(at).index("made-pw-1") < page(at).index("admin"),
       page(at)[:300])
 check("14 with the instruction to write it down", "Write this down" in page(at))
 

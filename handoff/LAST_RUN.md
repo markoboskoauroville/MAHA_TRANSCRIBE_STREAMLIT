@@ -1,42 +1,45 @@
-# STEP: compact the admin panel
-STATUS: done, pushed as v109
+# STEP: make the owner's screen look like a control panel
+STATUS: done, pushed as v110
 
 WHAT HAPPENED
-- The People panel is one table, one selection, one set of actions.
-  Before: six buttons per person — 24 targets for four people, most of a
-  phone screen. Now a table showing every person with their engine,
-  whether they have a password yet, and their note; a radio to pick one;
-  a radio for their engine; then reset / rename / delete.
-- The engine is a radio because it is one choice out of three, which is
-  what three pills were pretending not to be.
-- docs/HOW_WE_WORK.md gained "Who each screen is for": the family's
-  screens are governed by rule 6 completely, the amber gear is not, and
-  the exception applies behind is_admin() and NOWHERE else.
+- Square buttons (3px), rows sitting on each other, one thin rule as the
+  only separator, and labels BESIDE their boxes instead of above them.
+- The owner's gear is now FIRST in the tab row, before the one everybody
+  has: T R TR ⚙amber ⚙grey L H. For a family member nothing moves —
+  they never see the amber one.
+- Trimmed the band above the tabs: the panel's top padding was 14px on
+  top of Streamlit's own, which put empty space between the browser bar
+  and the first thing anybody looks at. Bottom padding kept.
+- The whole owner module is dense, not only the People half — it was
+  only People at first, which left round pills above square ones on one
+  screen, worse than either.
 
 NUMBERS
-- admin users 39 · owner edge 5 · calm login 32 · engine UI 18 — green
-- four mutations applied and all four caught: showing only the selected
-  person, the strip not naming who it is about, the admin password not
-  being sent, the "no pw" marker dropped from the table
+- admin users 39 · owner edge 5 — green
+- button radius 3px measured in the browser
+- panel height 475px, from 605px on a taller viewport
 - pyflakes clean
 
 WHAT BROKE, AND WHAT I UNDID
-- Nothing in the app. Three checks named per-person button keys that no
-  longer exist, and one named a person the fixture never had ("emina" —
-  it seeds admin, baba, mama). Rewritten around a pick() helper, which
-  is better: selecting the person is a separate act in the test now, the
-  same way it is on the screen.
-- One long shell chain timed out midway and left the version bump and
-  this file unwritten. Redone in smaller pieces. Nothing was lost —
-  git status showed exactly what had and had not been done.
+- TWO REAL BUGS from v109, both visible in Baba's screenshot and neither
+  caught by any test: `adm_who` and `adm_engine` were rendering as raw
+  string KEYS, because the script that was supposed to add those strings
+  had a guard that skipped it and reported nothing. t() falls back to
+  the key, so the screen showed its own internals. Added.
+- I first scoped the dense stylesheet with a sibling selector hanging
+  off statusbox_admin. Fragile and one refactor from styling nothing.
+  Removed the scope entirely: the sheet is emitted only while the
+  owner's tab renders, and Streamlit rebuilds the page each run, so it
+  cannot leak by construction.
+- Check 13 anchored its ordering test to the "Add a person" heading,
+  which this change replaced with a plain rule. Re-anchored to the list
+  itself — a check tied to a label breaks when the wording changes.
 
 STILL UNSURE
-- I could not SEE the new panel. This sandbox has no AUTH_URL, so it
-  drew the not-connected sentence instead — correct behaviour, useless
-  for judging a layout. The tests cover the shape; Baba's eye is the
-  check that matters. Tell me if it is still too tall.
+- I still cannot SEE the People table: no AUTH_URL here, so it draws the
+  not-connected sentence. Everything above it is verified in the
+  browser; the table's density is tested but not seen.
 
 FOR BABA
-- Unchanged: ADMIN_USER = "admin" in the cloud secrets, deploy the AUTH
-  script, add AUTH_ADMIN_TOKEN, and create accounts for Emina and
-  Marinko.
+- Unchanged: ADMIN_USER = "admin", deploy the AUTH script, add
+  AUTH_ADMIN_TOKEN, then create Emina and Marinko.

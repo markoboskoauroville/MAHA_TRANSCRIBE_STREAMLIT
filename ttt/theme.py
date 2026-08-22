@@ -136,9 +136,14 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 10px;
-      padding: 14px 14px 20px !important;
+      /* The top padding was 14px and Streamlit adds its own above that,
+         which on a phone put an empty band between the browser bar and
+         the tabs — the first thing anybody sees and the least useful.
+         Trimmed at the top only; the bottom keeps its room so the last
+         control is not against the edge. */
+      padding: 4px 14px 20px !important;
       max-width: 640px;
-      margin-top: 0.6rem;
+      margin-top: 0.2rem;
     }}
 
     /* ---- PILLS ----------------------------------------------------

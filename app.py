@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v109 (a) (the admin panel, dense)"
+APP_VERSION = "v110 (a) (the owner's screen looks like a control panel)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -565,6 +565,8 @@ STRINGS = {
     "adm_name":           {"en": "name",              "hr": "ime"},
     "adm_note":           {"en": "note (optional)",   "hr": "bilješka (nije obavezno)"},
     "adm_add":            {"en": "add",               "hr": "dodaj"},
+    "adm_who":            {"en": "who",                "hr": "tko"},
+    "adm_engine":         {"en": "engine",             "hr": "motor"},
     "adm_reset":          {"en": "reset",             "hr": "nova lozinka"},
     "adm_delete":         {"en": "delete",            "hr": "obriši"},
     "adm_rename":         {"en": "rename",            "hr": "preimenuj"},
@@ -1982,6 +1984,73 @@ def sheet_prompt(key: str) -> str:
     return SHEET.prompt(sheet_config(), key, USER)
 
 
+def admin_dense():
+    """The owner's screen: square, tight, and labels beside their boxes.
+
+    NO SELECTOR SCOPE, and that is the robust choice rather than the
+    lazy one: this stylesheet is emitted ONLY while the owner's tab is
+    rendering, and Streamlit rebuilds the page every run, so it simply
+    does not exist on any other screen. A sibling selector tied to some
+    other container would have been one refactor away from silently
+    styling nothing.
+
+    docs/HOW_WE_WORK.md,
+    "Who each screen is for": the family's modules keep rule 6 whole —
+    44px targets, generous type, room to breathe. This screen is read by
+    one person who knows what every word means, and there the room is
+    the problem rather than the kindness.
+
+    Square corners are not decoration either: they say "you are somewhere
+    else" at a glance, the same job the gold edge does, without another
+    colour.
+    """
+    st.markdown("""<style>
+    .stButton button {
+      border-radius: 3px !important;
+      min-height: 0 !important;
+      padding: 0.25rem 0.7rem !important;
+      font-size: 0.74rem !important;
+    }
+    input {
+      border-radius: 3px !important;
+      padding: 0.25rem 0.5rem !important;
+      font-size: 0.76rem !important;
+    }
+    /* Rows sit on each other. The default rhythm is built for thumbs on
+       a reading screen; this is a control panel. */
+    div[data-testid="stVerticalBlock"] {
+      gap: 0.18rem !important;
+    }
+    [data-testid="stElementContainer"] {
+      margin: 0 !important;
+    }
+    /* ONE horizontal line as the only separator, thin and quiet. */
+    hr {
+      margin: 0.45rem 0 !important;
+      border-color: var(--line);
+      opacity: 0.5;
+    }
+    /* Radios in a row, small, with no wasted label block above them. */
+    [data-testid="stRadio"] label p {
+      font-size: 0.74rem !important;
+    }
+    [data-testid="stRadio"] > label {
+      display: none !important;
+    }
+    /* The table of people: tight leading, no panel around it. */
+    pre {
+      font-size: 0.72rem !important;
+      line-height: 1.35 !important;
+      padding: 0.4rem 0.5rem !important;
+      border-radius: 3px !important;
+    }
+    .stCaption, 
+    [data-testid="stText"] {
+      font-size: 0.72rem !important;
+    }
+    </style>""", unsafe_allow_html=True)
+
+
 def user_admin_panel():
     """WHO EXISTS — make, unmake, re-password, and give each an engine.
 
@@ -2004,6 +2073,7 @@ def user_admin_panel():
     if not url or not token:
         st.caption(t("adm_noconn"))
         return
+    # admin_dense() is emitted once by the settings module, above.
 
     # THE NEW PASSWORD GOES FIRST, above everything, because it is the
     # one thing on this screen that cannot be fetched again. Under the
@@ -2180,11 +2250,21 @@ def user_admin_panel():
                          on_click=close_ask, use_container_width=True)
 
     # ---- add a person ------------------------------------------------
-    st.text(t("adm_add_title"))
-    st.text_input(t("adm_name"), key="_adm_name")
-    st.text_input(t("adm_note"), key="_adm_note")
-    st.button(t("adm_add"), key="ad_add", on_click=do_create,
-              use_container_width=True)
+    #
+    # ONE LINE PER FIELD, label beside the box rather than above it.
+    # Baba: "put name and then input box, not name and then new line
+    # input box." Two fields stacked with their labels above was six
+    # rows for two values.
+    st.markdown("---")
+    n1, n2 = st.columns([1, 4])
+    n1.text(t("adm_name"))
+    n2.text_input(t("adm_name"), key="_adm_name",
+                  label_visibility="collapsed")
+    t1, t2 = st.columns([1, 4])
+    t1.text(t("adm_note"))
+    t2.text_input(t("adm_note"), key="_adm_note",
+                  label_visibility="collapsed")
+    st.button(t("adm_add"), key="ad_add", on_click=do_create)
 
     if st.session_state.get("_adm_msg"):
         st.caption(st.session_state.pop("_adm_msg"))
@@ -2272,9 +2352,15 @@ def nav_tabs():
     # T and there will be dropdown for the source." Everything after
     # capture was already identical, so a second tab was a second place
     # to keep the same screen in step.
-    tabs = ["transcribe", "talk", "translate", "looks"]
+    tabs = ["transcribe", "talk", "translate"]
     if is_admin():
+        # THE OWNER'S GEAR COMES FIRST, before the one everybody has.
+        # Baba: "gear icon should be first — first is orange icon, then
+        # is normal icon." For a family member nothing moves: they never
+        # see the amber one, so their row is unchanged.
         tabs.append("settings")
+    tabs.append("looks")
+    if is_admin():
         tabs.append("log")
     # HELP IS ALWAYS LAST. It is the one tab whose position should never
     # move as other modules come and go — somebody looking for help looks
@@ -4991,6 +5077,10 @@ elif active == "settings":
     if not is_admin():
         st.caption(t("settings_owner_only"))
     else:
+        # THE WHOLE MODULE IS THE OWNER'S, so the whole module is dense.
+        # It was only the People half at first, which left round pills
+        # above square ones on one screen — worse than either.
+        admin_dense()
         # Small, at the top, out of the way. It is a health reading, not a
         # heading — it was sitting among the controls in body type, which
         # is why the panel read as cluttered.
@@ -5097,6 +5187,9 @@ elif active == "settings":
                             _mark, _name, _jobs, _row.get("detail", "")))
 
             # ---- ONE ENGINE PER PERSON ----------------------------
+            # The keyed container is what admin_dense() styles. Nothing
+            # outside it changes, which is how the exception to rule 6
+            # stays scoped to the one screen it belongs on.
             st.text(t("adm_title"))
             user_admin_panel()
 
