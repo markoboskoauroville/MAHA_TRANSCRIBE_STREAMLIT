@@ -208,9 +208,9 @@ def pick(at, who):
     means is a separate act — which is the point, since it is also how
     the panel stops the wrong row being deleted by a mis-tap.
     """
-    for r in at.radio:
-        if r.key == "_adm_pick":
-            r.set_value(who).run()
+    for sb in at.selectbox:
+        if sb.key == "_adm_pick":
+            sb.set_value(who).run()
             return
     raise AssertionError("no person list on the page")
 

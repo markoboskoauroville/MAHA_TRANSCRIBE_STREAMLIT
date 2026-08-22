@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v110 (a) (the owner's screen looks like a control panel)"
+APP_VERSION = "v111 (a) (people in a dropdown)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2188,10 +2188,19 @@ def user_admin_panel():
                 (person.get("note") or "")[:28]))
         st.code("\n".join(rows), language=None)
 
+        # A DROPDOWN FOR PEOPLE, a radio for the engine. Baba: "each user
+        # should appear under the dropdown list, and then I am dropping
+        # down this user, and I can delete him or change his password."
+        #
+        # The difference is how many there are. Engines are three and
+        # will stay three, so a radio shows all of them at once and
+        # choosing costs one press. People grow — a radio for a family of
+        # eight is eight rows standing open forever, when the list above
+        # already says who exists. The dropdown holds one name and opens
+        # only when he means to change it.
         names = [p.get("user", "") for p in people]
-        who = st.radio(t("adm_who"), names, key="_adm_pick",
-                       horizontal=len(names) <= 4,
-                       label_visibility="collapsed")
+        who = st.selectbox(t("adm_who"), names, key="_adm_pick",
+                           label_visibility="collapsed")
 
         current = next((p for p in people if p.get("user") == who), {})
         theirs = (current.get("engine") or "").strip().lower()
@@ -2200,8 +2209,13 @@ def user_admin_panel():
         # which is what a radio is for, and what three pills were
         # pretending not to be.
         opts = [e.id for e in EN.ENGINES] + [""]
-        labels_by_id = {e.id: e.label for e in EN.ENGINES}
-        labels_by_id[""] = t("eng_global_word")
+        # SHORT LABELS HERE ONLY. "Speechify / AssemblyAI / Claude" is
+        # right where the owner is CHOOSING an engine and needs to know
+        # what he is buying. Beside a person's name he already knows, and
+        # the full names wrapped the row onto two lines with a gap
+        # between them — seen with four people on the screen, not
+        # predicted.
+        labels_by_id = {"free": "free", "studio": "studio", "": "global"}
         picked = st.radio(
             t("adm_engine"), opts,
             index=opts.index(theirs) if theirs in opts else len(opts) - 1,
@@ -2256,14 +2270,20 @@ def user_admin_panel():
     # input box." Two fields stacked with their labels above was six
     # rows for two values.
     st.markdown("---")
-    n1, n2 = st.columns([1, 4])
-    n1.text(t("adm_name"))
-    n2.text_input(t("adm_name"), key="_adm_name",
-                  label_visibility="collapsed")
-    t1, t2 = st.columns([1, 4])
-    t1.text(t("adm_note"))
-    t2.text_input(t("adm_note"), key="_adm_note",
-                  label_visibility="collapsed")
+    # THE LABEL GOES INSIDE THE BOX.
+    #
+    # A label column beside it was measured starting at two different x
+    # positions for the two rows, even with one ratio: st.text renders
+    # preformatted text that does not wrap, so the longer word — "note
+    # (optional)" — stretched its own column and pushed its box right.
+    #
+    # A placeholder cannot drift out of alignment, because there is
+    # nothing beside it to align WITH. It is also one row shorter per
+    # field, which is the whole point of this screen.
+    st.text_input(t("adm_name"), key="_adm_name",
+                  placeholder=t("adm_name"), label_visibility="collapsed")
+    st.text_input(t("adm_note"), key="_adm_note",
+                  placeholder=t("adm_note"), label_visibility="collapsed")
     st.button(t("adm_add"), key="ad_add", on_click=do_create)
 
     if st.session_state.get("_adm_msg"):
