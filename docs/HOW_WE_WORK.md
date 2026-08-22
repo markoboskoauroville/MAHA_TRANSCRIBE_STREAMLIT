@@ -54,6 +54,56 @@ look for damage that is not there.
 
 ---
 
+## Do not stop to ask. Run the whole step.
+
+Baba, 22.8.2026: *"Because I am a beginner and I do not understand these
+comments, I am saying yes to all that comes. Run every step, do not
+stop, otherwise this takes too much time."*
+
+He is right about the cost. A permission prompt he cannot evaluate is
+not a safety check — it is a delay he answers `yes` to by reflex, and
+answering `yes` by reflex is worse than not being asked, because it
+teaches him that prompts do not mean anything.
+
+**So: run the step through.** Do not stop between edits, tests and
+commits inside one agreed piece of work. Report at the END, with what
+was done and what it cost.
+
+### What makes that safe, and what does not
+
+It is safe because **everything is committed and pushed**. Any file this
+damages comes back with `git checkout -- <file>`. That is real
+protection, and it is the only reason the rule above is acceptable.
+
+It does **not** cover two files, and they are in the Deny list for
+exactly that reason:
+
+- `apps_script/Code.gs` — holds his filled-in secrets, and is
+  `assume-unchanged`, so **git cannot restore it.** Never edit it.
+- `.streamlit/secrets.toml` — never edit, never read aloud.
+
+Anything OUTSIDE the repo — installing packages, changing his shell,
+touching his Desktop, rotating a key — still stops and asks. Those
+change his machine, not the work, and git will not undo them.
+
+### Still stop for these
+
+- a **decision that changes what gets built** — ask, with the options
+  laid out and a recommendation
+- anything that **deletes data that is not in git**: a Drive folder, a
+  sheet row, a deployment
+- anything **outside the repo**
+- when you are about to do something he told you not to
+
+### And keep telling him what it cost
+
+Running without stopping means he is not watching each step, so the
+report at the end carries more weight, not less. Say what broke, what
+you had to undo, and what you are unsure of. **A mistake volunteered is
+the whole basis of him being able to say `yes` at all.**
+
+---
+
 ## Starting a session — the exact command
 
 ```bash
