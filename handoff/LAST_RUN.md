@@ -1,39 +1,46 @@
-# STEP: v105 — fix the test harness (the four problems, worst first)
-STATUS: done, pushed as v105 `4531b7d`
+# STEP: install the dev requirements, run the browser tests
+STATUS: done, pushed as v106 `97db018`
 
 WHAT HAPPENED
-- 17 test files ended in a module-level `sys.exit()`. pytest EXECUTES a
-  file to collect it, so that fired during collection and killed the
-  whole run with INTERNALERROR — the same crash whether checks passed or
-  failed. Each now has a `test_<name>()` holding the tally, with the exit
-  under `if __name__ == "__main__"`. Both ways of running still work.
-- `tests/test1_wordtimes.py` began with a hardcoded sandbox path,
-  `/home/claude/repo`, so it had NEVER run on your Mac or anywhere else.
-  Fixed to find the repo from its own location: 65 checks ran for the
-  first time and all 65 pass.
-- Cleared the 3 pyflakes findings in `tests/`.
-- Added `requirements-dev.txt` (playwright, pytest, pyflakes, and the
-  Streamlit floor) and a two-line `pytest.ini`.
-- The two browser tests now SKIP with a reason instead of erroring.
+- Installed `requirements-dev.txt` and Chromium. Both browser tests ran
+  on your Mac for the first time.
+- `test_shake` was right: the shipped colour-only highlight moves NO
+  word, while the old padding+background style shoved 195 of 812 words
+  by up to 307px.
+- `test_layout` failed two checks and the app was innocent. Its frame
+  list had no `langrow`, so it measured deck→cmdrow ACROSS the whole
+  HR / ENG / single / multi row and called that 61.6px gap a chasm. The
+  real rhythm is even. With your yes, `langrow` was added to the list,
+  and check 3's count now comes from the list instead of a hardcoded 3.
+- Re-verified today on the current tree: everything below is a fresh run.
 
 NUMBERS
-- pytest tests/  ->  16 passed, 2 skipped in 33s  (436 checks inside)
-- before this    ->  INTERNALERROR, "no tests ran"
+- pytest tests/  ->  18 passed in 84s (app served) · 17 + 1 skipped without
+- gaps measured  ->  8.8 · 8.8 · 9.8 px, spread 1.0px
+- test_shake     ->  shipped style 0 of 812 words moved; old style 195
 - pyflakes       ->  clean across app.py, ttt/ and tests/
-- no app code changed
+- no app code changed by this step
 
 WHAT BROKE, AND WHAT I UNDID
-- My own mistake: while proving the runner can go red, I ran
-  `git checkout -- tests/test_box.py` to undo a bad edit, and it silently
-  reverted that file's real fixes too. I caught it, re-applied both, and
-  checked its tail is now identical in shape to the other files. The
-  green number was measured after that repair, not before it.
+- Two deliberate sabotages, to prove test_layout can still go red. The
+  first, in `app.py`, did NOTHING and taught the useful part: `ttt/theme.py`
+  resets those frames' margins to `0 !important` and is emitted after
+  app.py's own stylesheet, so frame spacing is `--frame-gap` in theme.py
+  and nowhere else. The second, in theme.py, worked: gaps became
+  34.8 / 34.8 / 9.8 and the test failed at once. Both reverted with
+  `git checkout --`.
+- I ran a Streamlit server on port 8811 for the test, then stopped it.
 
 STILL UNSURE
-- These numbers were measured on Streamlit 1.58.0 while
-  `requirements.txt` asks for >=1.61 — so they were measured against a
-  Streamlit production does not run. The next step closes that.
+- The install upgraded Streamlit 1.58.0 -> 1.62.0 in your SHARED pyenv,
+  where another project (videolingo) pins 1.38.0. Already mismatched at
+  1.58; wider now. Every suite here passes on 1.62. If that project
+  misbehaves, a virtualenv for this repo is the fix — say the word.
+- `test_layout` needs the app running or it skips. Nobody is served by a
+  suite that quietly reports 17 + 1 on a machine where the app is down.
 
 FOR BABA
-- To run the browser tests yourself, one paste:
-  `cd ~/Developer/MAHA_TRANSCRIBE_STREAMLIT && pip install -r requirements-dev.txt && python3 -m playwright install chromium`
+- Queue unchanged, and all three are things only you can do: deploy the
+  AUTH script (Reset asks for your password and the deployed script still
+  ignores it), add `AUTH_ADMIN_TOKEN` to the Streamlit Cloud secrets, and
+  check whether `migrateRun()` ever ran on the live sheet.
