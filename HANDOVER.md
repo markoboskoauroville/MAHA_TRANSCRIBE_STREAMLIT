@@ -5068,3 +5068,33 @@ one taught something worth writing down:
 
 Without that it skips and says so, which is why the suite reports 17 + 1
 skipped on a machine where nobody started the app.
+
+---
+
+## 78. SELF UPGRADE PLANNED, AND ONE 400 CAUGHT BEFORE IT HAPPENED (v106+)
+
+`docs/SELF_UPGRADE.md` holds the plan: a SECOND Streamlit app on a
+`beta` branch, cyan, with its own sheet and its own Drive folder, in
+which Baba speaks a change, sees a diff, uses the result, and only then
+pushes to main. Decisions taken: cyan; push straight to main; one file
+per request; the diff must be readable on a phone.
+
+**The plan found a live bug while being written.**
+`ttt/providers/anthropic.py` sent `temperature` on every call, and every
+current model — Opus 5, Opus 4.8, 4.7, Sonnet 5 — rejects sampling
+parameters with a **400**. Translation and the AI text box would have
+started failing the moment the model picker landed on a current model,
+and the self-upgrade feature would have failed on its very first call,
+looking like a wrong design rather than one wrong line.
+
+Fixed: no `temperature` unless a caller passes one deliberately,
+`max_tokens` 2048 → 16000 (2048 could truncate a long translation and
+cannot hold a file), timeout 120s → 300s to match, and the fallback
+model id is `claude-opus-5` instead of a dated year-old one.
+`tests/test_anthropic_call.py` is new — 8 offline checks on what goes on
+the wire, proven by restoring the old behaviour and watching check 2 go
+red. **Check 9 is a REAL call and is skipped here: this machine has no
+Anthropic key.** Until somebody runs it with one, the fix is verified
+only against our own assertion about the API.
+
+    pytest tests/  ->  18 passed, 1 skipped (layout, no app served)

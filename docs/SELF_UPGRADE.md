@@ -8,6 +8,26 @@ Written 22.8.2026. **Plan only — no code exists yet.**
 
 ---
 
+## DECIDED, 22.8.2026
+
+| | Decision | Why, in his words |
+|---|---|---|
+| Beta colour | **cyan** | amber is the family's app; a glance settles it |
+| Push to main | **straight to `main`** | *"I have already tested by USING beta, and an extra merge step on a phone at midnight is where I would make the mistake."* |
+| Scope per request | **one file** | most spoken changes are one file, and the app says so when they are not |
+| The diff | **must be readable on a phone** | *"a diff you can't read is a review you don't do"* |
+
+**One consequence of "one file", measured rather than assumed:**
+`app.py` is 5,015 lines — roughly **66,000 tokens**. Handing the whole
+of it back as an edited file is slow, near the output ceiling, and about
+$1.70 a request. Every `ttt/` module is 2,700–9,400 tokens and is fine
+whole. So: **whole file for `ttt/`, one named function for `app.py`** —
+which the menu in step 2 already implies, since "the reader" and "the
+people panel" are functions, not files. Still one file per request; the
+app just sends the part of it that the change is about.
+
+---
+
 ## The shape, in one picture
 
     main branch    ──►  the family's app        amber, the real sheet, the real Drive
@@ -62,23 +82,44 @@ mints a real remember-token and each person has only five device slots;
 and a password change made in beta is a real password change. Do
 neither in beta, or accept them.
 
-### 1.2 What the second Streamlit deployment needs from you
+### 1.2 The eight things only you can do — easiest first
 
-Eight things. Nothing here can be done from this repo.
+Each one stands alone. Do one, say "done", and stop. Nothing here can be
+done from inside this repo, which is why it is your list and not mine.
 
-1. A `beta` branch on GitHub — I can create and push that.
-2. **Streamlit Cloud → New app**, same repo, **branch `beta`**, main file
-   `app.py`. It gets its own URL. *(This is the one place "New app" is
-   correct — the never-New-deployment rule is about Apps Script, where a
-   second web app means a second URL nobody points at. Here the second
-   URL is the entire point.)*
-3. A copy of the Google Sheet — File → Make a copy. Note its id.
-4. A new Drive folder for beta recordings. Note its id.
-5. A second Apps Script project holding the same `apps_script/Code.gs`
-   with `SHEET_ID` and `DRIVE_ROOT_ID` set to those two, and its own
-   `SHEETS_TOKEN`. First deploy is a New deployment (it is a new
-   script); every deploy after that is New version, as always.
-6. Beta's secrets, pasted into the beta app only:
+**1. Prove the Claude fix against the real API.** One paste. Your key is
+in the sheet's `k_anthropic` tab; this keeps it out of your shell
+history and off the screen:
+
+    cd ~/Developer/MAHA_TRANSCRIBE_STREAMLIT && read -s "ANTHROPIC_API_KEY?paste the key, then Enter: " && export ANTHROPIC_API_KEY && python3 tests/test_anthropic_call.py
+
+Nine checks instead of eight, the ninth being a real call. *(2 minutes.)*
+
+**2. Copy the Google Sheet.** Open it → File → Make a copy → name it
+something with BETA in it. Note the id from the address bar. *(2 min.)*
+
+**3. Make the beta Drive folder.** A new empty folder beside the real
+`USERS` one. Note its id from the address bar. *(1 min.)*
+
+**4. Make the GitHub token.** GitHub → Settings → Developer settings →
+Personal access tokens → **Fine-grained** → this repository only →
+Repository permissions → **Contents: Read and write**, nothing else →
+an expiry you are willing to renew. Copy it into a note; you cannot see
+it again. *(5 min.)*
+
+**5. The second Apps Script project.** Needs 2 and 3. A new standalone
+project, `apps_script/Code.gs` pasted in, with **only** `SHEET_ID` and
+`DRIVE_ROOT_ID` changed to the beta ones, plus its own `SHEETS_TOKEN`
+and `DRIVE_SECRET`. Deploy → **New deployment** — the one time that is
+right, because it is a new script — and every deploy after that is New
+version. Keep the /exec URL. *(15 min, the fiddliest of these.)*
+
+**6. The second Streamlit app.** The `beta` branch already exists on
+GitHub. Streamlit Cloud → **New app** → same repo → **branch `beta`** →
+main file `app.py`. It gets its own URL; bookmark it as BETA. *(5 min.)*
+
+**7. Paste beta's secrets** into that app only — Manage app → Settings →
+Secrets. Needs 4 and 5:
 
         APP_PASSWORDS      your own — the door that always opens
         ADMIN_USER         you
@@ -87,19 +128,19 @@ Eight things. Nothing here can be done from this repo.
         DRIVE_SECRET       the BETA script's
         AUTH_URL           the real accounts script
         AUTH_LOGIN_TOKEN   login token only — NOT the admin token
-        GITHUB_TOKEN       see 7
-        BETA               "1"      — turns the panel on and forces the colour
+        GITHUB_TOKEN       from 4
+        BETA               "1"
 
    No Anthropic key here: it comes from the beta sheet's `k_anthropic`
    tab through the existing key ring, like every other provider key.
-7. A **fine-grained GitHub token**: this repository only, Contents
-   read/write, an expiry date you are willing to renew. Nothing else —
-   not Actions, not Administration.
-8. Two answers from you: the beta colour (**cyan** is my recommendation
-   — blue against amber is the pair that stays distinguishable for
-   someone who does not see colour well; green against amber is not),
-   and whether "Push to main" may push straight to `main` or should only
-   move a `ready` branch you merge on GitHub.
+   *(5 min.)*
+
+**8. Prove the isolation before trusting it.** Open BETA, log in, record
+one short note. Then check three things: it is **cyan**, the new row is
+in the **beta** sheet's `recordings` tab, and the audio is in the
+**beta** Drive folder. If any of those lands in the family's copies,
+stop and say so — something is pointed at the wrong place, and that is
+exactly what this step exists to catch. *(5 min.)*
 
 ### 1.3 What can still take main down, and how you recover
 
@@ -186,16 +227,19 @@ All menus and buttons. Nothing to type.
 from the sheet, the recorder and the transcription path, `ACCOUNTS.login`
 for the password check, and `theme.SCHEMES` for the colour.
 
-**Broken for this purpose, and it must be fixed before step 4 can
-work:** `Anthropic.complete()` always sends `temperature`, and every
+**Was broken, FIXED 22.8.2026 (see `tests/test_anthropic_call.py`):**
+`Anthropic.complete()` sent `temperature` on every call, and every
 current model — Opus 5, Opus 4.8, 4.7, Sonnet 5 — **rejects sampling
-parameters with a 400**. Its `max_tokens` also defaults to 2048, which
-cannot hold a returned file. So the self-upgrade needs its own call
-(no `temperature`, `max_tokens` ~32k, streaming, adaptive thinking), and
-`complete()`'s fallback model id (`claude-sonnet-4-5-20250929`) is old
-enough to be worth replacing while we are there.
+parameters with a 400**. The first Claude call this feature ever made
+would have failed, and it would have looked like the plan was wrong
+rather than one line of it. Now: no `temperature` unless a caller passes
+one deliberately, `max_tokens` 16000 instead of 2048, a 300s timeout to
+match, and the fallback model id is `claude-opus-5` rather than a
+year-old dated one.
 
-**Not decided yet, and better decided when the first version exists:**
-whether the request should carry more than one file (a change often
-touches `app.py` and a `ttt/` module together), and whether the diff
-should be reviewable on a phone or only on the Mac.
+**Still open, and honestly still open:** the live half of that fix is
+unproven. The offline checks assert what goes on the wire; only a real
+call proves the API accepts it, and this machine has no Anthropic key —
+they live in the sheet's `k_anthropic` tab. `tests/test_anthropic_call.py`
+runs check 9 against the real API the moment `ANTHROPIC_API_KEY` is in
+the environment, and skips with a sentence saying so when it is not.
