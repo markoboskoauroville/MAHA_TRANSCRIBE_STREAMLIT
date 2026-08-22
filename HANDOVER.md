@@ -4993,3 +4993,78 @@ deploy debt (§72), the accounts script's own pending deploy, the frozen
 folder column that is written and never read, notes that do not survive
 a reload, and the six `components.html` call sites waiting for
 `st.iframe`.
+
+---
+
+## 77. THE BROWSER TESTS, RUN AT LAST (v106)
+
+playwright was installed on Baba's Mac and the two tests that need a
+real browser ran here for the first time. One was right, one was
+measuring the wrong distance, and the whole suite now answers in one
+number.
+
+    pytest tests/  →  18 passed in 83s      (with the app served)
+                      17 passed, 1 skipped  (without it)
+
+### What the install cost, since it is outside the repo
+
+`pip install -r requirements-dev.txt` upgraded **Streamlit 1.58.0 →
+1.62.0** in the shared pyenv 3.10.14 — not a virtualenv for this repo,
+which matters: pip warned that another project, `videolingo`, pins
+`streamlit==1.38.0`. That pin was already broken before this (1.58), and
+this moved it further. `greenlet` went 3.0.3 → 3.5.5, and Chromium
+(94.7 MB) landed in `~/Library/Caches/ms-playwright`. **A venv for this
+repo is the real fix** if videolingo ever misbehaves.
+
+Every suite still passes on 1.62 — nothing in AppTest moved between the
+two versions.
+
+### test_shake was right, and says so in numbers
+
+    CURRENT (padding+bg)  worst dx 307.2px  195 of 812 words displaced
+    the shipped style     worst dx   0.0px    0 of 812
+
+### test_layout was measuring across a row
+
+It failed checks 4 and 5 — *"spread 51.8px"*, *"largest gap 61.6px"* —
+and the app was innocent. Measured in the same browser, every frame on
+the way down:
+
+    deck    bottom 292.6 → langrow  top 301.4  =  8.8px
+    langrow bottom 345.4 → cmdrow   top 354.2  =  8.8px
+    cmdrow  bottom 401.2 → textarea top 411.0  =  9.8px
+
+The rhythm is even. The test's frame list was `deck → cmdrow →
+textarea`, with no `langrow` in it, so its "61.6px chasm" was the 44px
+row of HR / ENG / single / multi plus the two real gaps around it.
+`_lang_mode_row()` did not exist at v87, when this test was last
+written; it renders directly under the deck now (`app.py:4181`), between
+the two frames the test still treated as touching.
+
+`langrow` added to the list, and check 3's count derived from the list
+rather than hardcoded, so the next row added between the deck and the
+text box makes the test say so instead of quietly measuring past it.
+
+### Proved it can still fail
+
+Rule 71, applied the slow way. Two sabotages were needed, and the first
+one taught something worth writing down:
+
+* An added `margin-top` in **app.py's own `<style>` block did nothing** —
+  `ttt/theme.py` resets `margin-top/bottom` to `0 !important` on exactly
+  these frames (deckbox, statusbox, archivebox, langrow, cmdrow_) and is
+  emitted after it. **Frame spacing is `--frame-gap` in theme.py, and
+  nothing else.** The comment there says so; I found it by measuring a
+  computed style of `0px` and going to look.
+* Changing that reset to `26px` made the gaps 34.8 / 34.8 / 9.8 and the
+  test went red at once: *"spread 25px"*, *"largest 34.8px"*. Restored,
+  green again, and `git status` shows only the test file changed.
+
+### Running it
+
+`test_layout.py` drives the REAL app, so something must be serving it:
+
+    python3 -m streamlit run app.py --server.port 8811 --server.headless true
+
+Without that it skips and says so, which is why the suite reports 17 + 1
+skipped on a machine where nobody started the app.

@@ -97,14 +97,22 @@ with sync_playwright() as p:
             return None
         return el.bounding_box()
 
+    # EVERY FRAME ON THE WAY DOWN, IN THE ORDER THEY ARE DRAWN. The
+    # language row was missing from this list, and a gap measured ACROSS
+    # a row is not a gap: deck→cmdrow read 61.6px and was reported as a
+    # chasm while the screen was evenly spaced, because the 44px row of
+    # HR / ENG / single / multi was sitting inside the number. Anything
+    # added between the deck and the text box belongs here too, or this
+    # test starts measuring the wrong distance again.
     frames = [
         ("deck", '[class*="st-key-deckbox"]'),
+        ("langrow", '[class*="st-key-langrow"]'),
         ("cmdrow", '[class*="st-key-cmdrow_tx"]'),
         ("textarea", 'textarea'),
     ]
     got = [(n, box(s)) for n, s in frames]
     got = [(n, b) for n, b in got if b]
-    check("3 the frames are all on the page", len(got) == 3,
+    check("3 the frames are all on the page", len(got) == len(frames),
           [n for n, _ in got])
 
     gaps = []
