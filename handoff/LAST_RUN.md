@@ -1,47 +1,43 @@
-# STEP: clean up the login screen
-STATUS: done, pushed as v107
+# STEP: the owner's gold edge, and why the admin tools vanished
+STATUS: done, pushed as v108
 
 WHAT HAPPENED
-- Everything on that screen now comes from LOGIN_LABELS. The Continue
-  button came from STRINGS through t(), which follows ui_lang, while the
-  field labels follow the login screen's own pills — two sources on one
-  screen, which is why Baba saw "Korisnik / Lozinka" above "Continue as
-  admin". Mixed reads as broken, not as bilingual.
-- The login screen now defaults to ENGLISH. The five pills still work
-  and the choice sticks for the session.
-- Removed: the "Remembered on this device — press Enter, or the button"
-  caption, and the "Not me — sign in as someone else" button. A login
-  screen that has to explain itself has already failed. "Not me" is not
-  lost — type a different name over the filled-in one.
-- The "What is this?" fold-out has no frame now.
-- FOUND WHILE LOOKING: three paragraphs about installing an icon on a
-  phone were rendering OPEN, below the fold-out, on the screen a person
-  meets before typing anything — outside the expander that exists to
-  fold them away. The comment above the code had claimed for months that
-  they were inside it. Moved in. The screen went from ~22 lines to 7.
+- The whole panel gets a gold border when the owner is signed in. It
+  uses var(--amber), the SAME token as the signature at the foot, so the
+  edge and the word `admin` are one colour by construction rather than a
+  hex copied twice and drifting when the scheme changes.
+- WHY THE ADMIN TOOLS DISAPPEARED, and it is not a bug in the app:
+  is_admin() compares the logged-in USER against ADMIN_USER from the
+  Streamlit secrets. Baba now logs in as the NAME `admin`, but that
+  secret still holds his old PASSWORD. Name vs password, so the check
+  fails and the second gear and L are not drawn. The fix is one line in
+  the cloud secrets: ADMIN_USER = "admin". Nothing to change in code.
 
 NUMBERS
-- calm login 32 · login 7 · notes 39 · box 16 — all green
+- owner edge 5 · calm login 32 · login 7 · engine UI 18 — all green
+- one mutation applied (give the edge to everyone) and caught
 - pyflakes clean across app.py and ttt/
-- login screen: 7 lines of text, no page errors, no sideways scroll
 
 WHAT BROKE, AND WHAT I UNDID
-- My first CSS targeted [data-testid="stExpander"] and changed nothing
-  visible: the border is drawn on the inner <details>. Measured it in
-  the browser rather than guessing again, then targeted both.
-- Three checks in test_calm_login clicked the button I had just removed.
-  Rewritten to test the CAPABILITY — somebody else types their own name
-  and their own password gets THEM in, not the remembered person —
-  which is the thing that actually matters.
+- The edge was first written as a parameter on theme.css(). That
+  stylesheet is emitted before anyone has logged in, so it can never
+  know who this is — the flag would have been False on the one run that
+  matters. Reverted, and it is one rule emitted after authentication
+  instead.
+- My first test helper matched any markdown containing "block-container"
+  and so found the MAIN stylesheet, which styles that class too. Every
+  check passed for everybody and the mutation changed nothing. It now
+  matches the exact rule.
 
 STILL UNSURE
-- Whether English-by-default is right for Baba's mother, who does not
-  read English. She presses HR once and it sticks for that session, but
-  it does not persist across a new browser. If that turns out to matter,
-  the fix is to remember the login language in localStorage.
+- Baba reported the login hanging and needing a refresh before it let
+  him in. Not reproduced here and not investigated — it may be the
+  accounts round trip being slow, or a rerun that does not fire. Worth
+  watching; if it happens again, note whether the spinner was moving.
 
 FOR BABA
-- The old queue is unchanged and all three are still yours: deploy the
-  AUTH script, add AUTH_ADMIN_TOKEN to the Streamlit Cloud secrets, and
-  create accounts for Emina and Marinko — the users tab has only `admin`
-  in it, so they are still getting in through APP_PASSWORDS.
+- ADMIN_USER = "admin" in the Streamlit Cloud secrets. That alone brings
+  the admin tabs back.
+- Then, unchanged: deploy the AUTH script, add AUTH_ADMIN_TOKEN, and
+  create accounts for Emina and Marinko — the users tab still has only
+  `admin` in it.

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v107 (a) (the login screen says nothing)"
+APP_VERSION = "v108 (a) (the owner has a gold edge)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -699,6 +699,32 @@ def admin_user() -> str:
 
 def is_admin() -> bool:
     return bool(USER) and USER.strip().lower() == admin_user()
+
+
+def owner_edge():
+    """A gold edge round the whole panel when the owner is signed in.
+
+    Baba: "so I know I am a special gold user." He can delete an account,
+    reset somebody's password and change the engine for the whole family,
+    and until now the only sign of that was two extra tabs — nothing to
+    notice on a phone at speed.
+
+    ONE RULE, EMITTED LATE, and not a parameter on theme.css(): that
+    stylesheet is written before anyone has logged in, so it cannot know
+    who this is. Adding an `owner` argument there would mean either
+    moving the whole sheet after authentication — the riskiest reorder in
+    the file — or carrying a flag that is always False on the run that
+    matters.
+
+    It uses var(--amber), the SAME token as the signature at the foot, so
+    the edge and the word `admin` are one colour by construction and stay
+    together when the scheme changes.
+    """
+    if not is_admin():
+        return
+    st.markdown(
+        "<style>.block-container{border-color:var(--amber) !important}</style>",
+        unsafe_allow_html=True)
 
 
 def groq_keys() -> list:
@@ -3947,6 +3973,7 @@ st.segmented_control(
 )
 active = st.session_state.get("active_tab") or "transcribe"
 name_the_symbols()
+owner_edge()
 
 
 # ONE MODULE, TWO SOURCES.
