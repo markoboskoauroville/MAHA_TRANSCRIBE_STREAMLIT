@@ -4465,7 +4465,7 @@ His `Code.gs` is `assume-unchanged`, so **`git pull` will not update
 it** — `docs/ADMIN.md` §1.1 has the un-hide / stash / pull / re-fill /
 re-hide routine written out.
 
-### THE ACCOUNTS WORK — steps 9, 10, 11 remain
+### THE ACCOUNTS WORK — steps 9, 10, 11 are done (v102, v103, v104)
 
 A second, standalone Apps Script (`auth_script/`, its own token) now
 holds real accounts: salted hashes at 1000 rounds ≈ 497 ms, a pepper in
@@ -4480,10 +4480,20 @@ password required — the login token alone changes nothing), and a
 **Remember me that works for everyone** via a remember token whose hash
 alone is stored, up to five devices.
 
-    step 9   the admin dashboard: create, delete, rename, reset,
-             see who exists. THE THING HE ASKED FOR AT THE START.
-    step 10  tests mirroring test_login.py and test_users.py
-    step 11  rewrite ADMIN.md §3.2, §3.6 and §6
+    step 9   DONE v102  the admin dashboard: create, delete, rename,
+                        reset, see who exists. THE THING HE ASKED FOR
+                        AT THE START.
+    step 10  DONE v103  tests mirroring test_login.py and test_users.py
+    step 11  DONE v104  ADMIN.md rewritten for the accounts system:
+                        §1.0 names the two scripts and whose token is
+                        whose, §3 is the People panel rather than the
+                        sheet, §3.6 says plainly that a password cannot
+                        be read back — only reset — and PART 6 no longer
+                        claims the panel is unbuilt. §3.5 still holds:
+                        APP_PASSWORDS is the emergency door.
+
+The rename button in the panel stays `disabled` until the paragraph
+below stops being true.
 
 **Step 6 is half done.** The frozen-folder column is written at creation
 and **nothing reads it** — `apps_script/Code.gs` still builds
@@ -4859,6 +4869,18 @@ tests either. That is step 10, and it is where the next session starts.
 `tests/test_reader.py` check 8 fails — confirmed by stashing, it fails
 on v101 as pushed and is not from this session. `test_layout` and
 `test_shake` need playwright, which is not installed on Baba's Mac.
+
+> **v104 finishes this one, and the diagnosis above was too kind to the
+> test.** Check 8 had never passed: `_revoice` and the whole voice-change
+> path are untouched since v89, when the check was written beside them
+> (`git log -S "_revoice" -- app.py` returns one commit). It asked for
+> `cache == {}` after the run, and that state cannot exist by then — the
+> same rerun rebuilds the block being listened to before it can draw a
+> player. The app was right; the assertion was watching the wrong
+> moment. It now asks what the drop is FOR: the old audio gone, the
+> synth closure replaced, the old voice not spoken again, nothing behind
+> the index kept. Both halves were checked by sabotage — removing the
+> cache drop, and removing the synth rebuild — and each turns it red.
 
 ### STILL WAITING
 

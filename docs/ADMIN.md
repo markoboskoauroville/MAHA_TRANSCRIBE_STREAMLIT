@@ -3,14 +3,15 @@
 Written for Baba, who runs this for his family. Everything here assumes
 a Mac, `clasp` already installed and logged in, and this repo cloned.
 
-There are only **four places** anything lives. Once you can name them,
+There are only **five places** anything lives. Once you can name them,
 the rest of this document is detail.
 
 | Where | What it holds | Who changes it |
 |---|---|---|
-| **This repo** | the app and the Apps Script source | you, in your editor |
-| **The Apps Script project** | the running copy of `Code.gs` | `clasp push`, then Deploy |
-| **The Google Sheet** | users, settings, API keys, the recording index | you, by hand |
+| **This repo** | the app and both Apps Script sources | you, in your editor |
+| **The main script** | the running copy of `apps_script/Code.gs` | `clasp push`, then Deploy |
+| **The accounts script** | the running copy of `auth_script/Code.gs` — logins and passwords | `clasp push`, then Deploy |
+| **The Google Sheet** | users, settings, API keys, the recording index | the accounts script, and you for settings |
 | **Google Drive** | the audio and the transcripts | the app, mostly |
 
 **Nothing syncs by itself.** clasp copies a file to Google. Streamlit's
@@ -21,6 +22,53 @@ confusing thing about this setup, and it is worth reading twice.
 ---
 
 ## PART 1 — Changing the script
+
+### 1.0 There are TWO scripts — and which token is whose
+
+They are separate Apps Script projects, with separate deployments and
+separate tokens. Confusing them is the most expensive mistake available
+here, so name them once:
+
+| | **The main script** | **The accounts script** |
+|---|---|---|
+| In this repo | `apps_script/Code.gs` | `auth_script/Code.gs` |
+| Does | recordings, Drive, settings, usage | logins, passwords, who exists |
+| Its token | `SHEETS_TOKEN` | `AUTH_LOGIN_TOKEN` **and** `AUTH_ADMIN_TOKEN` |
+| Its address in secrets | `SHEETS_URL` | `AUTH_URL` |
+| Deploy | Deploy → Manage deployments → pencil → **New version** | the same, in its own project |
+
+**They share one spreadsheet and nothing else.** The accounts script
+owns the `users` tab; the main script reads the four left-hand columns
+of it and never writes a password.
+
+**The accounts script has two tokens, and the difference is the point:**
+
+- **`AUTH_LOGIN_TOKEN`** may ask *"is this pair right"*, hand back a
+  remembered session, and change a password **when the current one is
+  supplied**. It cannot make, rename or delete anybody. Every phone in
+  the house is effectively carrying this one.
+- **`AUTH_ADMIN_TOKEN`** may change people. The app reads it in exactly
+  one place — the People panel — and the script wants your own password
+  on top of it before it will delete, rename or reset (§3.2).
+
+Both are pasted into Streamlit secrets, and both are *also* set in the
+accounts project's **Project Settings → Script Properties**, where they
+are compared. Three more properties live there and **nowhere else**:
+
+```
+AUTH_PEPPER       the secret that makes a leaked spreadsheet useless (§3.6)
+AUTH_ADMIN_USER   the one username allowed to prove itself as administrator
+AUTH_SETUP_PASSWORD   temporary — setupAdmin() uses it once and deletes it
+```
+
+`AUTH_PEPPER` is **not** in the sheet and **not** in Streamlit. If you
+ever change it, every existing password stops working and every account
+needs a reset. Leave it alone.
+
+One more name, on the app's side: **`ADMIN_USER`** in Streamlit secrets
+decides who sees the amber gear. It should be the same person as
+`AUTH_ADMIN_USER` in the accounts project — if they disagree, the gear
+opens for somebody whose password the script will not accept as proof.
 
 ### 1.1 The one trap, before anything else
 
@@ -45,6 +93,10 @@ git update-index --assume-unchanged apps_script/Code.gs
 
 That tells git to stop tracking your changes to that one file, so
 `git add -A` can never publish your token by accident.
+
+**Only the main script needs this.** `auth_script/Code.gs` keeps its
+secrets in Script Properties rather than in the file, so there is
+nothing in it to protect and `git pull` updates it normally.
 
 **But it also means `git pull` will not update that file.** So when I
 tell you the script has changed, the routine is:
@@ -78,10 +130,22 @@ contain apostrophes, which is a very confusing hour.
 
 ```bash
 cd ~/path/to/MAHA_TRANSCRIBE_STREAMLIT
-clasp push
+clasp push                      # the MAIN script
 ```
 
 You should see `Pushed 2 files.` (`Code.gs` and `appsscript.json`.)
+
+**The accounts script is pushed from its own folder**, because that is
+where its `.clasp.json` — and therefore its project id — lives:
+
+```bash
+cd ~/path/to/MAHA_TRANSCRIBE_STREAMLIT/auth_script
+clasp push                      # the ACCOUNTS script
+```
+
+Push from the wrong folder and you send one script's code to the other
+project. If that happens, push the right file from the right folder and
+deploy again; nothing is lost.
 
 If it fails with something unhelpful, the usual cause is the Apps Script
 API being off. Turn it on at
@@ -102,6 +166,11 @@ Deploy**
 > still points at the first one. The old code keeps answering and
 > nothing appears to change. If you have already done this, the fix is
 > to go back to Manage deployments and update the original.
+
+**Both projects deploy the same way, separately.** Changing the accounts
+script and deploying the main one leaves the login exactly as it was —
+the two have nothing to do with each other, and `AUTH_URL` points at the
+accounts deployment, not this one.
 
 ### 1.4 How to tell it worked
 
@@ -129,6 +198,14 @@ Run these in order:
 3. **Set up Drive storage** — makes `recordings` and checks it can see your Drive folder
 4. **Set up users tab** — makes `users`
 
+Then, **once**, in the **accounts** project's editor (§1.0): set
+`AUTH_PEPPER`, `AUTH_LOGIN_TOKEN`, `AUTH_ADMIN_TOKEN` and
+`AUTH_ADMIN_USER` in Script Properties and run **`setupAdmin()`**. It
+makes your own account and prints the password to the log **once**.
+Write it down there and then — §3.6 explains why nothing can print it
+again. If a `users` tab already exists it adds the columns it needs
+rather than replacing anything.
+
 **Ignore the spinner. Look for the tabs.** If a function seems to hang
 for more than thirty seconds, it is waiting for a dialog you cannot see.
 Running from the TTT-LLL menu avoids that; running from the editor does
@@ -138,7 +215,7 @@ not. If the tab exists, the function did its job.
 
 | Tab | What it is |
 |---|---|
-| `users` | **username, password, engine, note** — the family |
+| `users` | the family — **username, engine, note**, and the hashes beside them (§3.6). Owned by the accounts script; use the People panel. |
 | `settings` | `scope, key, value` — global switches and the AI prompts |
 | `recordings` | the index of what is in Drive. **Do not edit by hand.** |
 | `k_groq`, `k_speechify`, … | spare API keys, one per row |
@@ -148,51 +225,94 @@ not. If the tab exists, the function did its job.
 
 ## PART 3 — Managing users
 
-This is the part you asked for, and it is deliberately simple: **the
-`users` tab IS the user database.** Four columns.
+This is the part you asked for, and it is now **in the app**: amber gear
+→ **People**. Everything in this Part is done from that panel, and the
+`users` tab is what it writes.
+
+The tab still has the four columns the main script reads, plus the ones
+the accounts script added on the right:
 
 ```
-username | password  | engine | note
----------|-----------|--------|---------------------------
-baba     | kruh-more | studio | me
-kerstin  | sunce-42  |        | uses the global engine
-mama     | lipa-9    | free   | keep her on the free engine
+username | password | engine | note     | salt | hash | rounds | folder | remember
+---------|----------|--------|----------|------|------|--------|--------|----------
+baba     |          | studio | me       | 7f…  | Qk…  | 1000   | baba   | a9…
+kerstin  |          |        | …        | 2c…  | Lm…  | 1000   | kerstin|
+mama     |          | free   | …        | e1…  | Zx…  | 1000   | mama   |
 ```
+
+**The `password` column is empty and stays empty.** It is what the old
+plaintext login used; the accounts script emptied it at migration and
+never writes it again. See §3.6.
+
+**Do not add or delete rows by hand.** A person made in the panel gets a
+salt, a hash and a frozen folder name in one locked write; a row typed
+into the sheet has none of those and cannot log in.
 
 ### 3.1 Add a user
 
-1. Open the `users` tab
-2. Add a row: a username, a password
-3. Leave `engine` blank unless you want to pin them to one
-4. Tell them their username and password
+1. Amber gear → **People**
+2. Type the username (and a note, if you want one)
+3. **Add**
+4. The password appears **once**, at the top of the panel — copy it and
+   give it to them
 
-That is all. **No deploy, no restart.** The app reads the sheet at login,
-so the next time they open it, it works.
+**No deploy, no restart, and no password for you to invent** — the
+script generates it, hashes it, and never stores the readable version.
+If you close the panel before copying it, reset it (§3.2); there is no
+way to look it up.
 
 **Rules that matter:**
 
 - **Username** is matched without caring about capitals. `Kerstin` and
   `kerstin` are the same person. It is stored lowercase.
-- **Password** is matched **exactly**, including spaces. A trailing
-  space you cannot see is a password they cannot type. If a login
-  mysteriously fails, click the cell and check the end of the value.
 - **Do not reuse a username.** It is the name of their Drive folder and
   their usage tab.
 - Avoid spaces and punctuation in usernames — `ana-marija` is fine,
-  `Ana Marija!` is asking for trouble.
+  `Ana Marija!` is refused.
+- The panel needs `AUTH_URL` and `AUTH_ADMIN_TOKEN` in Streamlit
+  secrets. If either is missing it says so and does nothing — it never
+  takes the app down with it.
 
 ### 3.2 Reset someone's password
 
-Change the value in the `password` cell. Tell them the new one. Done.
+**In the app, not in the sheet.** Amber gear → **People** → their row →
+**Reset**. A strip opens under that person and asks for **your own
+password** — not the token, yours. Type it, confirm, and the new
+password appears once at the top of the panel. Copy it before you leave
+that screen.
 
-They stay logged in on any device where they ticked *Remember me* until
-that browser forgets — the old password does not lock them out
-retroactively. If you need someone out **now**, change the password AND
-tell them to press *Forget me* in Settings, or clear their browser data.
+**Why it asks for your password as well as the admin token:** the token
+is a string sitting in Streamlit's secrets, and a string can leak or be
+left on a screen. A reset is not the gentle one of the three actions —
+it locks a person out of their own account — so the script wants the
+person, not just the string. It checks the name you are logged in as
+against `AUTH_ADMIN_USER` in its own Script Properties, so holding the
+token is not enough to nominate yourself administrator.
+
+Three things happen on a reset, all of them deliberate:
+
+- The old password stops working **immediately**.
+- **Every remembered device is signed out.** A reset is how you get
+  somebody *out* as much as how you let them back *in*, and leaving
+  their old phone logged in would defeat half of that. This is the
+  answer to "I need them out now" — there is nothing else to do.
+- The row is re-hashed at today's cost, not the cost it was made at.
+
+If **you** are the one who forgot: nobody can reset the administrator
+from inside the app. Log in with your `APP_PASSWORDS` password and the
+username box empty (§3.5), then use the panel.
 
 ### 3.3 Delete a user
 
-Delete their row. They can no longer log in.
+Amber gear → **People** → their row → **Delete**, and confirm with your
+own password, the same as a reset. They can no longer log in.
+
+Renaming is in the panel too, but the button is **deliberately
+disabled**, with the reason on its tooltip: the accounts script freezes
+a folder name at creation, and the main script still builds
+`USERS/<username>/` out of the login name. A rename today would walk
+away from that person's recordings. When the main script reads the
+`folder` column, the button loses `disabled` and nothing else changes.
 
 **Their recordings are NOT deleted.** Drive still holds
 `USERS/<username>/…` and `recordings` still has their rows. That is
@@ -209,13 +329,15 @@ there.
 
 ### 3.4 Give someone a different engine
 
-Two ways, and they do the same thing:
+Amber gear → **People**. Every name has **Edge / Groq**, **Speechify /
+AssemblyAI / Claude**, and **global**. One press, no confirmation — an
+engine is the one thing here that can be put back by pressing the other
+button, so it does not ask for your password.
 
-- **In the app:** log in as yourself, amber gear, *Engine per user*.
-  Every name has **Edge / Groq**, **Speechify / AssemblyAI / Claude**,
-  and **global**.
-- **In the sheet:** type `free`, `studio`, or leave the cell blank in
-  their `engine` column.
+The `engine` column in the sheet says the same thing, and typing `free`
+or `studio` into it by hand still works. Prefer the panel: it takes the
+script's lock, so it cannot collide with somebody logging in at that
+moment.
 
 **Blank means "use the global engine"** from the `settings` tab. It is
 not an error and it is not "no engine".
@@ -226,38 +348,75 @@ row for you.
 
 ### 3.5 The emergency door — READ THIS ONE
 
-Streamlit secrets still hold `APP_PASSWORDS`. Those passwords work
-**even if the Sheet is unreachable, misconfigured, or empty.**
+Streamlit secrets still hold `APP_PASSWORDS`, and **real accounts did
+not replace it.** Those passwords work **even if the accounts script is
+unreachable, half-deployed, misconfigured, or the Sheet is empty.**
 
-That is on purpose. A failure in the login screen locks out *everybody*,
-including you, and there would be no way in to fix it. So:
+That is on purpose, and it matters more now than it did with passwords
+in a spreadsheet: the login screen is a second web app that can be down
+on its own. A failure there locks out *everybody*, including you, and
+there would be no way in to fix it. So:
 
 > **Keep at least one password in `APP_PASSWORDS` that only you know,
-> and do not delete it.** It is the key under the doormat. If the sheet
-> ever breaks, you log in with that, with the username box empty.
+> and do not delete it.** It is the key under the doormat. If the
+> accounts script ever breaks — or you forget the administrator
+> password — you log in with that, with the username box empty.
+
+Logging in this way makes you the administrator (`ADMIN_USER`, or the
+first entry in `APP_PASSWORDS`), so the amber gear and the People panel
+are there. The panel still needs the accounts script to be answering:
+if the door you came through is the one that broke, fix that first.
 
 To change it: Streamlit Cloud → Manage app → Settings → Secrets → edit
 the line → Save. The app restarts itself.
 
-### 3.6 About passwords in a spreadsheet — said plainly
+### 3.6 About passwords — said plainly
 
-The passwords sit in the sheet as ordinary text. Anyone you share that
-spreadsheet with can read every password in it.
+**There are no passwords in the spreadsheet any more.** The `password`
+column is empty. What is stored is three cells per person:
 
-For a family of five, with a private sheet you own, that is a reasonable
-trade — and it is what makes "she forgot her password" a ten-second fix
-instead of a feature.
+```
+salt    a long random string, different for every person
+hash    the password put through a one-way mill
+rounds  how many times it went through — 1000 today
+```
 
-Two things follow, and they are not optional:
+The mill is HMAC-SHA256, keyed with a **pepper**, run `rounds` times.
+The salt goes in so that two people who happen to choose the same
+password still get different hashes. The repetition is the cost: about
+**half a second** on Google's servers, measured, not guessed. You wait
+it once when you log in; somebody guessing waits it for every guess.
 
-- **Never share that spreadsheet** with anyone who should not see every
-  password. Not "view only" either — view is enough to read them.
-- **Nobody should reuse a password they use anywhere else.** Make them
-  up yourself: two Croatian words and a number is plenty.
+**The pepper is the part that matters.** It lives in the accounts
+project's **Script Properties** — not in the sheet, not in Streamlit,
+not in this repo, not in any file you can open. Without it, the hashes
+in the spreadsheet cannot be attacked offline at all. That is what makes
+a leaked sheet a leak of *usernames*, not of passwords.
 
-The app itself never sends a password anywhere: the script is asked
-"is this pair right" and answers yes or no. There is no way to get the
-list of passwords out of the web app, only out of the spreadsheet.
+Now the plain part, and it is the whole point of the change:
+
+> **You cannot read anyone's password. Not from the sheet, not from the
+> app, not from the script, not by asking me.** A hash cannot be turned
+> back. When someone forgets theirs, the only thing anybody can do —
+> including you — is **reset** it (§3.2) and hand them a new one.
+
+That includes your own. There is no copy of it anywhere.
+
+So "she forgot her password" is no longer a ten-second look-up; it is a
+ten-second reset that also signs her old devices out. That is the better
+trade, and it is why the plaintext column went.
+
+What still follows:
+
+- **Do not share that spreadsheet** with people who should not see it.
+  The hashes are useless without the pepper, but the sheet also lists
+  who exists, their notes, their engines and their recordings.
+- **Nobody should reuse a password they use anywhere else.** The script
+  makes them up now, which handles this by itself — let it.
+- The app still never sees a stored password. It asks the script *"is
+  this pair right"* and gets yes or no, and the login costs the same
+  half second for a name that does not exist as for one that does, so
+  the family list cannot be read off the login screen.
 
 ---
 
@@ -312,11 +471,14 @@ housekeeping you do when you feel like it.
 
 | What you see | What it means | What to do |
 |---|---|---|
-| `bad token` | the script and Streamlit disagree | check `SHEETS_TOKEN` is spelled identically in both |
-| `this session only` under the engine buttons | the deployed script is older than the repo | Deploy → Manage deployments → pencil → New version |
-| `no users tab yet` | `setupUsers` has not been run, or is not deployed | run it from the TTT-LLL menu; deploy first if needed |
-| someone cannot log in | password mismatch | check for a trailing space in the cell |
-| nobody can log in | the sheet is unreachable | use your `APP_PASSWORDS` password with the username box empty |
+| `bad token` | a script and Streamlit disagree | check *which* script (§1.0): `SHEETS_TOKEN` for the main one, `AUTH_LOGIN_TOKEN` / `AUTH_ADMIN_TOKEN` for accounts |
+| `this session only` under the engine buttons | the deployed main script is older than the repo | Deploy → Manage deployments → pencil → New version |
+| `admin token required` | the panel is using the login token | `AUTH_ADMIN_TOKEN` missing or wrong in Streamlit secrets |
+| `administrator password required` | the password you typed to confirm was wrong, or you are not `AUTH_ADMIN_USER` | check `ADMIN_USER` and `AUTH_ADMIN_USER` name the same person (§1.0) |
+| the People panel says it cannot connect | `AUTH_URL` or `AUTH_ADMIN_TOKEN` is missing | paste both into Streamlit secrets |
+| the People panel lists nobody | the accounts script answered, and there is nobody | expected only before `setupAdmin()` has run |
+| someone cannot log in | wrong password, or their row has no hash | reset them (§3.2); a row typed in by hand has no hash and never works |
+| nobody can log in | the accounts script is unreachable | use your `APP_PASSWORDS` password with the username box empty |
 | the app is completely white | usually a stale module after a deploy | Streamlit Cloud → Manage app → **Reboot**. A rerun is not enough. |
 | `check engine` shows ✗ | a provider refused | the row names which one and why; usually an expired key |
 
@@ -325,20 +487,40 @@ log in. Local green is not production green.
 
 ---
 
-## PART 6 — Could this all be in the app instead?
+## PART 6 — It IS in the app now
 
-Some of it already is: assigning engines per person, and setting the
-global engine, are both in the amber gear.
+This Part used to say the user panel was not built. It is built, it is
+deployed, and it is the thing you asked for at the very start: *"I want
+in this panel to have list of all users and assign them engines."*
 
-Adding, deleting and re-passwording people is **not** in the app yet. It
-could be — the script would need `user_add`, `user_delete` and
-`user_password` endpoints beside the ones that already exist, and a
-panel behind the same admin gate.
+Amber gear → **People**. Five things, all of them live:
 
-It was not built yet for a reason worth understanding: **a bug in a user
-panel can lock everybody out, including you.** The sheet cannot do that.
-When it is built, the rule from §1 will still apply — `APP_PASSWORDS`
-stays as the door that always opens.
+| | What it does | What it asks for |
+|---|---|---|
+| **Add** | makes the account, generates the password, shows it once | nothing |
+| **Reset** | new password, old devices signed out | **your own password** |
+| **Delete** | the account goes, the recordings stay | **your own password** |
+| **Engine** | Edge / Groq, Speechify / AssemblyAI / Claude, or global | nothing |
+| **Rename** | disabled on purpose — see §3.3 | — |
 
-Ask for it when you want it. For now, a spreadsheet you edit by hand is
-not the crude version; it is the version that cannot break.
+It talks to the **accounts** script, not the main one (§1.0). That is
+why it works while the main script is mid-deploy: the old version of
+this panel asked the main script and said *"no users tab yet"* whenever
+that script was behind, which was true about the deployment and a lie
+about the tab.
+
+**The worry that delayed it has not gone away, it has been designed
+against.** A bug in a user panel can lock everybody out, including you.
+So:
+
+- Every call in it **returns** rather than raises. An unreachable script
+  is a sentence on the screen, not a crash.
+- A missing `AUTH_ADMIN_TOKEN` is not an error — the panel says so and
+  does nothing.
+- The two destructive actions need your password as well as the token,
+  and the script checks the name against its own `AUTH_ADMIN_USER`.
+- **`APP_PASSWORDS` is untouched by all of it** and stays the door that
+  always opens (§3.5). Nothing in this panel can close it.
+
+What is left for the spreadsheet: settings, API keys, the recording
+index, and reading things. Not people — do those here.
