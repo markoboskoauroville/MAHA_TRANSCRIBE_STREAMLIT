@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v103 (a) (the accounts script, finally executed)"
+APP_VERSION = "v107 (a) (the login screen says nothing)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1200,7 +1200,13 @@ def check_password() -> bool:
     if st.session_state.get("_authed"):
         return True
 
-    st.session_state.setdefault("login_lang", "hr")
+    # ENGLISH BY DEFAULT. Baba: "everything must be in English." The five
+    # pills are still there and the choice sticks for the session, so his
+    # mother presses HR once — but the screen a stranger meets, and the
+    # screen he meets on a fresh browser, is one language throughout.
+    # Mixed was the real complaint: Croatian labels above an English
+    # button reads as broken rather than as bilingual.
+    st.session_state.setdefault("login_lang", "en")
     ll = st.session_state["login_lang"]
     labels = _ht("LOGIN_LABELS", ll)
 
@@ -1233,16 +1239,24 @@ def check_password() -> bool:
                   on_change=_entered)
 
     if _rem.get("user"):
-        # SAID, NOT IMPLIED. The dots in the box are a placeholder, not a
-        # stored password — the app never keeps one. What it holds is a
-        # token the script can check, and this line says so rather than
-        # letting the dots pretend otherwise.
-        st.caption(t("login_remembered").format(who=_rem["user"]))
-        st.button(t("login_continue").format(who=_rem["user"]),
+        # ONE BUTTON, NO EXPLANATION.
+        #
+        # There was a caption saying "Remembered on this device — press
+        # Enter, or the button", and a second button offering "Not me —
+        # sign in as someone else". Both are gone, and Baba is right that
+        # they should be: a login screen that has to explain itself has
+        # already failed. Username, password, Continue. Nothing to read.
+        #
+        # "Not me" is not lost, only unlabelled: type a different name
+        # over the filled-in one and that person logs in normally. The
+        # button was a second way to do what the top box already does.
+        #
+        # The label comes from LOGIN_LABELS like everything else here,
+        # so the whole screen speaks one language.
+        st.button(labels.get("continue", "Continue as {who}")
+                  .format(who=_rem["user"]),
                   key="login_go", type="primary",
                   use_container_width=True, on_click=enter_remembered)
-        st.button(t("login_notme"), key="login_notme",
-                  use_container_width=True, on_click=forget_remembered)
     st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
         wait = st.session_state.get("_gate_wait", 0)
@@ -1255,18 +1269,30 @@ def check_password() -> bool:
     # st.expander gives a real disclosure widget: a proper button with the
     # right ARIA state, keyboard reachable, and the content stays in the
     # page for a screen reader rather than being hidden from it.
-    with st.expander(_more_label(ll),
-                     expanded=st.session_state.get("_login_open", False)):
-        lcols = st.columns(len(LANGS5))
-        for col, code in zip(lcols, LANGS5):
-            col.button(
-                code.upper(), key="login_pill_" + code,
-                type="primary" if st.session_state["login_lang"] == code else "secondary",
-                on_click=_set_login_lang, args=(code,),
-            )
-        st.markdown(_ht("WELCOME", ll))
-        st.markdown("---")
-        st.markdown(_ht("LOGIN_GUIDE", ll))
+    # A KEYED CONTAINER so the stylesheet can strip the frame off THIS
+    # expander only. Baba: "just remove this frame around it, let it be
+    # a >." On the login screen the box drew a heavy panel around a
+    # single closed line, which read as a section with something in it
+    # rather than as one quiet way in. Elsewhere expanders keep their
+    # frame — there they hold real content.
+    with st.container(key="loginmore"):
+        with st.expander(_more_label(ll),
+                         expanded=st.session_state.get("_login_open", False)):
+            lcols = st.columns(len(LANGS5))
+            for col, code in zip(lcols, LANGS5):
+                col.button(
+                    code.upper(), key="login_pill_" + code,
+                    type="primary" if st.session_state["login_lang"] == code else "secondary",
+                    on_click=_set_login_lang, args=(code,),
+                )
+            st.markdown(_ht("WELCOME", ll))
+            # INSIDE THE FOLD-OUT, where the comment above always said it
+            # was. It has been sitting open below it — three paragraphs
+            # about installing an icon on a phone, on the screen a person
+            # meets before they have typed anything. That is the wall of
+            # text this expander exists to fold away.
+            st.markdown("---")
+            st.markdown(_ht("LOGIN_GUIDE", ll))
     return False
 
 

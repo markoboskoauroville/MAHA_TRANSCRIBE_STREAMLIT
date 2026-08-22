@@ -255,6 +255,25 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       overflow: hidden;
     }}
     [data-testid="stExpander"] summary {{ color: var(--prose); }}
+
+    /* THE LOGIN FOLD-OUT HAS NO FRAME. Everywhere else an expander holds
+       real content and the panel around it is right. Here it is one
+       closed line on an otherwise bare screen, and the box made it read
+       as a section with something inside rather than as a quiet way in.
+       Just the arrow and the words. */
+    /* The border is drawn on the inner <details>, not on the expander
+       itself — measured, after the first attempt styled the wrong
+       element and changed nothing visible. */
+    [class*="st-key-loginmore"] [data-testid="stExpander"],
+    [class*="st-key-loginmore"] [data-testid="stExpander"] details {{
+      background: transparent !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+    }}
+    [class*="st-key-loginmore"] [data-testid="stExpander"] summary {{
+      padding-left: 0;
+      color: var(--dim);
+    }}
     [data-testid="stExpander"] summary:hover {{ color: var(--amber); }}
 
     [data-testid="stPopoverBody"] {{

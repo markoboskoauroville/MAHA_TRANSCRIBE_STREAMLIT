@@ -67,7 +67,16 @@ check("5 the username is filled in for them",
       sget(at2, "_user_input") == "baba", sget(at2, "_user_input"))
 keys2 = [b.key for b in at2.get("button")]
 check("6 a continue button appears", "login_go" in keys2, keys2)
-check("7 and a way to say it is not you", "login_notme" in keys2, keys2)
+# "Not me" was a second BUTTON and it is gone (v107) — a login screen
+# that has to explain itself has already failed. The capability is not
+# gone: typing a different name over the filled-in one logs that person
+# in. So the check is on the CAPABILITY, not on the button.
+check("7 and someone else can still sign in — the name box is editable",
+      box(at2, "_user_input") is not None)
+check("7b the explanation caption is gone too",
+      not any("Remembered on this device" in (c.value or "")
+              for c in at2.caption),
+      [c.value for c in at2.caption][:3])
 check("8 the button names WHO it will let in",
       any("baba" in (b.label or "") for b in at2.get("button")
           if b.key == "login_go"),
@@ -128,14 +137,26 @@ check("12d and nobody has been signed in under a name they did not type",
 check("12e and it does not burn a throttle attempt",
       not sget(at3b, "_gate_wait"), sget(at3b, "_gate_wait"))
 
-# --- "not me" clears it ------------------------------------------------
+# --- somebody else signs in, without a "not me" button -----------------
+#
+# The button is gone (v107). What must survive is the ABILITY: on a
+# shared phone the next person types their own name over the filled-in
+# one and logs in normally. That is the behaviour worth testing; the
+# button was only one way to reach it.
 at4 = fresh(dict(rem))
 at4.run()
-[b for b in at4.get("button") if b.key == "login_notme"][0].click().run()
-check("13 'not me' forgets them", sget(at4, "_remembered") is None)
-check("14 and does NOT log anybody in", sget(at4, "_authed") is not True)
-check("15 and empties the name box", not sget(at4, "_user_input"),
-      sget(at4, "_user_input"))
+check("13 the remembered name is filled in", sget(at4, "_user_input") == "baba")
+
+box(at4, "_user_input").set_value("emina").run()
+check("14 typing a different name does NOT log the remembered person in",
+      sget(at4, "_authed") is not True, sget(at4, "_authed"))
+check("15 and the typed name is what stands",
+      sget(at4, "_user_input") == "emina", sget(at4, "_user_input"))
+
+box(at4, "_pw_input").set_value("stub").run()
+check("15b and their own password gets THEM in, not baba",
+      sget(at4, "_authed") is True and sget(at4, "_user") != "baba",
+      (sget(at4, "_authed"), sget(at4, "_user")))
 
 # --- a real password still works while somebody is remembered ---------
 at5 = fresh(dict(rem))

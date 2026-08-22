@@ -1,55 +1,47 @@
-# STEP: decisions recorded · fix the Claude call · the eight-step checklist
-STATUS: done, except the live API check — that one needs you (step 1)
+# STEP: clean up the login screen
+STATUS: done, pushed as v107
 
 WHAT HAPPENED
-- Decisions written into `docs/SELF_UPGRADE.md`: beta is CYAN, Push to
-  main goes straight to `main`, one file per request, and the diff must
-  be readable on a phone.
-- Fixed `ttt/providers/anthropic.py`: no `temperature` unless a caller
-  passes one on purpose, `max_tokens` 2048 -> 16000, timeout 120s ->
-  300s, and the fallback model id is now `claude-opus-5` instead of a
-  dated year-old one. Both call sites (translation, the AI text box)
-  relied on the old 0.2 default and neither passes one, so nothing else
-  changes shape.
-- New `tests/test_anthropic_call.py`: 8 checks on what actually goes on
-  the wire, through a fake transport.
-- `§1.2` rewritten as your checklist, easiest first. The `beta` branch
-  now exists on GitHub, identical to main (undo: `git push origin
-  --delete beta`).
+- Everything on that screen now comes from LOGIN_LABELS. The Continue
+  button came from STRINGS through t(), which follows ui_lang, while the
+  field labels follow the login screen's own pills — two sources on one
+  screen, which is why Baba saw "Korisnik / Lozinka" above "Continue as
+  admin". Mixed reads as broken, not as bilingual.
+- The login screen now defaults to ENGLISH. The five pills still work
+  and the choice sticks for the session.
+- Removed: the "Remembered on this device — press Enter, or the button"
+  caption, and the "Not me — sign in as someone else" button. A login
+  screen that has to explain itself has already failed. "Not me" is not
+  lost — type a different name over the filled-in one.
+- The "What is this?" fold-out has no frame now.
+- FOUND WHILE LOOKING: three paragraphs about installing an icon on a
+  phone were rendering OPEN, below the fold-out, on the screen a person
+  meets before typing anything — outside the expander that exists to
+  fold them away. The comment above the code had claimed for months that
+  they were inside it. Moved in. The screen went from ~22 lines to 7.
 
 NUMBERS
-- pytest tests/     ->  18 passed, 1 skipped (layout — no app served)
-- the new file      ->  8 passed offline, 1 skipped (live call, no key)
-- pyflakes          ->  clean
-- app.py measured   ->  5,015 lines, ~66,000 tokens
+- calm login 32 · login 7 · notes 39 · box 16 — all green
+- pyflakes clean across app.py and ttt/
+- login screen: 7 lines of text, no page errors, no sideways scroll
 
 WHAT BROKE, AND WHAT I UNDID
-- My own test was wrong first: the fake `fetch` threw away the reply, so
-  two checks failed for a reason that had nothing to do with the code.
-  Fixed the fake, not the checks.
-- Sabotage, then undone: I restored the old always-send-temperature line
-  and watched check 2 go red, so the check is known to catch the real
-  bug and not just to pass.
+- My first CSS targeted [data-testid="stExpander"] and changed nothing
+  visible: the border is drawn on the inner <details>. Measured it in
+  the browser rather than guessing again, then targeted both.
+- Three checks in test_calm_login clicked the button I had just removed.
+  Rewritten to test the CAPABILITY — somebody else types their own name
+  and their own password gets THEM in, not the remembered person —
+  which is the thing that actually matters.
 
 STILL UNSURE
-- **The fix is verified against my reading of the API, not against the
-  API.** This machine has no Anthropic key — they live in the sheet's
-  `k_anthropic` tab — so the ninth check, the real call, did not run.
-  Until you run step 1 below, that is an assertion, not a result.
-- Whether translations change character now that no `temperature` is
-  sent. Current models ignore it either way; an older one would now run
-  at its own default rather than 0.2. Worth one look at a translation
-  you know well.
+- Whether English-by-default is right for Baba's mother, who does not
+  read English. She presses HR once and it sticks for that session, but
+  it does not persist across a new browser. If that turns out to matter,
+  the fix is to remember the login language in localStorage.
 
 FOR BABA
-- Step 1 of the checklist, one paste, and it keeps the key off the
-  screen and out of your history:
-
-      cd ~/Developer/MAHA_TRANSCRIBE_STREAMLIT && read -s "ANTHROPIC_API_KEY?paste the key, then Enter: " && export ANTHROPIC_API_KEY && python3 tests/test_anthropic_call.py
-
-  Nine checks instead of eight is the answer you want.
-- The other seven steps are in `docs/SELF_UPGRADE.md` §1.2, one at a
-  time, easiest first.
-- Older queue, unchanged: deploy the AUTH script, add
-  `AUTH_ADMIN_TOKEN` to the Streamlit Cloud secrets, and check whether
-  `migrateRun()` ever ran on the live sheet.
+- The old queue is unchanged and all three are still yours: deploy the
+  AUTH script, add AUTH_ADMIN_TOKEN to the Streamlit Cloud secrets, and
+  create accounts for Emina and Marinko — the users tab has only `admin`
+  in it, so they are still getting in through APP_PASSWORDS.

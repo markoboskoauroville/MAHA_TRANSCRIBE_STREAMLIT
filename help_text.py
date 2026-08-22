@@ -323,17 +323,27 @@ demandera plus le mot de passe sur ce téléphone.
 # Login-screen labels that must match whichever LOGIN_GUIDE language is
 # showing, so the guide's instructions point at words that actually appear
 # on screen.
+# ONE SOURCE FOR THE WHOLE LOGIN SCREEN.
+#
+# The Continue button used to come from app.py's STRINGS through t(),
+# which follows ui_lang, while these labels follow the login screen's own
+# language pills. Two sources on one screen gave Baba "Korisnik /
+# Lozinka" above "Continue as admin" — mixed language, which is worse
+# than either language, and it looked broken rather than bilingual.
+#
+# Anything the login screen prints belongs in here.
 LOGIN_LABELS = {
     "hr": {"username": "Korisnik", "password": "Lozinka",
-           "remember": "Zapamti me", "wrong": "Pogrešna lozinka."},
+           "remember": "Zapamti me", "wrong": "Pogrešna lozinka.",
+           "continue": "Nastavi kao {who}"},
     "en": {"username": "Username", "password": "Password",
-           "remember": "Remember me", "wrong": "Wrong password."},
+           "remember": "Remember me", "wrong": "Wrong password.", "continue": "Continue as {who}"},
     "it": {"username": "Utente", "password": "Password",
-           "remember": "Ricordami", "wrong": "Password errata."},
+           "remember": "Ricordami", "wrong": "Password errata.", "continue": "Continua come {who}"},
     "de": {"username": "Benutzer", "password": "Passwort",
-           "remember": "Angemeldet bleiben", "wrong": "Falsches Passwort."},
+           "remember": "Angemeldet bleiben", "wrong": "Falsches Passwort.", "continue": "Weiter als {who}"},
     "fr": {"username": "Utilisateur", "password": "Mot de passe",
-           "remember": "Se souvenir de moi", "wrong": "Mot de passe incorrect."},
+           "remember": "Se souvenir de moi", "wrong": "Mot de passe incorrect.", "continue": "Continuer comme {who}"},
 }
 
 # Shown once, at the very top of the login screen, above everything else —
