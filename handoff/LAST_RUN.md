@@ -1,46 +1,50 @@
-# STEP: install the dev requirements, run the browser tests
-STATUS: done, pushed as v106 `97db018`
+# STEP: plan SELF UPGRADE — a second Streamlit app on a `beta` branch
+STATUS: done — plan only, no code written
 
 WHAT HAPPENED
-- Installed `requirements-dev.txt` and Chromium. Both browser tests ran
-  on your Mac for the first time.
-- `test_shake` was right: the shipped colour-only highlight moves NO
-  word, while the old padding+background style shoved 195 of 812 words
-  by up to 307px.
-- `test_layout` failed two checks and the app was innocent. Its frame
-  list had no `langrow`, so it measured deck→cmdrow ACROSS the whole
-  HR / ENG / single / multi row and called that 61.6px gap a chasm. The
-  real rhythm is even. With your yes, `langrow` was added to the list,
-  and check 3's count now comes from the list instead of a hardcoded 3.
-- Re-verified today on the current tree: everything below is a fresh run.
+- Wrote `docs/SELF_UPGRADE.md`: the shape, the three decisions you asked
+  for, the flow screen by screen, and what already exists in the repo.
+- Read the current Claude API reference before naming anything:
+  `claude-opus-5`, $5 / $25 per million tokens, 1M context. A file-sized
+  request is a few cents.
+
+THE THREE ANSWERS, SHORT
+- Own sheet AND own Drive folder: YES, both, and it is the one
+  non-optional part — beta writes real rows and real audio otherwise.
+  Accounts stay SHARED but with the login token only, never the admin
+  token, so a broken beta cannot create, delete or reset anybody.
+- The second deployment needs 8 things from you, all outside this repo:
+  a beta branch, a new Streamlit app on it, a copy of the sheet, a new
+  Drive folder, a second Apps Script project, beta's secrets, a
+  fine-grained GitHub token, and two decisions (colour — I recommend
+  cyan; and whether Push to main may push straight to main).
+- Six ways main can still die are listed with their guards. Recovery
+  from a phone, first thing to try: GitHub in the browser → Commits →
+  the bad one → Revert. Redeploys in about two minutes.
 
 NUMBERS
-- pytest tests/  ->  18 passed in 84s (app served) · 17 + 1 skipped without
-- gaps measured  ->  8.8 · 8.8 · 9.8 px, spread 1.0px
-- test_shake     ->  shipped style 0 of 812 words moved; old style 195
-- pyflakes       ->  clean across app.py, ttt/ and tests/
-- no app code changed by this step
+- nothing run — planning only. No test, no commit to app code.
 
 WHAT BROKE, AND WHAT I UNDID
-- Two deliberate sabotages, to prove test_layout can still go red. The
-  first, in `app.py`, did NOTHING and taught the useful part: `ttt/theme.py`
-  resets those frames' margins to `0 !important` and is emitted after
-  app.py's own stylesheet, so frame spacing is `--frame-gap` in theme.py
-  and nowhere else. The second, in theme.py, worked: gaps became
-  34.8 / 34.8 / 9.8 and the test failed at once. Both reverted with
-  `git checkout --`.
-- I ran a Streamlit server on port 8811 for the test, then stopped it.
+- Nothing was changed or undone. One thing found already broken:
+  `ttt/providers/anthropic.py` `complete()` always sends `temperature`,
+  and every current Claude model rejects sampling parameters with a 400.
+  Its `max_tokens` default (2048) is also too small to return an edited
+  file. This must be fixed before the Claude step can work at all — it
+  is in the plan, not fixed, because you said plan only.
 
 STILL UNSURE
-- The install upgraded Streamlit 1.58.0 -> 1.62.0 in your SHARED pyenv,
-  where another project (videolingo) pins 1.38.0. Already mismatched at
-  1.58; wider now. Every suite here passes on 1.62. If that project
-  misbehaves, a virtualenv for this repo is the fix — say the word.
-- `test_layout` needs the app running or it skips. Nobody is served by a
-  suite that quietly reports 17 + 1 on a machine where the app is down.
+- Whether one file per request is enough. A real change often touches
+  `app.py` and a `ttt/` module together, and the plan currently sends
+  one file. Better decided once the first version exists than guessed
+  now.
+- Whether you want the diff to be readable on a phone. It changes how
+  step 5 is drawn, and you are on a phone half the time.
 
 FOR BABA
-- Queue unchanged, and all three are things only you can do: deploy the
-  AUTH script (Reset asks for your password and the deployed script still
-  ignores it), add `AUTH_ADMIN_TOKEN` to the Streamlit Cloud secrets, and
-  check whether `migrateRun()` ever ran on the live sheet.
+- Read `docs/SELF_UPGRADE.md` §1.2 — the eight things only you can do.
+- Two decisions before any code: the beta colour, and whether "Push to
+  main" pushes straight to `main` or stops at a branch you merge.
+- Older queue, unchanged: deploy the AUTH script, add
+  `AUTH_ADMIN_TOKEN` to the Streamlit Cloud secrets, and check whether
+  `migrateRun()` ever ran on the live sheet.
