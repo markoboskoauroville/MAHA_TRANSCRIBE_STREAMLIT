@@ -10,7 +10,21 @@ EVERY OTHER word is measured at each step. Any word that is not the
 highlighted one must not move at all, ever.
 """
 import sys
-from playwright.sync_api import sync_playwright
+
+# PLAYWRIGHT IS OPTIONAL — it is in requirements-dev.txt, not in the app's
+# own requirements, and Baba's Mac does not have it. Missing, this used to
+# be a traceback at import, which under pytest is a collection error rather
+# than the honest answer: this test did not run.
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    _WHY = ("playwright is not installed — pip install -r requirements-dev.txt"
+            " && python3 -m playwright install chromium")
+    if "pytest" in sys.modules:
+        import pytest
+        pytest.skip(_WHY, allow_module_level=True)
+    print(_WHY)
+    sys.exit(1)
 
 # The two candidates, written exactly as the app writes them.
 CURRENT = ('background:#f59e0b;color:#0b0d10;border-radius:4px;'
@@ -118,4 +132,17 @@ if px > 0.5 or py > 0.5:
     ok = False
 else:
     print("proposed style: not one pixel of movement in any word, at any step")
-sys.exit(0 if ok else 1)
+
+
+def test_shake():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_shake.py` is how it is meant to be read."""
+    assert ok, "a word still moves between steps — see the output above"
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(0 if ok else 1)

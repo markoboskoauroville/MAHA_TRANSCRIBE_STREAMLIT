@@ -26,7 +26,7 @@ def app(seed=None, open_id=None):
     at.session_state["active_tab"]="transcribe"
     if seed:
         st={}
-        ids=[N.add(st,x) for x in seed]
+        for x in seed: N.add(st,x)
         at.session_state[N.KEY]=st[N.KEY]
         at.session_state["_notes_adopted"]=True
         if open_id is not None:
@@ -95,4 +95,18 @@ ck("17 the second press deletes", len(sget(at4,N.KEY,[]))==before-1,
 ck("18 and the note closes", sget(at4,"_open_note") is None)
 
 print("\n%d passed, %d failed" % (ok,fail))
-sys.exit(1 if fail else 0)
+
+
+def test_notes_ui():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_notes_ui.py` is how it is meant to be read."""
+    assert fail == 0, "{} of {} checks failed — see the output above".format(
+        fail, ok + fail)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if fail else 0)

@@ -4,9 +4,15 @@ No network, no audio, hand-picked inputs. Attacks the rules: the case each
 is for, the case it must refuse, both sides of every boundary, two rules
 colliding, and the same input twice.
 """
+import os
 import sys
-sys.path.insert(0, '/home/claude/repo')
-from ttt import wordtimes as wt
+
+# The repo root, worked out from THIS file — it used to be the hardcoded
+# path of the sandbox this was first written in, which meant the file
+# could not run on Baba's Mac or anywhere else.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from ttt import wordtimes as wt  # noqa: E402
 
 P, F = 0, 0
 def ck(name, got, want):
@@ -162,4 +168,18 @@ ckt("mark times are non-decreasing",
     m and all(a["start_time"]<=b["start_time"] for a,b in zip(m,m[1:])))
 
 print(f"\nTEST 1 (mechanism alone): {P} passed, {F} failed")
-sys.exit(1 if F else 0)
+
+
+def test_wordtimes_mechanism():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test1_wordtimes.py` is how it is meant to be read."""
+    assert F == 0, "{} of {} checks failed — see the output above".format(
+        F, P + F)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if F else 0)

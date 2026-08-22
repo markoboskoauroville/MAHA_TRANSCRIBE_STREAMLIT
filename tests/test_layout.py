@@ -8,13 +8,46 @@ pixel, not that the page looks tidy.
     python3 tests/test_layout.py [port]
 """
 
+import socket
 import sys
 import time
 
-from playwright.sync_api import sync_playwright
-
-PORT = sys.argv[1] if len(sys.argv) > 1 else "8811"
+# ARGV BELONGS TO THE SCRIPT. Under pytest, sys.argv[1] is pytest's own
+# argument — "tests/" — and this would go looking for a port called that.
+PORT = sys.argv[1] if (__name__ == "__main__" and len(sys.argv) > 1) else "8811"
 URL = "http://127.0.0.1:{}/".format(PORT)
+
+
+def _cannot_run():
+    """Why this test cannot run, or "" if it can.
+
+    TWO PRECONDITIONS, NEITHER OF THEM THIS FILE'S DOING: playwright is
+    optional (requirements-dev.txt), and this drives the REAL app, which
+    something else has to be serving. Both used to be a traceback at
+    import — under pytest a collection error, which reads as a broken
+    suite rather than as a test that did not run.
+    """
+    import importlib.util
+    if importlib.util.find_spec("playwright") is None:
+        return ("playwright is not installed — pip install -r requirements-dev.txt"
+                " && python3 -m playwright install chromium")
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        if probe.connect_ex(("127.0.0.1", int(PORT))) != 0:
+            return ("nothing is serving the app on port %s — "
+                    "streamlit run app.py --server.port %s" % (PORT, PORT))
+    return ""
+
+
+_WHY = _cannot_run()
+if _WHY:
+    if "pytest" in sys.modules:
+        import pytest
+        pytest.skip(_WHY, allow_module_level=True)
+    print(_WHY)
+    sys.exit(1)
+
+from playwright.sync_api import sync_playwright  # noqa: E402
 
 passed = failed = 0
 shots = []
@@ -128,4 +161,18 @@ with sync_playwright() as p:
 
 print("\n{} passed, {} failed".format(passed, failed))
 print("screenshots: " + ", ".join(shots))
-sys.exit(1 if failed else 0)
+
+
+def test_layout():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_layout.py` is how it is meant to be read."""
+    assert failed == 0, "{} of {} checks failed — see the output above".format(
+        failed, passed + failed)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

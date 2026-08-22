@@ -207,4 +207,18 @@ drive._audio.duration_seconds = _orig_dur
 
 print("\n{} passed, {} failed".format(passed, failed))
 srv.shutdown()
-sys.exit(1 if failed else 0)
+
+
+def test_drive_text():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_drive_text.py` is how it is meant to be read."""
+    assert failed == 0, "{} of {} checks failed — see the output above".format(
+        failed, passed + failed)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

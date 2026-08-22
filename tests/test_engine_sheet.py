@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from ttt import engines as EN  # noqa: E402
 from ttt import routing as RO  # noqa: E402
 from ttt import sheet as SHEET  # noqa: E402
 
@@ -205,4 +204,18 @@ check("27 no url is False", SHEET.put_setting("", "TOK", "engine", "free") is Fa
 srv.shutdown()
 
 print("\n{} passed, {} failed".format(passed, failed))
-sys.exit(1 if failed else 0)
+
+
+def test_engine_sheet():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_engine_sheet.py` is how it is meant to be read."""
+    assert failed == 0, "{} of {} checks failed — see the output above".format(
+        failed, passed + failed)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

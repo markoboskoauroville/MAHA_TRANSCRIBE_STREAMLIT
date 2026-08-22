@@ -179,4 +179,18 @@ check("33 every id is different — a counter, not a clock",
       len(set(ids)) == 5, ids)
 
 print("\n{} passed, {} failed".format(passed, failed))
-sys.exit(1 if failed else 0)
+
+
+def test_notes():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_notes.py` is how it is meant to be read."""
+    assert failed == 0, "{} of {} checks failed — see the output above".format(
+        failed, passed + failed)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

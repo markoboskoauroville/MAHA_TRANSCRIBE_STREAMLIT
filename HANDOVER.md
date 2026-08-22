@@ -4546,8 +4546,12 @@ under a mutation for exactly that reason.
     GAS 44 · drive 20
     plus editor arrows and accessibility, driven in real Chromium
 
+*(v105: the whole suite now answers in one command — `pytest tests/`,
+436 checks in 16 files, 33 seconds. The current tally is in §76.)*
+
 `pyflakes` is clean across `app.py` and all of `ttt/`. It was not
-before; keep it that way.
+before; keep it that way. **v105 added `tests/` to that**, which is now
+clean too.
 
 ### What this is for
 
@@ -4893,3 +4897,99 @@ buttons say `unknown request`, which is honest, while **reset asks for
 the administrator password and the old deployed script ignores it.**
 That is the one place the screen would be lying, and it is worth doing
 the deploy for that reason alone.
+
+---
+
+## 76. THE TEST HARNESS — ONE COMMAND, AND A SUITE THAT WAS NEVER RUN (v105)
+
+Nothing in the app changed. This is the harness only, and it started
+from a plain question — what is broken right now — whose answer turned
+out to be mostly *"the tests cannot tell you"*.
+
+### `pytest tests/` used to die before the first test
+
+Every file ended in a module-level `sys.exit()`. pytest **executes a
+module to collect it**, so the exit fired during collection and took the
+whole run down with `INTERNALERROR`, before one test could be reported —
+green or red, the answer was the same crash. v104 fixed `test_reader.py`
+alone; this does the other seventeen, identically:
+
+    def test_<name>():           the tally, as an assertion pytest can report
+    if __name__ == "__main__":   the exit, which belongs to the script
+
+**Both ways of running still work, and they are not the same tool.**
+`python3 tests/test_notes.py` prints its checks and is how these files
+are meant to be READ; `pytest tests/` answers for all of them at once.
+
+    16 passed, 2 skipped in 33s   ← 436 checks inside those 16 files
+
+### A suite that had never run at all
+
+`tests/test1_wordtimes.py` began with
+
+    sys.path.insert(0, '/home/claude/repo')
+
+the hardcoded path of the sandbox it was written in. On Baba's Mac — on
+any machine but that one — it died with `ModuleNotFoundError: No module
+named 'ttt'`, and had done since it was written. It now works out the
+repo root from `__file__` like every other file here, and **65 checks
+ran for the first time. All 65 pass.** The mechanism they cover,
+`ttt/wordtimes.py`, has been carrying the highlight all along.
+
+pytest's default `python_files` is `test_*.py`, which that filename does
+not match, so `pytest.ini` widens it to `test*.py` rather than renaming
+a file HANDOVER refers to by name.
+
+### The two browser tests now SKIP instead of exploding
+
+`test_layout.py` and `test_shake.py` import playwright, which is not
+installed here, and `test_layout.py` additionally drives a **real
+running app** that something else has to be serving. Both were a
+traceback at import — under pytest, a collection error, which reads as a
+broken suite rather than as a test that did not run. Each now says which
+of the two preconditions is missing, and what to type. `test_layout.py`
+also stopped reading `sys.argv[1]` when it is not the script: under
+pytest that argument is pytest's own, and it would have gone looking for
+a port called `tests/`.
+
+### What to install
+
+    pip install -r requirements-dev.txt && python3 -m playwright install chromium
+
+`requirements-dev.txt` is new and pulls in `requirements.txt`, so one
+install covers both. It also repeats the Streamlit floor for a reason
+worth keeping: **1.58 was installed on this machine while
+`requirements.txt` asked for ≥1.61**, so every local green number had
+been measured against a Streamlit that production does not run. That is
+still true until somebody runs the command above; the suite below was
+measured on 1.58.
+
+### The numbers, and that they can go red
+
+    wordtimes 65 · accounts 50 · notes 39 · admin users 38 · users 32
+    calm login 30 · engines 28 · engine sheet 27 · drive 20 · source 19
+    ugly 19 · engine UI 18 · notes UI 18 · box 16 · reader 10 · login 7
+    = 436 checks, 16 files, one process, 33 seconds
+    GAS 46 + 44, run separately with node
+    layout + shake: skipped, playwright absent
+
+`pyflakes` now covers `tests/` as well and is clean: an unused
+`ttt.archive` import in `test_box.py` (the archive became notes in v98),
+an unused `ttt.engines` in `test_engine_sheet.py`, and a list
+comprehension in `test_notes_ui.py` whose result was never read — turned
+into the loop it always was, since `N.add`'s effect on the session is
+the point, not the ids.
+
+**Rule 71 applies to the harness itself.** A copy of `test_box.py` with
+one deliberately failing check was run through pytest before this was
+committed: `FAILED tests/… - AssertionError: 1 of 17 checks failed`. A
+runner that has never been seen to go red is not a runner, it is a
+green light.
+
+### Still not fixed by this
+
+Everything else on the list this session started from: the main script's
+deploy debt (§72), the accounts script's own pending deploy, the frozen
+folder column that is written and never read, notes that do not survive
+a reload, and the six `components.html` call sites waiting for
+`st.iframe`.

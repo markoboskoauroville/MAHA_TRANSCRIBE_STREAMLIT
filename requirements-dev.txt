@@ -1,0 +1,30 @@
+# What the TESTS need, on top of what the app needs.
+#
+# The app's own requirements.txt is deliberately short — Streamlit Cloud
+# installs it on every boot, and nothing in this file should ever be
+# installed there. `-r` pulls it in so one install covers both, and so
+# the Streamlit floor below cannot drift away from the app's.
+-r requirements.txt
+
+# THE FLOOR, REPEATED ON PURPOSE. The suite is run against whatever is on
+# this machine, and 1.58 was installed here while requirements.txt asked
+# for 1.61 — so every local green number was measured against a Streamlit
+# that production does not run. `pip install -r requirements-dev.txt -U`
+# is what closes that gap.
+streamlit>=1.61.0
+
+# The two browser tests (test_layout.py, test_shake.py) drive real
+# Chromium. Playwright also needs its browser downloaded, which pip
+# cannot do for you:
+#
+#     python3 -m playwright install chromium
+#
+# Without both, those two tests SKIP rather than fail — they say so.
+playwright>=1.44.0
+
+# `pytest tests/` runs every suite in one process. Each file also still
+# runs alone as a script, which is how they are meant to be read.
+pytest>=8.0.0
+
+# The lint the repo keeps at zero, across app.py, ttt/ and tests/.
+pyflakes>=3.0.0

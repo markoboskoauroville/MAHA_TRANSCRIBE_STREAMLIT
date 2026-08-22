@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from ttt import archive  # noqa: E402
 
 passed = failed = 0
 
@@ -155,5 +154,20 @@ check("15 the language and mode row still renders",
       all(k in keys for k in ("tr_hr", "tr_en", "tr_single", "tr_multi")),
       keys)
 
+
 print("\n{} passed, {} failed".format(passed, failed))
-sys.exit(1 if failed else 0)
+
+
+def test_box():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_box.py` is how it is meant to be read."""
+    assert failed == 0, "{} of {} checks failed — see the output above".format(
+        failed, passed + failed)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

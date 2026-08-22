@@ -55,4 +55,18 @@ N.add(s4,"čćžšđ ČĆŽŠĐ")
 ck("18 diacritics survive storage", "čćžšđ" in N.items(s4)[0]["text"])
 ck("19 and are findable folded", len(N.search(s4,"cczsd"))==1)
 print("\n%d passed, %d failed" % (ok,fail))
-sys.exit(1 if fail else 0)
+
+
+def test_notes_ugly():
+    """The verdict, in the one form pytest can report. The checks
+    themselves run above, at import, because this file is a script
+    first — `python3 tests/test_notes_ugly.py` is how it is meant to be read."""
+    assert fail == 0, "{} of {} checks failed — see the output above".format(
+        fail, ok + fail)
+
+
+# THE EXIT BELONGS TO THE SCRIPT, NOT TO THE IMPORT. At module level it
+# fired during pytest's collection, which aborts the whole run with
+# INTERNALERROR before one test is reported.
+if __name__ == "__main__":
+    sys.exit(1 if fail else 0)
