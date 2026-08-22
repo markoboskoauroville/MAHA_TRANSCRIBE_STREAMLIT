@@ -565,6 +565,43 @@ STRINGS = {
     "adm_name":           {"en": "name",              "hr": "ime"},
     "adm_note":           {"en": "note (optional)",   "hr": "bilješka (nije obavezno)"},
     "adm_add":            {"en": "add",               "hr": "dodaj"},
+    "adm_pw":             {"en": "password (optional)",
+                           "hr": "lozinka (nije obavezno)"},
+    # The whole message, ready to send. %s in order: name, username,
+    # password. It says the change is coming so it does not arrive as a
+    # surprise the first time they log in.
+    "adm_ready":          {"en": "%s, your account is ready.\n"
+                                 "Username: %s\n"
+                                 "Password: %s\n"
+                                 "The first time you log in it will ask "
+                                 "you to choose your own password.",
+                           "hr": "%s, tvoj račun je spreman.\n"
+                                 "Korisničko ime: %s\n"
+                                 "Lozinka: %s\n"
+                                 "Prvi put kad se prijaviš tražit će te "
+                                 "da odabereš svoju lozinku."},
+    "adm_ready_url":      {"en": "Open: %s\n", "hr": "Otvori: %s\n"},
+    "adm_copy":           {"en": "one tap on the corner copies it",
+                           "hr": "jedan dodir na kut kopira poruku"},
+    # The forced change. A FAMILY screen, so these are full sentences.
+    "must_title":         {"en": "Choose your own password",
+                           "hr": "Odaberi svoju lozinku"},
+    "must_why":           {"en": "This password was made for you. Now "
+                                 "choose one that only you know.",
+                           "hr": "Ovu lozinku je netko napravio za tebe. "
+                                 "Sada odaberi onu koju znaš samo ti."},
+    "must_old":           {"en": "the password you were given",
+                           "hr": "lozinka koju si dobio"},
+    "must_new":           {"en": "your new password",
+                           "hr": "tvoja nova lozinka"},
+    "must_again":         {"en": "type it once more",
+                           "hr": "upiši je još jednom"},
+    "must_save":          {"en": "Save my password",
+                           "hr": "Spremi moju lozinku"},
+    "must_nomatch":       {"en": "The two do not match.",
+                           "hr": "Ove dvije nisu iste."},
+    "must_done":          {"en": "Saved. This is your password now.",
+                           "hr": "Spremljeno. To je sada tvoja lozinka."},
     "adm_who":            {"en": "who",                "hr": "tko"},
     "adm_engine":         {"en": "engine",             "hr": "motor"},
     "adm_reset":          {"en": "reset",             "hr": "nova lozinka"},
@@ -1022,6 +1059,7 @@ def _try_remembered():
             st.session_state["_remembered"] = {
                 "user": got["user"], "token": tok,
                 "engine": got.get("engine", ""), "kind": "accounts",
+                "must_change": bool(got.get("must_change")),
             }
         return
 
@@ -1057,6 +1095,8 @@ def enter_remembered():
         st.session_state["_remember_token"] = r.get("token", "")
         if EN.get(r.get("engine", "")):
             st.session_state["_assigned_engine"] = r["engine"]
+        if r.get("must_change"):
+            st.session_state["_must_change"] = True
     st.session_state.pop("_remembered", None)
     return True
 
@@ -1186,11 +1226,14 @@ def check_password() -> bool:
                 st.session_state["_via_accounts"] = True
                 if got.get("remember"):
                     st.session_state["_remember_token"] = got["remember"]
-                # Their own engine, if the sheet gives them one. A blank
-                # cell means "use the global engine", so it is not an
-                # override and must not be treated as one.
+                # Their own engine. Every row has one of two answers
+                # now; an older row saying 'free' resolves through
+                # EN.get, and anything unreadable leaves the routes
+                # alone rather than guessing.
                 if EN.get(got.get("engine", "")):
                     st.session_state["_assigned_engine"] = got["engine"]
+                if got.get("must_change"):
+                    st.session_state["_must_change"] = True
 
         if matched is None:
             matched = next((p for p in PASSWORDS
@@ -1328,6 +1371,95 @@ if not check_password():
     st.stop()
 
 USER = st.session_state.get("_user") or "shared"
+
+
+def log_out():
+    """Hand the phone over.
+
+    Three things, and the ORDER matters. The script is told first, while
+    the session still knows which token to revoke; then the session is
+    emptied; then the browser's copy is queued for removal — queued
+    AFTER the clear, or the clear would throw the queue away with
+    everything else.
+
+    Telling the script is best effort. If it cannot be reached the
+    browser's copy still goes, so the person is out on this phone either
+    way — the revocation is merely delayed, not cancelled.
+    """
+    who = st.session_state.get("_user", "")
+    tok = st.session_state.get("_remember_token", "")
+    if who and tok:
+        try:
+            ACCOUNTS.remember_forget(auth_url(), auth_token(), who, tok)
+        except Exception:
+            pass
+
+    st.session_state.clear()
+    queue_ls(removes=[AUTH_LS_KEY])
+    st.session_state["_authed"] = False
+    st.session_state["_logged_out"] = True
+
+
+def must_change_gate():
+    """A password somebody else chose is a temporary password.
+
+    The account was made with one that was typed into a panel, read
+    aloud and sent through a chat app. This is where it stops being the
+    one that opens the door.
+
+    THE ONLY THING ON THE SCREEN. Not a banner, not a nag in Settings —
+    a person who can dismiss it will, and the account keeps the password
+    that went through WhatsApp. It is placed here, immediately after the
+    login gate, so nothing else is drawn behind it.
+
+    HARD RULE 6 GOVERNS THIS SCREEN COMPLETELY. The dense owner's panel
+    is behind is_admin() and this is not: it is the FIRST screen a new
+    person ever sees, and half of them do not read easily. Full
+    sentences, one field under another, a button they cannot miss.
+
+    NEVER A TRAP. `_must_done` means it succeeded in this session, so a
+    stale reply cannot ask twice; log out stays reachable; and a script
+    that does not know about the flag simply never sets it, which is why
+    a missing field is read as false in ttt/accounts.py.
+    """
+    if not st.session_state.get("_must_change"):
+        return
+    if st.session_state.get("_must_done"):
+        return
+
+    st.header(t("must_title"))
+    st.write(t("must_why"))
+
+    old_pw = st.text_input(t("must_old"), type="password", key="_must_old")
+    new_pw = st.text_input(t("must_new"), type="password", key="_must_new")
+    again = st.text_input(t("must_again"), type="password", key="_must_again")
+
+    if st.button(t("must_save"), key="_must_save", type="primary",
+                 use_container_width=True):
+        if new_pw != again:
+            st.error(t("must_nomatch"))
+        else:
+            ok, err = ACCOUNTS.change_password(
+                auth_url(), auth_token(), USER, old_pw, new_pw)
+            if ok:
+                # Cleared in the sheet by the same call. Kept here too so
+                # this screen cannot come back inside one session.
+                st.session_state["_must_done"] = True
+                st.session_state.pop("_must_change", None)
+                for k in ("_must_old", "_must_new", "_must_again"):
+                    st.session_state.pop(k, None)
+                st.success(t("must_done"))
+                st.rerun()
+            else:
+                st.error(err or t("pw_wrong"))
+
+    # A WAY OUT THAT IS NOT THE FRONT DOOR. If they cannot do this now —
+    # wrong password, not their phone — they must still be able to leave.
+    st.button(t("log_out"), key="_must_logout", on_click=log_out)
+    st.stop()
+
+
+must_change_gate()
 
 # Usage logging to the Google Sheet. Created once per session so the
 # session timer is meaningful, and inert unless both secrets are present —
@@ -2080,8 +2212,20 @@ def user_admin_panel():
     # list it would arrive below the fold on a phone.
     shown = st.session_state.get("_adm_shown")
     if shown:
-        st.text(shown[0])
-        st.code(shown[1], language=None)
+        # A WHOLE SENTENCE, NOT A PASSWORD ON ITS OWN. What he does next
+        # is send this to somebody, and st.code puts a copy button in its
+        # corner — one tap on a phone, instead of selecting a bare word
+        # and typing the rest of the message around it.
+        #
+        # It is built from what the SCRIPT sent back, never from what was
+        # typed into the box: against a deployment older than this one a
+        # chosen password is ignored and a generated one comes back, and
+        # the message he sends has to be the one that works.
+        who, pw = shown[0], shown[1]
+        link = str(st.secrets.get("APP_URL", "") or "")
+        st.code(((t("adm_ready_url") % link) if link else "")
+                + t("adm_ready") % (who.capitalize(), who, pw), language=None)
+        st.text(t("adm_copy"))
         st.text(t("adm_newpw"))
         st.button(t("adm_written"), key="adm_written",
                   on_click=lambda: st.session_state.pop("_adm_shown", None))
@@ -2101,22 +2245,27 @@ def user_admin_panel():
     # ---- the five actions, each ending in a sentence ----------------
     def do_engine(who, engine_id):
         ok, err = ACCOUNTS.user_engine(url, token, who, engine_id)
-        st.session_state["_adm_msg"] = who + (" → " + (engine_id or
-                                      t("eng_global_word")) if ok else "  " + err)
+        st.session_state["_adm_msg"] = who + (" → " + engine_id
+                                              if ok else "  " + err)
         if ok:
             forget()
 
     def do_create():
         name = str(st.session_state.get("_adm_name", "")).strip().lower()
         note = str(st.session_state.get("_adm_note", ""))
+        # EMPTY MEANS "MAKE ME ONE", which is what it did before this
+        # box existed. A typed one is used as it stands.
+        chosen = str(st.session_state.get("_adm_pw", ""))
         if not name:
             return
-        pw, err = ACCOUNTS.user_create(url, token, name, "", note)
+        pw, err = ACCOUNTS.user_create(url, token, name, "", note,
+                                       password=chosen)
         if pw:
             st.session_state["_adm_shown"] = (name, pw)
             st.session_state["_adm_msg"] = ""
             st.session_state.pop("_adm_name", None)
             st.session_state.pop("_adm_note", None)
+            st.session_state.pop("_adm_pw", None)
             forget()
         else:
             st.session_state["_adm_msg"] = err
@@ -2180,11 +2329,16 @@ def user_admin_panel():
         # have a password yet, and their note.
         rows = []
         for person in people:
-            e = (person.get("engine") or "").strip().lower()
-            rows.append("%-14s %-10s %-4s %s" % (
+            known = EN.get(person.get("engine") or "")
+            # "must" is worth a column of its own: it says the password
+            # he handed over has not been replaced yet, so the person has
+            # not logged in even once.
+            mark = ("no pw" if not person.get("hashed")
+                    else "must" if person.get("must_change") else "")
+            rows.append("%-14s %-10s %-5s %s" % (
                 person.get("user", ""),
-                e or "global",
-                "" if person.get("hashed") else "no pw",
+                known.id if known else EN.DEFAULT,
+                mark,
                 (person.get("note") or "")[:28]))
         st.code("\n".join(rows), language=None)
 
@@ -2205,20 +2359,34 @@ def user_admin_panel():
         current = next((p for p in people if p.get("user") == who), {})
         theirs = (current.get("engine") or "").strip().lower()
 
-        # The engine as a radio, because it is one choice out of three —
-        # which is what a radio is for, and what three pills were
-        # pretending not to be.
-        opts = [e.id for e in EN.ENGINES] + [""]
+        # The engine as a radio: one choice out of two now, not three.
+        # The third was blank, meaning "follow the global row", and a
+        # state that is neither of the two real answers is a state he
+        # has to remember the meaning of.
+        opts = [e.id for e in EN.ENGINES]
         # SHORT LABELS HERE ONLY. "Speechify / AssemblyAI / Claude" is
         # right where the owner is CHOOSING an engine and needs to know
         # what he is buying. Beside a person's name he already knows, and
         # the full names wrapped the row onto two lines with a gap
         # between them — seen with four people on the screen, not
         # predicted.
-        labels_by_id = {"free": "free", "studio": "studio", "": "global"}
+        labels_by_id = {"normal": "normal", "studio": "studio"}
+        # AN OLD ROW SAYS 'free' AND MUST NOT LAND ON THE WRONG BUTTON.
+        # EN.get resolves the old word to the current engine; anything
+        # unreadable falls to the first option rather than to nothing.
+        known = EN.get(theirs)
+        theirs = known.id if known else opts[0]
+        # A WIDGET KEY OUTLIVES THE OPTIONS IT WAS SET FROM. This radio
+        # offered "" for "global" until today; a session still holding
+        # that value makes Streamlit raise ValueError deep inside its own
+        # element tree — a white panel, not a wrong label. Clearing the
+        # stale value is one line and cannot be triggered by any input.
+        wkey = "_adm_engine_%s" % who
+        if st.session_state.get(wkey) not in opts:
+            st.session_state.pop(wkey, None)
         picked = st.radio(
             t("adm_engine"), opts,
-            index=opts.index(theirs) if theirs in opts else len(opts) - 1,
+            index=opts.index(theirs) if theirs in opts else 0,
             format_func=lambda k: labels_by_id[k],
             key="_adm_engine_%s" % who, horizontal=True,
             label_visibility="collapsed")
@@ -2284,6 +2452,11 @@ def user_admin_panel():
                   placeholder=t("adm_name"), label_visibility="collapsed")
     st.text_input(t("adm_note"), key="_adm_note",
                   placeholder=t("adm_note"), label_visibility="collapsed")
+    # NOT a password field: he is choosing one to read out and send, not
+    # typing his own, and a row of dots he cannot check is how a typo
+    # becomes a person who cannot log in.
+    st.text_input(t("adm_pw"), key="_adm_pw",
+                  placeholder=t("adm_pw"), label_visibility="collapsed")
     st.button(t("adm_add"), key="ad_add", on_click=do_create)
 
     if st.session_state.get("_adm_msg"):
@@ -2499,7 +2672,12 @@ def tab_signature(name: str):
     label = eng.label if eng else t("eng_mixed")
     res = st.session_state.get("_engine_check") or {}
     mark = ""
-    if eng and res.get("engine") == eng.id:
+    # THROUGH EN.get, NOT BY STRING. A verdict recorded before the engine
+    # was renamed says "free", and comparing the words would quietly drop
+    # a tick that had been earned. The check for a DIFFERENT engine still
+    # fails to match, which is the part that matters.
+    checked = EN.get(res.get("engine", ""))
+    if eng and checked is eng:
         mark = " ✓" if res.get("state") == EN.OK else " ✗"
     # AND WHO YOU ARE. Baba: "show me who I am." On a shared phone the
     # question "am I Marko or am I admin" has no other answer on the
@@ -2952,31 +3130,6 @@ def forget_me():
     st.session_state["_forgotten"] = True
 
 
-def log_out():
-    """Hand the phone over.
-
-    Three things, and the ORDER matters. The script is told first, while
-    the session still knows which token to revoke; then the session is
-    emptied; then the browser's copy is queued for removal — queued
-    AFTER the clear, or the clear would throw the queue away with
-    everything else.
-
-    Telling the script is best effort. If it cannot be reached the
-    browser's copy still goes, so the person is out on this phone either
-    way — the revocation is merely delayed, not cancelled.
-    """
-    who = st.session_state.get("_user", "")
-    tok = st.session_state.get("_remember_token", "")
-    if who and tok:
-        try:
-            ACCOUNTS.remember_forget(auth_url(), auth_token(), who, tok)
-        except Exception:
-            pass
-
-    st.session_state.clear()
-    queue_ls(removes=[AUTH_LS_KEY])
-    st.session_state["_authed"] = False
-    st.session_state["_logged_out"] = True
 
 
 def change_own_password():

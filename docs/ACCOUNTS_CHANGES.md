@@ -1,6 +1,11 @@
 # FOUR CHANGES TO THE ACCOUNTS SYSTEM — the plan
 
-Asked for 22.8.2026. **Plan only — no code written.**
+Asked for 22.8.2026. **BUILT 22.8.2026** — this document is now the
+record of what was decided and why, not a proposal. What actually
+shipped differs from the plan in one place, marked below.
+
+**Still to do, and only Baba can:** deploy the accounts script (New
+version), then run `migrateEnginesPreview()` and `migrateEnginesRun()`.
 
 Two engines instead of three · a password I choose · a forced change on
 first login · one message I can copy.
@@ -197,8 +202,15 @@ that door has no users row, no engine of their own, and no flag.
    in as them in a private window and meet the change-password screen.
 5. Only then create Emina and Marinko.
 
-**Open, and worth a word from you before step 1:** whether the forced
-change should also apply to **you** the first time, given your own
-account predates the flag. My answer is no — you set your password
-yourself and nobody else has seen it — but the column will be empty for
-you either way, which means no.
+**Answered:** the forced change does not apply to Baba. His column is
+empty, and an empty cell reads as no.
+
+## 8. WHAT SHIPPED THAT THE PLAN DID NOT SAY
+
+**The change screen asks for the temporary password as well as the new
+one.** The plan did not say where the proof would come from. The script's
+`password_change` requires the current password — that is what stops a
+leaked login token from setting anybody's password — and the app does
+not keep the one they typed at login. Asking again is one more field on
+one screen, once, and it is the only version that also works for a phone
+that logged in through Remember me and never typed anything.

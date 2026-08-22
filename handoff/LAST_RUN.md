@@ -1,51 +1,61 @@
-# STEP: plan the four accounts changes
-STATUS: done — plan only, no code
+# STEP: build the four accounts changes
+STATUS: done and pushed. **Deploy the accounts script before using it.**
 
 WHAT HAPPENED
-- Wrote `docs/ACCOUNTS_CHANGES.md`: two engines, a password you choose,
-  must-change-on-first-login, and one copyable message — each with what
-  it touches, plus the deploy answer and the breakage table.
-- Traced the engine value end to end before deciding anything, because
-  the answer to "what must I deploy" depended on it: panel →
-  `ACCOUNTS.user_engine` (auth script) → users tab → `login_` →
-  `_assigned_engine` → `adopt_sheet_engine()` → the routes.
-
-THE DECISIONS I TOOK, AND WHY
-- Store **`normal`**, and accept **`free` forever on read** via an alias
-  in `EN.get()`. Nothing here updates atomically, so every value already
-  written has to keep meaning something.
-- `userEngine_` keeps accepting an empty string and stores `normal`.
-  The deployed panel sends `""` for its "global" button; if you deploy
-  the script before I push the app, that press must not become an error.
-- The forced change screen is a FAMILY screen, so hard rule 6 governs it
-  completely — none of the owner-density from `HOW_WE_WORK.md` applies.
-- The copy message is built from the SCRIPT'S REPLY, never from what you
-  typed. That one rule is what makes an undeployed script visible
-  instead of silently wrong.
+- Two engines: `normal` and `studio`. The blank "follow the global row"
+  state is gone. `free` still resolves everywhere, forever — old rows do
+  not stop meaning something just because we renamed the word.
+- A password you choose on create, optional, same 8-character floor.
+  Empty still means "make me one".
+- Must-change-on-first-login: a tenth column, set by create and by
+  reset, cleared only by an actual password change. The screen it drives
+  is the WHOLE screen — no tabs, no deck behind it.
+- One message you can copy: name, username, password, and the sentence
+  saying a change is coming. `st.code` puts the copy button in its
+  corner. It carries a link only if you set `APP_URL`.
 
 NUMBERS
-- nothing run — planning only. No test, no app code changed.
+- auth script (node)  ->  66 checks, was 46
+- admin panel         ->  47 checks, was 39
+- must-change (new)   ->  12 checks
+- pytest tests/       ->  20 passed, 1 skipped (layout, no app served)
+- pyflakes            ->  clean
+- mutation-tested     ->  8 sabotages in the script, 5 in the app, all caught
 
 WHAT BROKE, AND WHAT I UNDID
-- Nothing. Read-only work.
+- Three real faults the tests found, all fixed, none of them in the part
+  I was building:
+  * `log_out` was defined 1,600 lines BELOW the new gate, which stops
+    the script — so the way OFF that screen was a crash. Moved up.
+  * A radio whose options change crashes on a stored value that is no
+    longer one of them (`ValueError: '' is not in list`, thrown inside
+    Streamlit) — a white panel. It now clears a stale value first.
+  * The engine tick in the corner compared ids as strings, so a verdict
+    recorded as `free` would have silently lost its tick.
+- One of my own checks was worthless: it passed while the entire app
+  rendered underneath the gate. Rewritten to measure against the real
+  app, then re-mutated to prove it fails.
+- Two sabotages ran against `app.py` and `auth_script/Code.gs` and were
+  restored from copies held aside; `git status` is clean apart from the
+  intended changes.
 
 STILL UNSURE
-- **Blank engine cells need a decision from you, not from me.** Blank
-  meant "follow the global row". If that row says `free`, blank becomes
-  `normal` and nobody moves; if it says `studio`, those people are on
-  studio today and writing `normal` would quietly demote them. The
-  migration previews the global value and the affected names before it
-  writes anything.
-- Whether the app should know its own public URL for the message. It
-  cannot work it out reliably; I would use an optional `APP_URL` secret
-  and simply leave the link out when it is unset.
+- Nothing was tested against the REAL deployed script — the suites run a
+  stub and a fake Apps Script runtime. The first real proof is you
+  creating one person after deploying.
+- The Croatian in the new screens is mine. Worth reading once: the
+  message you will send to Emina and Marinko is in it.
 
 FOR BABA
-- Deploy needed: **the accounts script only** (New version). The main
-  script does NOT need one — checked in the code, reasons in §5 — and
-  the Streamlit app redeploys itself when I push.
-- One decision before building: blank engine cells, above.
-- Older queue, unchanged: `ADMIN_USER = "admin"`, deploy the AUTH
-  script, add `AUTH_ADMIN_TOKEN`, then create Emina and Marinko. Step 1
-  of `SELF_UPGRADE.md` — the live Claude API check — is also still
-  unrun, so the `temperature` fix stays asserted rather than proven.
+1. **Deploy the accounts script** — Manage deployments → pencil → New
+   version. Until then: pressing `normal` fails loudly with "not an
+   engine", a chosen password is ignored (the message still shows the
+   one that works), and nobody is asked to change anything.
+2. In the accounts editor, run `migrateEnginesPreview()`, read the log,
+   then `migrateEnginesRun()`.
+3. Make one test person and watch it end to end: the copy message, then
+   log in as them in a private window and meet the change screen.
+4. Then Emina and Marinko.
+- Older queue, unchanged: `ADMIN_USER = "admin"`, `AUTH_ADMIN_TOKEN` in
+  the Streamlit secrets, and step 1 of `SELF_UPGRADE.md` — the live
+  Claude API check — is still unrun.

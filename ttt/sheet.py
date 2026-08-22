@@ -42,7 +42,7 @@ DEFAULTS = {
     # that is shared and editable by hand. "allow_patch_bay" sat here
     # until v91 and was never read by anything — the patch bay it
     # governed had already been replaced by engines.
-    "engine": "free",
+    "engine": "normal",
 }
 
 # A prompt from the sheet is untrusted text: it is typed by a person and

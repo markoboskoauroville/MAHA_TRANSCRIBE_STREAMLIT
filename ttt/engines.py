@@ -76,7 +76,7 @@ class Engine:
 # The names are Baba's own, and they name the PARTS rather than a tier,
 # because "which engine am I on" is answered by reading the vendors.
 ENGINES = [
-    Engine("free", "Edge / Groq",
+    Engine("normal", "Edge / Groq",
            {"stt": "groq", "tts": "edge", "llm": "groq"},
            note="the app's own keys"),
     Engine("studio", "Speechify / AssemblyAI / Claude",
@@ -85,13 +85,26 @@ ENGINES = [
 ]
 
 BY_ID = {e.id: e for e in ENGINES}
-DEFAULT = "free"
+DEFAULT = "normal"
+
+# WHAT "free" USED TO BE CALLED, and it has to keep resolving.
+#
+# The id was `free` until 22.8.2026. Every users row written before that
+# says `free`, the global settings row may still say it, and an app and
+# a script in this system never update at the same minute — the app
+# redeploys itself on a push while the Apps Script waits for a human. A
+# name that stops resolving does not raise anything: it makes get()
+# return None, which reads as "no engine of their own" and silently
+# drops the person onto the global row. Silence is the failure mode
+# worth spending three lines to avoid.
+ALIASES = {"free": "normal"}
 
 SETTING_KEY = "engine"
 
 
 def get(engine_id):
-    return BY_ID.get(engine_id or "")
+    name = (engine_id or "").strip().lower()
+    return BY_ID.get(ALIASES.get(name, name))
 
 
 def route_settings(engine):

@@ -41,7 +41,7 @@ def check(name, cond, detail=""):
 ADMIN_TOK = "ADMIN-TOK"
 ADMIN_PW = "admin-password"
 SEEN = []
-MODE = {"dead": False, "empty": False}
+MODE = {"dead": False, "empty": False, "old_deployment": False}
 PEOPLE = {}
 MADE = {"n": 0}
 
@@ -100,10 +100,22 @@ class Handler(BaseHTTPRequestHandler):
             if who in PEOPLE:
                 return self._reply({"ok": False, "error": "that name is taken"})
             MADE["n"] += 1
-            PEOPLE[who] = {"engine": "", "note": str(body.get("note") or ""),
-                           "folder": who, "hashed": True}
-            return self._reply({"ok": True, "user": who,
-                                "password": "made-pw-%d" % MADE["n"]})
+            # A CHOSEN PASSWORD IS USED; an empty one is generated. The
+            # reply is the only place the caller may read it from — see
+            # check 18b, which is the whole reason this stub can return
+            # something different from what it was sent.
+            chosen = str(body.get("password") or "")
+            # A DEPLOYMENT OLDER THAN THIS CHANGE ignores the field and
+            # generates one anyway. It is the case the panel has to
+            # survive without sending Baba's family a password that does
+            # not work, so the stub can be put into it.
+            if MODE["old_deployment"]:
+                chosen = ""
+            PEOPLE[who] = {"engine": "normal", "note": str(body.get("note") or ""),
+                           "folder": who, "hashed": True, "must_change": True,
+                           "sent_password": chosen}
+            return self._reply({"ok": True, "user": who, "must_change": True,
+                                "password": chosen or "made-pw-%d" % MADE["n"]})
 
         if what == "user_password":
             if not proved():
@@ -186,6 +198,13 @@ def sget(at, key, default=None):
 
 def keys(at):
     return [b.key for b in at.get("button")]
+
+
+def _engine_options(at):
+    for r in at.get("radio"):
+        if r.key and r.key.startswith("_adm_engine_"):
+            return list(r.options)
+    raise AssertionError("no engine choice on the page")
 
 
 def engine(at, engine_id):
@@ -400,9 +419,13 @@ check("32 an engine can be assigned from here",
 check("33 THROUGH THE ACCOUNTS SCRIPT, not the main one — one script "
       "owns the users tab",
       any(b.get("what") == "user_engine" for b in SEEN), SEEN[-1:])
-engine(at, "")
-check("34 and taken away again, which is the way back to the global one",
-      PEOPLE["mama"]["engine"] == "", PEOPLE["mama"])
+engine(at, "normal")
+check("34 and moved back to normal, which is now a real answer rather "
+      "than the absence of one",
+      PEOPLE["mama"]["engine"] == "normal", PEOPLE["mama"])
+check("34b THE RADIO OFFERS TWO ENGINES AND NO BLANK. The third option "
+      "was 'global', a state that is neither of the two real answers",
+      sorted(_engine_options(at)) == ["normal", "studio"], _engine_options(at))
 
 # ── §1: none of this may ever shut the door ───────────────────────────
 at = panel()
@@ -415,6 +438,54 @@ check("35 A DEAD SCRIPT IS A SENTENCE, NEVER AN EXCEPTION (§1)",
       not at.exception, at.exception)
 check("36 and it says it could not be reached",
       "unreachable" in page(at), page(at)[:300])
+
+# ── the chosen password, and the message he sends ─────────────────────
+at = panel()
+at.run()
+field(at, "_adm_name").set_value("emina")
+field(at, "_adm_pw").set_value("kruh-i-more-9")
+press(at, "ad_add")
+check("41 A PASSWORD I CHOOSE IS THE ONE THAT IS SET",
+      PEOPLE.get("emina", {}).get("sent_password") == "kruh-i-more-9",
+      PEOPLE.get("emina"))
+page41 = page(at)
+check("42 and the message names the person, the username and it",
+      "emina" in page41 and "kruh-i-more-9" in page41, page41[:400])
+check("43 and says the change is coming, so it is not a surprise later",
+      "change" in page41.lower() or "lozink" in page41.lower(), page41[:400])
+check("44 NO LINK when APP_URL is unset — a placeholder URL in a message "
+      "he forwards is worse than no URL",
+      "http" not in page41.split("kruh-i-more-9")[0][-400:], page41[:400])
+
+# THE RULE THAT MAKES A HALF-DEPLOYED SCRIPT SAFE.
+MODE["old_deployment"] = True
+at = panel()
+at.run()
+field(at, "_adm_name").set_value("marinko")
+field(at, "_adm_pw").set_value("ovo-nece-raditi")
+press(at, "ad_add")
+page45 = page(at)
+check("45 AGAINST AN OLD SCRIPT THE MESSAGE CARRIES THE PASSWORD THAT "
+      "WORKS, not the one that was typed — the old script ignores the "
+      "field and generates its own, and a message with the typed one "
+      "would be a person who cannot log in",
+      "ovo-nece-raditi" not in page45 and "made-pw" in page45, page45[:400])
+MODE["old_deployment"] = False
+
+# ── the table says who has not chosen their own password yet ──────────
+at = panel()
+at.run()
+check("46 the list marks somebody who must still change their password",
+      "must" in page(at), page(at)[:400])
+
+# ── an empty box still means "make me one" ────────────────────────────
+at = panel()
+at.run()
+field(at, "_adm_name").set_value("sonia")
+press(at, "ad_add")
+check("47 an empty password box asks the script to make one",
+      PEOPLE.get("sonia", {}).get("sent_password") == ""
+      and "made-pw" in page(at), PEOPLE.get("sonia"))
 
 print("\n{} passed, {} failed".format(passed, failed))
 

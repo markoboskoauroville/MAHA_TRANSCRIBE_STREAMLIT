@@ -5098,3 +5098,88 @@ Anthropic key.** Until somebody runs it with one, the fix is verified
 only against our own assertion about the API.
 
     pytest tests/  ->  18 passed, 1 skipped (layout, no app served)
+
+---
+
+## 79. TWO ENGINES, A PASSWORD HE CHOOSES, AND A CHANGE THEY CANNOT SKIP (v112)
+
+Four changes to the accounts system, planned in `docs/ACCOUNTS_CHANGES.md`
+and built the same day. **The accounts script needs a New version; the
+main script does not** — checked rather than assumed, reasons in §5 of
+that document.
+
+### The engine has two answers now
+
+`free` / `studio` / blank-meaning-follow-the-global becomes **normal**
+and **studio**. The stored word is `normal`, and **`free` still resolves,
+forever**, through an alias in `EN.get()`. That is not politeness: this
+system never updates at one moment. The app redeploys itself on a push
+while the Apps Script waits for a human, so a value already written has
+to keep meaning something. `engineOf_` in the script does the same job
+from the other side, and it **keeps accepting the empty string** the
+currently deployed panel sends for its old "global" button — deploy the
+script first and that press becomes `normal` instead of an error.
+
+`migrateEnginesPreview()` / `migrateEnginesRun()` tidy an old sheet. The
+preview prints the global settings row before it prints the blank names,
+because blank meant "follow that row": if it said `studio`, writing
+`normal` would quietly demote those people. On Baba's live sheet there
+is no engine row at all and one blank user, so blank meant the built-in
+default and `normal` is exactly right.
+
+### A chosen password, and why the message shows the other one
+
+`userCreate_` takes an optional password, held to the same 8-character
+floor as a change. The panel gained one box; empty still means "make me
+one".
+
+**The rule that makes it safe against a half-deployed script: the panel
+shows the password from the REPLY, never the one typed.** An older
+deployment ignores the new field and generates its own — so what he
+sends has to be what came back, or he sends his family a password that
+does not work. `tests/test_admin_users.py` check 45 puts the stub into
+exactly that state and watches for it.
+
+### Must change on first login
+
+A tenth column. Set by create and by reset — including when he chose the
+password himself, because by then it has been typed into a panel and
+sent through a chat app. Returned by `login_` **and `rememberLogin_`**,
+or a remembered phone walks past the one screen it must not. Cleared by
+`passwordChange_`, the one place that already proves the current
+password.
+
+The screen is the whole screen: no tabs, no deck, nothing behind it. It
+is a FAMILY screen, so hard rule 6 governs it completely — none of the
+owner-density the amber gear allows. **A missing field is read as false**
+everywhere, so an undeployed script means nobody is asked rather than
+everybody being stuck.
+
+### One message he can copy
+
+`st.code` puts a copy button in its corner, so the whole sentence —
+name, username, password, and the warning that a change is coming — is
+one tap on a phone. It carries the app's link only if `APP_URL` is set;
+no placeholder URL ever goes into a message he forwards.
+
+### Found by the tests, not by reading
+
+* `log_out` was defined 1,600 lines BELOW the new gate, which calls
+  `st.stop()`. The way out of the change-password screen was therefore
+  `name 'log_out' is not defined` — a white screen for the one person
+  who most needs a way off it. Moved above the gate.
+* A stale widget value crashes a radio whose options changed:
+  `ValueError: '' is not in list`, raised inside Streamlit's own element
+  tree, i.e. a white panel rather than a wrong label. The panel now
+  clears a stored engine value that is no longer an option.
+* The corner compared engine ids as STRINGS, so a verdict recorded as
+  `free` would have silently lost its tick. It compares resolved engines
+  now.
+* My own first containment check passed while the entire app rendered
+  under the gate, because it guessed at key prefixes. It runs the app
+  without the flag and requires none of those keys instead — found by
+  mutating `st.stop()` away and watching it stay green.
+
+    auth GAS 66 (was 46) · admin users 47 (was 39) · must change 12 (new)
+    accounts 51 · engine UI 18 · engine sheet 28 · pytest 20 files
+    every new behaviour mutation-tested: 8 in the script, 5 in the app

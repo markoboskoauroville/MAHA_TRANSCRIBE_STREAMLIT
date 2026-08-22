@@ -51,6 +51,11 @@ def login(url: str, token: str, username: str, password: str,
     return {"user": user,
             "engine": str(out.get("engine") or "").strip().lower(),
             "note": str(out.get("note") or ""),
+            # MISSING IS FALSE, and that is the safe direction: a
+            # deployment older than this one returns no such field, and
+            # the result is that nobody is asked to change a password —
+            # not that everybody is stuck on a screen asking them to.
+            "must_change": bool(out.get("must_change")),
             # Present only when Remember me asked for one. The token
             # itself, once — the sheet keeps nothing but its hash.
             "remember": str(out.get("remember") or "")}
@@ -85,6 +90,10 @@ def remember_login(url: str, token: str, username: str, remember: str):
         return None
     return {"user": user,
             "engine": str(out.get("engine") or "").strip().lower(),
+            # A REMEMBERED PHONE MUST NOT WALK PAST THE ONE SCREEN it is
+            # not allowed to walk past. Remember me skips the login form
+            # entirely, so the flag has to travel on this reply too.
+            "must_change": bool(out.get("must_change")),
             "note": str(out.get("note") or "")}
 
 
@@ -166,7 +175,7 @@ def users(url: str, token: str):
 
 
 def user_create(url: str, token: str, username: str,
-                engine: str = "", note: str = ""):
+                engine: str = "", note: str = "", password: str = ""):
     """Make a person. Returns (password, error).
 
     THE PASSWORD IS THE SUCCESS SIGNAL. There is no (True, "") to
@@ -174,10 +183,16 @@ def user_create(url: str, token: str, username: str,
     did not. That shape is deliberate — a create that half-succeeded
     would otherwise show an empty box under the word "done".
     """
+    # An EMPTY password asks the script to make one, which is what it
+    # did before this argument existed. A script older than this one
+    # ignores the field and generates one anyway — which is why the
+    # caller must show what comes BACK, not what it sent.
     out = _post(url, token, {"what": "user_create",
                              "username": str(username or ""),
                              "engine": str(engine or ""),
-                             "note": str(note or "")}, timeout=ADMIN_TIMEOUT)
+                             "note": str(note or ""),
+                             "password": str(password or "")},
+                timeout=ADMIN_TIMEOUT)
     if out is None:
         return "", "unreachable"
     if not out.get("ok"):

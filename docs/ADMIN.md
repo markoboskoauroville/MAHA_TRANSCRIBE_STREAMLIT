@@ -252,14 +252,22 @@ into the sheet has none of those and cannot log in.
 
 1. Amber gear → **People**
 2. Type the username (and a note, if you want one)
-3. **Add**
-4. The password appears **once**, at the top of the panel — copy it and
-   give it to them
+3. **Optionally** type a password. Leave it empty and one is made for
+   you — that is what it did before this box existed.
+4. **Add**
+5. A **whole message** appears at the top of the panel, ready to send:
+   their name, their username, the password, and the sentence saying
+   they will be asked to change it. One tap on the corner of that block
+   copies it.
 
-**No deploy, no restart, and no password for you to invent** — the
-script generates it, hashes it, and never stores the readable version.
-If you close the panel before copying it, reset it (§3.2); there is no
-way to look it up.
+**The password is shown once.** If you close the panel before copying
+it, reset it (§3.2); there is no way to look it up — §3.6 explains why.
+
+**It is a temporary password either way**, whether you chose it or the
+script made it. By the time they have it, it has been typed into a
+panel and sent through a chat app, so the first thing the app asks them
+is to choose their own. You do not have to explain that: the message
+says it, and the app enforces it.
 
 **Rules that matter:**
 
@@ -297,6 +305,11 @@ Three things happen on a reset, all of them deliberate:
   their old phone logged in would defeat half of that. This is the
   answer to "I need them out now" — there is nothing else to do.
 - The row is re-hashed at today's cost, not the cost it was made at.
+- **They must choose their own password the next time they log in.** The
+  one you hand over is temporary by design: it has been read aloud and
+  sent through a chat app by the time they have it. The app asks for a
+  new one before it shows them anything else, and nothing you or I can
+  press skips that screen for them.
 
 If **you** are the one who forgot: nobody can reset the administrator
 from inside the app. Log in with your `APP_PASSWORDS` password and the
@@ -329,15 +342,25 @@ there.
 
 ### 3.4 Give someone a different engine
 
-Amber gear → **People**. Every name has **Edge / Groq**, **Speechify /
-AssemblyAI / Claude**, and **global**. One press, no confirmation — an
-engine is the one thing here that can be put back by pressing the other
-button, so it does not ask for your password.
+Amber gear → **People**. Pick the person, then the engine: **normal**
+or **studio**. One press, no confirmation — an engine is the one thing
+here that can be put back by pressing the other button, so it does not
+ask for your password.
 
-The `engine` column in the sheet says the same thing, and typing `free`
-or `studio` into it by hand still works. Prefer the panel: it takes the
-script's lock, so it cannot collide with somebody logging in at that
-moment.
+**Two engines, not three.** `normal` is Edge / Groq — the app's own
+keys, free. `studio` is Speechify / AssemblyAI / Claude, on your keys.
+There used to be a third choice, a blank cell meaning "follow the global
+row", and it is gone: a person's engine is now theirs outright.
+
+**Old sheets keep working.** A cell still saying `free` is read as
+`normal` everywhere, and a blank one lands on `normal` too. To tidy them
+up in one go, open the ACCOUNTS script's editor and run
+`migrateEnginesPreview()` — it prints what it would change and writes
+nothing — then `migrateEnginesRun()`.
+
+The global engine row in `settings` stays, and it is what somebody
+logging in through `APP_PASSWORDS` runs, since they have no row on the
+users tab at all.
 
 **Blank means "use the global engine"** from the `settings` tab. It is
 not an error and it is not "no engine".

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
+from ttt import engines as EN  # noqa: E402
 from ttt import routing as RO  # noqa: E402
 from ttt import sheet as SHEET  # noqa: E402
 
@@ -72,7 +73,7 @@ check("9 TASKS still names all three jobs",
 
 # --- the sheet now carries the engine ---------------------------------
 check("10 engine is a sheet setting with a default",
-      SHEET.DEFAULTS.get("engine") == "free", SHEET.DEFAULTS.get("engine"))
+      SHEET.DEFAULTS.get("engine") == "normal", SHEET.DEFAULTS.get("engine"))
 check("11 and the Apps Script seeds it", "'engine'" in gs)
 
 cfg = {"ok": True, "settings": [["global", "engine", "studio"]]}
@@ -84,7 +85,12 @@ check("13 a user row beats the global row",
       SHEET.setting(cfg2, "engine", "stub") == "free",
       SHEET.setting(cfg2, "engine", "stub"))
 check("14 an absent sheet falls back to the built-in default",
-      SHEET.setting({}, "engine") == "free", SHEET.setting({}, "engine"))
+      SHEET.setting({}, "engine") == "normal", SHEET.setting({}, "engine"))
+# THE OLD WORD MUST KEEP WORKING. Every row written before 22.8.2026 says
+# 'free', and the sheet is not migrated by pushing an app.
+check("14b a sheet still saying 'free' resolves to the normal engine",
+      EN.get("free") is EN.get("normal") and EN.get("free").id == "normal",
+      EN.get("free"))
 
 
 # --- the app applies it -----------------------------------------------

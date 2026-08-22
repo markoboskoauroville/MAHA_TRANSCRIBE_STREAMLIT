@@ -100,6 +100,21 @@ function rowOf(ctx, name) {
   return ctx.userList_().filter((r) => r.user === name)[0];
 }
 
+/**
+ * THE CELLS AS THEY ARE ON THE SHEET, not as userList_ reports them.
+ *
+ * userList_ normalises: an engine cell reads back through engineOf_, so
+ * a blank one answers 'normal' and a migration that did nothing would
+ * look like it had worked. Anything asserting what was WRITTEN has to
+ * read the row itself.
+ */
+function rawOf(ctx, name) {
+  const rows = ctx.userRows_();
+  const row = rows[ctx.rowOf_(rows, name) - 2];
+  return { password: ctx.cell_(row, 2), engine: ctx.cell_(row, 3),
+           must: ctx.cell_(row, 10) };
+}
+
 // ---------------------------------------------------------------------
 // A. the door, and who may open it
 // ---------------------------------------------------------------------
@@ -275,10 +290,21 @@ console.log('\nTHE ACCOUNTS SCRIPT\n');
   check('37 an engine can be assigned, and is named back', r.ok === true
         && r.user === 'baba' && r.engine === 'studio', r);
   check('38 and the sheet holds it', rowOf(ctx, 'baba').engine === 'studio');
-  check('39 AN EMPTY ENGINE IS A REAL ANSWER — it means "use the global "'
-        + 'one" and is the way back from a choice',
+  // WAS: an empty engine meant "follow the global row". That third
+  // state is gone. Empty still has to be ACCEPTED — the panel deployed
+  // today sends it for its "global" button, and this script reaches
+  // Baba's phone before the app does — but it now lands on the engine
+  // that blank always resolved to.
+  check('39 an empty engine is accepted and becomes normal, so the older '
+        + 'panel\'s "global" press is not an error',
         post(ctx, { what: 'user_engine', username: 'baba', engine: '' }).ok === true
-        && rowOf(ctx, 'baba').engine === '');
+        && rowOf(ctx, 'baba').engine === 'normal');
+  check('39b the old word "free" also becomes normal',
+        post(ctx, { what: 'user_engine', username: 'baba', engine: 'free' }).ok === true
+        && rowOf(ctx, 'baba').engine === 'normal');
+  check('39c and normal is accepted by its own name',
+        post(ctx, { what: 'user_engine', username: 'baba', engine: 'normal' }).ok === true
+        && rowOf(ctx, 'baba').engine === 'normal');
   check('40 a made-up engine is refused',
         /not an engine/.test(post(ctx, { what: 'user_engine', username: 'baba',
                                          engine: 'turbo' }).error || ''));
@@ -331,8 +357,110 @@ console.log('\nTHE ACCOUNTS SCRIPT\n');
                  && json.indexOf(salt) === -1
                  && json.indexOf(hash) === -1
                  && json.indexOf(made.password) === -1
-                 && keys === 'engine,folder,hashed,note,user';
+                 && keys === 'engine,folder,hashed,must_change,note,user';
         })());
+}
+
+// ---------------------------------------------------------------------
+// I. A CHOSEN PASSWORD, AND THE FLAG THAT MAKES IT TEMPORARY
+// ---------------------------------------------------------------------
+{
+  const { ctx } = fresh();
+
+  const made = post(ctx, { what: 'user_create', username: 'emina',
+                           password: 'kruh-i-more-9' });
+  check('49 a chosen password comes back as the one that was chosen',
+        made.ok === true && made.password === 'kruh-i-more-9', made);
+  check('50 and it is the password that actually logs in',
+        post(ctx, { what: 'login', token: LOGIN_TOK,
+                    username: 'emina', password: 'kruh-i-more-9' }).ok === true);
+  check('51 the plaintext column stays empty even so',
+        rawOf(ctx, 'emina').password === '');
+  check('52 a chosen password too short is refused, by the SAME floor '
+        + 'the change-password endpoint uses',
+        /too short/.test(post(ctx, { what: 'user_create', username: 'kratka',
+                                     password: 'abc' }).error || ''));
+  check('53 and nobody was made by that refusal',
+        ctx.rowOf_(ctx.userRows_(), 'kratka') === 0
+        || ctx.rowOf_(ctx.userRows_(), 'kratka') === null
+        || ctx.rowOf_(ctx.userRows_(), 'kratka') === undefined);
+
+  check('54 an empty password still means "make me one"',
+        (() => {
+          const r = post(ctx, { what: 'user_create', username: 'marinko',
+                                password: '' });
+          return r.ok === true && r.password && r.password.length >= 8;
+        })());
+
+  // ---- must_change ----------------------------------------------
+  check('55 a new account MUST change its password',
+        rawOf(ctx, 'emina').must === 'yes'
+        && rowOf(ctx, 'emina').must_change === true);
+  check('56 and login says so, so the app can stop them',
+        post(ctx, { what: 'login', token: LOGIN_TOK, username: 'emina',
+                    password: 'kruh-i-more-9' }).must_change === true);
+  check('57 changing it clears the flag — the one place that does',
+        (() => {
+          const r = post(ctx, { what: 'password_change', token: LOGIN_TOK,
+                                username: 'emina',
+                                old_password: 'kruh-i-more-9',
+                                new_password: 'moja-vlastita-8' });
+          return r.ok === true && rawOf(ctx, 'emina').must === ''
+                 && rowOf(ctx, 'emina').must_change === false;
+        })());
+  check('58 and the next login no longer asks',
+        post(ctx, { what: 'login', token: LOGIN_TOK, username: 'emina',
+                    password: 'moja-vlastita-8' }).must_change === false);
+  check('59 A RESET SETS IT AGAIN — that password went through a chat app too',
+        (() => {
+          const r = post(ctx, { what: 'user_password', username: 'emina',
+                                admin_user: 'admin', admin_password: ADMIN_PW });
+          return r.ok === true && r.must_change === true
+                 && rawOf(ctx, 'emina').must === 'yes';
+        })());
+  check('60 A REMEMBERED PHONE IS TOLD TOO — it skips the login form, so '
+        + 'without this it would walk past the one screen it must not',
+        (() => {
+          const made2 = post(ctx, { what: 'user_create', username: 'sonia',
+                                    password: 'lozinka-123' });
+          const li = post(ctx, { what: 'login', token: LOGIN_TOK,
+                                 username: 'sonia', password: made2.password,
+                                 remember: true });
+          const rl = post(ctx, { what: 'remember_login', token: LOGIN_TOK,
+                                 username: 'sonia', remember: li.remember });
+          return rl.ok === true && rl.must_change === true;
+        })());
+  check('61 a row written before this column existed reads as NO, not yes',
+        (() => {
+          const s2 = gas.SS.getSheetByName('users');
+          s2.appendRow(['stara', '', 'normal', '', '', '', '', 'stara']);
+          const rows = ctx.userRows_();
+          return ctx.mustOf_(rows[ctx.rowOf_(rows, 'stara') - 2]) === false;
+        })());
+}
+
+// ---------------------------------------------------------------------
+// J. THE ENGINE MIGRATION
+// ---------------------------------------------------------------------
+{
+  const { ctx } = fresh();
+  const s2 = gas.SS.getSheetByName('users');
+  s2.appendRow(['blanka', '', '', '', 'x', 'y', 8, 'blanka']);
+  s2.appendRow(['stari', '', 'free', '', 'x', 'y', 8, 'stari']);
+  s2.appendRow(['nova', '', 'studio', '', 'x', 'y', 8, 'nova']);
+
+  const preview = ctx.migrateEnginesPreview();
+  check('62 the preview writes NOTHING', rawOf(ctx, 'blanka').engine === ''
+        && rawOf(ctx, 'stari').engine === 'free');
+  check('63 and it names who is affected, blank apart from free',
+        preview.blank.indexOf('blanka') !== -1
+        && preview.from_free.indexOf('stari') !== -1
+        && preview.already.indexOf('nova') !== -1, preview);
+
+  ctx.migrateEnginesRun();
+  check('64 the run rewrites blank to normal', rawOf(ctx, 'blanka').engine === 'normal');
+  check('65 and free to normal', rawOf(ctx, 'stari').engine === 'normal');
+  check('66 and leaves studio alone', rawOf(ctx, 'nova').engine === 'studio');
 }
 
 // ---------------------------------------------------------------------

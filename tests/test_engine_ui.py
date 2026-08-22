@@ -81,7 +81,7 @@ check("1 settings renders", not at.exception, at.exception)
 
 keys = [b.key for b in at.get("button")]
 check("2 both engine buttons exist",
-      "eng_free" in keys and "eng_studio" in keys, keys)
+      "eng_normal" in keys and "eng_studio" in keys, keys)
 check("3 the check engine button exists", "eng_check" in keys, keys)
 check("4 THE INTERFACE LANGUAGE PILLS ARE GONE",
       "ui_en" not in keys and "ui_hr" not in keys, keys)
@@ -102,7 +102,7 @@ check("7 choosing studio patches every route",
       == ("assemblyai", "speechify", "anthropic"),
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm")))
 
-[b for b in at2.get("button") if b.key == "eng_free"][0].click().run()
+[b for b in at2.get("button") if b.key == "eng_normal"][0].click().run()
 check("8 choosing free patches them back",
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm"))
       == ("groq", "edge", "groq"),

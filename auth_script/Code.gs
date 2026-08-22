@@ -269,7 +269,7 @@ function doPost(e) {
  */
 var C_USER = 1, C_PASS = 2, C_ENGINE = 3, C_NOTE = 4;
 var C_SALT = 5, C_HASH = 6, C_ROUNDS = 7;
-var N_COLS = 9;
+var N_COLS = 10;
 
 function userRows_() {
   var s = sheet_().getSheetByName('users');
@@ -332,8 +332,9 @@ function login_(body) {
     }
     var out = { ok: true,
                 user:   name,
-                engine: cell_(rows[i], C_ENGINE).trim().toLowerCase(),
-                note:   cell_(rows[i], C_NOTE) };
+                engine: engineOf_(cell_(rows[i], C_ENGINE)) || 'normal',
+                note:   cell_(rows[i], C_NOTE),
+                must_change: mustOf_(rows[i]) };
 
     // A remember token, ONLY when the tick-box asked for one. Wrapped
     // because a login must never fail over a convenience: if minting
@@ -371,8 +372,53 @@ function login_(body) {
 // Wiring the main script to READ this column is a separate change. Until
 // then it is written and unused, which is harmless.
 var C_FOLDER = 8;
+
+// ═══════════════════════════════════════════════════════════════════
+//  TWO ENGINES, AND EVERY OLD WAY OF SAYING THEM
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * The engine to STORE for a value somebody sent, or null if it is not
+ * an engine at all.
+ *
+ * There used to be three states: 'free', 'studio', and blank meaning
+ * "follow the global settings row". The blank is gone — a person's
+ * engine is now theirs outright — but three of these values are still
+ * out there and all three have to keep meaning something:
+ *
+ *   ''        the deployed panel's old "global" button. It arrives from
+ *             any app older than this deployment, and it must NOT become
+ *             an error the moment this script is deployed first. Blank
+ *             meant the built-in default, which was the free engine.
+ *   'free'    what every existing row says.
+ *   'normal'  what the panel sends now.
+ *
+ * All three land on 'normal'. NOTHING IN THIS SYSTEM UPDATES AT ONCE —
+ * the app redeploys itself on a push while this script waits for a
+ * human — so a value already written has to keep meaning what it meant.
+ */
+function engineOf_(raw) {
+  var e = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (e === '' || e === 'free' || e === 'normal') return 'normal';
+  if (e === 'studio') return 'studio';
+  return null;
+}
+
+// The tenth column: they must choose their own password before they can
+// do anything. Set when an account is made and when one is reset —
+// including when the password was chosen by hand, because the point is
+// that the person ends up with one nobody else has ever seen.
+//
+// An EMPTY CELL IS NO, which is what every row written before this
+// column existed already says.
+var C_MUST = 10;
+
+function mustOf_(row) {
+  var v = cell_(row, C_MUST).trim().toLowerCase();
+  return !!v && v !== 'no' && v !== 'false';
+}
 var HEADERS_ADDED = { 5: 'salt', 6: 'hash', 7: 'rounds', 8: 'folder',
-                      9: 'remember' };
+                      9: 'remember', 10: 'must_change' };
 
 // Which name may change users. NOT a secret and NOT hardcoded — the app
 // should no more contain a specific person's name than a password, and
@@ -456,7 +502,18 @@ function withLock_(fn) {
 }
 
 
-/** Make a person. The password is returned ONCE and is never stored. */
+/**
+ * Make a person. The password is returned ONCE and is never stored.
+ *
+ * THE PASSWORD MAY BE CHOSEN. Send one and it is used; leave it out and
+ * one is generated, as before. Either way it is hashed on arrival, the
+ * plaintext column stays empty, and the reply carries it exactly once.
+ *
+ * A CHOSEN PASSWORD IS STILL A TEMPORARY ONE — must_change is set
+ * either way. It has been spoken aloud, typed into a panel and sent
+ * through a chat app by the time they have it; the point of the flag is
+ * that they end up with one nobody else has ever seen.
+ */
 function userCreate_(body) {
   return withLock_(function () {
     var u = String(body.username || '').trim().toLowerCase();
@@ -466,17 +523,27 @@ function userCreate_(body) {
     var rows = userRows_();
     if (rowOf_(rows, u)) return { ok: false, error: 'that name is taken' };
 
-    var e = String(body.engine || '').trim().toLowerCase();
-    if (e && e !== 'free' && e !== 'studio') return { ok: false, error: 'not an engine: ' + e };
+    var e = engineOf_(body.engine);
+    if (e === null) return { ok: false, error: 'not an engine: ' + String(body.engine) };
 
-    var pw = makePassword_();
+    // The SAME floor the change-password endpoint applies. A short
+    // password chosen here would otherwise be a way around it.
+    var chosen = String(body.password == null ? '' : body.password);
+    if (chosen && chosen.length < MIN_PASSWORD) {
+      return { ok: false, error: 'too short: at least ' + MIN_PASSWORD + ' characters' };
+    }
+
+    var pw = chosen || makePassword_();
     var salt = makeSalt_();
     s.appendRow([u, '', e, String(body.note || ''),
-                 salt, hashPw_(pw, salt, ROUNDS), ROUNDS, u]);
+                 salt, hashPw_(pw, salt, ROUNDS), ROUNDS, u, '', 'yes']);
 
     // The only time this password exists anywhere. Not stored, not
-    // recoverable, not printed twice.
-    return { ok: true, user: u, password: pw };
+    // recoverable, not printed twice. The caller shows THIS, never what
+    // it sent: against a deployment older than this one the chosen
+    // password is ignored and a generated one comes back instead, and
+    // the message handed to the person must be the one that works.
+    return { ok: true, user: u, password: pw, must_change: true };
   });
 }
 
@@ -553,7 +620,11 @@ function userPassword_(body) {
     // A reset exists to get somebody OUT as much as to let them back in.
     // Leaving their old phone logged in would defeat half of that.
     rememberClear_(s, row);
-    return { ok: true, user: u, password: pw };
+    // And this one is temporary for the same reason a new account's is:
+    // it has been read aloud and sent through a chat app by the time
+    // they have it.
+    s.getRange(row, C_MUST).setValue('yes');
+    return { ok: true, user: u, password: pw, must_change: true };
   });
 }
 
@@ -567,14 +638,17 @@ function userPassword_(body) {
  * script to do all five things, so a half-deployed main script can no
  * longer make the list of people look empty.
  *
- * AN EMPTY STRING IS A REAL ANSWER, not a missing one: it means "use the
- * global engine", and it is the way back from a choice.
+ * TWO ENGINES NOW, NOT THREE. 'normal' is the free engine outright and
+ * 'studio' is the paid one; the old blank-means-follow-the-global state
+ * is gone. engineOf_ still accepts every older spelling — see it for
+ * why that is not politeness but the only way a half-deployed pair of
+ * apps can agree about what a row means.
  */
 function userEngine_(body) {
   return withLock_(function () {
     var u = String(body.username || '').trim().toLowerCase();
-    var e = String(body.engine || '').trim().toLowerCase();
-    if (e && e !== 'free' && e !== 'studio') return { ok: false, error: 'not an engine: ' + e };
+    var e = engineOf_(body.engine);
+    if (e === null) return { ok: false, error: 'not an engine: ' + String(body.engine) };
 
     var s = usersSheet_();
     var row = rowOf_(userRows_(), u);
@@ -593,9 +667,10 @@ function userEngine_(body) {
 function userList_() {
   return userRows_().map(function (r) {
     return { user:   cell_(r, C_USER).trim().toLowerCase(),
-             engine: cell_(r, C_ENGINE).trim().toLowerCase(),
+             engine: engineOf_(cell_(r, C_ENGINE)) || 'normal',
              note:   cell_(r, C_NOTE),
              folder: cell_(r, C_FOLDER),
+             must_change: mustOf_(r),
              hashed: !!(cell_(r, C_SALT) && cell_(r, C_HASH)) };
   }).filter(function (r) { return r.user; });
 }
@@ -670,6 +745,91 @@ function migrateReport_(commit) {
 }
 
 /** Changes NOTHING. Says what a real run would do. Run this first. */
+/**
+ * THE ENGINE MIGRATION — three spellings become two.
+ *
+ * Old rows say 'free', or say nothing at all. Nothing at all used to
+ * mean "follow the global settings row", and that state is gone, so
+ * every blank has to become a real answer.
+ *
+ * A BLANK IS THE ONE THAT NEEDS LOOKING AT, which is why the preview
+ * exists. Blank meant the global row, so if that row says 'studio',
+ * those people are on studio TODAY and writing 'normal' would quietly
+ * demote them. The preview prints what the settings tab says and who is
+ * affected, and writes nothing.
+ *
+ * On 22.8.2026 the live sheet had no engine row at all and one user
+ * with a blank cell, so blank meant the built-in default — the free
+ * engine — and 'normal' was exactly right. The next sheet may differ,
+ * which is the whole reason this reads the row instead of assuming it.
+ */
+function globalEngineSaid_() {
+  try {
+    var s = sheet_().getSheetByName('settings');
+    if (!s || s.getLastRow() < 2) return '';
+    var rows = s.getRange(2, 1, s.getLastRow() - 1, 3).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim().toLowerCase() === 'global' &&
+          String(rows[i][1] || '').trim().toLowerCase() === 'engine') {
+        return String(rows[i][2] || '').trim().toLowerCase();
+      }
+    }
+  } catch (err) { /* no settings tab is not an error here */ }
+  return '';
+}
+
+function migrateEnginesReport_(commit) {
+  var s = usersSheet_();
+  var rows = userRows_();
+  var out = { blank: [], from_free: [], already: [], global_said: globalEngineSaid_() };
+  for (var i = 0; i < rows.length; i++) {
+    var name = cell_(rows[i], C_USER).trim().toLowerCase();
+    if (!name) continue;
+    var raw = cell_(rows[i], C_ENGINE).trim().toLowerCase();
+    if (raw === 'normal' || raw === 'studio') { out.already.push(name); continue; }
+    if (raw === '') out.blank.push(name); else out.from_free.push(name);
+    if (commit) s.getRange(i + 2, C_ENGINE).setValue(engineOf_(raw) || 'normal');
+  }
+  return out;
+}
+
+function migrateEnginesPreview() {
+  var r = migrateEnginesReport_(false);
+  Logger.log([
+    'PREVIEW ONLY — nothing was written.',
+    '',
+    'the settings tab says the global engine is: ' +
+      (r.global_said ? r.global_said : '(no engine row at all)'),
+    '',
+    'BLANK, and would become normal (' + r.blank.length + '): ' +
+      (r.blank.join(', ') || '-'),
+    '   Read that line against the one above it. If the global engine is',
+    '   studio, these people are on studio today and normal would move',
+    '   them. If it is free, or there is no row, normal is what they',
+    '   already have and nobody moves.',
+    '',
+    "'free', would become normal (" + r.from_free.length + '): ' +
+      (r.from_free.join(', ') || '-'),
+    'already normal or studio (' + r.already.length + '): ' +
+      (r.already.join(', ') || '-'),
+    '',
+    'Run migrateEnginesRun() to write it.'
+  ].join('\n'));
+  return r;
+}
+
+function migrateEnginesRun() {
+  var r = withLock_(function () { return migrateEnginesReport_(true); });
+  Logger.log([
+    'DONE — every engine cell now says normal or studio.',
+    'was blank (' + r.blank.length + '): ' + (r.blank.join(', ') || '-'),
+    "was 'free' (" + r.from_free.length + '): ' + (r.from_free.join(', ') || '-'),
+    'left alone (' + r.already.length + '): ' + (r.already.join(', ') || '-')
+  ].join('\n'));
+  return r;
+}
+
+
 function migratePreview() {
   var r = migrateReport_(false);
   Logger.log([
@@ -701,7 +861,8 @@ function migrateRun() {
 // ═══════════════════════════════════════════════════════════════════
 
 var ALL_HEADERS = ['username', 'password', 'engine', 'note',
-                   'salt', 'hash', 'rounds', 'folder', 'remember'];
+                   'salt', 'hash', 'rounds', 'folder', 'remember',
+                   'must_change'];
 
 // Where you put your chosen password for ONE run.
 //
@@ -723,7 +884,7 @@ function ensureUsersSheet_() {
     s.setColumnWidth(3, 110); s.setColumnWidth(4, 240);
     s.setColumnWidth(5, 260); s.setColumnWidth(6, 300);
     s.setColumnWidth(7, 80);  s.setColumnWidth(8, 140);
-    s.setColumnWidth(9, 300);
+    s.setColumnWidth(9, 300); s.setColumnWidth(10, 110);
   }
   for (var i = 0; i < ALL_HEADERS.length; i++) {
     if (!String(s.getRange(1, i + 1).getValue() || '').trim()) {
@@ -892,9 +1053,13 @@ function rememberLogin_(body) {
     var have = tokList_(cell_(rows[i], C_REMEMBER));
     for (var j = 0; j < have.length; j++) {
       if (sameHash_(have[j], want)) {
+        // THE FLAG TRAVELS HERE TOO. A phone that ticked Remember me
+        // would otherwise walk straight past the change-your-password
+        // screen, which is the one screen it must not walk past.
         return { ok: true, user: u,
-                 engine: cell_(rows[i], C_ENGINE).trim().toLowerCase(),
-                 note: cell_(rows[i], C_NOTE) };
+                 engine: engineOf_(cell_(rows[i], C_ENGINE)) || 'normal',
+                 note: cell_(rows[i], C_NOTE),
+                 must_change: mustOf_(rows[i]) };
       }
     }
     return { ok: false, error: 'no' };
@@ -969,6 +1134,10 @@ function passwordChange_(body) {
     s.getRange(row, C_ROUNDS).setValue(ROUNDS);
     s.getRange(row, C_PASS).setValue('');
     rememberClear_(s, row);
+    // THE ONE PLACE THE FLAG IS CLEARED, and it is the place that just
+    // proved the current password. Nothing else may clear it: a screen
+    // that could would be a screen that can be skipped.
+    s.getRange(row, C_MUST).setValue('');
 
     // NOTHING COMES BACK. Not the new password, not a hash, not a token.
     return { ok: true, user: u };

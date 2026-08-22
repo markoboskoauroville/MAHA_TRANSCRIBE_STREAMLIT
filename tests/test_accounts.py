@@ -93,7 +93,14 @@ accounts._post = fake_post
 fake_post.reply = {"ok": True, "user": "Admin", "engine": "studio", "note": "me"}
 got = accounts.login("http://x", "LOGIN-TOK", "Admin", "pw")
 check("3 a good reply is understood",
-      got == {"user": "admin", "engine": "studio", "note": "me", "remember": ""}, got)
+      got == {"user": "admin", "engine": "studio", "note": "me",
+              "remember": "", "must_change": False}, got)
+# A REPLY WITHOUT THE FIELD MEANS NO, NOT YES. A deployment older than
+# 22.8.2026 says nothing about must_change, and the safe reading is that
+# nobody is stopped — the other way round would put every person in the
+# house on a change-your-password screen the app could not clear.
+check("3c a script that says nothing about it means nobody is stopped",
+      got["must_change"] is False, got)
 check("3b a plain login carries no token", got.get("remember") == "")
 check("4 it asks the login question", sent["payload"].get("what") == "login", sent)
 check("5 it sends the token it was given", sent["token"] == "LOGIN-TOK")
