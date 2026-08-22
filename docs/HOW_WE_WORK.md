@@ -22,6 +22,31 @@ five things at once.
 
 ---
 
+## Who each screen is for
+
+Two audiences, and they want opposite things.
+
+**The family — T, R, TR, the grey gear, the login.** Baba's mother, his
+father, his brother. They do not read easily. Hard rule 6 governs
+completely: 44px targets, generous type, nothing clipped, nothing that
+breaks at 250%. *"Anything that breaks at a large text size is a bug of
+the same seriousness as losing someone's recording."*
+
+**The owner — the amber gear, and only the amber gear.** One person who
+knows what every word means, on his own phone, doing something
+deliberate. Baba: *"It is not for users who are old. It is for a young
+administrator who is very smart."*
+
+There, density wins. A table read at a glance beats six buttons per
+person; a radio beats three pills. Six actions for four people was 24
+targets and most of a screen, to say what one line says better.
+
+**The exception is scoped and must not leak.** It applies behind
+`is_admin()` and nowhere else. If a family member can reach a screen,
+rule 6 governs it entirely — no exceptions, no judgement calls.
+
+---
+
 ## The one rule that is never bent
 
 Never `New deployment`.

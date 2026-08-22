@@ -188,6 +188,33 @@ def keys(at):
     return [b.key for b in at.get("button")]
 
 
+def engine(at, engine_id):
+    """Choose an engine for whoever is selected. It is a radio now — one
+    choice out of three, which is what three pills were pretending not
+    to be."""
+    for r in at.radio:
+        if r.key and r.key.startswith("_adm_engine_"):
+            r.set_value(engine_id).run()
+            return
+    raise AssertionError("no engine choice on the page")
+
+
+def pick(at, who):
+    """Select a person.
+
+    v109 compacted the panel: one list, one selection, one set of
+    actions. Before that every person carried their own buttons, so a
+    test could press `ad_del_baba` and never say who it meant. Now who it
+    means is a separate act — which is the point, since it is also how
+    the panel stops the wrong row being deleted by a mis-tap.
+    """
+    for r in at.radio:
+        if r.key == "_adm_pick":
+            r.set_value(who).run()
+            return
+    raise AssertionError("no person list on the page")
+
+
 def field(at, key):
     return [x for x in at.text_input if x.key == key][0]
 
@@ -231,13 +258,24 @@ at = panel()
 at.run()
 p = page(at)
 check("6 everybody is listed", "baba" in p and "mama" in p and "admin" in p, p[:200])
-check("7 somebody with no password yet is marked", "no password yet" in p, p[:200])
+# v109 compacted the panel to ONE list and ONE selection, so the marks
+# moved from a sentence per person into the table. "no pw" beside a name
+# is the same fact in less room.
+check("7 somebody with no password yet is marked", "no pw" in p, p[:200])
 check("8 NO SECRET IS EVER RENDERED — not a hash, not a token",
       ADMIN_TOK not in p and "folder" not in p, p[:200])
-check("9 each person has reset and delete", "ad_reset_baba" in keys(at)
-      and "ad_del_baba" in keys(at), keys(at))
+# The actions act on WHOEVER IS SELECTED now, so there is one set of
+# them rather than one set per person — which is the whole saving. The
+# behaviour that matters is unchanged and still checked below: the
+# confirm strip names the person, and nothing happens without the
+# administrator's own password.
+check("9 there are reset and delete actions",
+      "ad_reset" in keys(at) and "ad_del" in keys(at), keys(at))
+check("9b EVERY person is listed, not just the selected one — the point "
+      "of the table is seeing who exists at a glance",
+      all(n in p for n in ("admin", "baba", "mama")), p[:220])
 
-rename = [b for b in at.get("button") if b.key == "ad_rename_baba"]
+rename = [b for b in at.get("button") if b.key == "ad_rename"]
 check("10 RENAME IS PRESENT AND DISABLED — the main script still builds "
       "USERS/<user>/ from the login name", rename and rename[0].disabled,
       [b.key for b in at.get("button")])
@@ -278,15 +316,15 @@ check("17 and NO password box appears for a create that failed — not "
 # ── the second factor ─────────────────────────────────────────────────
 at = panel()
 at.run()
-press(at, "ad_del_baba")
+pick(at, "baba"); press(at, "ad_del")
 check("18 delete asks first, and names the person",
       "Delete baba" in page(at), page(at)[:300])
-check("19 the strip appears ONLY for the person pressed",
-      "ad_yes_baba" in keys(at) and "ad_yes_mama" not in keys(at), keys(at))
+check("19 the strip is about the SELECTED person, and names them",
+      "ad_yes" in keys(at) and "Delete baba" in page(at), page(at)[:200])
 check("20 and it says the recordings are kept", "recordings are kept" in page(at))
 
 field(at, "_adm_proof").set_value("wrong-password")
-press(at, "ad_yes_baba")
+pick(at, "baba"); press(at, "ad_yes")
 check("21 A WRONG ADMINISTRATOR PASSWORD DELETES NOBODY",
       "baba" in PEOPLE, list(PEOPLE))
 check("22 and the refusal is shown", "administrator password" in page(at),
@@ -294,15 +332,16 @@ check("22 and the refusal is shown", "administrator password" in page(at),
 
 at = panel()
 at.run()
-press(at, "ad_del_baba")
+pick(at, "baba"); press(at, "ad_del")
 field(at, "_adm_proof").set_value(ADMIN_PW)
-press(at, "ad_yes_baba")
+pick(at, "baba"); press(at, "ad_yes")
 check("23 the right password deletes", "baba" not in PEOPLE, list(PEOPLE))
 # NOT "baba" not in page(at) — the panel says "baba is gone", so the
 # name is rightly on the screen. What must disappear is the ROW.
 check("24 and the list refreshes without their row",
-      "ad_del_baba" not in keys(at) and "ue_baba_studio" not in keys(at),
-      keys(at))
+      "baba" not in [r for r in (sget(at, "_adm_people") or [])
+                     for r in [r.get("user")]],
+      sget(at, "_adm_people"))
 check("24b while saying plainly that they are gone",
       "baba is gone" in page(at), page(at)[-200:])
 check("25 THE ADMINISTRATOR'S OWN PASSWORD IS NEVER PUT ON THE SCREEN",
@@ -315,9 +354,9 @@ check("26 it really was sent to the script, with the admin's name",
 # ── cancelling ────────────────────────────────────────────────────────
 at = panel()
 at.run()
-press(at, "ad_del_baba")
+pick(at, "baba"); press(at, "ad_del")
 field(at, "_adm_proof").set_value(ADMIN_PW)
-press(at, "ad_no_baba")
+pick(at, "baba"); press(at, "ad_no")
 check("27 cancel deletes nobody", "baba" in PEOPLE, list(PEOPLE))
 # THE OBSERVABLE GUARANTEE, not the mechanism: reopening the strip must
 # present an empty box, never the password typed a minute ago.
@@ -328,7 +367,7 @@ check("27 cancel deletes nobody", "baba" in PEOPLE, list(PEOPLE))
 # change what happens here — the mutation survives this check and always
 # will. The pop stays as belt-and-braces for the day that key is read by
 # something other than the widget; it is not what makes this true.
-press(at, "ad_del_baba")
+pick(at, "baba"); press(at, "ad_del")
 check("28 reopening the strip presents an EMPTY password box",
       not (field(at, "_adm_proof").value or ""),
       field(at, "_adm_proof").value)
@@ -337,26 +376,27 @@ check("28b and nothing was deleted along the way", "baba" in PEOPLE, list(PEOPLE
 # ── resetting ─────────────────────────────────────────────────────────
 at = panel()
 at.run()
-press(at, "ad_reset_baba")
+pick(at, "baba"); press(at, "ad_reset")
 check("29 reset asks first too", "New password for baba" in page(at),
       page(at)[:300])
 check("30 and warns that their devices are signed out",
       "signed out" in page(at), page(at)[:300])
 field(at, "_adm_proof").set_value(ADMIN_PW)
-press(at, "ad_yes_baba")
+pick(at, "baba"); press(at, "ad_yes")
 check("31 the new password is shown once", "reset-pw-1" in page(at),
       page(at)[:300])
 
 # ── engines ───────────────────────────────────────────────────────────
 at = panel()
 at.run()
-press(at, "ue_mama_studio")
+pick(at, "mama")
+engine(at, "studio")
 check("32 an engine can be assigned from here",
       PEOPLE["mama"]["engine"] == "studio", PEOPLE["mama"])
 check("33 THROUGH THE ACCOUNTS SCRIPT, not the main one — one script "
       "owns the users tab",
       any(b.get("what") == "user_engine" for b in SEEN), SEEN[-1:])
-press(at, "ue_mama_none")
+engine(at, "")
 check("34 and taken away again, which is the way back to the global one",
       PEOPLE["mama"]["engine"] == "", PEOPLE["mama"])
 
@@ -364,9 +404,9 @@ check("34 and taken away again, which is the way back to the global one",
 at = panel()
 at.run()
 MODE["dead"] = True
-press(at, "ad_reset_baba")
+pick(at, "baba"); press(at, "ad_reset")
 field(at, "_adm_proof").set_value(ADMIN_PW)
-press(at, "ad_yes_baba")
+pick(at, "baba"); press(at, "ad_yes")
 check("35 A DEAD SCRIPT IS A SENTENCE, NEVER AN EXCEPTION (§1)",
       not at.exception, at.exception)
 check("36 and it says it could not be reached",

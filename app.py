@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v108 (a) (the owner has a gold edge)"
+APP_VERSION = "v109 (a) (the admin panel, dense)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2086,45 +2086,84 @@ def user_admin_panel():
         st.caption(t("adm_nobody"))
 
     ask = st.session_state.get("_adm_ask") or ("", "")
-    for person in people:
-        who = person.get("user", "")
-        theirs = (person.get("engine") or "").strip().lower()
-        st.text(who + ("" if person.get("hashed") else "  ·  " + t("adm_nopw")))
 
-        cols = st.columns([1.4, 1.4, 1.2])
-        for col, eng in zip(cols[:2], EN.ENGINES):
-            col.button(eng.label, key="ue_%s_%s" % (who, eng.id),
-                       type="primary" if theirs == eng.id else "secondary",
-                       on_click=do_engine, args=(who, eng.id),
-                       use_container_width=True)
-        # A BLANK ENGINE IS NOT AN ENGINE — it means "use the global
-        # one", so it needs its own way back rather than being an
-        # unreachable state once anything has been assigned.
-        cols[2].button(t("eng_global_word"), key="ue_%s_none" % who,
-                       type="primary" if not theirs else "secondary",
-                       on_click=do_engine, args=(who, ""),
-                       use_container_width=True)
+    # ---- ONE LIST, ONE SELECTION ------------------------------------
+    #
+    # Baba: "optimize the real estate... make everything with radio
+    # buttons, and always give me a list so I can see who is registered.
+    # It is not for users who are old. It is for a young administrator
+    # who is very smart."
+    #
+    # THIS PANEL IS THE ONE PLACE THE ACCESSIBILITY RULES DO NOT GOVERN,
+    # and the exception is deliberate and scoped. Hard rule 6 — 44px
+    # targets, large type, nothing clipped — exists for his mother and
+    # his father, who do not read easily. They never see this screen: it
+    # is behind is_admin(), and it is read by one person who knows
+    # exactly what every word means. Six buttons per person was 24
+    # targets for four people, most of a phone screen, to say something a
+    # single line says better.
+    #
+    # The exception must not leak. Anything a FAMILY MEMBER can reach
+    # keeps rule 6 entirely.
+    if people:
+        # The whole table in one glance: who, which engine, whether they
+        # have a password yet, and their note.
+        rows = []
+        for person in people:
+            e = (person.get("engine") or "").strip().lower()
+            rows.append("%-14s %-10s %-4s %s" % (
+                person.get("user", ""),
+                e or "global",
+                "" if person.get("hashed") else "no pw",
+                (person.get("note") or "")[:28]))
+        st.code("\n".join(rows), language=None)
 
-        acts = st.columns([1.4, 1.4, 1.2])
-        acts[0].button(t("adm_reset"), key="ad_reset_%s" % who,
+        names = [p.get("user", "") for p in people]
+        who = st.radio(t("adm_who"), names, key="_adm_pick",
+                       horizontal=len(names) <= 4,
+                       label_visibility="collapsed")
+
+        current = next((p for p in people if p.get("user") == who), {})
+        theirs = (current.get("engine") or "").strip().lower()
+
+        # The engine as a radio, because it is one choice out of three —
+        # which is what a radio is for, and what three pills were
+        # pretending not to be.
+        opts = [e.id for e in EN.ENGINES] + [""]
+        labels_by_id = {e.id: e.label for e in EN.ENGINES}
+        labels_by_id[""] = t("eng_global_word")
+        picked = st.radio(
+            t("adm_engine"), opts,
+            index=opts.index(theirs) if theirs in opts else len(opts) - 1,
+            format_func=lambda k: labels_by_id[k],
+            key="_adm_engine_%s" % who, horizontal=True,
+            label_visibility="collapsed")
+        if picked != theirs:
+            do_engine(who, picked)
+            st.rerun()
+
+        acts = st.columns([1, 1, 1])
+        acts[0].button(t("adm_reset"), key="ad_reset",
                        on_click=open_ask, args=("reset", who),
                        use_container_width=True)
-        # DISABLED ON PURPOSE, with the reason beside it rather than in
-        # a document nobody has open. The accounts script freezes a
+        # DISABLED ON PURPOSE, with the reason in the tooltip rather than
+        # in a document nobody has open. The accounts script freezes a
         # folder column at creation; the MAIN script still builds
-        # USERS/<user>/ out of the login name, so a rename today would
-        # walk away from somebody's recordings. The day the main script
-        # reads that column, this line loses `disabled` and nothing else
-        # about it changes.
-        acts[1].button(t("adm_rename"), key="ad_rename_%s" % who,
+        # USERS/<user>/ from the login name, so a rename today would walk
+        # away from somebody's recordings. The day the main script reads
+        # that column, this line loses `disabled` and nothing else about
+        # it changes.
+        acts[1].button(t("adm_rename"), key="ad_rename",
                        disabled=True, help=t("adm_rename_why"),
                        use_container_width=True)
-        acts[2].button(t("adm_delete"), key="ad_del_%s" % who,
+        acts[2].button(t("adm_delete"), key="ad_del",
                        on_click=open_ask, args=("delete", who),
                        use_container_width=True)
 
-        # THE CONFIRM STRIP SITS UNDER THE PERSON IT IS ABOUT. A dialog
-        # elsewhere on the page is how the wrong row gets deleted.
+        # THE CONFIRM STRIP SITS UNDER THE PERSON IT IS ABOUT — with one
+        # list and one selection, "the person it is about" is whoever is
+        # selected, and the strip names them so the wrong row cannot be
+        # deleted by a mis-tap higher up.
         if ask[1] == who and ask[0] in ("delete", "reset"):
             st.text((t("adm_ask_delete") if ask[0] == "delete"
                      else t("adm_ask_reset")) % who)
@@ -2133,11 +2172,11 @@ def user_admin_panel():
             # token — a token can leak into a screenshot; a password
             # typed at the moment of the act cannot be lying around.
             st.text_input(t("adm_yourpw"), type="password", key="_adm_proof")
-            yn = st.columns([1.4, 1.4])
-            yn[0].button(t("adm_yes"), key="ad_yes_%s" % who, type="primary",
+            yn = st.columns([1, 1])
+            yn[0].button(t("adm_yes"), key="ad_yes", type="primary",
                          on_click=do_delete if ask[0] == "delete" else do_reset,
                          args=(who,), use_container_width=True)
-            yn[1].button(t("adm_cancel"), key="ad_no_%s" % who,
+            yn[1].button(t("adm_cancel"), key="ad_no",
                          on_click=close_ask, use_container_width=True)
 
     # ---- add a person ------------------------------------------------
