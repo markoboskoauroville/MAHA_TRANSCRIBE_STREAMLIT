@@ -1,50 +1,55 @@
-# STEP: plan SELF UPGRADE — a second Streamlit app on a `beta` branch
-STATUS: done — plan only, no code written
+# STEP: decisions recorded · fix the Claude call · the eight-step checklist
+STATUS: done, except the live API check — that one needs you (step 1)
 
 WHAT HAPPENED
-- Wrote `docs/SELF_UPGRADE.md`: the shape, the three decisions you asked
-  for, the flow screen by screen, and what already exists in the repo.
-- Read the current Claude API reference before naming anything:
-  `claude-opus-5`, $5 / $25 per million tokens, 1M context. A file-sized
-  request is a few cents.
-
-THE THREE ANSWERS, SHORT
-- Own sheet AND own Drive folder: YES, both, and it is the one
-  non-optional part — beta writes real rows and real audio otherwise.
-  Accounts stay SHARED but with the login token only, never the admin
-  token, so a broken beta cannot create, delete or reset anybody.
-- The second deployment needs 8 things from you, all outside this repo:
-  a beta branch, a new Streamlit app on it, a copy of the sheet, a new
-  Drive folder, a second Apps Script project, beta's secrets, a
-  fine-grained GitHub token, and two decisions (colour — I recommend
-  cyan; and whether Push to main may push straight to main).
-- Six ways main can still die are listed with their guards. Recovery
-  from a phone, first thing to try: GitHub in the browser → Commits →
-  the bad one → Revert. Redeploys in about two minutes.
+- Decisions written into `docs/SELF_UPGRADE.md`: beta is CYAN, Push to
+  main goes straight to `main`, one file per request, and the diff must
+  be readable on a phone.
+- Fixed `ttt/providers/anthropic.py`: no `temperature` unless a caller
+  passes one on purpose, `max_tokens` 2048 -> 16000, timeout 120s ->
+  300s, and the fallback model id is now `claude-opus-5` instead of a
+  dated year-old one. Both call sites (translation, the AI text box)
+  relied on the old 0.2 default and neither passes one, so nothing else
+  changes shape.
+- New `tests/test_anthropic_call.py`: 8 checks on what actually goes on
+  the wire, through a fake transport.
+- `§1.2` rewritten as your checklist, easiest first. The `beta` branch
+  now exists on GitHub, identical to main (undo: `git push origin
+  --delete beta`).
 
 NUMBERS
-- nothing run — planning only. No test, no commit to app code.
+- pytest tests/     ->  18 passed, 1 skipped (layout — no app served)
+- the new file      ->  8 passed offline, 1 skipped (live call, no key)
+- pyflakes          ->  clean
+- app.py measured   ->  5,015 lines, ~66,000 tokens
 
 WHAT BROKE, AND WHAT I UNDID
-- Nothing was changed or undone. One thing found already broken:
-  `ttt/providers/anthropic.py` `complete()` always sends `temperature`,
-  and every current Claude model rejects sampling parameters with a 400.
-  Its `max_tokens` default (2048) is also too small to return an edited
-  file. This must be fixed before the Claude step can work at all — it
-  is in the plan, not fixed, because you said plan only.
+- My own test was wrong first: the fake `fetch` threw away the reply, so
+  two checks failed for a reason that had nothing to do with the code.
+  Fixed the fake, not the checks.
+- Sabotage, then undone: I restored the old always-send-temperature line
+  and watched check 2 go red, so the check is known to catch the real
+  bug and not just to pass.
 
 STILL UNSURE
-- Whether one file per request is enough. A real change often touches
-  `app.py` and a `ttt/` module together, and the plan currently sends
-  one file. Better decided once the first version exists than guessed
-  now.
-- Whether you want the diff to be readable on a phone. It changes how
-  step 5 is drawn, and you are on a phone half the time.
+- **The fix is verified against my reading of the API, not against the
+  API.** This machine has no Anthropic key — they live in the sheet's
+  `k_anthropic` tab — so the ninth check, the real call, did not run.
+  Until you run step 1 below, that is an assertion, not a result.
+- Whether translations change character now that no `temperature` is
+  sent. Current models ignore it either way; an older one would now run
+  at its own default rather than 0.2. Worth one look at a translation
+  you know well.
 
 FOR BABA
-- Read `docs/SELF_UPGRADE.md` §1.2 — the eight things only you can do.
-- Two decisions before any code: the beta colour, and whether "Push to
-  main" pushes straight to `main` or stops at a branch you merge.
+- Step 1 of the checklist, one paste, and it keeps the key off the
+  screen and out of your history:
+
+      cd ~/Developer/MAHA_TRANSCRIBE_STREAMLIT && read -s "ANTHROPIC_API_KEY?paste the key, then Enter: " && export ANTHROPIC_API_KEY && python3 tests/test_anthropic_call.py
+
+  Nine checks instead of eight is the answer you want.
+- The other seven steps are in `docs/SELF_UPGRADE.md` §1.2, one at a
+  time, easiest first.
 - Older queue, unchanged: deploy the AUTH script, add
   `AUTH_ADMIN_TOKEN` to the Streamlit Cloud secrets, and check whether
   `migrateRun()` ever ran on the live sheet.
