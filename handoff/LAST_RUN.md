@@ -1,38 +1,39 @@
-# STEP: pull, install the dev requirements, run the browser tests
-STATUS: done
+# STEP: v105 — fix the test harness (the four problems, worst first)
+STATUS: done, pushed as v105 `4531b7d`
 
 WHAT HAPPENED
-- Pulled. `docs/HOW_WE_WORK.md` arrived and was read; `handoff/` landed
-  while this step was already running, so this is the first real report.
-- Installed `requirements-dev.txt` and Chromium. Both browser tests ran
-  on this Mac for the first time.
-- `test_shake` was right. `test_layout` failed two checks and the app was
-  innocent: its frame list had no `langrow`, so it measured deck→cmdrow
-  ACROSS the HR / ENG / single / multi row. The real gaps are even.
-- With your yes, `langrow` was added to that list. Committed as v106.
+- 17 test files ended in a module-level `sys.exit()`. pytest EXECUTES a
+  file to collect it, so that fired during collection and killed the
+  whole run with INTERNALERROR — the same crash whether checks passed or
+  failed. Each now has a `test_<name>()` holding the tally, with the exit
+  under `if __name__ == "__main__"`. Both ways of running still work.
+- `tests/test1_wordtimes.py` began with a hardcoded sandbox path,
+  `/home/claude/repo`, so it had NEVER run on your Mac or anywhere else.
+  Fixed to find the repo from its own location: 65 checks ran for the
+  first time and all 65 pass.
+- Cleared the 3 pyflakes findings in `tests/`.
+- Added `requirements-dev.txt` (playwright, pytest, pyflakes, and the
+  Streamlit floor) and a two-line `pytest.ini`.
+- The two browser tests now SKIP with a reason instead of erroring.
 
 NUMBERS
-- pytest tests/  ->  18 passed in 83s (app served) · 17 + 1 skipped without
+- pytest tests/  ->  16 passed, 2 skipped in 33s  (436 checks inside)
+- before this    ->  INTERNALERROR, "no tests ran"
 - pyflakes       ->  clean across app.py, ttt/ and tests/
-- gaps measured  ->  8.8 · 8.8 · 9.8 px, spread 1.0px
-- test_shake     ->  shipped style moves 0 of 812 words; the old one, 195
+- no app code changed
 
 WHAT BROKE, AND WHAT I UNDID
-- Two deliberate sabotages, to prove test_layout can still go red. The
-  first, in app.py, did nothing — ttt/theme.py resets those margins with
-  `!important` and wins. The second, in theme.py, worked: gaps 34.8 /
-  34.8 / 9.8 and the test failed at once. Both reverted with
-  `git checkout --`; only the test file and HANDOVER.md changed.
-- I ran a Streamlit server on port 8811 for the test, and stopped it.
+- My own mistake: while proving the runner can go red, I ran
+  `git checkout -- tests/test_box.py` to undo a bad edit, and it silently
+  reverted that file's real fixes too. I caught it, re-applied both, and
+  checked its tail is now identical in shape to the other files. The
+  green number was measured after that repair, not before it.
 
 STILL UNSURE
-- The install upgraded Streamlit 1.58.0 -> 1.62.0 in your SHARED pyenv,
-  where another project (videolingo) pins 1.38.0. It was already
-  mismatched at 1.58; this widened it. If that project misbehaves, the
-  fix is a virtualenv for this repo. Every suite here passes on 1.62.
+- These numbers were measured on Streamlit 1.58.0 while
+  `requirements.txt` asks for >=1.61 — so they were measured against a
+  Streamlit production does not run. The next step closes that.
 
 FOR BABA
-- Queue unchanged: deploy the AUTH script (Reset asks for your password
-  and the deployed script still ignores it), add `AUTH_ADMIN_TOKEN` to
-  the Streamlit Cloud secrets, and check whether `migrateRun()` ever ran
-  on the live sheet.
+- To run the browser tests yourself, one paste:
+  `cd ~/Developer/MAHA_TRANSCRIBE_STREAMLIT && pip install -r requirements-dev.txt && python3 -m playwright install chromium`
