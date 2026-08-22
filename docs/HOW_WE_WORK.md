@@ -54,6 +54,22 @@ look for damage that is not there.
 
 ---
 
+## Report through the repo, not through Baba
+
+He was copying terminal output into chat by hand, every step, all day,
+with carpal syndrome. Stop making him do that.
+
+**After every step: write `handoff/LAST_RUN.md`, commit, push.** One
+file, overwritten each time. He types "done" in chat; the other Claude
+pulls and reads it. See `handoff/README.md` for the shape and the rules
+— the important one being that the file is COMMITTED, so no secret ever
+goes in it, only the name of one.
+
+Pull before starting a step and before pushing, because chat Claude
+pushes to the same branch.
+
+---
+
 ## Do not stop to ask. Run the whole step.
 
 Baba, 22.8.2026: *"Because I am a beginner and I do not understand these
