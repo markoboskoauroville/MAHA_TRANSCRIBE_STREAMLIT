@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v136 (a) (a recommendation, not a wall)"
+APP_VERSION = "v137 (a) (settings you can see and type)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -677,6 +677,7 @@ STRINGS = {
     # FULL WORDS. Baba: "full name." TXT, TY and C are initialisms only
     # their author can read — and this is the screen a family member
     # opens when they cannot see the text well enough.
+    "looks_default":      {"en": "default",           "hr": "zadano"},
     "looks_size":         {"en": "text size",        "hr": "veličina teksta"},
     "looks_font":         {"en": "typeface",         "hr": "pismo"},
     "looks_scheme":       {"en": "colour",           "hr": "boja"},
@@ -5643,15 +5644,54 @@ elif active == "looks":
     # of eighteen buttons. The same fill the deck and the note sit in
     # says "these belong together" without another colour or another
     # line.
+    # TEXT SIZE IS A NUMBER YOU TYPE. Baba: "add entry box, user can
+    # enter any size... and then put default action link there."
+    #
+    # Eight pills covered 80 to 185 in fixed steps and could not reach
+    # 200 or 250, which are the sizes WCAG actually asks about. A box
+    # takes any of them.
+    #
+    # THE DEFAULT IS 100, NOT 80. 80 is the SMALLEST the app allows —
+    # it looked like the default only because it is the first pill and
+    # the one Baba had chosen. Making the smallest text the default in
+    # an app built for people who cannot see well would be exactly
+    # backwards.
     with st.container(key="looksgroup_size"):
-        st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        _sl, _sb, _sd, _ = st.columns([1.3, 1.1, 1, 1.6])
+        _sl.markdown('<div class="setlabel">%s</div>' % html.escape(
             t("looks_size")), unsafe_allow_html=True)
-        size_controls()
+        _now_pct = int(round(a11y.clamp(st.session_state.get(
+            "text_scale", a11y.DEFAULT_SCALE)) * 100))
 
+        def _size_typed():
+            raw = st.session_state.get("_size_pct", _now_pct)
+            try:
+                st.session_state["text_scale"] = a11y.clamp(float(raw) / 100.0)
+            except (TypeError, ValueError):
+                pass
+            persist_settings()
+
+        def _size_default():
+            st.session_state["text_scale"] = a11y.DEFAULT_SCALE
+            st.session_state["_size_pct"] = int(a11y.DEFAULT_SCALE * 100)
+            persist_settings()
+
+        _sb.number_input(
+            t("looks_size"), key="_size_pct", value=_now_pct,
+            min_value=int(a11y.MIN_SCALE * 100),
+            max_value=int(a11y.MAX_SCALE * 100), step=5,
+            label_visibility="collapsed", on_change=_size_typed)
+        _sd.button(t("looks_default"), key="size_default",
+                   on_click=_size_default, use_container_width=True)
+
+    # LABEL ON THE LINE, like the interface language. Above the buttons
+    # it was a row for one word, and under this screen's spacing it kept
+    # touching them.
     with st.container(key="looksgroup_font"):
-        st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        _fl, f1, f2, f3 = st.columns([1.3, 1, 1, 1])
+        _fl.markdown('<div class="setlabel">%s</div>' % html.escape(
             t("looks_font")), unsafe_allow_html=True)
-        fcols = st.columns(3)
+        fcols = [f1, f2, f3]
         for col, (fid, label) in zip(fcols, [("mono", "mono"), ("sans", "sans"),
                                              ("serif", "serif")]):
             def _pick_font(f=fid):
@@ -5662,9 +5702,10 @@ elif active == "looks":
                        else "secondary", on_click=_pick_font)
 
     with st.container(key="looksgroup_scheme"):
-        st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        _cl, k1, k2, k3, k4 = st.columns([1.3, 1, 1, 1, 1])
+        _cl.markdown('<div class="setlabel">%s</div>' % html.escape(
             t("looks_scheme")), unsafe_allow_html=True)
-        scols = st.columns(4)
+        scols = [k1, k2, k3, k4]
         for col, sid in zip(scols, ["amber", "green", "cyan", "paper"]):
             def _pick_scheme(x=sid):
                 st.session_state["scheme"] = x

@@ -773,6 +773,54 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       margin-bottom: 0.25rem;
     }}
 
+    /* EACH COLOUR BUTTON WEARS ITS OWN COLOUR. Baba: "each button can
+       be already colored to represent its color — people can see and
+       understand everything."
+       Four words in identical pills asked somebody to imagine what
+       `cyan` would look like. Now the button IS the answer, and the
+       chosen one fills, exactly as every other chosen pill does.
+
+       WRITTEN OUT RATHER THAN LOOPED because this stylesheet is one
+       f-string: a loop here would have to be built before it and read
+       further from the thing it describes. Four schemes, four blocks,
+       and they change together or not at all. */
+    [class*="st-key-scheme_amber"] button {{
+      border-color: #f59e0b !important;
+      color: #f59e0b !important;
+    }}
+    [class*="st-key-scheme_amber"] button[kind="primary"] {{
+      background: #f59e0b !important;
+      border-color: #f59e0b !important;
+      color: #14181d !important;
+    }}
+    [class*="st-key-scheme_green"] button {{
+      border-color: #4ade80 !important;
+      color: #4ade80 !important;
+    }}
+    [class*="st-key-scheme_green"] button[kind="primary"] {{
+      background: #4ade80 !important;
+      border-color: #4ade80 !important;
+      color: #14181d !important;
+    }}
+    [class*="st-key-scheme_cyan"] button {{
+      border-color: #38bdf8 !important;
+      color: #38bdf8 !important;
+    }}
+    [class*="st-key-scheme_cyan"] button[kind="primary"] {{
+      background: #38bdf8 !important;
+      border-color: #38bdf8 !important;
+      color: #14181d !important;
+    }}
+    [class*="st-key-scheme_paper"] button {{
+      border-color: #e6e0d4 !important;
+      color: #e6e0d4 !important;
+    }}
+    [class*="st-key-scheme_paper"] button[kind="primary"] {{
+      background: #e6e0d4 !important;
+      border-color: #e6e0d4 !important;
+      color: #14181d !important;
+    }}
+
     /* EACH SETTING IN ITS OWN FRAME. Baba: "visually group different
        settings so we know they belong to different groups — put the
        frame, the visual language from the rest of the interface."
@@ -783,6 +831,35 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       border-radius: 10px;
       padding: 0.5rem 0.55rem !important;
       margin-bottom: 0.4rem !important;
+    }}
+
+    /* Every settings row keeps its label on the line with its controls. */
+    [class*="st-key-looksgroup_"] div[data-testid="stHorizontalBlock"] {{
+      align-items: center !important;
+      flex-wrap: nowrap !important;
+      gap: 0.3rem !important;
+    }}
+    [class*="st-key-looksgroup_"] div[data-testid="stColumn"] {{
+      min-width: 0 !important;
+    }}
+    [class*="st-key-looksgroup_"] .setlabel {{
+      margin: 0 !important;
+      white-space: nowrap;
+    }}
+    /* The size box, small like everything beside it. */
+    [class*="st-key-_size_pct"] input {{
+      font-size: 0.8rem !important;
+      padding: 0.25rem 0.4rem !important;
+    }}
+    [class*="st-key-size_default"] button {{
+      background: transparent !important;
+      border: 0 !important;
+      color: var(--dim) !important;
+      min-height: 0 !important;
+      padding: 0.2rem 0 !important;
+      font-size: 0.7rem !important;
+      text-decoration: underline;
+      text-underline-offset: 3px;
     }}
 
     /* The interface language, label and pills on ONE line. */
