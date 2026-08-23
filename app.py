@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v140 (a) (notes survive)"
+APP_VERSION = "v141 (a) (the armed delete stays readable)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -538,7 +538,12 @@ STRINGS = {
     "note_cut":           {"en": "cut",                "hr": "reži"},
     "note_line":          {"en": "line",               "hr": "redak"},
     "note_del":           {"en": "delete",             "hr": "obriši"},
-    "note_del_sure":      {"en": "delete — sure?",     "hr": "obriši — sigurno?"},
+    # SHORTER THAN WHAT IT REPLACES, not longer. "delete — sure?" was
+    # wider than "delete user" and was cut at the panel edge — §27
+    # forbids a cut word outright. `sure?` says the same thing in a
+    # cell built for the shorter one, and the question mark is the
+    # whole message: you pressed delete, and this asks again.
+    "note_del_sure":      {"en": "sure?",              "hr": "sigurno?"},
     "note_to_box":        {"en": "to the box",         "hr": "u okvir"},
     "note_new":           {"en": "new note",           "hr": "nova bilješka"},
     "note_made":          {"en": "made",               "hr": "nastalo"},

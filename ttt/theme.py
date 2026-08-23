@@ -1140,11 +1140,15 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       color: var(--amber) !important;
     }}
     /* Armed delete is the one state that earns colour. */
-    [class*="st-key-note_del2"] button {{
-      color: var(--rec, #d9484b) !important;
-      background: transparent !important;
-      border: 0 !important;
-    }}
+    /* THE ARMED DELETE KEEPS THE LINK'S OWN COLOUR. Baba: "it has
+       changed the color and it is not visible — please do not change
+       the colour, keep it the same."
+       It was red on a dark panel, which is a colour chosen for a filled
+       button and unreadable as text. The WORDS are the signal: `delete
+       user` becomes `delete — sure?`, and a person who has just pressed
+       delete does not need to be told in red that they pressed delete.
+       Nothing here: the base rule above already styles it, because
+       `st-key-note_del` matches note_del2 as well. */
 
     /* The date, thinner and quieter than either. It is a mark on the
        frame, not a label — the word "made" in front of it was
