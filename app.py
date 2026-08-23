@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v172 (a) (the toggle actually routes)"
+APP_VERSION = "v173 (a) (the fast path is called)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2269,6 +2269,32 @@ class STTBridge:
         if self.id == "assemblyai":
             ring = get_ring("assemblyai")
             try:
+                # THE FAST PATH, IF THIS CLIP MAY TAKE IT. v167 wrote the
+                # rules and tested them; this is the line that asks.
+                #
+                # NOBODY IS TOLD WHICH PATH RAN. TTT mini's reasoning,
+                # kept: "from where Marko sits the only difference is how
+                # long the words take." A clip that cannot take the fast
+                # path takes the slow one silently.
+                #
+                # AND A FAILURE FALLS BACK rather than surfacing. Fast is
+                # a preference; arriving is not — so if the sync endpoint
+                # refuses for any reason, the async path still runs and
+                # the words still come. The cost is one wasted call on a
+                # clip under two minutes, which is under half a penny.
+                try:
+                    if self.provider.use_sync(
+                            language, path, ttt_audio.duration_seconds(path)):
+                        out = self.provider.transcribe_sync(
+                            lambda attempt: kr.rotate(ring, lambda k: attempt(k)),
+                            path, language=language)
+                        if out:
+                            return out
+                except Exception as e:
+                    errlog.add(st.session_state, "transcribe",
+                               "fast path refused, using the slow one",
+                               "{}: {}".format(type(e).__name__, e))
+
                 return self.provider.transcribe(
                     lambda attempt: kr.rotate(ring, lambda k: attempt(k)),
                     path, language=language,

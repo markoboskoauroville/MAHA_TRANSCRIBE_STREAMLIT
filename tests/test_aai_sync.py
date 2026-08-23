@@ -203,6 +203,46 @@ check("31 and hands the untouched routes back when it is off — the free "
       "engine keeps working exactly as before",
       "return routes" in routes)
 
+# --- the fast path is now CALLED, not merely decided ------------------
+#
+# v167 wrote the rules and tested them and nothing asked. That is the
+# delivery gate's UNWIRED class for a second time in three versions, so
+# these check the call site rather than the rule.
+bridge = src.split("class STTBridge", 1)[1].split("\nclass ", 1)[0]
+
+# THE EXACT SHAPE, not the substring. `if False and self.provider
+# .use_sync(...)` contains "use_sync(" perfectly happily — the same
+# rumour-check I wrote two versions ago, made twice in three days. A
+# substring test cannot tell a live call from a disabled one.
+check("32 the bridge ASKS use_sync, and asks it for real",
+      "if self.provider.use_sync(" in bridge,
+      "disabled or missing")
+check("33 and calls transcribe_sync when it says yes",
+      "transcribe_sync(" in bridge)
+check("34 IT PASSES A MEASURED DURATION, not a guess. use_sync treats an "
+      "unknown length as too long, so handing it nothing would disable "
+      "the fast path silently and for ever",
+      "duration_seconds(path)" in bridge)
+check("35 A FAILURE FALLS BACK to the slow path instead of surfacing. "
+      "Fast is a preference; arriving is not",
+      "except Exception" in bridge.split("use_sync")[1][:600]
+      and bridge.index("use_sync") < bridge.index("self.provider.transcribe("))
+check("36 and an empty answer falls back too — a sync call that returns "
+      "nothing must not become an empty transcript",
+      "if out:" in bridge)
+
+# the sync endpoint is a different host with a different model header
+prov = open(os.path.join(os.path.dirname(__file__), "..", "ttt",
+                         "providers", "assemblyai.py"), encoding="utf-8").read()
+check("37 THE SYNC ENDPOINT IS A DIFFERENT HOST, reached through `base`, "
+      "not the api host every other call uses",
+      "base=self.SYNC_URL" in prov and "base or API" in prov)
+check("38 and its model goes in a HEADER, not the body — the two are not "
+      "interchangeable",
+      'extra_headers={"X-AAI-Model"' in prov)
+check("39 with a deadline on the wait, as G5 of the delivery gate asks",
+      "timeout=180" in prov)
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 if __name__ == "__main__":

@@ -75,12 +75,30 @@ class AssemblyAI(Provider):
     # key ring's generic fallback path, which is correct here.
     key_prefixes = ()
 
-    def _call(self, key, path, payload=None, method="GET", data=None, timeout=60):
+    def _call(self, key, path, payload=None, method="GET", data=None,
+              timeout=60, base=None, extra_headers=None):
+        """One call to AssemblyAI.
+
+        `base` exists because the SYNC endpoint is a DIFFERENT HOST —
+        sync.assemblyai.com, not api.assemblyai.com — authenticating with
+        the same key. The cost document warns about exactly this: "the
+        same provider having several endpoints with different model ids
+        and different prices, all authenticating with the same key.
+        Users cannot tell them apart."
+
+        `extra_headers` exists because the sync endpoint takes its model
+        as a HEADER while the async one takes it as a body field. Also
+        from the document: "model id may be a body field on one endpoint
+        and a HEADER on another. They are not interchangeable."
+        """
         headers = {"authorization": key}
         if data is not None:
             headers["content-type"] = "application/octet-stream"
-        return http_json(API + path, headers, payload=payload, data=data,
-                         method=method, timeout=timeout, classify=_classify)
+        if extra_headers:
+            headers.update(extra_headers)
+        return http_json((base or API) + path, headers, payload=payload,
+                         data=data, method=method, timeout=timeout,
+                         classify=_classify)
 
     def models(self, task: str = "", fetch=None):
         """AssemblyAI has NO model-list endpoint — /v2/models,
@@ -182,6 +200,40 @@ class AssemblyAI(Provider):
     def test_key(self, key: str):
         _, err, kind = self._call(key, "/v2/transcript?limit=1", timeout=30)
         return err, kind
+
+    def transcribe_sync(self, rotate, path: str, language: str = "en"):
+        """One POST, one answer. No upload, no job, no polling.
+
+        THE FAST PATH FROM v167, finally called. It exists only for
+        clips `use_sync` has already approved: English, between half a
+        second and 118, under 40 MB.
+
+        ONE RETRY, NOT THREE. The cost document is explicit — "three
+        retries against a provider that is down is three bills for
+        nothing" — and the ring itself already moves to another key on
+        refusal, so a second attempt here is the second attempt, not the
+        fourth.
+
+        A DEADLINE, because G5 of the delivery gate asks for one on
+        every wait that leaves the process. 180s is generous for a clip
+        that cannot exceed two minutes.
+        """
+        with open(path, "rb") as f:
+            audio_bytes = f.read()
+
+        # THE LANGUAGE GOES IN THE QUERY, the model in a header, and the
+        # host is not the one every other call uses. Three ways this
+        # endpoint differs from its sibling, all of them silent if got
+        # wrong — the request would simply come back meaning something
+        # else.
+        out, err = rotate(lambda k: self._call(
+            k, "?language_code=" + str(language or "en"),
+            method="POST", data=audio_bytes, timeout=180,
+            base=self.SYNC_URL,
+            extra_headers={"X-AAI-Model": self.SYNC_MODEL}))
+        if err:
+            raise RuntimeError(err)
+        return str((out or {}).get("text") or "").strip()
 
     def transcribe(self, rotate, path: str, language: str = "hr",
                    model: str = "universal-3-pro", progress_cb=None,
