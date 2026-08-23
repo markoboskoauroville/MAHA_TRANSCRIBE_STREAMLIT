@@ -57,11 +57,26 @@ def _fresh_id(notes):
         used.add(i)
         if i.startswith("n") and i[1:].isdigit():
             highest = max(highest, int(i[1:]))
-    while True:
+    # A BOUND A CHECKER CAN SEE. G5 of the delivery gate, and rule 2 of
+    # JPL's Power of Ten: "every loop must have a fixed upper bound that
+    # a checking tool can prove statically."
+    #
+    # This one terminates in practice — `used` is finite, so a free
+    # number appears within len(used) + 1 tries — but nothing in the
+    # source SAYS so, and a reader has to reconstruct the argument. The
+    # gate is explicit that a bound you can only prove by reasoning is
+    # not a bound.
+    #
+    # The +2 is room for the two off-by-ones in that argument. Falling
+    # out of the loop cannot happen; if it ever does, a timestamp-based
+    # id is unique enough and losing the tidy numbering is better than
+    # spinning.
+    for _ in range(len(used) + 2):
         highest += 1
         candidate = "n%d" % highest
         if candidate not in used:
             return candidate
+    return "n%d" % int(time.time() * 1000)
 
 TITLE_WORDS = 5      # words taken for an untitled note's heading
 

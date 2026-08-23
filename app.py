@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v173 (a) (the fast path is called)"
+APP_VERSION = "v174 (a) (through the gate)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2351,66 +2351,6 @@ def llm_bridge():
     return LLMBridge(prov) if prov else None
 
 
-def cp_row(text: str, where: str, state_key: str = None):
-    """The row that sits ABOVE a text box in Baba's own app: the round
-    amber CP in the middle, clear on the right.
-
-    Paste belongs on the left and is not here yet — deliberately. The
-    component iframe is granted clipboard-WRITE but not clipboard-READ
-    (measured, HANDOVER §14), so a paste button built like this one would
-    do nothing for every real user. It needs the native paste event
-    instead, which is its own spoon. A button that lies is worse than a
-    button that is missing.
-    """
-    has_text = bool((text or "").strip())
-    with st.container(key="cprow_" + where):
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c1:
-            if state_key:
-                # A paste TARGET, not a clipboard reader — the iframe is
-                # not granted clipboard-read, so the obvious version would
-                # fail silently. See paste_frontend/index.html.
-                got = paste_target(where)
-                if got:
-                    st.session_state[state_key] = got
-                    st.rerun()
-        with c2:
-            if has_text:
-                components.html(
-                    copybtn.cp_html(text, done_label=t("copy_done_short"),
-                                    failed_label="X"),
-                    height=copybtn.CP_HEIGHT)
-        if has_text and state_key:
-            def _clear(k=state_key):
-                st.session_state[k] = ""
-            c3.button(SYM["clear"], key=f"clear_{where}", help=t("clear_btn"), on_click=_clear)
-
-
-def copy_pill(text: str, where: str):
-    """Kept as the plain wide copy button for places where the round CP
-    would be too much furniture."""
-    if not (text or "").strip():
-        return
-    components.html(
-        copybtn.html(
-            text,
-            label=t("copy_idle"), busy=t("copy_busy"),
-            done=t("copy_done"), failed=t("copy_failed"),
-            scale=a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE)),
-            # Match the row it sits in: same typeface, same prose colour.
-            fg=theme.SCHEMES.get(
-                st.session_state.get("scheme", "amber"),
-                theme.SCHEMES["amber"]).get("prose", "#f2ddb4"),
-            font=theme.FONTS.get(st.session_state.get("font", "mono"),
-                                 theme.FONTS["mono"]),
-        ),
-        height=copybtn.HEIGHT,
-    )
-
-
-FLASH_SECONDS = 0.9
-
-
 def flash(name: str):
     """Mark a command as just-pressed, so it can light up briefly.
 
@@ -2420,6 +2360,17 @@ def flash(name: str):
     colour, which is what makes the row feel like it responded.
     """
     st.session_state[f"_flash_{name}"] = time.time()
+
+
+# HOW LONG A CONFIRMATION STAYS ON SCREEN.
+#
+# This lived BETWEEN two functions I deleted at the gate, and my slice —
+# "from this def to the next def" — swallowed it with the second one.
+# pyflakes caught it in the same breath, which is the argument for
+# running the checks again after every deletion rather than at the end:
+# "deleting dead code exposes more dead code behind it", and sometimes
+# it exposes live code that was standing behind it.
+FLASH_SECONDS = 0.9
 
 
 def flashing(name: str) -> bool:
@@ -3009,32 +2960,6 @@ def cmd_width(word: str) -> int:
     return max(64, len(word) * CMD_CHAR_PX + CMD_PAD_PX)
 
 
-def size_controls():
-    """Text size, in Settings and nowhere else.
-
-    − and + used to ride on every command row. Baba removed them: they
-    appeared four times, they were the only controls that changed how the
-    app looks rather than what it does, and a decision made once does not
-    belong beside the ones made constantly.
-    """
-    scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-    steps = []
-    v = a11y.MIN_SCALE
-    while v <= a11y.MAX_SCALE + 0.001:
-        steps.append(round(v, 2))
-        v = round(v + a11y.STEP, 2)
-
-    cols = st.columns(min(len(steps), 8))
-    for i, val in enumerate(steps[:8]):
-        def _pick(x=val):
-            st.session_state["text_scale"] = x
-            persist_settings()
-        cols[i].button(f"{a11y.percent(val)}", key=f"sz_{i}",
-                       use_container_width=True,
-                       type="primary" if abs(scale - val) < 0.01 else "secondary",
-                       on_click=_pick)
-
-
 def box_links(where: str, text: str, on_clear=None, extra=None):
     """copy · clear, as links, under a text box. Everywhere.
 
@@ -3095,61 +3020,6 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
                     label, key, fn = kind, cb[0], cb[1]
                     st.button(label, key=key, on_click=fn,
                               use_container_width=True)
-
-
-def cmd_row(where: str, items, target_key: str = None, copy_text: str = "",
-            with_size: bool = False):
-    """THE row. Every command in the app is built here, so there is one
-    appearance and one behaviour to keep right.
-
-    Cells are sized to their WORD rather than forced equal — Baba's
-    correction, and it is better: "copy" needs less room than "reshape",
-    and equal cells wasted the width that a phone does not have.
-
-    − and + ride at the end of the same row. They are commands too; the
-    only reason they were a separate row was that they used to be a
-    different kind of control.
-    """
-    row = list(items)
-    scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-
-    def _smaller():
-        st.session_state["text_scale"] = a11y.smaller(
-            st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-        persist_settings()
-
-    def _bigger():
-        st.session_state["text_scale"] = a11y.bigger(
-            st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
-        persist_settings()
-
-    if with_size:
-        row += [("−", f"sz_minus_{where}", _smaller),
-                ("+", f"sz_plus_{where}", _bigger)]
-
-    widths = []
-    for label, _, _ in row:
-        word = t("copy_word") if label == "copy" else (
-            t("paste_btn") if label == "paste" else label)
-        widths.append(cmd_width(word))
-
-    with st.container(key=f"cmdrow_{where}"):
-        cols = st.columns(widths)
-        for col, (label, key, cb), w in zip(cols, row, widths):
-            with col:
-                if label == "copy":
-                    components.html(
-                        copybtn.cp_html(copy_text or "", label=t("copy_word"),
-                                        done_label=t("copy_done_word"),
-                                        failed_label="—", size=0),
-                        height=44, width=w)
-                else:
-                    disabled = (label == "−" and a11y.at_min(scale)) or \
-                               (label == "+" and a11y.at_max(scale))
-                    st.button(label, key=key, use_container_width=True,
-                              disabled=disabled,
-                              type="primary" if flashing(key or label) else "secondary",
-                              on_click=cb)
 
 
 def tab_signature(name: str):
@@ -4945,6 +4815,19 @@ def assemblyai_panel():
 
         st.button(t("aai_credit_save"), key="aai_credit_save",
                   on_click=_set_credit, use_container_width=True)
+
+
+# REMOVED AT THE DELIVERY GATE, G4. Each was orphaned by a change of
+# mine and left behind:
+#   cmd_row        v139, when the last command row left T
+#   size_controls  v137, when text size became a box you type in
+#   copy_pill      superseded by box_links
+#   cp_row         superseded by box_links
+#
+# Confirmed unreferenced across the whole project — app, modules, tests,
+# frontends and docs — not merely within this file. Git remembers them;
+# commenting them out would be "dead code that has learned to survive
+# the checks".
 
 
 def note_number(i):
