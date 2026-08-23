@@ -85,7 +85,12 @@ check("4 A REMEMBERED LOGIN DOES NOT ENTER BY ITSELF — this is the whole "
 check("5 the username is filled in for them",
       sget(at2, "_user_input") == "baba", sget(at2, "_user_input"))
 keys2 = [b.key for b in at2.get("button")]
-check("6 a continue button appears", "login_go" in keys2, keys2)
+# "Continue as {name}" was a SECOND gold button a centimetre from Log in
+# (v116). Baba: "Login is enough." The capability it carried is not
+# gone — submitting with an empty password completes a remembered
+# login — so the checks moved from the button to the behaviour.
+check("6 there is ONE way in, not two",
+      not any(str(k).startswith("login_go") for k in keys2), keys2)
 # "Not me" was a second BUTTON and it is gone (v107) — a login screen
 # that has to explain itself has already failed. The capability is not
 # gone: typing a different name over the filled-in one logs that person
@@ -96,37 +101,41 @@ check("7b the explanation caption is gone too",
       not any("Remembered on this device" in (c.value or "")
               for c in at2.caption),
       [c.value for c in at2.caption][:3])
-check("8 the button names WHO it will let in",
-      any("baba" in (b.label or "") for b in at2.get("button")
-          if b.key == "login_go"),
-      [b.label for b in at2.get("button") if b.key == "login_go"])
+check("8 the name is still filled in, so they see WHO they will be",
+      sget(at2, "_user_input") == "baba", sget(at2, "_user_input"))
 
-# --- pressing it lets them in -----------------------------------------
-[b for b in at2.get("button") if b.key == "login_go"][0].click().run()
-check("9 pressing continue logs them in", sget(at2, "_authed") is True)
+# --- submitting with an empty password completes it -------------------
+#
+# Safe ONLY because this is a form: it submits when the button is
+# pressed or Enter is struck, never while somebody is halfway through
+# filling it. That was the v114 bug — both boxes fired the handler, so
+# typing a USERNAME went straight through with nothing confirmed.
+submit(at2)
+check("9 submitting with an empty password logs a remembered person in",
+      sget(at2, "_authed") is True, sget(at2, "_authed"))
 check("10 as the right person", sget(at2, "_user") == "baba",
       sget(at2, "_user"))
 check("11 and the remembered state is spent, not left lying around",
       sget(at2, "_remembered") is None)
 
-# --- what Enter can and cannot do, stated honestly --------------------
+# --- the limitation that no longer exists -----------------------------
 #
-# Baba asked to press Enter and be let in. Streamlit does NOT fire
-# on_change when a value has not changed, so Enter in an EMPTY password
-# box fires nothing — in a real browser as much as here. Making it work
-# would mean wrapping the login in st.form, which changes how every
-# callback on that screen behaves, and the login screen is the one place
-# where a mistake locks out everybody (§1).
+# THIS CHECK USED TO ASSERT THE OPPOSITE, and its comment argued that a
+# form would be too dangerous to try: "the login screen is the one place
+# where a mistake locks out everybody". The caution was right; the
+# conclusion was wrong. v115 made it a form because typing and then
+# CLICKING did nothing without one — and a form submits on Enter too,
+# even when nothing changed. The limit is gone.
 #
-# So the button is the press. It is one press, it says his name, and it
-# works everywhere. This test records the limit rather than pretending
-# past it.
+# Left here with its history rather than quietly rewritten, because the
+# lesson is about the reasoning: "too risky to try" was standing in for
+# "not yet measured".
 at3 = fresh(dict(rem))
 at3.run()
 submit(at3, password="")
-check("12 Enter on an EMPTY password does nothing — Streamlit fires no "
-      "event when a value has not changed, so the button is the press",
-      sget(at3, "_authed") is not True, sget(at3, "_authed"))
+check("12 submitting empty DOES let a remembered person in now — the "
+      "form made Enter and the button the same act",
+      sget(at3, "_authed") is True, sget(at3, "_authed"))
 
 # AND THE PATH IS DRIVEN FOR REAL, because the check above cannot fail.
 #

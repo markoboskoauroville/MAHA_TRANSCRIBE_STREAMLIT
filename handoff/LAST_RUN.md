@@ -1,46 +1,46 @@
-# STEP: the login is a form now, and it actually works
-STATUS: done, pushed as v115
+# STEP: one way in
+STATUS: done, pushed as v116
 
 WHAT HAPPENED
-- Baba photographed "Calling st.rerun() within a callback is a no-op."
-  That warning IS v113's fix failing. A callback cannot repaint, so the
-  rerun I added there never ran — the freeze was never fixed, only
-  papered over with a warning.
-- The login no longer happens inside a callback. The callback records
-  what was typed; the main body performs the attempt. Finishing there
-  falls straight through to the app, so there is no repaint to ask for.
-- AND A SECOND BUG, found only by typing in a real browser: TYPING AND
-  THEN CLICKING "Log in" did nothing. The click blurs the field, but
-  Streamlit has not committed the value by the time the button's
-  callback runs, so it read an empty box. Enter worked, because Enter
-  commits. Every AppTest check passed either way — AppTest has no blur
-  and no focus.
-- The fix is a FORM. A form commits every widget inside it and THEN runs
-  the submit callback; that ordering is the entire reason forms exist.
-  The language pills stay outside it, because they must act the moment
-  they are pressed.
+- "Continue as {name}" is gone. Baba: "Login is enough." Two gold
+  buttons a centimetre apart doing almost the same thing is a choice
+  nobody asked to make, and the name is already filled in above.
+- The capability it carried is not lost: submitting with an EMPTY
+  password completes a remembered login. Safe ONLY because the screen is
+  a form now — it submits when the button is pressed or Enter is struck,
+  never while somebody is halfway through filling it.
+
+THE HOLE THE TESTS CAUGHT, IN THE SAME CHANGE
+- My first version let ANY empty submit complete the remembered login.
+  Typing "emina" over the filled-in "baba" and submitting signed BABA
+  in — somebody let into an account under a name they did not type. The
+  v114 bug in a new coat, five minutes after I wrote the comment that
+  explains v114.
+- Fixed: the name box must still hold their name, or be empty. The
+  mutation that drops that condition fails 5 checks.
+
+A CHECK THAT ASSERTED THE OPPOSITE
+- test_calm_login 12 said submitting empty does NOTHING, with a comment
+  arguing a form was too dangerous to try: "the login screen is the one
+  place where a mistake locks out everybody". The caution was right; the
+  conclusion was wrong. Rewritten with its history kept, because the
+  lesson is that "too risky to try" was standing in for "not yet
+  measured".
 
 NUMBERS
-- Browser-verified BOTH ways: click -> logged in, no warning; Enter ->
-  logged in, no warning. One action each, no refresh.
-- login 11 · calm login 32 · notes UI 22 · box 16 · owner edge 5 — green
-- mutation: removing the submit callback fails 5 checks
-- pyflakes clean
+- calm login 32 · login 11 — green
+- one mutation, 5 checks red
+- pyflakes clean; one button seen in a browser
 
 WHAT BROKE, AND WHAT I UNDID
-- A form changes how tests drive the screen: set_value().run() no longer
-  submits anything, because a form commits nothing until its button is
-  pressed. Both login suites gained a submit() helper. That is the form
-  working, not a regression.
-- at.form_submit_button does not exist. A form's button is an ordinary
-  button whose key is "FormSubmitter:<form>-<label>".
+- Two checks asserted the removed button. Moved to the behaviour that
+  replaced it, which is what should have been checked all along.
 
 STILL UNSURE
-- Nothing on this one. Unlike v113, both paths were driven in a real
-  browser and seen to work.
+- Nothing here.
 
 FOR BABA
-- Log in and tell me it is one press now, either way.
-- Then: open a note, press the DECK's rec, and the words should join the
-  note (v114). If the note's own red button still does nothing, the
-  error will now be ON SCREEN — send me that text.
+- Log in and confirm one press, one button.
+- Then v114's note tests: the DECK's rec inside an open note, and the
+  note's own red button. If the red one still does nothing, its error is
+  on screen now — send me that text.

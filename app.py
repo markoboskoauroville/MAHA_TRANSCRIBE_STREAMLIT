@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v115 (a) (the login is a form, and it actually works)"
+APP_VERSION = "v116 (a) (one way in)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1167,8 +1167,31 @@ def check_password() -> bool:
         app — no repaint to ask for, because the run that draws the app
         is the run that logged you in.
         """
-        st.session_state["_login_try"] = st.session_state.get("_pw_input", "")
+        typed = st.session_state.get("_pw_input", "")
         st.session_state["_pw_input"] = ""
+
+        # AN EMPTY PASSWORD IS A REMEMBERED PERSON'S PRESS — but only
+        # because this is now a FORM. The reason it was forbidden in v114
+        # was that both boxes fired this handler, so typing a USERNAME
+        # went straight through with nothing confirmed. A form submits
+        # only when the button is pressed or Enter is struck in it, so
+        # "empty" here means somebody deliberately asked to go in, not
+        # that they are halfway through filling the form.
+        _r = st.session_state.get("_remembered") or {}
+        _name = (st.session_state.get("_user_input") or "").strip().lower()
+        if not typed and _r.get("user") and _name in ("", _r["user"]):
+            # AND THE NAME MUST STILL BE THEIRS.
+            #
+            # Without that last condition this was the v114 bug wearing a
+            # new coat: type "emina" over the filled-in "baba", submit
+            # with an empty password, and BABA was signed in — somebody
+            # let into an account under a name they did not type. Caught
+            # by the tests, which is the whole reason they name the
+            # person rather than only checking that a login happened.
+            enter_remembered()
+            return
+
+        st.session_state["_login_try"] = typed
 
     def _attempt(entered):
 
@@ -1358,25 +1381,13 @@ def check_password() -> bool:
                               type="primary", use_container_width=True,
                               on_click=_entered)
 
-    if _rem.get("user"):
-        # ONE BUTTON, NO EXPLANATION.
-        #
-        # There was a caption saying "Remembered on this device — press
-        # Enter, or the button", and a second button offering "Not me —
-        # sign in as someone else". Both are gone, and Baba is right that
-        # they should be: a login screen that has to explain itself has
-        # already failed. Username, password, Continue. Nothing to read.
-        #
-        # "Not me" is not lost, only unlabelled: type a different name
-        # over the filled-in one and that person logs in normally. The
-        # button was a second way to do what the top box already does.
-        #
-        # The label comes from LOGIN_LABELS like everything else here,
-        # so the whole screen speaks one language.
-        st.button(labels.get("continue", "Continue as {who}")
-                  .format(who=_rem["user"]),
-                  key="login_go", type="primary",
-                  use_container_width=True, on_click=enter_remembered)
+    # "Continue as {name}" lived here and is gone (v116). Baba: "Login is
+    # enough." Two gold buttons a centimetre apart, doing almost the same
+    # thing, is a choice nobody asked to make — and the name is already
+    # filled in above, so Log in says everything the second button said.
+    #
+    # A remembered person still gets in without typing: submitting with
+    # an EMPTY password completes their login, in _entered below.
     st.checkbox(labels["remember"], key="_remember_me", value=True)
     if st.session_state.get("_authed") is False:
         wait = st.session_state.get("_gate_wait", 0)
