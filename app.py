@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v161 (a) (play means play)"
+APP_VERSION = "v162 (a) (save a recording to this device)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -524,6 +524,12 @@ STRINGS = {
     "rec_close_play":     {"en": "close player",     "hr": "zatvori"},
     "rec_play":           {"en": "play",              "hr": "slušaj"},
     "rec_again":          {"en": "transcribe again",  "hr": "prepiši ponovno"},
+    "rec_save":           {"en": "save",              "hr": "spremi"},
+    "rec_save_one":       {"en": "fetching %d of %d  ·  %s  ·  %.1fs",
+                           "hr": "dohvaćam %d od %d  ·  %s  ·  %.1fs"},
+    "rec_save_ready":     {"en": "press each one to save it to this device",
+                           "hr": "pritisni svaku da je spremiš na uređaj"},
+    "rec_save_done":      {"en": "done",               "hr": "gotovo"},
     "rec_del":            {"en": "delete",            "hr": "obriši"},
     "rec_del_sure":       {"en": "delete %d?",        "hr": "obrisati %d?"},
     "rec_del_done":       {"en": "%d deleted in %.1fs",
@@ -4425,6 +4431,89 @@ def keep_as_note():
         open_note(nid)
 
 
+def _rec_save(recs):
+    """Fetch the ticked recordings and offer each as a download.
+
+    Baba: "add option to export recorded file to local hard disk. One or
+    multiple? All works. If there are multiples, they should download one
+    after the other."
+
+    WHY IT IS A BUTTON PER FILE AND NOT ONE AUTOMATIC RUN.
+    A browser will not let a page push files at somebody unasked — that
+    is a download bomb, and every browser blocks it after the first. So
+    "one after the other" is a stack of buttons, pressed in turn, which
+    is the only honest way to do it and is also recoverable: a person who
+    changes their mind halfway just stops pressing.
+
+    THE BYTES MUST BE IN HAND FIRST. st.download_button needs the data
+    at render time, so fetching ten recordings means ten waits before
+    anything appears — narrated, like everything else here that makes
+    somebody wait.
+    """
+    ids = list(st.session_state.get("_rec_saving") or [])
+    if not ids:
+        return
+
+    store = drive_store()
+    ready = st.session_state.setdefault("_rec_files", {})
+    todo = [i for i in ids if i not in ready]
+
+    if todo:
+        started = time.time()
+        bar = st.progress(0.0, text=t("rec_step_get"))
+        line = st.empty()
+        for k, rid in enumerate(todo):
+            row = next((r for r in recs if str(r.get("rec_id")) == rid), None)
+            if not row:
+                continue
+            line.markdown('<div class="readhint">%s</div>' % html.escape(
+                t("rec_save_one") % (k + 1, len(todo), rid,
+                                     time.time() - started)),
+                unsafe_allow_html=True)
+            tmp = tempfile.mkdtemp(prefix="save_")
+            try:
+                parts = store.fetch(rid, int(row.get("parts") or 1), tmp)
+                if not parts:
+                    errlog.add(st.session_state, "drive",
+                               "could not fetch a recording to save", rid)
+                    continue
+                # ONE ENTRY PER PART, because that is what is actually
+                # stored. Merging them would need a joiner this codebase
+                # does not have, and inventing one to save a file is a
+                # new failure mode for no gain.
+                for pi, pth in enumerate(parts):
+                    with open(pth, "rb") as fh:
+                        ready.setdefault(rid, []).append(
+                            ("%s%s.flac" % (rid, "" if len(parts) == 1
+                                            else "_part%d" % (pi + 1)),
+                             fh.read()))
+            except Exception as e:
+                errlog.add(st.session_state, "drive", "saving failed",
+                           "%s: %s" % (rid, e))
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            bar.progress((k + 1) / max(len(todo), 1), text=t("rec_step_get"))
+        bar.empty()
+        line.empty()
+
+    with st.container(key="recsave"):
+        st.markdown('<div class="readhint">%s</div>' % html.escape(
+            t("rec_save_ready")), unsafe_allow_html=True)
+        for rid in ids:
+            for name, blob in ready.get(rid, []):
+                st.download_button(
+                    "%s  ·  %.0f KB" % (name, len(blob) / 1024.0),
+                    data=blob, file_name=name, mime="audio/flac",
+                    key="dl_%s" % name, use_container_width=True)
+        # DONE IS A LINK, and it drops the bytes. A dozen recordings held
+        # in session memory is a dozen recordings this instance cannot
+        # spare — the same reason the deck lets a take go once the words
+        # are out.
+        st.button(t("rec_save_done"), key="rec_save_close",
+                  on_click=lambda: (st.session_state.pop("_rec_saving", None),
+                                    st.session_state.pop("_rec_files", None)))
+
+
 def _rec_after_actions(recs):
     """Re-transcribe, after the panel has drawn.
 
@@ -4436,6 +4525,11 @@ def _rec_after_actions(recs):
     msg = st.session_state.pop("_rec_msg", None)
     if msg:
         (st.success if msg[0] == "good" else st.error)(msg[1])
+
+    # THE DOWNLOAD BUTTONS OUTLIVE ONE RENDER, unlike everything else
+    # here: they have to be there to be pressed. So this reads the state
+    # rather than popping it, and only `done` clears it.
+    _rec_save(recs)
 
     rid = st.session_state.pop("_rec_again", None)
     if not rid:
@@ -4632,7 +4726,7 @@ def _rec_actions(picked, all_ids, where):
     everything = len(all_ids) and n == len(all_ids)
 
     with st.container(key="recacts_%s" % where):
-        c0, c1, c2, c3 = st.columns([1.1, 0.8, 1.5, 1.1])
+        c0, c1, c2, c4, c3 = st.columns([1.1, 0.8, 1.5, 0.9, 1.1])
 
         # SELECT ALL, and the same link clears it. One control for a
         # thing and its opposite, because "select all" next to "select
@@ -4669,6 +4763,16 @@ def _rec_actions(picked, all_ids, where):
                   help=None if one else t("rec_one_only"),
                   on_click=lambda: st.session_state.update(
                       {"_rec_again": picked[0] if picked else None}),
+                  use_container_width=True)
+
+        # SAVE WORKS ON MANY, like delete. Baba: "one or multiple, all
+        # works." Copying a file to a disk is the same act repeated,
+        # exactly as deleting is — unlike playing or transcribing, where
+        # several at once is not a thing.
+        c4.button(t("rec_save"), key="rec_save_%s" % where,
+                  disabled=not n,
+                  on_click=lambda: st.session_state.update(
+                      {"_rec_saving": list(picked)}),
                   use_container_width=True)
 
         if st.session_state.get("_rec_del_armed") and n:
