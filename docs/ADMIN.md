@@ -3,6 +3,50 @@
 Written for Baba, who runs this for his family. Everything here assumes
 a Mac, `clasp` already installed and logged in, and this repo cloned.
 
+## One command, and one button
+
+Baba: *"I want that parameters fill in automatically from my local
+system, so I don't need to enter those things any more during update,
+only during change."*
+
+```bash
+cd ~/Developer/MAHA_TRANSCRIBE_STREAMLIT && tools/push_gs.sh
+```
+
+That fills the secrets from `secrets_streamlit.txt`, sends both scripts
+to Google, and prints the two links to click. **The secrets never enter
+git**: the filled file exists only for the seconds clasp needs to read
+it, and a trap restores the tracked file even if the push fails or you
+press ctrl-C — tested by making clasp fail on purpose.
+
+`tools/push_gs.sh main` or `auth` does just one of them.
+
+**THE BUTTON STAYS, and that is not laziness.** `clasp push` updates the
+CODE; it does not publish it. A deployment is a named version and making
+one needs the browser. A script that claimed otherwise would be lying
+about whether the family's app had actually changed.
+
+One-time setup, if clasp is not there yet:
+
+```bash
+npm install -g @google/clasp && clasp login
+```
+
+### Why the pasting went wrong once, and cannot again
+
+`apps_script/Code.gs` was `assume-unchanged` — a git trick for hiding a
+file you have edited locally. It hid a file that had been REPLACED with
+placeholders, and the hiding is exactly what stopped anyone noticing.
+`git stash` said *"No local changes to save"*, which was true and meant
+the opposite of what it looked like.
+
+Now the tracked file keeps its placeholders always, `tools/fill_gs.py`
+reports what it found BEFORE writing anything, and it re-reads its own
+output to prove the values landed — a substitution that silently misses
+is how this went wrong in the first place.
+
+---
+
 There are only **five places** anything lives. Once you can name them,
 the rest of this document is detail.
 
