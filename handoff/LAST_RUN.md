@@ -1,38 +1,36 @@
-# STEP: an id that cannot collide
-STATUS: done, pushed as v152. No deploy needed. **THIS WAS CRASHING THE
-LIVE APP.**
+# STEP: out from under the badge
+STATUS: done, pushed as v153. No deploy needed.
 
 WHAT HAPPENED
-- StreamlitDuplicateElementKey, in notes_panel, on Baba's phone: a red
-  wall of Python where his notes should be.
-- `_seq` is a MODULE-LEVEL counter that restarts at 1 with the process.
-  Before v140 that was harmless — notes died with the session, so
-  nothing older was around to clash with.
-- Notes come back from the browser and from Drive now, KEEPING their
-  ids. So the first new note of a session asked for `n1` while a
-  restored `n1` was already on screen. Two buttons, one key, dead app.
-- The id is derived from WHAT IS IN THE NOTEBOOK now, not from how many
-  times this process has been asked.
-- AND THE CARD KEY CARRIES THE POSITION as well as the id. That is the
-  second line of defence: the notebook can arrive from the browser or
-  from Drive, and data that came from somewhere else must never be able
-  to take the app down.
+- Baba: "delete and close are behind Manage App. Align everything to the
+  left side. Urgently."
+- STREAMLIT CLOUD PLANTS ITS OWN "Manage app" BADGE IN THE BOTTOM RIGHT
+  of every page. v149 moved the note's actions to the FOOT of the note,
+  right-aligned — which is precisely where that badge sits. On his phone
+  they were underneath it and could not be pressed.
+- Nothing in the app can move that badge. The actions moved instead:
+  date · delete · close, packed left.
+- AND THE SIGNATURE LINE HAD THE SAME PROBLEM, which he did not report
+  but his screenshot shows — the last line of the page read
+  "transcrib", cut by the badge. It keeps its right alignment, because
+  that is where he asked for it, but it now leaves room for the thing
+  sitting on top of it.
 
-THE MUTATION SURVIVED THE FIRST TIME, AND THAT MATTERED
-- Putting the counter back did not fail the new checks, because earlier
-  checks in the same file had already advanced `_seq` past n1 — so the
-  collision never happened and the test passed by luck.
-- It resets `N._seq` to where a fresh process starts before testing.
-  Then the mutation fails 2. A test that cannot reproduce the crash is
-  not a test of the crash.
+THE CORNER WORTH REMEMBERING
+- ANYTHING RIGHT-ALIGNED AT THE BOTTOM OF THIS APP IS UNDER SOMETHING
+  STREAMLIT OWNS. That is not a rule about these two buttons; it is
+  true of every future control that lands there, and it is written into
+  the stylesheet where the next person will meet it.
 
 NUMBERS
-- notes 53 (was 50) · notes UI 22 · notes persist 18 · box 16 · tier 15
-- mutation caught after the reset was added
+- notes UI 22 · notes 53 — green
+- measured on a 360px mobile viewport: close ends at 233 of 360, clear
+  of the badge; actions packed left
 - pyflakes clean
 
 STILL OPEN
-- STORAGE IS STILL OFF for Baba — v151 makes the log say which piece is
-  missing, and he has not read it yet. Nothing reaches Drive until then.
+- STORAGE IS STILL OFF. His log shows only [deliver] lines. v151 makes
+  it name the missing piece and he has not read it yet — nothing
+  reaches Drive until then.
 - A language pill in the open note. Asked, not started.
-- The two-system split and the explorer — docs/TWO_SYSTEMS.md.
+- docs/TWO_SYSTEMS.md — the split and the explorer.

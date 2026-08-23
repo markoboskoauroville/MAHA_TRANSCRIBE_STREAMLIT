@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v152 (a) (an id that cannot collide)"
+APP_VERSION = "v153 (a) (out from under the badge)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4452,7 +4452,11 @@ def note_open_view():
             # "made date could go on the top on the left side of delete
             # and close... do not make it, it is clear that it is made."
             # The word "made" was explaining what a date already says.
-            when, dele, back = st.columns([2, 1, 1])
+            # NO SPACER SHARE. The columns hold only what is in them
+            # now — the stylesheet packs them to the left, and a wide
+            # first column would push the pair back under the badge
+            # this move was to escape.
+            when, dele, back = st.columns([1, 1, 1])
             when.markdown('<div class="notewhen">%s</div>'
                           % NOTES.when_of(note), unsafe_allow_html=True)
         # STILL TWO PRESSES. One press on a whole note, in an app with no

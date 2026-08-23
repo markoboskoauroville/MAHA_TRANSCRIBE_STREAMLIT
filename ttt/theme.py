@@ -675,6 +675,13 @@ def css(scheme: str = "amber", font: str = "mono",
        the recorder's 00:00 counter, so it reads as a mark on the panel
        rather than as another control competing for attention. */
     .tabsig {{
+      /* AND IT KEEPS CLEAR OF THE BADGE TOO. This is the very last
+         thing on the page and it was right-aligned, which on Streamlit
+         Cloud puts it directly under "Manage app" — Baba's screenshot
+         shows it cut to "transcrib". The line stays on the right,
+         because that is where he asked for it and it reads well there,
+         but it now leaves room for the thing sitting on top of it. */
+      padding-right: 5.5rem;
       text-align: right;
       /* Gold, on Baba's instruction: it should catch the eye enough to
          answer "where am I?" without being read on purpose. */
@@ -1230,10 +1237,20 @@ def css(scheme: str = "amber", font: str = "mono",
        an empty spacer column collapsed and left both buttons on the
        left, measured at x=54 in a 380px panel. Its columns become
        auto-width so they take only what the words need. */
+    /* LEFT, NOT RIGHT. Baba: "delete and close are behind Manage App —
+       align everything to the left side."
+       Streamlit Cloud plants its own "Manage app" badge in the BOTTOM
+       RIGHT of the page, and these actions moved to the foot of the
+       note in v149. Right-aligned at the foot is exactly where that
+       badge sits, so on his phone they were underneath it and could not
+       be pressed.
+       Nothing in the app can move that badge. The actions move instead.
+       And it is a corner worth remembering: anything right-aligned at
+       the bottom of this app is under something Streamlit owns. */
     [class*="st-key-noteacts"] div[data-testid="stHorizontalBlock"] {{
-      justify-content: flex-end !important;
+      justify-content: flex-start !important;
       flex-wrap: nowrap !important;
-      gap: 0.3rem !important;
+      gap: 0.6rem !important;
     }}
     [class*="st-key-noteacts"] div[data-testid="stColumn"] {{
       flex: 0 0 auto !important;
