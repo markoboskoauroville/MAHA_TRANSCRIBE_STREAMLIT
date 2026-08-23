@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v114 (a) (add to notes, and the deck feeds the open note)"
+APP_VERSION = "v115 (a) (the login is a form, and it actually works)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1155,8 +1155,22 @@ def _more_label(lang: str) -> str:
 
 def check_password() -> bool:
     def _entered():
-        entered = st.session_state.get("_pw_input", "")
+        """RECORD THE ATTEMPT. Do not perform it.
+
+        A callback cannot repaint: `st.rerun()` inside one is a no-op and
+        Streamlit says so on screen. v113 put the rerun here and it never
+        ran — the warning Baba photographed IS that fix failing.
+
+        So the callback does the one thing callbacks are for: it captures
+        what was typed and clears the box. The login itself happens in
+        the main body below, where finishing simply falls through to the
+        app — no repaint to ask for, because the run that draws the app
+        is the run that logged you in.
+        """
+        st.session_state["_login_try"] = st.session_state.get("_pw_input", "")
         st.session_state["_pw_input"] = ""
+
+    def _attempt(entered):
 
         # BOTH BOXES FIRE THIS. Now that there is a username field above
         # the password, on_change runs when someone finishes typing their
@@ -1259,12 +1273,6 @@ def check_password() -> bool:
             # REPAINT NOW, do not wait for the browser-storage component.
             #
             # Ticking Remember me queues a localStorage write, and that
-            # write is a COMPONENT — it needs a frontend round trip that
-            # does not come on this run. The page sat greyed out with the
-            # spinner turning until a manual refresh forced another run,
-            # which is exactly what Baba described. The login had already
-            # succeeded; only the paint was missing.
-            st.rerun()
         else:
             gate.record_failure(tstate, time.time())
             _, wait = gate.check(tstate, time.time())
@@ -1278,6 +1286,12 @@ def check_password() -> bool:
         # your face — and the welcome text you were about to read
         # disappears.
         st.session_state["_login_open"] = True
+
+    # THE LOGIN HAPPENS HERE, in the main body, not in the callback.
+    # Whatever the callback captured is spent exactly once.
+    _try = st.session_state.pop("_login_try", None)
+    if _try:
+        _attempt(_try)
 
     if st.session_state.get("_authed"):
         return True
@@ -1314,21 +1328,35 @@ def check_password() -> bool:
         # §63's lesson about widget keys.
         st.session_state["_user_input"] = _rem["user"]
 
-    st.text_input(labels.get("username", "Username"), key="_user_input",
-                  on_change=_entered)
-    st.text_input(labels["password"], type="password", key="_pw_input",
-                  placeholder="••••••••" if _rem.get("user") else "",
-                  on_change=_entered)
-
-    # A VISIBLE WAY IN. Baba: "give me an action button immediately, Log
-    # in, just that button... we have a rule not to hide anything from
-    # the view, no hiding please."
+    # A FORM, and it has to be one.
     #
-    # Enter still works and always did — but it is invisible, and an
-    # invisible control is one somebody has to be TOLD about. This screen
-    # is the first thing his mother meets.
-    st.button(labels.get("login", "Log in"), key="login_now",
-              type="primary", use_container_width=True, on_click=_entered)
+    # With plain widgets, TYPING AND THEN CLICKING Log in did nothing:
+    # the click blurs the field, but Streamlit has not committed the new
+    # value by the time the button's callback runs, so the callback read
+    # an empty box. Enter worked, because Enter commits. Found by typing
+    # and clicking in a real browser — every AppTest check passed either
+    # way, since AppTest has no blur and no focus.
+    #
+    # A form commits every widget inside it and THEN runs the submit
+    # callback. That ordering is the entire reason forms exist, and it is
+    # the one mechanism that makes a button and a keypress do the same
+    # thing here.
+    #
+    # The language pills stay OUTSIDE it: they must act the moment they
+    # are pressed, and a form would hold them until submit.
+    with st.form("login_form", clear_on_submit=False, border=False):
+        st.text_input(labels.get("username", "Username"), key="_user_input")
+        st.text_input(labels["password"], type="password", key="_pw_input",
+                      placeholder="••••••••" if _rem.get("user") else "")
+        # A VISIBLE WAY IN. Baba: "give me an action button immediately,
+        # Log in, just that button... no hiding please." Enter still
+        # works — a form submits on Enter in any of its fields — but
+        # Enter is invisible, and an invisible control is one somebody
+        # has to be TOLD about. This screen is the first thing his
+        # mother meets.
+        st.form_submit_button(labels.get("login", "Log in"),
+                              type="primary", use_container_width=True,
+                              on_click=_entered)
 
     if _rem.get("user"):
         # ONE BUTTON, NO EXPLANATION.

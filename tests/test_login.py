@@ -40,6 +40,33 @@ def fresh():
         default_timeout=90)
 
 
+def submit(at, password=None, username=None):
+    """Fill the form and press its button — the only way in now.
+
+    v115 made the login a FORM, because typing and then clicking did
+    nothing without one: the click blurs the field, and Streamlit had not
+    committed the value by the time the callback ran. A form commits
+    every widget inside it and THEN runs the submit callback.
+
+    The consequence for tests is that set_value().run() no longer submits
+    anything. That is not a regression — it is the form working. Nothing
+    is submitted until the button is pressed, which is exactly what a
+    person does.
+    """
+    if username is not None:
+        at.session_state["_user_input"] = username
+    if password is not None:
+        at.session_state["_pw_input"] = password
+    # A form's submit button is an ordinary button whose key Streamlit
+    # builds as "FormSubmitter:<form>-<label>". There is no
+    # at.form_submit_button accessor.
+    for b in at.get("button"):
+        if str(b.key or "").startswith("FormSubmitter:login_form"):
+            b.click().run()
+            return
+    raise AssertionError("no submit button on the login form")
+
+
 def box(at, key):
     return [x for x in at.text_input if x.key == key][0]
 
@@ -56,26 +83,26 @@ check("2 a username box above the password box",
 # --- the old way must keep working, with no sheet at all --------------
 at2 = fresh()
 at2.run()
-box(at2, "_pw_input").set_value("stub").run()
+submit(at2, password="stub")
 check("3 PASSWORD-ONLY LOGIN STILL WORKS with no sheet configured — "
       "nobody is locked out by this change",
       sget(at2, "_authed") is True, sget(at2, "_authed"))
 
 at3 = fresh()
 at3.run()
-box(at3, "_pw_input").set_value("nope").run()
+submit(at3, password="nope")
 check("4 a wrong password is still refused", sget(at3, "_authed") is False)
 
 # --- typing a name is not an attempt ----------------------------------
 at4 = fresh()
 at4.run()
-box(at4, "_user_input").set_value("baba").run()
+at4.session_state["_user_input"] = "baba"; at4.run()
 check("5 TYPING A USERNAME IS NOT A FAILED ATTEMPT — otherwise someone "
       "throttles themselves by filling the form top to bottom",
       sget(at4, "_authed") in (None, False) and not sget(at4, "_gate_wait"),
       sget(at4, "_gate_wait"))
 
-box(at4, "_pw_input").set_value("stub").run()
+submit(at4, password="stub")
 check("6 and the password then still gets them in even though the sheet "
       "is unreachable", sget(at4, "_authed") is True, sget(at4, "_authed"))
 
@@ -83,7 +110,7 @@ check("6 and the password then still gets them in even though the sheet "
 at5 = fresh()
 at5.run()
 for _ in range(6):
-    box(at5, "_pw_input").set_value("wrong").run()
+    submit(at5, password="wrong")
 check("7 repeated WRONG PASSWORDS still trigger the throttle",
       bool(sget(at5, "_gate_wait")), sget(at5, "_gate_wait"))
 
@@ -95,24 +122,34 @@ check("7 repeated WRONG PASSWORDS still trigger the throttle",
 at8 = fresh()
 at8.run()
 check("8 there is a visible Log in button",
-      "login_now" in [b.key for b in at8.get("button")],
+      any(str(b.key or "").startswith("FormSubmitter:login_form")
+          for b in at8.get("button")),
       [b.key for b in at8.get("button")])
 
-box(at8, "_pw_input").set_value("stub")
-[b for b in at8.get("button") if b.key == "login_now"][0].click().run()
+# TESTING THE BUTTON SPECIFICALLY IS AWKWARD, and the awkwardness is
+# worth understanding rather than working around blindly.
+#
+# set_value() alone never reaches the widget — the callback reads an
+# empty box. set_value().run() DOES reach it, but the run fires
+# on_change, which is Enter, and Enter logs you straight in — so the
+# button is gone before it can be pressed.
+#
+# So the value is put into session_state directly, which is the one way
+# to have a filled box that has NOT been submitted. Then the button is
+# the only thing that can act.
+submit(at8, password="stub")
 check("9 PRESSING IT LOGS YOU IN — not just Enter",
       sget(at8, "_authed") is True, sget(at8, "_authed"))
 
 at9 = fresh()
 at9.run()
-box(at9, "_pw_input").set_value("wrong")
-[b for b in at9.get("button") if b.key == "login_now"][0].click().run()
+submit(at9, password="wrong")
 check("10 and a wrong password through the button is still refused",
       sget(at9, "_authed") is not True, sget(at9, "_authed"))
 
 at10 = fresh()
 at10.run()
-[b for b in at10.get("button") if b.key == "login_now"][0].click().run()
+submit(at10)
 check("11 pressing it with an EMPTY password does nothing, and does not "
       "spend a throttle attempt",
       sget(at10, "_authed") is not True and not sget(at10, "_gate_wait"),

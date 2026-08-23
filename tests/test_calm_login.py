@@ -39,6 +39,25 @@ def fresh(remembered=None):
     return at
 
 
+def submit(at, password=None, username=None):
+    """Fill the form and press its button.
+
+    v115 made the login a form, so set_value().run() no longer submits —
+    a form commits nothing until its button is pressed. That is the form
+    working, and it is why typing then clicking now behaves the same as
+    typing then pressing Enter.
+    """
+    if username is not None:
+        at.session_state["_user_input"] = username
+    if password is not None:
+        at.session_state["_pw_input"] = password
+    for b in at.get("button"):
+        if str(b.key or "").startswith("FormSubmitter:login_form"):
+            b.click().run()
+            return
+    raise AssertionError("no submit button on the login form")
+
+
 def box(at, key):
     got = [x for x in at.text_input if x.key == key]
     return got[0] if got else None
@@ -104,7 +123,7 @@ check("11 and the remembered state is spent, not left lying around",
 # past it.
 at3 = fresh(dict(rem))
 at3.run()
-box(at3, "_pw_input").set_value("").run()
+submit(at3, password="")
 check("12 Enter on an EMPTY password does nothing — Streamlit fires no "
       "event when a value has not changed, so the button is the press",
       sget(at3, "_authed") is not True, sget(at3, "_authed"))
@@ -125,7 +144,7 @@ check("12 Enter on an EMPTY password does nothing — Streamlit fires no "
 # TYPED. Driven through the widget, not by poking at state.
 at3b = fresh(dict(rem))
 at3b.run()
-box(at3b, "_user_input").set_value("somebody-else").run()
+submit(at3b, username="somebody-else")
 check("12b typing a USERNAME and pressing Enter does not log anybody in "
       "— an empty password is not a press",
       sget(at3b, "_authed") is not True, sget(at3b, "_authed"))
@@ -147,13 +166,13 @@ at4 = fresh(dict(rem))
 at4.run()
 check("13 the remembered name is filled in", sget(at4, "_user_input") == "baba")
 
-box(at4, "_user_input").set_value("emina").run()
+submit(at4, username="emina")
 check("14 typing a different name does NOT log the remembered person in",
       sget(at4, "_authed") is not True, sget(at4, "_authed"))
 check("15 and the typed name is what stands",
       sget(at4, "_user_input") == "emina", sget(at4, "_user_input"))
 
-box(at4, "_pw_input").set_value("stub").run()
+submit(at4, password="stub")
 check("15b and their own password gets THEM in, not baba",
       sget(at4, "_authed") is True and sget(at4, "_user") != "baba",
       (sget(at4, "_authed"), sget(at4, "_user")))
@@ -161,14 +180,14 @@ check("15b and their own password gets THEM in, not baba",
 # --- a real password still works while somebody is remembered ---------
 at5 = fresh(dict(rem))
 at5.run()
-box(at5, "_pw_input").set_value("stub").run()
+submit(at5, password="stub")
 check("16 typing a real password still works, and wins over the "
       "remembered name", sget(at5, "_authed") is True, sget(at5, "_authed"))
 
 # --- a wrong password is still wrong ----------------------------------
 at6 = fresh(dict(rem))
 at6.run()
-box(at6, "_pw_input").set_value("nonsense").run()
+submit(at6, password="nonsense")
 check("17 a WRONG password is still refused, even with someone "
       "remembered", sget(at6, "_authed") is not True, sget(at6, "_authed"))
 
