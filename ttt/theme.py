@@ -196,12 +196,53 @@ def css(scheme: str = "amber", font: str = "mono",
       pointer-events: none;
     }}
     [data-testid="stHeader"] * {{ pointer-events: auto; }}
+
+    /* THE TOOLBAR GOES. Share, the star, the pencil, the GitHub mark and
+       the three dots are Streamlit's, not this app's — and on a phone
+       they land ON TOP of the tab row, because the header they live in
+       is fixed and narrow enough that the icons and the tabs occupy the
+       same band. Baba photographed "Share" printed across TR.
+       Nobody here has ever pressed one of them: this is his family's
+       transcriber, not a Streamlit demo to fork. Removing them also
+       removes the collision entirely, rather than negotiating with it —
+       which is what padding-top was doing, and what it kept losing. */
+    /* THE TAB BAR HOLDS ONE LINE, whoever is looking at it. The owner
+       has seven and a family member five, and at 360px the seventh
+       wrapped — `log` alone underneath, which is the orphan shape Baba
+       objected to for `multi` and which I noted at v130 and left.
+       §27's trade: the cells may shrink and the type may shrink, and no
+       word may be cut. `log` is three letters and survives it. */
+    /* .stButtonGroup's INNER div is the flex row that wraps — not
+       stSegmentedControl, which is the block around it. Found by
+       walking up from the `log` tab and reading each ancestor's
+       computed display and flex-wrap, rather than guessing at a
+       test-id. The same lesson as the add-to-notes link: when a rule
+       does nothing, print the chain. */
+    .stButtonGroup > div {{
+      flex-wrap: nowrap !important;
+      gap: 0.2rem !important;
+    }}
+    .stButtonGroup button {{
+      padding-left: 0.5rem !important;
+      padding-right: 0.5rem !important;
+      min-width: 0 !important;
+      white-space: nowrap !important;
+    }}
+    .stButtonGroup button p {{ white-space: nowrap !important; }}
+
+    [data-testid="stToolbar"] {{ display: none !important; }}
+    [data-testid="stToolbarActions"] {{ display: none !important; }}
+    [data-testid="stAppDeployButton"] {{ display: none !important; }}
+    /* The running indicator STAYS. It is the only thing up there that
+       says the app is working, and on a slow phone that is the
+       difference between waiting and pressing again. */
+    [data-testid="stStatusWidget"] {{ display: block !important; }}
     [data-testid="stMainBlockContainer"] {{
-      /* 64px, MEASURED: the header's own box is 60px tall in a real
-         browser, and 2.4rem (38px) still let content under it. Guessing
-         at this number is what produced four rounds of symptom fixes —
-         it is a measurement, not a taste. */
-      padding-top: 64px !important;
+      /* 64px WAS FOR A TOOLBAR THAT IS NO LONGER THERE. With it hidden
+         the header holds nothing that can be printed through, so the
+         page can start where Baba wanted it in the first place — at the
+         top. Measured again after hiding it, not assumed. */
+      padding-top: 12px !important;
     }}
 
     /* ---- PILLS ----------------------------------------------------

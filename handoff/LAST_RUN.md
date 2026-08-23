@@ -1,36 +1,40 @@
-# STEP: an empty note, and actions at the foot
-STATUS: done, pushed as v149. No deploy needed.
+# STEP: the top of the screen, on a phone
+STATUS: done, pushed as v150. No deploy needed.
 
-WHAT HAPPENED
-- AN EMPTY NOTE CAN BE MADE ON PURPOSE. `add to notes` with an empty box
-  now creates one and OPENS it — there is nothing to see on the card and
-  nothing to read in the list, so the only reason to make one is to put
-  something in it. A note WITH text stays closed: it is finished.
-- The empty guard in NOTES.add is still there, because it exists to stop
-  a RERUN turning a silent take into a blank note. `allow_empty`
-  separates the two cases, and THE DUPLICATE GUARD is what keeps it
-  safe: a second empty note while the first is still empty returns the
-  first, so pressing twice cannot fill the list with blanks.
-- THE ACTIONS MOVED BELOW THE RECORDER. Baba: "our visual language is
-  that actions are written below the text boxes; in the notes they are
-  above." He is right and it was the last place that disagreed — every
-  other module puts what you can DO under what you are looking at,
-  because you read first and act second.
+WHAT BABA SAW
+- Streamlit's toolbar — Share, the star, the pencil, the GitHub mark,
+  the three dots — printed ACROSS his tab row. "Share" sat on top of TR.
+- It only shows on a phone: the header those icons live in is fixed and
+  narrow enough there that the icons and the tabs occupy the same band.
 
-WHAT I BROKE ON THE WAY, AND IT WAS BAD
-- Removing a stale comment took the `with st.container(key="noteopen"):`
-  line with it. The dedent that followed put the ENTIRE note view inside
-  `_del_do()` — so an open note rendered nothing at all, and its body
-  would only have run when somebody pressed delete.
-- pyflakes was clean throughout. Valid Python, completely wrong
-  program. Only opening a note in a browser showed it, and the
-  screenshot was a panel with a deck and nothing under it.
-- THE LESSON: a scripted deletion that swallows a line of CODE along
-  with the comment above it cannot be caught by a syntax check. When a
-  comment is removed, read back what sits where it was.
+THE FIX, AND WHY IT IS A REMOVAL
+- The toolbar is gone. It is Streamlit's, not this app's: Share, fork,
+  star and edit belong to a demo somebody might copy, not to his
+  family's transcriber. Nobody here has ever pressed one.
+- Removing it removes the collision ENTIRELY rather than negotiating
+  with it — which is what padding-top had been doing since v138, and
+  what it kept losing. The page top came back from 64px to 12px as a
+  result, which is where Baba wanted it in the first place.
+- THE RUNNING INDICATOR STAYS. It is the only thing up there that says
+  the app is working, and on a slow phone that is the difference
+  between waiting and pressing again.
+
+AND THE ORPHAN I HAD LEFT
+- The owner's seven tabs wrapped at 360px with `log` alone underneath —
+  the same shape Baba objected to for `multi`, noted at v130 and not
+  fixed. One row now, nothing clipped, no sideways scroll.
+- My first attempt styled `stSegmentedControl`. The element that
+  actually wraps is `.stButtonGroup`'s inner div; I found it by walking
+  up from the `log` tab and printing each ancestor's computed display
+  and flex-wrap. Same lesson as the add-to-notes link: when a rule does
+  nothing, print the chain instead of guessing at a test-id.
 
 NUMBERS
-- notes 50 (was 46) · notes UI 22 · tier 15 — green
-- mutation: refusing empty again fails 2
-- browser-verified: actions below the recorder, empty note opens itself
+- box 16 · tier 15 · owner edge 5 — green
+- measured on a 360px MOBILE viewport: toolbar hidden, 7 tabs, 1 row,
+  0 clipped, 0 overflow
 - pyflakes clean
+
+STILL UNANSWERED FROM BABA
+- "There is no note next to recording, only recording." I do not
+  understand this one and have NOT guessed at it — see the reply.
