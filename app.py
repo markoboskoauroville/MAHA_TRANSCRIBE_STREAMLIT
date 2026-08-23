@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v134 (a) (the note keeps only its transport)"
+APP_VERSION = "v135 (a) (settings that read as groups)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -668,9 +668,12 @@ STRINGS = {
     # have up there. Everybody understands one letter." The nav row is
     # already letters, so the panel matches it and the labels stop eating
     # a whole line each.
-    "looks_size":         {"en": "TXT",              "hr": "TXT"},
-    "looks_font":         {"en": "TY",               "hr": "TY"},
-    "looks_scheme":       {"en": "C",                "hr": "C"},
+    # FULL WORDS. Baba: "full name." TXT, TY and C are initialisms only
+    # their author can read — and this is the screen a family member
+    # opens when they cannot see the text well enough.
+    "looks_size":         {"en": "text size",        "hr": "veličina teksta"},
+    "looks_font":         {"en": "typeface",         "hr": "pismo"},
+    "looks_scheme":       {"en": "colour",           "hr": "boja"},
     "looks_preview":      {"en": "The quick brown fox jumps over the lazy dog. 0123456789",
                             "hr": "Gojazni đačić s ljutim che pjeva u fioci. 0123456789"},
     "sig_looks":          {"en": "looks",             "hr": "izgled"},
@@ -5610,29 +5613,43 @@ elif active == "looks":
     # HOW THE APP LOOKS — everyone gets this. Size, typeface, colour.
     # Deliberately separate from engines and keys: what a person sees is
     # theirs to set, what the app talks to is the owner's.
-    st.caption(t("looks_size"))
-    size_controls()
+    # EACH SETTING IN ITS OWN FRAME. Baba: "visually group different
+    # settings so we know they belong to different groups — put the
+    # frame, the visual language from the rest of the interface."
+    #
+    # Three rows of pills with a word above each read as one long list
+    # of eighteen buttons. The same fill the deck and the note sit in
+    # says "these belong together" without another colour or another
+    # line.
+    with st.container(key="looksgroup_size"):
+        st.markdown('<div class="setlabel">%s</div>' % html.escape(
+            t("looks_size")), unsafe_allow_html=True)
+        size_controls()
 
-    st.caption(t("looks_font"))
-    fcols = st.columns(3)
-    for col, (fid, label) in zip(fcols, [("mono", "mono"), ("sans", "sans"),
-                                         ("serif", "serif")]):
-        def _pick_font(f=fid):
-            st.session_state["font_family"] = f
-            persist_settings()
-        col.button(label, key=f"font_{fid}", use_container_width=True,
-                   type="primary" if st.session_state.get("font_family", "mono") == fid
-                   else "secondary", on_click=_pick_font)
+    with st.container(key="looksgroup_font"):
+        st.markdown('<div class="setlabel">%s</div>' % html.escape(
+            t("looks_font")), unsafe_allow_html=True)
+        fcols = st.columns(3)
+        for col, (fid, label) in zip(fcols, [("mono", "mono"), ("sans", "sans"),
+                                             ("serif", "serif")]):
+            def _pick_font(f=fid):
+                st.session_state["font_family"] = f
+                persist_settings()
+            col.button(label, key=f"font_{fid}", use_container_width=True,
+                       type="primary" if st.session_state.get("font_family", "mono") == fid
+                       else "secondary", on_click=_pick_font)
 
-    st.caption(t("looks_scheme"))
-    scols = st.columns(4)
-    for col, sid in zip(scols, ["amber", "green", "cyan", "paper"]):
-        def _pick_scheme(x=sid):
-            st.session_state["scheme"] = x
-            persist_settings()
-        col.button(sid, key=f"scheme_{sid}", use_container_width=True,
-                   type="primary" if st.session_state.get("scheme", "amber") == sid
-                   else "secondary", on_click=_pick_scheme)
+    with st.container(key="looksgroup_scheme"):
+        st.markdown('<div class="setlabel">%s</div>' % html.escape(
+            t("looks_scheme")), unsafe_allow_html=True)
+        scols = st.columns(4)
+        for col, sid in zip(scols, ["amber", "green", "cyan", "paper"]):
+            def _pick_scheme(x=sid):
+                st.session_state["scheme"] = x
+                persist_settings()
+            col.button(sid, key=f"scheme_{sid}", use_container_width=True,
+                       type="primary" if st.session_state.get("scheme", "amber") == sid
+                       else "secondary", on_click=_pick_scheme)
 
     st.text_area("preview", key="looks_preview", height=110,
                  label_visibility="collapsed", value=t("looks_preview"))
@@ -5661,9 +5678,17 @@ elif active == "looks":
     # tight spacing here it printed THROUGH the buttons under it — the
     # same collision as the engine test result, one screen over. TXT, TY
     # and C above it are already thin dim marks; this is now one of them.
-    st.markdown('<div class="setlabel">%s</div>' % html.escape(
-        t("settings_lang")), unsafe_allow_html=True)
-    _lc1, _lc2, _ = st.columns([1, 1, 3])
+    # THE LABEL SITS ON THE SAME LINE AS THE PILLS. Baba: "check the
+    # overlapping text, interface language — you can put interface
+    # language HR ENG in one line, not in two lines."
+    #
+    # Above them it was a whole row for two words, and under this
+    # screen's tight spacing it kept colliding with what came next. On
+    # the line it costs nothing and cannot overlap anything.
+    with st.container(key="uilangrow"):
+        _llab, _lc1, _lc2, _ = st.columns([1.6, 0.8, 0.8, 1.4])
+        _llab.markdown('<div class="setlabel">%s</div>' % html.escape(
+            t("settings_lang")), unsafe_allow_html=True)
     _lang_now = st.session_state.get("ui_lang", "en")
     _lc1.button("HR", key="ui_hr",
                 type="primary" if _lang_now == "hr" else "secondary",

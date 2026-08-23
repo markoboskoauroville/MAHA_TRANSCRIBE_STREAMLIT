@@ -740,6 +740,32 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* EACH SETTING IN ITS OWN FRAME. Baba: "visually group different
+       settings so we know they belong to different groups — put the
+       frame, the visual language from the rest of the interface."
+       The same fill the deck and the note sit in, so the grouping is
+       said the way this app already says it. */
+    [class*="st-key-looksgroup_"] {{
+      background: var(--surface-2);
+      border-radius: 10px;
+      padding: 0.5rem 0.55rem !important;
+      margin-bottom: 0.4rem !important;
+    }}
+
+    /* The interface language, label and pills on ONE line. */
+    [class*="st-key-uilangrow"] div[data-testid="stHorizontalBlock"] {{
+      align-items: center !important;
+      flex-wrap: nowrap !important;
+      gap: 0.3rem !important;
+    }}
+    [class*="st-key-uilangrow"] div[data-testid="stColumn"] {{
+      min-width: 0 !important;
+    }}
+    [class*="st-key-uilangrow"] .setlabel {{
+      margin: 0 !important;
+      white-space: nowrap;
+    }}
+
     /* copy · clear UNDER EVERY BOX. One rule, one look, in T, R and
        both halves of TR. Baba: "under all tabs we have text box, copy
        clear under — as an action link, not an action button."
