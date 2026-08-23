@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v158 (a) (a file manager that behaves like one)"
+APP_VERSION = "v159 (a) (a second reading that says what it is doing)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -534,6 +534,22 @@ STRINGS = {
                            "hr": "brišem %d od %d"},
     "rec_del_now":        {"en": "%d of %d  ·  %s  ·  %.1fs",
                            "hr": "%d od %d  ·  %s  ·  %.1fs"},
+    "rec_step_get":       {"en": "fetching the audio",
+                           "hr": "dohvaćam zvuk"},
+    "rec_step_say":       {"en": "transcribing",     "hr": "prepisujem"},
+    "rec_get_wait":       {"en": "part %d of %d  ·  waiting  ·  %.1fs",
+                           "hr": "dio %d od %d  ·  čekam  ·  %.1fs"},
+    "rec_get_part":       {"en": "part %d of %d  ·  %.0f KB  ·  %.1fs",
+                           "hr": "dio %d od %d  ·  %.0f KB  ·  %.1fs"},
+    "rec_say_part":       {"en": "reading part %d of %d  ·  %.1fs",
+                           "hr": "čitam dio %d od %d  ·  %.1fs"},
+    "rec_say_chunk":      {"en": "piece %d of %d  ·  %.1fs",
+                           "hr": "komad %d od %d  ·  %.1fs"},
+    # NOT "rec_retry" — that is already the deck's retry BUTTON. Two
+    # meanings on one key is how a button ends up labelled with a
+    # sentence about waiting.
+    "rec_wait_again":     {"en": "no answer — trying again (%d), %ds",
+                           "hr": "nema odgovora — pokušavam opet (%d), %ds"},
     "rec_getting":        {"en": "fetching the audio…",
                            "hr": "dohvaćam zvuk…"},
     "rec_gone":           {"en": "That audio could not be fetched whole.",
@@ -4427,31 +4443,97 @@ def _rec_after_actions(recs):
     if not row:
         return
 
+    # A SECOND READING IS A LONG WAIT AND IT MUST SAY SO.
+    #
+    # Baba: "it takes a long time until it actually gets transcribed, so
+    # user is confused what's going on... show what you can fetch from
+    # the transferring information."
+    #
+    # Three phases, and each one can report something real:
+    #   1. the DOWNLOAD — which part, of how many, and its size, from
+    #      drive.fetch's on_part
+    #   2. the TRANSCRIPTION — which chunk, of how many, from
+    #      ttt/audio.py's progress_cb, which has always been there and
+    #      was simply never wired to anything here
+    #   3. a RETRY — the module waits and tries again on a transient
+    #      failure, and on_wait says which attempt and how long
+    #
+    # None of this is invented: every number comes from a callback the
+    # code already had. Guessing at a percentage would be worse than
+    # silence, because a bar that lies is a bar nobody believes twice.
     store = drive_store()
     tmp = tempfile.mkdtemp(prefix="again_")
+    started = time.time()
+    bar = st.progress(0.0, text=t("rec_step_get"))
+    line = st.empty()
+
+    def _say(msg):
+        line.markdown('<div class="readhint">%s</div>' % html.escape(msg),
+                      unsafe_allow_html=True)
+
     try:
-        with st.spinner(t("rec_getting")):
-            parts = store.fetch(rid, int(row.get("parts") or 1), tmp)
+        got = {"bytes": 0}
+
+        def _on_part(done, total, size):
+            # size is None while a part is STILL COMING, and a number
+            # once it has landed. The bar only moves on arrival; the
+            # line names the part either way, so a long wait has
+            # something on it rather than the last part's figures.
+            if size is None:
+                _say(t("rec_get_wait") % (done, total,
+                                          time.time() - started))
+                return
+            got["bytes"] += size
+            # HALF THE BAR IS THE DOWNLOAD, half the transcription. Not
+            # because they take equal time — they do not — but because a
+            # bar that jumps to 90% and sits there is worse than one
+            # that moves steadily through two honest halves.
+            bar.progress(0.5 * (done / max(total, 1)), text=t("rec_step_get"))
+            _say(t("rec_get_part") % (done, total, got["bytes"] / 1024.0,
+                                      time.time() - started))
+
+        parts = store.fetch(rid, int(row.get("parts") or 1), tmp,
+                            on_part=_on_part)
         if not parts:
             st.error(t("rec_gone"))
             return
-        with st.spinner(t("transcribing")):
-            text, _m, _r = transcribe_any_size(
-                parts[0], "", str(row.get("language") or ""))
-            for pth in parts[1:]:
-                more, _m2, _r2 = transcribe_any_size(
-                    pth, "", str(row.get("language") or ""))
-                if (more or "").strip():
-                    text = (text or "").rstrip() + "\n\n" + more.strip()
-        if (text or "").strip():
+
+        def _on_chunk(done, total):
+            bar.progress(0.5 + 0.5 * (done / max(total, 1)),
+                         text=t("rec_step_say"))
+            _say(t("rec_say_chunk") % (done, total, time.time() - started))
+
+        def _on_wait(attempt, pause, err):
+            # A RETRY IS THE MOMENT SOMEBODY MOST NEEDS TELLING. The app
+            # is doing something patient and looks identical to an app
+            # doing nothing.
+            _say(t("rec_wait_again") % (attempt, pause))
+
+        text = ""
+        for i, pth in enumerate(parts):
+            _say(t("rec_say_part") % (i + 1, len(parts),
+                                      time.time() - started))
+            more, _m, _r = transcribe_any_size(
+                pth, "", str(row.get("language") or ""),
+                progress_cb=_on_chunk, on_wait=_on_wait)
+            if (more or "").strip():
+                text = (text.rstrip() + "\n\n" + more.strip()
+                        if text else more.strip())
+
+        took = time.time() - started
+        bar.empty()
+        line.empty()
+        if text.strip():
             # INTO THE BOX, not over the old transcript. A second reading
             # is a new take of the same audio, and which one is better is
             # Baba's call, not the app's.
             t1_set_text(text)
-            st.success(t("rec_again_done"))
+            st.success(t("rec_again_done") + "  ·  %.1fs" % took)
         else:
             st.warning(t("nothing_heard"))
     except Exception as e:
+        bar.empty()
+        line.empty()
         errlog.add(st.session_state, "drive", "could not use that recording",
                    "{}: {}".format(type(e).__name__, e))
         st.error(t("rec_failed"))

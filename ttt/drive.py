@@ -280,13 +280,26 @@ class DriveStore:
             if tmp:
                 _audio.cleanup(tmp)
 
-    def fetch(self, rec_id: str, parts: int, out_dir: str):
+    def fetch(self, rec_id: str, parts: int, out_dir: str, on_part=None):
         """Pull every part back down as files. Returns paths in order, or
         [] — never a partial list, because a partial list transcribes to a
         confident transcript with a hole in the middle, and nothing in the
         result would show that anything was missing."""
         got = []
-        for i in range(int(parts or 0)):
+        total = int(parts or 0)
+        for i in range(total):
+            # SAY WHICH PART IS COMING BEFORE IT COMES. A caller that
+            # wants to narrate needs the number BEFORE the wait, not
+            # after — announcing "part 2 of 3" once part 2 has already
+            # arrived tells somebody about a wait that is over.
+            if on_part:
+                # THE PART ABOUT TO BE FETCHED IS 1-BASED AND ITS SIZE IS
+                # UNKNOWN. Passing `i` and 0 read on screen as "part 0 of
+                # 3 · 0 KB" — a number nobody counts from and a size that
+                # looks like a failure. `i + 1` with size None says
+                # "starting this one", and the caller can tell the two
+                # apart because only the finished call carries a size.
+                on_part(i + 1, total, None)
             raw = self.get_part(rec_id, i)
             if raw is None:
                 for p in got:
@@ -299,6 +312,9 @@ class DriveStore:
             with open(p, "wb") as fh:
                 fh.write(raw)
             got.append(p)
+            # And again with the size, now that it is known.
+            if on_part:
+                on_part(i + 1, total, len(raw))
         return got
 
     def list(self):
