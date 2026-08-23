@@ -642,16 +642,25 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        five command keys above it; a sixth full-width button would
        compete with them for an action that is an afterthought — you read
        what came back, THEN you decide to keep it. */
+    /* GLUED TO THE BOTTOM OF THE BOX. The negative margin closes the
+       gap Streamlit puts between two elements; without it the line
+       floated loose and read as a status report rather than an action.
+       Left-aligned to the box's own text inset so the words line up
+       with the transcript above them. */
+    [class*="st-key-tx_tonote"] {{
+      margin-top: -0.75rem !important;
+    }}
     [class*="st-key-tx_tonote"] button {{
       background: transparent !important;
       border: 0 !important;
       color: var(--amber) !important;
-      padding: 0.15rem 0 !important;
+      padding: 0.1rem 0.75rem !important;
       min-height: 0 !important;
       font-size: 0.76rem !important;
       text-decoration: underline;
       text-underline-offset: 3px;
-      width: auto !important;
+      justify-content: flex-start !important;
+      text-align: left !important;
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 

@@ -1,46 +1,34 @@
-# STEP: one way in
-STATUS: done, pushed as v116
+# STEP: glue "add to notes" to the text box
+STATUS: done, pushed as v117
 
 WHAT HAPPENED
-- "Continue as {name}" is gone. Baba: "Login is enough." Two gold
-  buttons a centimetre apart doing almost the same thing is a choice
-  nobody asked to make, and the name is already filled in above.
-- The capability it carried is not lost: submitting with an EMPTY
-  password completes a remembered login. Safe ONLY because the screen is
-  a form now — it submits when the button is pressed or Enter is struck,
-  never while somebody is halfway through filling it.
-
-THE HOLE THE TESTS CAUGHT, IN THE SAME CHANGE
-- My first version let ANY empty submit complete the remembered login.
-  Typing "emina" over the filled-in "baba" and submitting signed BABA
-  in — somebody let into an account under a name they did not type. The
-  v114 bug in a new coat, five minutes after I wrote the comment that
-  explains v114.
-- Fixed: the name box must still hold their name, or be empty. The
-  mutation that drops that condition fails 5 checks.
-
-A CHECK THAT ASSERTED THE OPPOSITE
-- test_calm_login 12 said submitting empty does NOTHING, with a comment
-  arguing a form was too dangerous to try: "the login screen is the one
-  place where a mistake locks out everybody". The caution was right; the
-  conclusion was wrong. Rewritten with its history kept, because the
-  lesson is that "too risky to try" was standing in for "not yet
-  measured".
+- The link sits against the bottom edge of the box now, full width, its
+  words aligned to the box's own text inset. Baba: "close to the text
+  field as much as possible, almost touching, otherwise it looks like
+  status." He was right about what the gap was saying — floating loose
+  it read as a report on something that had happened, not as a thing to
+  press.
+- Measured in a browser: gap −1.8px, so it touches. The button spans the
+  full width and the whole strip is tappable; the underline hugs the
+  words, which is what makes it read as a link rather than a bar.
 
 NUMBERS
-- calm login 32 · login 11 — green
-- one mutation, 5 checks red
-- pyflakes clean; one button seen in a browser
+- notes UI 22 · login 11 — green
+- pyflakes clean
 
 WHAT BROKE, AND WHAT I UNDID
-- Two checks asserted the removed button. Moved to the behaviour that
-  replaced it, which is what should have been checked all along.
+- Nothing in the app. I twice booted a server after my own cleanup had
+  already removed the stub secrets, so it died on
+  StreamlitSecretNotFoundError and the browser check hit a refused
+  connection. Order of operations in my own script, not a fault in the
+  app — but it cost two attempts, and the lesson is to write the
+  secrets AFTER the cleanup, not before.
 
 STILL UNSURE
 - Nothing here.
 
 FOR BABA
-- Log in and confirm one press, one button.
-- Then v114's note tests: the DECK's rec inside an open note, and the
-  note's own red button. If the red one still does nothing, its error is
-  on screen now — send me that text.
+- Still waiting on the two note checks from v114: open a note and press
+  the DECK's rec (the words should join the note), then the note's own
+  red button. If the red one does nothing, its error is on screen now —
+  send me that text.

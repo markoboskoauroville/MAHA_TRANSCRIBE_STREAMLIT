@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v116 (a) (one way in)"
+APP_VERSION = "v117 (a) (add to notes, glued to the box)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4817,8 +4817,15 @@ if active == "transcribe":
     # correction, a grammar pass or a hand edit is what gets kept.
     _body = t1_text().strip()
     if _body:
-        st.markdown('<div class="tolink"></div>', unsafe_allow_html=True)
-        st.button(t("tx_tonote"), key="tx_tonote", on_click=keep_as_note)
+        # FULL WIDTH AND GLUED TO THE BOX. Baba: "close to the text
+        # field as much as possible, almost touching it, so they come
+        # together, otherwise it looks like status." He is right about
+        # what the gap was saying: floating loose under the box it read
+        # as a report on something that had happened, not as a thing to
+        # press. Against the edge it reads as part of the box — the
+        # bottom of the writing surface, where the action belongs.
+        st.button(t("tx_tonote"), key="tx_tonote", on_click=keep_as_note,
+                  use_container_width=True)
         if st.session_state.pop("_note_kept", None):
             st.caption(t("tx_tonote_done"))
 
