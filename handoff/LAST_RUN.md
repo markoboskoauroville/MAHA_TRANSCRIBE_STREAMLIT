@@ -1,45 +1,46 @@
-# STEP: AUTO first and in caps, and the link on the right
-STATUS: done, pushed as v119
+# STEP: AUTO returned nothing
+STATUS: fixed and pushed as v120
 
-WHAT HAPPENED
-- AUTO · HR · ENG, in that order, AUTO in caps like the other two.
-- "add to notes" now sits at the right edge, 11px in — the button's own
-  padding — lined up with the tab signature below it.
+WHAT BABA REPORTED
+- AUTO: no transcription at all.
+- HR: correct, filters to Croatian.
+- ENG: behaves like AUTO, recognises every language.
 
-THE PART WORTH READING: SEVEN ROUNDS TO MOVE A LINK
-- I changed the CSS six times and measured no improvement, or a small
-  one, every time. The reason was not Streamlit being difficult. It was
-  that I kept styling the thing I wanted to move instead of measuring
-  what was holding it.
-- The nesting is button > div > p, and each layer had its own answer:
-  the ELEMENT CONTAINER was 128px inside a 390px parent; the BUTTON had
-  `width: 100%` immediately followed by `width: auto` — a leftover from
-  an earlier attempt, so the last one won and every rule after it argued
-  with a line I had forgotten to delete; and the DIV inside the button
-  is a flex with justify-content: center, so a full-width button still
-  centred a 104px paragraph.
-- What ended it was walking the ancestor chain and printing the computed
-  width of every level. That took one command and should have been the
-  FIRST thing, not the seventh.
-- Two wrong turns worth recording: I blamed st.columns stacking (they do
-  not stack here — the language pills prove it), and I blamed a column
-  flex direction (it is a row). Both were guesses dressed as diagnoses.
+THE AUTO BUG, AND WHY v118 DID NOT FIX IT
+- "auto" was being SENT to Whisper. That is a 400, the key rotation then
+  tried every key, every one failed, and the result was an empty string
+  — so the screen showed nothing and named no fault.
+- v118 fixed exactly this in ttt/providers/groq.py. It changed nothing,
+  because THE PATH A RECORDING TAKES NEVER GOES NEAR THAT FILE. app.py
+  has its own copy of the Groq call at line ~1569, talking to the SDK
+  directly, and transcribe_any_size routes through that one.
+- One implementation in the module, used from everywhere, is the rule.
+  The cost of having two was a fix that read as complete and did
+  nothing for a whole version.
+- Nothing tested the SHAPE of the request, which is why a wrong shape
+  shipped twice. tests/test_language.py now does: 13 checks, and the
+  mutation that sends "auto" again fails 2 of them.
+
+ENG — NOT A BUG, AND I SHOULD SAY SO PLAINLY
+- Whisper's `language` is a HINT, not a filter. It biases the decoder;
+  it does not refuse other languages. Croatian audio with language=en
+  still decodes as Croatian, because the model recognises it and the
+  hint is weak against strong evidence.
+- HR "works" for the same reason in reverse: Croatian audio plus a
+  Croatian hint agree, so the result is clean.
+- There is no setting that makes Whisper transcribe ONLY English and
+  refuse the rest. It cannot be fixed in the app because it is not the
+  app's behaviour. Options if it matters: check the returned language
+  and reject the take, or use AssemblyAI, whose language_detection is a
+  real detector rather than a hint.
 
 NUMBERS
-- inset from right: 11px, measured
+- language 13 (new) · box 16 · source 19 — green
+- one mutation applied, 2 checks red
 - pyflakes clean
 
-WHAT BROKE, AND WHAT I UNDID
-- Nothing in the app. But I booted a dead server SIX more times because
-  my cleanup removes the stub secrets and I keep writing the boot before
-  the secrets. Third handoff running that this appears in.
-
-STILL UNSURE
-- Nothing here.
-
 FOR BABA
-- Still waiting from v114: open a note, press the DECK's rec — the words
-  should join the note. Then the note's own red button; if it fails its
-  error is on screen now.
-- And auto: try a Croatian sentence and an English one and see whether
-  it holds.
+- Try AUTO again after this deploys. It should transcribe now.
+- ENG will still pick up Croatian. That is Whisper, not the app — tell
+  me if you want the app to REJECT a take whose language is not the one
+  you asked for, which is the only honest way to get what you described.

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v119 (a) (AUTO first, and the link finally on the right)"
+APP_VERSION = "v120 (a) (auto reaches Whisper)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1573,14 +1573,27 @@ def transcribe(path: str, model: str, language: str) -> str:
         idx = (start + offset) % len(KEYS)
         client = Groq(api_key=KEYS[idx])
         try:
+            # "auto" AND EMPTY ARE OMITTED, NOT SENT.
+            #
+            # Whisper detects the language itself when the parameter is
+            # absent; sending "auto" is a 400 and the key rotation then
+            # burns through every key and returns nothing. That is
+            # exactly what Baba saw: "auto does not bring anything, no
+            # transcription at all."
+            #
+            # THIS IS A SECOND COPY. ttt/providers/groq.py has the same
+            # call and was fixed for auto in v118 — but this path never
+            # reaches it. app.py talks to the Groq SDK directly here,
+            # which is the "one implementation, in the module" rule
+            # broken, and the cost of breaking it was a fix that looked
+            # complete and changed nothing.
+            kw = dict(file=(os.path.basename(path), None),
+                      model=model, response_format="text", temperature=0.0)
+            if language and language != "auto":
+                kw["language"] = language
             with open(path, "rb") as f:
-                resp = client.audio.transcriptions.create(
-                    file=(os.path.basename(path), f.read()),
-                    model=model,
-                    language=language,
-                    response_format="text",
-                    temperature=0.0,
-                )
+                kw["file"] = (os.path.basename(path), f.read())
+                resp = client.audio.transcriptions.create(**kw)
             st.session_state["_key_idx"] = idx
             text = resp if isinstance(resp, str) else getattr(resp, "text", str(resp))
             return text.strip()
