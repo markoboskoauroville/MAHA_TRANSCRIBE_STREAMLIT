@@ -117,18 +117,27 @@ def adopt_archive(state, archive_key="_t1_archive"):
     return taken
 
 
-def add(state, text, language="", rec_id="", at=""):
+def add(state, text, language="", rec_id="", at="", allow_empty=False):
     """Make a note. Returns its id, or None if there was nothing to keep.
 
     THE SAME TEXT TWICE IN A ROW IS NOT KEPT TWICE, for the reason
     archive.py gives: Streamlit reruns constantly and delivery can be
     reached more than once for one recording.
+
+    `allow_empty` is for a note somebody ASKED for. Baba: "add to notes,
+    if it is empty then it simply adds empty note — user can manually
+    type inside or talk inside." The empty guard exists to stop a
+    rerun turning a silent take into a blank note; it must not stop a
+    press of a button that says exactly what it will do.
     """
     try:
         body = (text or "").strip()
-        if not body:
+        if not body and not allow_empty:
             return None
         notes = _all(state)
+        # THE DUPLICATE GUARD STILL APPLIES, and it is what stops
+        # `allow_empty` filling the list with blanks: a second empty note
+        # while the first is still empty and unedited returns the first.
         if notes and (notes[0].get("text") or "").strip() == body:
             return notes[0].get("id")
         note = {

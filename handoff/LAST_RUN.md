@@ -1,40 +1,36 @@
-# STEP: numbered notes, and an interface you can resize
-STATUS: done, pushed as v148. No deploy needed.
+# STEP: an empty note, and actions at the foot
+STATUS: done, pushed as v149. No deploy needed.
 
-SIX THINGS, AND TWO OF THEM WERE MY MESS
-1. THE CONFIRM WAS STILL DARK — asked twice, wrong both times. v141 took
-   the red away and I stopped there; the real cause was
-   `type="primary"`, which gives Streamlit's own colour rules and they
-   win over the link styling beside it. Measured now: `sure?` and
-   `close` are the same rgb(177,163,137).
-2. THE NOTICE GAP WENT FROM 2px TO 41px — Baba: "you create another
-   mess." Correct in direction and absurd in size, because Streamlit's
-   container margin added to mine. 0.15rem now, about one line.
-3. Serial numbers on the note cards: 1. 2. 3. The POSITION in the list,
-   not an id — it exists to point at, so it must match what somebody is
-   counting on the screen.
-4. The cards have a gold edge and prose-coloured words. The edge says a
-   card is a thing you can open; the colour says what is inside is the
-   same stuff as the transcript.
-5. `add to notes` stood on the box's border when the box was EMPTY. The
-   glue is right with text and wrong without it, so the key now carries
-   the state — a Streamlit container cannot be given a class, but it
-   can be given a different key.
-6. INTERFACE SIZE, beside text size. It moves the ROOT font size, which
-   every rem in the stylesheet is measured against, so pills, labels,
-   links and padding move together. Text size multiplies on top of it.
-   Two questions, two controls: "I cannot read the transcript" and "the
-   whole thing is too small".
+WHAT HAPPENED
+- AN EMPTY NOTE CAN BE MADE ON PURPOSE. `add to notes` with an empty box
+  now creates one and OPENS it — there is nothing to see on the card and
+  nothing to read in the list, so the only reason to make one is to put
+  something in it. A note WITH text stays closed: it is finished.
+- The empty guard in NOTES.add is still there, because it exists to stop
+  a RERUN turning a silent take into a blank note. `allow_empty`
+  separates the two cases, and THE DUPLICATE GUARD is what keeps it
+  safe: a second empty note while the first is still empty returns the
+  first, so pressing twice cannot fill the list with blanks.
+- THE ACTIONS MOVED BELOW THE RECORDER. Baba: "our visual language is
+  that actions are written below the text boxes; in the notes they are
+  above." He is right and it was the last place that disagreed — every
+  other module puts what you can DO under what you are looking at,
+  because you read first and act second.
+
+WHAT I BROKE ON THE WAY, AND IT WAS BAD
+- Removing a stale comment took the `with st.container(key="noteopen"):`
+  line with it. The dedent that followed put the ENTIRE note view inside
+  `_del_do()` — so an open note rendered nothing at all, and its body
+  would only have run when somebody pressed delete.
+- pyflakes was clean throughout. Valid Python, completely wrong
+  program. Only opening a note in a browser showed it, and the
+  screenshot was a panel with a deck and nothing under it.
+- THE LESSON: a scripted deletion that swallows a line of CODE along
+  with the comment above it cannot be caught by a syntax check. When a
+  comment is removed, read back what sits where it was.
 
 NUMBERS
-- tier 15 · box 16 · notes 46 · notes UI 22 · must change 15 ·
-  owner edge 5 — green
-- browser-measured: card border rgb(245,158,11), text rgb(242,221,180);
-  `sure?` identical to `close`; interface size 8px/16px/32px at
-  50/100/200
+- notes 50 (was 46) · notes UI 22 · tier 15 — green
+- mutation: refusing empty again fails 2
+- browser-verified: actions below the recorder, empty note opens itself
 - pyflakes clean
-
-STILL OPEN
-- The reset-password test.
-- test_reader 8, red since v101.
-- THE KEYS IN THE SHEET — its own session.

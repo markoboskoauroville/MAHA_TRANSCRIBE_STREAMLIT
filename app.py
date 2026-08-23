@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v148 (a) (numbered notes, and an interface you can resize)"
+APP_VERSION = "v149 (a) (an empty note, and actions at the foot)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4237,10 +4237,17 @@ def keep_as_note():
     # box. It used to return here and do nothing at all, which read as
     # a broken button.
     body = t1_text().strip()
-    NOTES.add(st.session_state, body,
-              language=st.session_state.get("last_lang", ""),
-              rec_id=st.session_state.get("_last_rec_id", ""))
+    nid = NOTES.add(st.session_state, body, allow_empty=True,
+                    language=st.session_state.get("last_lang", ""),
+                    rec_id=st.session_state.get("_last_rec_id", ""))
     st.session_state["_note_kept"] = True
+    # AN EMPTY NOTE OPENS ITSELF. There is nothing to see on the card and
+    # nothing to read in the list — the only reason to make one is to put
+    # something in it, so it goes straight to the place where that
+    # happens. A note WITH text stays closed: it is finished, and the
+    # list is where it belongs.
+    if nid and not body:
+        open_note(nid)
 
 
 def note_number(i):
@@ -4324,53 +4331,16 @@ def note_open_view():
         close_note()
 
     with st.container(key="noteopen"):
-        # TITLE, DELETE, CLOSE — all on one line at the top.
+        # THE ACTIONS MOVED TO THE FOOT. Baba: "our visual language is
+        # that actions are written below the text boxes; in the notes
+        # they are above, so move this below the recorder."
         #
-        # Baba: "delete should be there, but we want to save on space, so
-        # glue it to the note's upper right corner, same size of font."
-        # A footer row of three full-width buttons for actions taken once
-        # in a while was a whole band of screen; up here they are two
-        # small words where the eye already goes when it wants OUT of
-        # something.
-        # THE TWO SMALL ACTIONS SIT ABOVE THE TITLE, at the right.
-        #
-        # Sharing one row with the title did not fit: forced onto a
-        # single line, `close` ran past the panel edge — and §27 is
-        # explicit that no word may be cut. Streamlit gives a text_input
-        # a minimum width, so on a 380px screen there is simply not room
-        # for a title AND two words beside it.
-        #
-        # Their own row costs one thin line and gives Baba what he asked
-        # for — the upper right corner — without anything clipped.
-        # A KEYED ROW, pushed right by the stylesheet. An empty spacer
-        # column collapsed to nothing and left both buttons on the left —
-        # measured at x=54 when the panel is 380 wide. The row itself is
-        # what gets aligned, which is the one approach that worked for
-        # the notes link after six that did not.
-        with st.container(key="noteacts"):
-            # THE DATE SITS WITH THEM, on the left of the pair. Baba:
-            # "made date could go on the top on the left side of delete
-            # and close... do not make it, it is clear that it is made."
-            # The word "made" was explaining what a date already says.
-            when, dele, back = st.columns([2, 1, 1])
-            when.markdown('<div class="notewhen">%s</div>'
-                          % NOTES.when_of(note), unsafe_allow_html=True)
-        # STILL TWO PRESSES. One press on a whole note, in an app with no
-        # undo anywhere, is not a risk worth taking — and moving it next
-        # to `close` makes a mis-tap MORE likely, not less.
-            if st.session_state.get("_note_del_armed") == note_id:
-                # NOT type="primary". That is why it stayed dark after
-                # v141 took the red away: Streamlit gives a primary
-                # button its own colour rules and they win over the
-                # link styling beside it. Baba asked twice; I fixed the
-                # red the first time and this the second.
-                dele.button(t("note_del_sure"), key="note_del2",
-                            on_click=_del_do, use_container_width=True)
-            else:
-                dele.button(t("note_del"), key="note_del",
-                            on_click=_del_arm, use_container_width=True)
-            back.button(t("note_close"), key="note_close",
-                        on_click=close_note, use_container_width=True)
+        # He is right and it is the last place that disagreed. Every
+        # other module puts what you can DO under what you are looking
+        # at — copy, clear, add to notes in T; clear in R — because you
+        # read first and act second. The open note had its date, delete
+        # and close above the words, which is where a title bar goes,
+        # not where an action goes.
 
         st.text_input("title", key="note_title_%s" % note_id,
                       value=NOTES.heading(note),
@@ -4428,6 +4398,31 @@ def note_open_view():
                              st.session_state, note_id,
                              text=st.session_state.get(
                                  "note_plain_%s" % note_id, "")))
+
+        with st.container(key="noteacts"):
+            # THE DATE SITS WITH THEM, on the left of the pair. Baba:
+            # "made date could go on the top on the left side of delete
+            # and close... do not make it, it is clear that it is made."
+            # The word "made" was explaining what a date already says.
+            when, dele, back = st.columns([2, 1, 1])
+            when.markdown('<div class="notewhen">%s</div>'
+                          % NOTES.when_of(note), unsafe_allow_html=True)
+        # STILL TWO PRESSES. One press on a whole note, in an app with no
+        # undo anywhere, is not a risk worth taking — and moving it next
+        # to `close` makes a mis-tap MORE likely, not less.
+            if st.session_state.get("_note_del_armed") == note_id:
+                # NOT type="primary". That is why it stayed dark after
+                # v141 took the red away: Streamlit gives a primary
+                # button its own colour rules and they win over the
+                # link styling beside it. Baba asked twice; I fixed the
+                # red the first time and this the second.
+                dele.button(t("note_del_sure"), key="note_del2",
+                            on_click=_del_do, use_container_width=True)
+            else:
+                dele.button(t("note_del"), key="note_del",
+                            on_click=_del_arm, use_container_width=True)
+            back.button(t("note_close"), key="note_close",
+                        on_click=close_note, use_container_width=True)
 
         # "to the box" and "new note" are gone. Baba: "I don't know what
         # that means or what it does, it's not clear. Remove it. New

@@ -232,6 +232,28 @@ ids = [N.add(s7, "x%d" % i) for i in range(5)]
 check("33 every id is different — a counter, not a clock",
       len(set(ids)) == 5, ids)
 
+# --- an empty note, on purpose ----------------------------------------
+#
+# Baba: "add to notes, if the text field is empty, should add empty
+# note — user can manually type inside or talk inside."
+#
+# The empty guard exists to stop a RERUN turning a silent take into a
+# blank note. It must not stop a press of a button that says exactly
+# what it will do, so `allow_empty` separates the two.
+s_e = {}
+check("47 an empty note is still refused by default — a silent take "
+      "must not become a blank note",
+      N.add(s_e, "") is None)
+first = N.add(s_e, "", allow_empty=True)
+check("48 but it is made when it is ASKED for", bool(first))
+check("49 AND A SECOND EMPTY RETURNS THE FIRST, so pressing twice does "
+      "not fill the list with blanks — the duplicate guard is what "
+      "makes allow_empty safe",
+      N.add(s_e, "", allow_empty=True) == first)
+N.update(s_e, first, text="sada ima nesto")
+check("50 once that one has words, a new empty one can be made",
+      N.add(s_e, "", allow_empty=True) != first)
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 
