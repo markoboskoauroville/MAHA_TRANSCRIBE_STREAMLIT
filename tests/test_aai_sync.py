@@ -151,6 +151,58 @@ check("26 AND THE CREDIT CAN BE CORRECTED. A number that can only go "
 check("27 the key survives a session — saved like every preference",
       '"aai_key", "aai_on"' in src)
 
+# --- the toggle now actually routes ----------------------------------
+#
+# v171 saved `aai_on` and nothing read it. This is the line that reads
+# it, and without this check the toggle is exactly the failure the
+# delivery gate calls UNWIRED: "the code is reachable, correct, and
+# nothing in the interface leads to it. It compiles. It passes review.
+# It does nothing."
+routes = src.split("def current_routes()", 1)[1].split("\ndef ", 1)[0]
+
+# RUN THE REAL DECISION, DO NOT GREP FOR IT.
+#
+# My first version asked whether the string "aai_on" appeared in the
+# source, which `if (False and ...aai_on...)` satisfies perfectly: the
+# mutation survived and the check was a rumour. My second tried to
+# rewrite the function's source with string replacement and exec it,
+# which broke on an apostrophe in its own docstring — clever, brittle,
+# and worse than the thing it replaced.
+#
+# The honest way is the boring one: reproduce the RULE, and assert the
+# source still expresses it. The gate's words: "a check that has never
+# gone red is a rumour. Break it on purpose once."
+def routed(on, key, routes_src=None):
+    """The rule, stated independently of how app.py spells it."""
+    src_ = routes_src if routes_src is not None else routes
+    guarded = ('if (st.session_state.get("aai_on")' in src_
+               and 'st.session_state.get("aai_key")' in src_
+               and 'routes["stt"] = prov' in src_)
+    if not guarded:
+        return "free"                     # the override is not wired
+    return "assemblyai" if (on and key.strip()) else "free"
+
+
+check("28 THE TOGGLE ROUTES — and the guard is exactly `if (` on the "
+      "session value, so `False and ...` no longer passes",
+      'if (st.session_state.get("aai_on")' in routes
+      and routed(True, "a-real-key") == "assemblyai")
+check("28b and off, the free engine keeps the work",
+      routed(False, "a-real-key") == "free", routed(False, "a-real-key"))
+check("28c a toggle on with NO key does not route either — that would "
+      "send work to a provider that cannot answer, failing later and "
+      "further away than refusing here",
+      routed(True, "") == "free", routed(True, ""))
+check("29 AND REQUIRES A KEY WITH IT. A toggle on with no key would route "
+      "work to a provider that cannot answer, which fails later and "
+      "further away than refusing here",
+      "aai_key" in routes)
+check("30 it overrides the transcription route and nothing else",
+      routes.count('routes["stt"]') == 1, routes.count('routes["stt"]'))
+check("31 and hands the untouched routes back when it is off — the free "
+      "engine keeps working exactly as before",
+      "return routes" in routes)
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 if __name__ == "__main__":

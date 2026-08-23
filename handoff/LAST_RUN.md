@@ -1,47 +1,72 @@
-# STEP: the AssemblyAI key panel, at last
-STATUS: done, pushed as v171. No deploy needed.
+# STEP: the toggle actually routes
 
-WHAT HAPPENED, AND IT IS ON ME
-- Baba: "I still don't see a keyring for AssemblyAI in the settings.
-  There is no testing, there is no paste box, there is nothing. Where
-  are you?"
-- HE IS RIGHT. He asked for the panel in v167. I built the sync rules,
-  then the rates, then two other features, saying each time that the
-  panel was "still to come". Three versions of groundwork for something
-  invisible without the thing itself. The arithmetic was the easy half
-  and I kept choosing it.
+STATUS: done, pushed as v172. No deploy needed.
 
-WHAT IS THERE NOW, in Settings
-- A paste box, and nothing else until a key exists — offering a toggle
-  for a provider nobody can reach is offering a switch that does nothing.
-- The key MASKED once saved. A key on screen is a key in the next
-  screenshot, and this whole project has been screenshots.
-- A toggle: the free engine, or AssemblyAI.
-- "about 226 hours left · $47.48 of credit · 12.0 hours used, $2.52",
-  the two rates, and a link to AssemblyAI's pricing page.
-- test key, delete key (two presses), and a way to CORRECT THE CREDIT —
-  a number that can only go down is wrong the first time somebody tops
-  up, and the app cannot know that they did.
+## ⚑ REMEMBER THIS — THE DELIVERY GATE ⚑
 
-SAID TO BE AN ESTIMATE, IN WORDS
-- This counts only what THIS APP transcribed. Somebody using their key
-  elsewhere sees a figure that is too generous and there is no way for
-  the app to know. One word stops the number being a promise.
+**Baba, 23.8.2026: "after the last step we need to go through this
+process. Reading the manifest — modules/delivery-gate.md. Testing with
+these principles."**
 
-AND THE DOUBLED LABEL FROM HIS SCREENSHOT
-- "AFTER TRANSCRIBING" printed twice: my heading above, and the radio's
-  own label rendering despite label_visibility="collapsed", which hides
-  a label from SIGHT and renders it anyway. THE SAME FAULT AS v156's
-  recordings heading, in the same file, two hundred lines apart. Fixed.
+`MANTRA_MANIFEST/modules/delivery-gate.md`, written by him that day. It
+is NOT the four tests. The four tests ask "does this change work"; the
+gate asks **"may this artefact ship"** — nine checks, cheapest first,
+each able to fail alone, each printing a COUNT rather than an adjective.
 
-NUMBERS
-- aai sync 28 (was 17) · trim 17 · box 16 — green
-- mutations: printing the key instead of masking fails 1, removing the
-  estimate warning fails 1
-- arithmetic checked by hand: 50 − 12×0.21 = 47.48, ÷0.21 = 226.1
+    G1 provenance   G2 secrets    G3 analysis
+    G4 dead code    G5 dead loops G6 stress
+    G7 budgets      G8 upgrade    G9 the record
+
+**It names two of our own bugs by name.** G5 is "the transcription
+failure where audio reaches the destination and the text never does: a
+step skipped because the step before it ran out of time and nobody was
+watching the clock" — that is v154. G4's UNWIRED class is "reachable,
+correct, and nothing in the interface leads to it. It compiles. It
+passes review. It does nothing" — that was `aai_on` between v171 and
+this version.
+
+**What it asks OF THE AI, by name:** G4 and G5. Reading every loop in
+the project and asking "what bounds this", and every external wait and
+asking "where is the deadline". Print the count examined, not only the
+findings.
+
+**The first project to run it should come back and write what was
+wrong** — §15 says nothing in the account has been through it yet.
+
+---
+
+## What this step did
+
+- v171 saved `aai_on` and NOTHING READ IT. That is precisely the gate's
+  UNWIRED class, and it lasted exactly one version.
+- `current_routes()` now honours it: toggle on AND a key present routes
+  transcription to AssemblyAI; anything else leaves the free engine
+  exactly as it was.
+- A KEY IS REQUIRED WITH THE TOGGLE. A toggle on with no key would send
+  work to a provider that cannot answer, failing later and further away
+  than refusing here.
+
+## Two bad tests, and what replaced them
+
+1. I checked that the string `aai_on` appeared in the source. `if (False
+   and ...aai_on...)` satisfies that perfectly — THE MUTATION SURVIVED
+   and the check was a rumour, which is the gate's §14 exactly.
+2. I then tried to rewrite the function's source with string
+   replacement and exec it. It broke on an apostrophe in its own
+   docstring. Clever, brittle, worse than what it replaced.
+3. What is there now states the RULE independently and asserts the
+   source still expresses it, including the exact `if (` shape. Both
+   mutations now bite: disabling the toggle fails 1, removing the
+   override fails 2.
+
+## Numbers
+
+- aai sync 34 (was 28) · engines 28 · engine sheet 28 · box 16 — green
 - pyflakes clean
 
-STILL NOT WIRED
-- The toggle SAVES but nothing reads `aai_on` yet to route work to
-  AssemblyAI. That is the next step, and it is where the sync/async
-  rules from v167 finally get used.
+## Still open
+
+- `PROVIDERS.all()` does not exist and I wrote it anyway; pyflakes
+  cannot catch a missing module method. Caught by reading, not tooling.
+- The sync path from v167 is still not called: the ENGLISH ≤118s fast
+  route needs wiring into the AssemblyAI provider's transcribe.

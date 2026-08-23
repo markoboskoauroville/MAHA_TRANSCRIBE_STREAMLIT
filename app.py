@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v171 (a) (the AssemblyAI key panel, at last)"
+APP_VERSION = "v172 (a) (the toggle actually routes)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2226,8 +2226,23 @@ def provider_usable(provider) -> bool:
 
 
 def current_routes() -> dict:
-    """task id -> the provider that should do it right now."""
-    return RO.all_routes(PROVIDERS, provider_usable, st.session_state)
+    """task id -> the provider that should do it right now.
+
+    THE PERSON'S OWN ASSEMBLYAI KEY OVERRIDES THE ROUTE, when they have
+    one and have turned it on. Baba: "a toggle to use either Whisper free
+    or AssemblyAI." The toggle saved from v171 and nothing read it; this
+    is the line that reads it.
+    """
+    routes = RO.all_routes(PROVIDERS, provider_usable, st.session_state)
+    if (st.session_state.get("aai_on")
+            and str(st.session_state.get("aai_key") or "").strip()):
+        # PROVIDERS.get(), not a scan of PROVIDERS.all() — there is no
+        # all(). pyflakes cannot catch a method that does not exist on a
+        # module, so this is the kind of thing that reaches a phone.
+        prov = PROVIDERS.get("assemblyai")
+        if prov is not None:
+            routes["stt"] = prov
+    return routes
 
 
 class STTBridge:
