@@ -488,6 +488,19 @@ function makePassword_() {
  * The name must match AUTH_ADMIN_USER, or anyone holding the token could
  * nominate themselves administrator and prove their own password.
  */
+/**
+ * NO LONGER CALLED BY delete, rename OR reset — v127.
+ *
+ * Baba: "if I am logging as admin, do not ask me to enter a password
+ * before I change things for users. It is annoying."
+ *
+ * WHAT THAT COSTS, written here so nobody restores it by accident or
+ * removes this note thinking it is stale: the AUTH_ADMIN_TOKEN alone
+ * now deletes people. The second factor existed because a token can
+ * leak into a screenshot — and his has, once. For five family members
+ * on a sheet he owns that is a fair trade; for anything wider it is
+ * not, and this function is left here, working, for the day it is.
+ */
 function adminProved_(body) {
   var who = String(prop_(P_ADMIN_USER) || '').trim().toLowerCase();
   if (!who) return false;
@@ -550,7 +563,6 @@ function userCreate_(body) {
 /** Unmake a person. Their recordings are deliberately left alone. */
 function userDelete_(body) {
   return withLock_(function () {
-    if (!adminProved_(body)) return { ok: false, error: 'administrator password required' };
     var u = String(body.username || '').trim().toLowerCase();
 
     // YOU MAY NOT DELETE YOURSELF. There would be no way back in.
@@ -572,7 +584,6 @@ function userDelete_(body) {
 /** Change the name shown. The Drive folder keeps its birth name. */
 function userRename_(body) {
   return withLock_(function () {
-    if (!adminProved_(body)) return { ok: false, error: 'administrator password required' };
     var from = String(body.username || '').trim().toLowerCase();
     var to   = String(body.new_username || '').trim().toLowerCase();
     if (!okName_(to)) return { ok: false, error: 'bad name: letters, digits, - and _ only' };
@@ -603,7 +614,6 @@ function userPassword_(body) {
     // gentle one of the three: it locks the person out of their own
     // account and signs every remembered device out below. The token
     // alone is a string that can leak; this needs the person.
-    if (!adminProved_(body)) return { ok: false, error: 'administrator password required' };
     var u = String(body.username || '').trim().toLowerCase();
     var s = usersSheet_();
     var row = rowOf_(userRows_(), u);

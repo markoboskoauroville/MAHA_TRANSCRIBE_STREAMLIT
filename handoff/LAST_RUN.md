@@ -1,35 +1,64 @@
-# STEP: white is yours, gold is mine
-STATUS: done, pushed as v126
+# STEP: the owner is trusted, and the actions are links
+STATUS: done, pushed as v127. **DEPLOY THE ACCOUNTS SCRIPT.**
 
 WHAT HAPPENED
-- THE TAB BAR NOW READS WITHOUT READING. Baba's rule: "everything that
-  is gold belongs to the admin, and it will be grouped to the right
-  side, so I can see what users see and what I see."
-  Now: T · R · TR · ⚙ · H  |  ⚙ · log — user tabs plain, the owner's
-  two in gold at the end. Everything before the first gold tab is what
-  a family member has; for them the gold group is simply absent, so
-  their row ends at help, which is where help was always meant to be.
-- The log tab says `log`, not `L`, and is gold. A single letter needs
-  learning; the word does not, and the colour already says whose it is.
-- H is plain. It belongs to whoever is using the app.
-- Interface language is a thin dim label like TXT, TY and C above it.
-  st.caption is heavier and carries margins, and under this screen's
-  spacing it printed THROUGH the buttons beneath it — the same
-  collision as the engine test result one screen over.
+- rename user · reset password · delete user — one line, as links, in
+  that order. Baba: "these should be links at the top, not buttons...
+  first rename, then reset password, and delete user is the last thing."
+  The order is an argument about danger as much as habit: rename changes
+  a word, reset changes a password, delete ends an account. Least harm
+  first, so a hand moving down the row moves toward the thing it should
+  hesitate over.
+- Full words. "reset" and "delete" alone left "reset what" and "delete
+  what" to be inferred beside somebody's name.
+- THE ADMIN PASSWORD IS NO LONGER ASKED FOR, in the app or the script.
+- And the placeholder stopped saying "password (optional)" — it has been
+  required since v123 and told people the opposite for four versions,
+  which is worse than saying nothing.
 
-A REVERSAL, NAMED AS ONE
-- v110 put the owner's gear FIRST, on Baba's instruction. This puts it
-  last, on Baba's instruction. The grouping serves the same wish better:
-  he wanted his own things distinguishable, and a group says that more
-  clearly than a position does.
+WHY IT FELT BROKEN, WHICH IS NOT WHY HE THINKS
+- "He asked me for a password and I did not have a place to enter it."
+  The box WAS there — rendering BELOW the confirm buttons. So pressing
+  yes sent an empty password, the script refused, and the refusal read
+  as a demand with nowhere to answer it. A layout fault wearing the
+  clothes of a security one.
+
+WHAT REMOVING IT COSTS — SAID ONCE, AND WRITTEN IN THE SCRIPT
+- THE ADMIN TOKEN ALONE NOW DELETES PEOPLE. The second factor existed
+  because a token can leak into a screenshot, and Baba's has, once. For
+  five family members on a sheet he owns that is a fair trade. What is
+  LEFT is the token separation: the login token still cannot reach any
+  admin action, and that is now the only thing between a leaked login
+  token and the family's accounts. Two checks assert exactly that.
+- adminProved_ is left in the script, working and uncalled, with a note
+  saying why — for the day the trade stops being fair.
 
 NUMBERS
-- tier 12 · owner edge 5 — green
-- order and colours read in a browser: five plain, two gold
+- admin users 49 · auth script 66 — green
+- order and one-line fit measured in a browser
 - pyflakes clean
 
-STILL OPEN, unchanged
-- The note's red rec has never been seen to work.
-- test_reader 8, red since v101.
-- The four items from v124, one waiting on his answer: usage as totals
-  only, or totals plus a shared events tab keeping the detail.
+WHAT BROKE, AND WHAT I UNDID
+- Five script checks and seven app checks asserted the protection I had
+  just removed. Rewritten to assert the NEW truth rather than deleted,
+  so the day it changes back the change is visible.
+- The test stub still enforced the password after the real script had
+  stopped. A stub stricter than the thing it stands for fails tests
+  about a rule that no longer exists.
+
+FOR BABA — TWO THINGS, IN ORDER
+1. DEPLOY THE ACCOUNTS SCRIPT (New version). Until then the deployed
+   one still demands the password the app no longer sends, so delete,
+   rename and reset will all refuse.
+2. Then: the note's red rec, still never seen to work.
+
+NOT DONE FROM THIS ROUND
+- Per-provider test buttons (test Edge, test Groq, and one each for the
+  studio three) instead of one whole-engine test.
+- The People list and the test result as real tables.
+- THE KEYS IN THE SHEET. Baba now wants Speechify, AssemblyAI and Claude
+  keys stored in the Google Sheet, read-only there, managed entirely
+  from the app — list, test, delete — copying his Key Tester app. NOTE
+  THAT THIS REVERSES his earlier "I will never enter the keys table, we
+  need to delete those." It is the right call and it is a session of its
+  own; it starts by reading Key Tester and Password Keyring.

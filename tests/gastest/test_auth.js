@@ -180,24 +180,41 @@ console.log('\nTHE ACCOUNTS SCRIPT\n');
   const { ctx } = fresh();
   post(ctx, { what: 'user_create', username: 'baba' });
 
-  check('14 RESET NEEDS THE ADMINISTRATOR PASSWORD, not just the token',
-        post(ctx, { what: 'user_password', username: 'baba' }).error
-          === 'administrator password required');
-  check('15 and a WRONG administrator password is refused',
-        post(ctx, { what: 'user_password', username: 'baba',
-                    admin_user: 'admin', admin_password: 'wrong' }).error
-          === 'administrator password required');
-  check('16 delete needs it too',
-        post(ctx, { what: 'user_delete', username: 'baba' }).error
-          === 'administrator password required');
-  check('17 rename needs it too',
-        post(ctx, { what: 'user_rename', username: 'baba', new_username: 'deda' }).error
-          === 'administrator password required');
-  check('18 NOBODY MAY NOMINATE THEMSELVES ADMINISTRATOR — proving your '
-        + 'own password under another name is not proof',
-        post(ctx, { what: 'user_delete', username: 'baba',
-                    admin_user: 'baba', admin_password: 'whatever' }).error
-          === 'administrator password required');
+  // THE SECOND FACTOR IS GONE (v127), AND THIS RECORDS WHAT THAT MEANS.
+  //
+  // Baba: "if I am logging as admin, do not ask me to enter a password
+  // before I change things for users. It is annoying." His app, his
+  // family, his call — and the friction was real: the box rendered
+  // BELOW the confirm buttons, so pressing yes sent an empty password
+  // and the script refused, which reads as being asked for something
+  // there is nowhere to type.
+  //
+  // What it costs: THE ADMIN TOKEN ALONE NOW DELETES PEOPLE. The second
+  // factor existed because a token can leak into a screenshot, and his
+  // has, once. For five family members on a sheet he owns that is a
+  // fair trade. These checks assert the new truth rather than being
+  // deleted, so the day it stops being fair, the change is visible.
+  check('14 reset needs ONLY the admin token now',
+        post(ctx, { what: 'user_password', username: 'baba' }).ok === true);
+  check('15 delete needs only the token',
+        post(ctx, { what: 'user_delete', username: 'baba' }).ok === true);
+
+  const { ctx: ctx2 } = fresh();
+  post(ctx2, { what: 'user_create', username: 'baba' });
+  check('16 rename needs only the token',
+        post(ctx2, { what: 'user_rename', username: 'baba',
+                     new_username: 'deda' }).ok === true);
+
+  // AND THE TOKEN IS STILL THE WHOLE DOOR. The login token must not
+  // reach any of this — that separation is what is left, and it is now
+  // the only thing standing between a leaked login token and the
+  // family's accounts.
+  const { ctx: ctx3 } = fresh();
+  ctx3.token = 'LOGIN-TOK';
+  check('17 THE LOGIN TOKEN STILL CANNOT DELETE ANYBODY',
+        post(ctx3, { what: 'user_delete', username: 'baba' }).ok !== true);
+  check('18 nor reset a password',
+        post(ctx3, { what: 'user_password', username: 'baba' }).ok !== true);
 }
 
 // ---------------------------------------------------------------------

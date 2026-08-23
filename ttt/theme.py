@@ -740,6 +740,36 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* THE PERSON'S ACTIONS ARE LINKS, not buttons. Baba: "these should
+       be links at the top, not buttons — we make it a nice and compact
+       user interface." Three bordered pills for actions taken once in a
+       while were the heaviest thing on a panel that is mostly a list. */
+    [class*="st-key-ad_rename"] button,
+    [class*="st-key-ad_reset"] button,
+    [class*="st-key-ad_del"] button {{
+      background: transparent !important;
+      border: 0 !important;
+      min-height: 0 !important;
+      padding: 0.1rem 0 !important;
+      font-size: 0.7rem !important;
+      color: var(--dim) !important;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      justify-content: flex-start !important;
+    }}
+    /* ONE LINE, and the type may shrink to hold it — §27's rule, which
+       lets a cell get smaller but never lets a word be cut. */
+    [class*="st-key-ad_rename"] button p,
+    [class*="st-key-ad_reset"] button p,
+    [class*="st-key-ad_del"] button p {{
+      white-space: nowrap !important;
+      font-size: 0.66rem !important;
+    }}
+    [class*="st-key-ad_reset"] button:hover {{ color: var(--amber) !important; }}
+    /* Delete is the one that ends something. It says so before it is
+       pressed, not only in the confirm strip afterwards. */
+    [class*="st-key-ad_del"] button:hover {{ color: var(--rec, #d9484b) !important; }}
+
     /* The label above the interface-language pills. The same thin dim
        mark as TXT, TY and C further up the same screen — st.caption was
        heavier and carried margins that printed it through the buttons

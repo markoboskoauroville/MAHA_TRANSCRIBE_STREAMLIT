@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v126 (a) (white is yours, gold is mine)"
+APP_VERSION = "v127 (a) (the owner is trusted, and the actions are links)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -587,8 +587,11 @@ STRINGS = {
     "adm_need_pw":        {"en": "a password is needed",
                            "hr": "treba lozinka"},
     "adm_add":            {"en": "add",               "hr": "dodaj"},
-    "adm_pw":             {"en": "password (optional)",
-                           "hr": "lozinka (nije obavezno)"},
+    # NOT OPTIONAL ANY MORE (v123). The word stayed behind in the
+    # placeholder for four versions, telling people the opposite of what
+    # the form does — which is worse than saying nothing.
+    "adm_pw":             {"en": "password",
+                           "hr": "lozinka"},
     # The whole message, ready to send. %s in order: name, username,
     # password. It says the change is coming so it does not arrive as a
     # surprise the first time they log in.
@@ -626,9 +629,9 @@ STRINGS = {
                            "hr": "Spremljeno. To je sada tvoja lozinka."},
     "adm_who":            {"en": "who",                "hr": "tko"},
     "adm_engine":         {"en": "engine",             "hr": "motor"},
-    "adm_reset":          {"en": "reset",             "hr": "nova lozinka"},
-    "adm_delete":         {"en": "delete",            "hr": "obriši"},
-    "adm_rename":         {"en": "rename",            "hr": "preimenuj"},
+    "adm_reset":          {"en": "reset password",             "hr": "nova lozinka"},
+    "adm_delete":         {"en": "delete user",  "hr": "obriši korisnika"},
+    "adm_rename":         {"en": "rename user",  "hr": "preimenuj korisnika"},
     # The reason is written where the dead button is, not in a document
     # nobody has open at the moment they wonder.
     "adm_rename_why":     {"en": "rename waits until the main script "
@@ -2512,8 +2515,28 @@ def user_admin_panel():
             do_engine(who, picked)
             st.rerun()
 
-        acts = st.columns([1, 1, 1])
-        acts[0].button(t("adm_reset"), key="ad_reset",
+        # RENAME · RESET PASSWORD · DELETE USER, in that order, as links.
+        #
+        # Baba: "these should be links at the top, not buttons... the
+        # order is more logical for me: first rename, then reset
+        # password, and delete user is the last thing."
+        #
+        # The order is an argument about danger as much as habit: rename
+        # changes a word, reset changes a password, delete ends an
+        # account. Least harm first, most harm last, so a hand moving
+        # down the row is moving toward the thing it should hesitate
+        # over.
+        #
+        # FULL WORDS. "reset" and "delete" alone leave "reset what" and
+        # "delete what" to be inferred beside a person's name.
+        # MEASURED, NOT GUESSED: at 1 : 1.3 : 1.1 the words "delete user"
+        # wrapped to a second line on a 420px screen. The three shares
+        # follow the three lengths.
+        acts = st.columns([1.15, 1.3, 1.15])
+        acts[0].button(t("adm_rename"), key="ad_rename",
+                       disabled=True, help=t("adm_rename_why"),
+                       use_container_width=True)
+        acts[1].button(t("adm_reset"), key="ad_reset",
                        on_click=open_ask, args=("reset", who),
                        use_container_width=True)
         # DISABLED ON PURPOSE, with the reason in the tooltip rather than
@@ -2523,9 +2546,6 @@ def user_admin_panel():
         # away from somebody's recordings. The day the main script reads
         # that column, this line loses `disabled` and nothing else about
         # it changes.
-        acts[1].button(t("adm_rename"), key="ad_rename",
-                       disabled=True, help=t("adm_rename_why"),
-                       use_container_width=True)
         acts[2].button(t("adm_delete"), key="ad_del",
                        on_click=open_ask, args=("delete", who),
                        use_container_width=True)
@@ -2537,11 +2557,12 @@ def user_admin_panel():
         if ask[1] == who and ask[0] in ("delete", "reset"):
             st.text((t("adm_ask_delete") if ask[0] == "delete"
                      else t("adm_ask_reset")) % who)
-            # The script checks this password itself (`adminProved_`).
-            # Delete, rename and reset all need the person, not just the
-            # token — a token can leak into a screenshot; a password
-            # typed at the moment of the act cannot be lying around.
-            st.text_input(t("adm_yourpw"), type="password", key="_adm_proof")
+            # NO PASSWORD BOX. It used to sit here, BELOW the confirm
+            # buttons — so pressing yes sent an empty one and the script
+            # refused, which reads as being asked for something there is
+            # nowhere to type. Baba asked for it gone; auth_script no
+            # longer requires it. The two presses remain, because one
+            # press on a whole account is still not a risk worth taking.
             yn = st.columns([1, 1])
             yn[0].button(t("adm_yes"), key="ad_yes", type="primary",
                          on_click=do_delete if ask[0] == "delete" else do_reset,

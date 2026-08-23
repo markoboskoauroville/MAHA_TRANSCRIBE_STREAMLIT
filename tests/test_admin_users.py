@@ -85,10 +85,12 @@ class Handler(BaseHTTPRequestHandler):
         what = body.get("what")
         who = str(body.get("username") or "").strip().lower()
 
-        # The second factor, exactly as the real script does it.
+        # THE SECOND FACTOR IS GONE (v127), in the real script and so
+        # here. A stub that is stricter than the thing it stands for
+        # fails tests about a rule that no longer exists — which is what
+        # happened the moment auth_script stopped requiring it.
         def proved():
-            return (str(body.get("admin_user") or "").lower() == "stub"
-                    and body.get("admin_password") == ADMIN_PW)
+            return True
 
         if what == "users":
             if MODE["empty"]:
@@ -354,17 +356,23 @@ check("19 the strip is about the SELECTED person, and names them",
       "ad_yes" in keys(at) and "Delete baba" in page(at), page(at)[:200])
 check("20 and it says the recordings are kept", "recordings are kept" in page(at))
 
-field(at, "_adm_proof").set_value("wrong-password")
-pick(at, "baba"); press(at, "ad_yes")
-check("21 A WRONG ADMINISTRATOR PASSWORD DELETES NOBODY",
+# THE SECOND FACTOR IS GONE (v127). These two used to assert that a
+# wrong administrator password deleted nobody. Baba asked for the
+# password removed — "it is annoying" — and the friction was real: the
+# box rendered BELOW the confirm buttons, so pressing yes sent an empty
+# one and the script refused, which reads as being asked for something
+# there is nowhere to type.
+#
+# What replaces them is the guarantee that is LEFT: two presses, and the
+# strip naming the person, so a mis-tap cannot end an account.
+check("21 ONE press does not delete — the strip only arms it",
       "baba" in PEOPLE, list(PEOPLE))
-check("22 and the refusal is shown", "administrator password" in page(at),
-      page(at)[:300])
+check("22 and the strip names WHO it is about",
+      "Delete baba" in page(at), page(at)[:200])
 
 at = panel()
 at.run()
 pick(at, "baba"); press(at, "ad_del")
-field(at, "_adm_proof").set_value(ADMIN_PW)
 pick(at, "baba"); press(at, "ad_yes")
 check("23 the right password deletes", "baba" not in PEOPLE, list(PEOPLE))
 # NOT "baba" not in page(at) — the panel says "baba is gone", so the
@@ -378,15 +386,17 @@ check("24b while saying plainly that they are gone",
 check("25 THE ADMINISTRATOR'S OWN PASSWORD IS NEVER PUT ON THE SCREEN",
       ADMIN_PW not in page(at), page(at)[:300])
 sent = [b for b in SEEN if b.get("what") == "user_delete"][-1]
-check("26 it really was sent to the script, with the admin's name",
-      sent.get("admin_password") == ADMIN_PW
-      and sent.get("admin_user") == "stub", sent)
+# THE ADMIN TOKEN IS THE WHOLE DOOR NOW. What is still worth asserting
+# is that it is the ADMIN token and never the login one — that
+# separation is the only thing left between a leaked login token and
+# the family's accounts.
+check("26 it went with the ADMIN token, not the login token",
+      sent.get("token") == ADMIN_TOK, sent)
 
 # ── cancelling ────────────────────────────────────────────────────────
 at = panel()
 at.run()
 pick(at, "baba"); press(at, "ad_del")
-field(at, "_adm_proof").set_value(ADMIN_PW)
 pick(at, "baba"); press(at, "ad_no")
 check("27 cancel deletes nobody", "baba" in PEOPLE, list(PEOPLE))
 # THE OBSERVABLE GUARANTEE, not the mechanism: reopening the strip must
@@ -399,9 +409,8 @@ check("27 cancel deletes nobody", "baba" in PEOPLE, list(PEOPLE))
 # will. The pop stays as belt-and-braces for the day that key is read by
 # something other than the widget; it is not what makes this true.
 pick(at, "baba"); press(at, "ad_del")
-check("28 reopening the strip presents an EMPTY password box",
-      not (field(at, "_adm_proof").value or ""),
-      field(at, "_adm_proof").value)
+check("28 reopening the strip asks again rather than acting",
+      "ad_yes" in keys(at), keys(at))
 check("28b and nothing was deleted along the way", "baba" in PEOPLE, list(PEOPLE))
 
 # ── resetting ─────────────────────────────────────────────────────────
@@ -412,7 +421,6 @@ check("29 reset asks first too", "New password for baba" in page(at),
       page(at)[:300])
 check("30 and warns that their devices are signed out",
       "signed out" in page(at), page(at)[:300])
-field(at, "_adm_proof").set_value(ADMIN_PW)
 pick(at, "baba"); press(at, "ad_yes")
 check("31 the new password is shown once", "reset-pw-1" in page(at),
       page(at)[:300])
@@ -444,7 +452,6 @@ at = panel()
 at.run()
 MODE["dead"] = True
 pick(at, "baba"); press(at, "ad_reset")
-field(at, "_adm_proof").set_value(ADMIN_PW)
 pick(at, "baba"); press(at, "ad_yes")
 check("35 A DEAD SCRIPT IS A SENTENCE, NEVER AN EXCEPTION (§1)",
       not at.exception, at.exception)
