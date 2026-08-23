@@ -1,46 +1,52 @@
-# STEP: AUTO returned nothing
-STATUS: fixed and pushed as v120
+# STEP: the note's red button never worked, and its bar was not a transport
+STATUS: fixed and pushed as v121
 
-WHAT BABA REPORTED
-- AUTO: no transcription at all.
-- HR: correct, filters to Croatian.
-- ENG: behaves like AUTO, recognises every language.
+THE ERROR BABA PHOTOGRAPHED
+- `'model' is a required property` — a 400, every key tried, nothing
+  returned. The note's own recorder passed model="" meaning "the
+  engine's default", which ttt/providers/groq.py has always understood
+  (`model or FAST_STT`). app.py's SECOND COPY of that call did not.
+- Same two-implementations fault as v120's language bug, in the same
+  function, one version later. That copy has now cost two bugs; it
+  should be deleted and routed through the provider, and that is a real
+  piece of work rather than a patch.
 
-THE AUTO BUG, AND WHY v118 DID NOT FIX IT
-- "auto" was being SENT to Whisper. That is a 400, the key rotation then
-  tried every key, every one failed, and the result was an empty string
-  — so the screen showed nothing and named no fault.
-- v118 fixed exactly this in ttt/providers/groq.py. It changed nothing,
-  because THE PATH A RECORDING TAKES NEVER GOES NEAR THAT FILE. app.py
-  has its own copy of the Groq call at line ~1569, talking to the SDK
-  directly, and transcribe_any_size routes through that one.
-- One implementation in the module, used from everywhere, is the rule.
-  The cost of having two was a fix that read as complete and did
-  nothing for a whole version.
-- Nothing tested the SHAPE of the request, which is why a wrong shape
-  shipped twice. tests/test_language.py now does: 13 checks, and the
-  mutation that sends "auto" again fails 2 of them.
-
-ENG — NOT A BUG, AND I SHOULD SAY SO PLAINLY
-- Whisper's `language` is a HINT, not a filter. It biases the decoder;
-  it does not refuse other languages. Croatian audio with language=en
-  still decodes as Croatian, because the model recognises it and the
-  hint is weak against strong evidence.
-- HR "works" for the same reason in reverse: Croatian audio plus a
-  Croatian hint agree, so the result is clean.
-- There is no setting that makes Whisper transcribe ONLY English and
-  refuse the rest. It cannot be fixed in the app because it is not the
-  app's behaviour. Options if it matters: check the returned language
-  and reject the take, or use AssemblyAI, whose language_detection is a
-  real detector rather than a hint.
+WHAT CHANGED IN THE NOTE
+- The bar is a TRANSPORT: rec, pause, stop. Cut and line are gone — the
+  arrows above already delete what they select, so those two were a
+  second way to do the same thing sitting where the transport belongs.
+- Pause keeps the clock honest: the paused seconds are added back to the
+  start time, so it counts recorded time rather than elapsed time.
+- "to the box" and "new note" removed. Baba: "I don't know what that
+  means." He was right — "to the box" was the old ARCHIVE's habit
+  surviving into a place where the note IS the document, and "new note"
+  only closed this one, so it was `close` under a second name.
+- delete and close now sit small in the upper right corner.
+- REMOVED MY OWN DEBUG LOGGING from note_frontend — three console.log
+  lines from the v101 investigation had been shipped and left there.
 
 NUMBERS
-- language 13 (new) · box 16 · source 19 — green
-- one mutation applied, 2 checks red
+- notes UI 22 · box 16 · notes 39 · language 13 — green
+- measured: actions 15px from the panel's right edge, nothing clipped
 - pyflakes clean
 
+WHAT BROKE, AND WHAT I UNDID
+- Four attempts at the corner placement. Sharing a row with the title
+  ran `close` past the panel edge (a text_input has a minimum width). An
+  empty spacer column collapsed and left both buttons on the left at
+  x=54. What worked was aligning the ROW — the same approach that
+  finally worked for the notes link, which I had already learned once
+  and did not apply.
+- One check drove "to the box", the button this change removed. Rewritten
+  to test what remains true: opening a note takes the module over, and
+  closing it returns the box untouched.
+
+STILL UNSURE
+- The note's recorder has still never been seen to SUCCEED. The model
+  fix is right and the error it threw is gone, but only Baba pressing it
+  proves the whole path.
+
 FOR BABA
-- Try AUTO again after this deploys. It should transcribe now.
-- ENG will still pick up Croatian. That is Whisper, not the app — tell
-  me if you want the app to REJECT a take whose language is not the one
-  you asked for, which is the only honest way to get what you described.
+- Open a note, press its red rec, speak, press stop. The words should
+  appear in the note.
+- If it fails, the error is on screen — send me that text.

@@ -747,6 +747,34 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     [class*="st-key-noteopen"] [data-testid="stIFrame"] {{
       margin: 0 !important;
     }}
+    /* THE ACTION ROW SITS AT THE RIGHT. The row is what gets aligned —
+       an empty spacer column collapsed and left both buttons on the
+       left, measured at x=54 in a 380px panel. Its columns become
+       auto-width so they take only what the words need. */
+    [class*="st-key-noteacts"] div[data-testid="stHorizontalBlock"] {{
+      justify-content: flex-end !important;
+      flex-wrap: nowrap !important;
+      gap: 0.3rem !important;
+    }}
+    [class*="st-key-noteacts"] div[data-testid="stColumn"] {{
+      flex: 0 0 auto !important;
+      width: auto !important;
+      min-width: 0 !important;
+    }}
+
+    /* The old note about a spacer, so it needs no
+       nowrap: there is no text_input in it to demand a minimum width.
+       Forcing nowrap with the title in the row ran `close` past the
+       panel edge, which is why the title moved to its own line. */
+    /* DELETE AND CLOSE, small, at the top right. Same size as the note's
+       own meta line, so they read as part of the frame rather than as
+       two more things to do. */
+    [class*="st-key-note_del"] button,
+    [class*="st-key-note_close"] button {{
+      font-size: 0.7rem !important;
+      min-height: 0 !important;
+      padding: 0.3rem 0.4rem !important;
+    }}
     [class*="st-key-noteopen"] input {{
       font-size: 0.95rem !important;
       color: var(--amber) !important;

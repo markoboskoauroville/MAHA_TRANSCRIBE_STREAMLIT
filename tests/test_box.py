@@ -109,9 +109,16 @@ check("9 typing does NOT remount the box under the fingers",
 check("10 what was typed is still shown", box_text(at2) == "typed by hand",
       box_text(at2))
 
-# --- 5. a note can be put back in the box -----------------------------
-# The archive became notes in v98, so this goes through the notes path:
-# open the note, press "to the box".
+# --- 5. the box and the note are separate surfaces ---------------------
+#
+# This check used to press "to the box", which copied a note's text back
+# into the transcript box. That button is gone in v121 — Baba: "I don't
+# know what that means or what it does." He was right: it was the old
+# ARCHIVE's habit surviving into a place where the note IS the document,
+# not a copy of something that lives elsewhere.
+#
+# What is worth checking is what remains true: opening a note takes the
+# module over, and closing it gives the box back untouched.
 from ttt import notes as NOTES  # noqa: E402
 
 at3 = app()
@@ -120,15 +127,14 @@ NOTES.add(state, "iz biljeske")
 at3.session_state[NOTES.KEY] = state[NOTES.KEY]
 at3.session_state["_notes_adopted"] = True
 at3.session_state["_open_note"] = state[NOTES.KEY][0]["id"]
+at3.session_state["_t1_text"] = "u okviru"
+at3.session_state["_t1_text_gen"] = 1
 at3.run()
-[b for b in at3.get("button") if b.key == "note_to_box"][0].click().run()
-# The box is NOT DRAWN while a note is open — that is the takeover
-# working, not a fault — so close the note before looking for it.
-check("11a while the note is open there is no box to look at",
+check("11a while a note is open there is no box to look at",
       box_text(at3) is None, box_text(at3))
 [b for b in at3.get("button") if b.key == "note_close"][0].click().run()
-check("11 a note can be put back into the box",
-      box_text(at3) == "iz biljeske", box_text(at3))
+check("11 closing gives the box back, with what was in it",
+      box_text(at3) == "u okviru", box_text(at3))
 
 # --- 6. clear empties it ----------------------------------------------
 at4 = app()

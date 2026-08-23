@@ -161,13 +161,22 @@
        button." Same idea as the big deck upstairs, in one row: the red
        key is wide because it is the thing you reach for, and cut and
        line are small because they are not. -->
+  <!-- A TRANSPORT, NOT A ROW OF ACTIONS. Baba: "all these action
+       buttons beside recording should go out, we don't have anything,
+       just record... in the remote we need to have all buttons: record,
+       pause, stop."
+       Cut and line are gone from here: the arrows above already delete
+       what they select, so those two were a second way to do the same
+       thing sitting where the transport belongs. -->
   <div class="bar" id="acts">
     <button type="button" id="rec" title="record into this note">
       <span class="dot"></span><span id="lRec">rec</span>
       <span id="clk"></span><span id="vu"><i></i></span>
     </button>
-    <button type="button" id="bCut" class="wee" title="delete what is selected">✕ <span id="lCut">cut</span></button>
-    <button type="button" id="bLine" class="wee" title="delete this line">⌫ <span id="lLine">line</span></button>
+    <button type="button" id="bPause" class="wee" disabled>
+      <span class="pz"></span><span id="lPause">pause</span></button>
+    <button type="button" id="bStop" class="wee" disabled>
+      <span class="sq"></span><span id="lStop">stop</span></button>
   </div>
 
   <div id="meta"><span id="mLeft"></span><span id="mRight"></span></div>
@@ -359,6 +368,7 @@ ta.addEventListener('click', report);
    clock and the message line down with it. The button still toggled,
    which is why it looked like it worked. */
 var L_REC = 'rec', L_STOP = 'stop',
+    L_PAUSE = 'pause', L_RESUME = 'resume',
     L_MICNO = 'microphone refused — check the browser permission',
     L_NOTHING = 'nothing was recorded',
     L_TOOBIG = 'too long for a note — use the deck above',
@@ -398,6 +408,8 @@ function setRecording(on) {
   RECORDING = on;
   recBtn.classList.toggle('on', on);
   document.getElementById('lRec').textContent = on ? L_STOP : L_REC;
+  if (!on) PAUSED = false;
+  transportState();
   if (!on) {
     if (vuRaf) { clearInterval(vuRaf); vuRaf = null; }
     if (clockT) { clearInterval(clockT); clockT = null; }
@@ -448,7 +460,7 @@ async function startRec() {
   mediaRec.ondataavailable = function (ev) {
     if (ev.data && ev.data.size) chunks.push(ev.data);
   };
-  mediaRec.onstop = function () { console.log('ONSTOP fired'); finishRec(); };
+  mediaRec.onstop = function () { finishRec(); };
   mediaRec.start();
 
   recT0 = Date.now();
@@ -466,7 +478,6 @@ async function startRec() {
 }
 
 function finishRec() {
-  console.log('FINISHREC entered, chunks=' + chunks.length);
   var secs = (Date.now() - recT0) / 1000;
   var type = (chunks[0] && chunks[0].type) || 'audio/webm';
   var blob = new Blob(chunks, { type: type });
@@ -494,14 +505,51 @@ function finishRec() {
 /* ONE KEY, TWO JOBS. Baba: "when I press Record, then it turns to Stop,
    and when I press Stop, it is set text." A separate stop key would sit
    dead most of the time and be the wrong one to reach for in a hurry. */
+var pauseBtn = document.getElementById('bPause');
+var stopBtn  = document.getElementById('bStop');
+var PAUSED = false, pauseAt = 0;
+
+function transportState() {
+  pauseBtn.disabled = !RECORDING;
+  stopBtn.disabled = !RECORDING;
+  document.getElementById('lPause').textContent = PAUSED ? L_RESUME : L_PAUSE;
+}
+
+/* REC STARTS, and still stops — a hand reaching for the red key
+   mid-take means to end it. Pause and stop sit beside it so the note's
+   transport reads the same as the deck's upstairs. */
 recBtn.addEventListener('click', function (e) {
   e.preventDefault();
   if (RECORDING) {
-    console.log('STOP path, state=' + (mediaRec && mediaRec.state));
-    try { mediaRec.stop(); } catch (err) { console.log('stop threw '+err); finishRec(); }
+    try { mediaRec.stop(); } catch (err) { finishRec(); }
   } else {
     startRec();
   }
+});
+
+pauseBtn.addEventListener('click', function (e) {
+  e.preventDefault();
+  if (!RECORDING || !mediaRec) return;
+  try {
+    if (PAUSED) {
+      mediaRec.resume();
+      /* The clock must not count the pause. Moving the start forward by
+         the time spent paused keeps it showing recorded seconds rather
+         than elapsed ones. */
+      recT0 += Date.now() - pauseAt;
+    } else {
+      mediaRec.pause();
+      pauseAt = Date.now();
+    }
+    PAUSED = !PAUSED;
+    transportState();
+  } catch (err) { /* a recorder that cannot pause simply keeps going */ }
+});
+
+stopBtn.addEventListener('click', function (e) {
+  e.preventDefault();
+  if (!RECORDING || !mediaRec) return;
+  try { mediaRec.stop(); } catch (err) { finishRec(); }
 });
 
 window.addEventListener('message', function (ev) {
@@ -534,7 +582,8 @@ window.addEventListener('message', function (ev) {
     if (a.labels.rec)  { L_REC = a.labels.rec;
                          if (!RECORDING)
                            document.getElementById('lRec').textContent = L_REC; }
-    if (a.labels.stop) L_STOP = a.labels.stop;
+    if (a.labels.stop)  L_STOP = a.labels.stop;
+    if (a.labels.pause) { L_PAUSE = a.labels.pause; transportState(); }
     if (a.labels.cut)  document.getElementById('lCut').textContent = a.labels.cut;
     if (a.labels.line) document.getElementById('lLine').textContent = a.labels.line;
   }

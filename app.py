@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v120 (a) (auto reaches Whisper)"
+APP_VERSION = "v121 (a) (the note records, and its transport is a transport)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -73,6 +73,7 @@ from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR_
 from ttt import vision
 from ttt import notes as NOTES
+from ttt.providers.groq import FAST_STT as GROQ_FAST_STT
 from ttt import routing as RO
 from ttt import engines as EN
 from ttt import audio as ttt_audio
@@ -1587,8 +1588,18 @@ def transcribe(path: str, model: str, language: str) -> str:
             # which is the "one implementation, in the module" rule
             # broken, and the cost of breaking it was a fix that looked
             # complete and changed nothing.
+            # AN EMPTY MODEL FALLS BACK, it is not sent.
+            #
+            # Groq answers `'model' is a required property` — a 400 — and
+            # the rotation then burns every key and returns nothing. The
+            # note's own red button passed "" meaning "the engine's
+            # default", which is what ttt/providers/groq.py has always
+            # understood (`model or FAST_STT`). This copy did not, which
+            # is the same two-implementations fault as the language bug,
+            # in the same function, found one version later.
             kw = dict(file=(os.path.basename(path), None),
-                      model=model, response_format="text", temperature=0.0)
+                      model=model or GROQ_FAST_STT,
+                      response_format="text", temperature=0.0)
             if language and language != "auto":
                 kw["language"] = language
             with open(path, "rb") as f:
@@ -3900,12 +3911,47 @@ def note_open_view():
         close_note()
 
     with st.container(key="noteopen"):
-        head, back = st.columns([4, 1.3])
-        head.text_input("title", key="note_title_%s" % note_id,
-                        value=NOTES.heading(note),
-                        label_visibility="collapsed", on_change=_save_title)
-        back.button(t("note_close"), key="note_close",
-                    on_click=close_note, use_container_width=True)
+        # TITLE, DELETE, CLOSE — all on one line at the top.
+        #
+        # Baba: "delete should be there, but we want to save on space, so
+        # glue it to the note's upper right corner, same size of font."
+        # A footer row of three full-width buttons for actions taken once
+        # in a while was a whole band of screen; up here they are two
+        # small words where the eye already goes when it wants OUT of
+        # something.
+        # THE TWO SMALL ACTIONS SIT ABOVE THE TITLE, at the right.
+        #
+        # Sharing one row with the title did not fit: forced onto a
+        # single line, `close` ran past the panel edge — and §27 is
+        # explicit that no word may be cut. Streamlit gives a text_input
+        # a minimum width, so on a 380px screen there is simply not room
+        # for a title AND two words beside it.
+        #
+        # Their own row costs one thin line and gives Baba what he asked
+        # for — the upper right corner — without anything clipped.
+        # A KEYED ROW, pushed right by the stylesheet. An empty spacer
+        # column collapsed to nothing and left both buttons on the left —
+        # measured at x=54 when the panel is 380 wide. The row itself is
+        # what gets aligned, which is the one approach that worked for
+        # the notes link after six that did not.
+        with st.container(key="noteacts"):
+            dele, back = st.columns([1, 1])
+        # STILL TWO PRESSES. One press on a whole note, in an app with no
+        # undo anywhere, is not a risk worth taking — and moving it next
+        # to `close` makes a mis-tap MORE likely, not less.
+            if st.session_state.get("_note_del_armed") == note_id:
+                dele.button(t("note_del_sure"), key="note_del2",
+                            type="primary", on_click=_del_do,
+                            use_container_width=True)
+            else:
+                dele.button(t("note_del"), key="note_del",
+                            on_click=_del_arm, use_container_width=True)
+            back.button(t("note_close"), key="note_close",
+                        on_click=close_note, use_container_width=True)
+
+        st.text_input("title", key="note_title_%s" % note_id,
+                      value=NOTES.heading(note),
+                      label_visibility="collapsed", on_change=_save_title)
 
         # SAY WHEN A TAKE FAILED. _note_error was written in two places
         # and displayed in none, so a failed transcription inside a note
@@ -3921,7 +3967,7 @@ def note_open_view():
                 scale=a11y.clamp(st.session_state.get("text_scale",
                                                       a11y.DEFAULT_SCALE)),
                 labels={"rec": t("rec_btn"), "stop": t("rec_stop"),
-                        "cut": t("note_cut"), "line": t("note_line")},
+                        "pause": t("rec_pause")},
                 recording=False,
                 key="note_ed_%s" % note_id, default=None)
 
@@ -3956,20 +4002,14 @@ def note_open_view():
                              text=st.session_state.get(
                                  "note_plain_%s" % note_id, "")))
 
-        c1, c2, c3 = st.columns([1, 1, 1])
-        c1.button(t("note_to_box"), key="note_to_box",
-                  use_container_width=True,
-                  on_click=lambda: t1_set_text(note.get("text", "")))
-        c2.button(t("note_new"), key="note_new_from",
-                  use_container_width=True, on_click=close_note)
-        # DELETE IS TWO PRESSES. One press on a whole note, in an app
-        # with no undo anywhere, is not a risk worth taking.
-        if st.session_state.get("_note_del_armed") == note_id:
-            c3.button(t("note_del_sure"), key="note_del2", type="primary",
-                      use_container_width=True, on_click=_del_do)
-        else:
-            c3.button(t("note_del"), key="note_del",
-                      use_container_width=True, on_click=_del_arm)
+        # "to the box" and "new note" are gone. Baba: "I don't know what
+        # that means or what it does, it's not clear. Remove it. New
+        # note, remove it — we only make new notes of it."
+        #
+        # He is right on both. "to the box" copied a note back into the
+        # transcript box, which was the old archive's habit surviving
+        # into a place where the note IS the document. And "new note"
+        # only closed this one, so it was `close` wearing a second name.
 
         st.caption("%s %s   %s" % (
             t("note_made"), note.get("made", note.get("at", "")),
