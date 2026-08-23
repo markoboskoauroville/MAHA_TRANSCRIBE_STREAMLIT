@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v150 (a) (the top of the screen, on a phone)"
+APP_VERSION = "v151 (a) (a voice that refuses, and a store that says why)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -467,6 +467,10 @@ STRINGS = {
     "img_no_model":       {"en": "No engine here can read pictures.",
                             "hr": "Nijedan pogon ovdje ne može čitati slike."},
     "img_done":           {"en": "Read from a picture.", "hr": "Pročitano iz slike."},
+    "read_failed":        {"en": "That voice would not read this — try "
+                                 "another voice, or again in a moment.",
+                           "hr": "Taj glas ovo nije mogao pročitati — "
+                                 "probaj drugi glas ili za koji trenutak."},
     "gen_part":           {"en": "Making part {i} of {n}…",
                             "hr": "Pripremam dio {i} od {n}…"},
     "gen_audio":          {"en": "Making the audio…",  "hr": "Pripremam zvuk…"},
@@ -3837,12 +3841,44 @@ def drive_store():
     """
     try:
         secret = str(st.secrets.get("DRIVE_SECRET", "") or "")
-        on = bool(secret) and SHEET.flag(sheet_config(), "store_audio", USER)
-        return _drive_store(
-            str(st.secrets.get("SHEETS_URL", "") or ""),
-            str(st.secrets.get("SHEETS_TOKEN", "") or ""),
-            secret, USER, on)
-    except Exception:
+        url = str(st.secrets.get("SHEETS_URL", "") or "")
+        token = str(st.secrets.get("SHEETS_TOKEN", "") or "")
+        flag = SHEET.flag(sheet_config(), "store_audio", USER)
+        on = bool(secret) and bool(url) and bool(token) and flag
+
+        # SAY WHY IT IS OFF, ONCE PER SESSION.
+        #
+        # Baba recorded three times, nothing reached Drive, and the log
+        # held nothing at all. That silence is this function: any one
+        # condition missing and the store is disabled, and every caller
+        # then returns early WITHOUT an error because a disabled store
+        # is not a failure.
+        #
+        # It is not a failure and it is not nothing either. Somebody
+        # whose recordings are quietly not being kept deserves to know
+        # which of the four things is missing — the secret, the URL, the
+        # token, or the sheet's own switch.
+        if not on and not st.session_state.get("_drive_off_logged"):
+            st.session_state["_drive_off_logged"] = True
+            missing = [n for n, v in (("DRIVE_SECRET", secret),
+                                      ("SHEETS_URL", url),
+                                      ("SHEETS_TOKEN", token),
+                                      ("the sheet's store_audio switch", flag))
+                       if not v]
+            errlog.add(st.session_state, "drive",
+                       "NOT KEEPING RECORDINGS — nothing is being stored",
+                       "missing: " + ", ".join(missing))
+
+        return _drive_store(url, token, secret, USER, on)
+    except Exception as e:
+        # The same silence, one layer out: this used to swallow whatever
+        # went wrong reading the sheet and hand back a disabled store.
+        if not st.session_state.get("_drive_off_logged"):
+            st.session_state["_drive_off_logged"] = True
+            errlog.add(st.session_state, "drive",
+                       "NOT KEEPING RECORDINGS — could not work out whether "
+                       "storage is on",
+                       "{}: {}".format(type(e).__name__, e))
         return DRIVE.DriveStore(enabled=False)
 
 
@@ -5556,9 +5592,42 @@ elif active == "talk":
             return job["cache"][i]
 
         if cached is None:
-            with st.spinner(t("gen_part").format(i=idx + 1, n=len(parts))):
-                cached = _make(idx)
+            # A VOICE THAT REFUSES IS A SENTENCE, NEVER A TRACEBACK.
+            #
+            # Baba photographed edge_tts.exceptions.NoAudioReceived
+            # taking the whole app down — a red wall of Python on his
+            # phone, on the tab he opened to hear something read.
+            #
+            # The BACKGROUND worker two functions up already swallows its
+            # errors, "so one failed block cannot cancel the others".
+            # This is the same call in the foreground and it had no
+            # guard at all: the block he is actually waiting for was the
+            # one that could kill the run.
+            #
+            # Edge is free and unauthenticated, so it refuses sometimes
+            # for reasons nobody here can control — a rate limit, a bad
+            # minute. The honest answer is to say so and leave the app
+            # standing, with the studio voices as the way past it.
+            try:
+                with st.spinner(t("gen_part").format(i=idx + 1, n=len(parts))):
+                    cached = _make(idx)
+            except Exception as e:
+                errlog.add(st.session_state, "read",
+                           "the voice could not read this block",
+                           "{}: {}".format(type(e).__name__, e))
+                st.error(t("read_failed"))
+                cached = None
             save_rings()
+
+        # AND IF IT COULD NOT BE BUILT, STOP HERE. Everything below wants
+        # audio and marks; without them it would fail again, one line
+        # further down, with a less useful message.
+        if cached is None:
+            # st.stop(), not return: this is module level, not a
+            # function. pyflakes caught the `return` immediately, which
+            # is exactly what it is for.
+            tab_signature(t("sig_read"))
+            st.stop()
 
         scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
         if _wave_component is not None:

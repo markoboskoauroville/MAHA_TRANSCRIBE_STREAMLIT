@@ -1,40 +1,48 @@
-# STEP: the top of the screen, on a phone
-STATUS: done, pushed as v150. No deploy needed.
+# STEP: a voice that refuses, and a store that says why
+STATUS: done, pushed as v151. No deploy needed.
 
-WHAT BABA SAW
-- Streamlit's toolbar — Share, the star, the pencil, the GitHub mark,
-  the three dots — printed ACROSS his tab row. "Share" sat on top of TR.
-- It only shows on a phone: the header those icons live in is fixed and
-  narrow enough there that the icons and the tabs occupy the same band.
+TWO REAL FAULTS, BOTH FROM BABA'S PHONE
 
-THE FIX, AND WHY IT IS A REMOVAL
-- The toolbar is gone. It is Streamlit's, not this app's: Share, fork,
-  star and edit belong to a demo somebody might copy, not to his
-  family's transcriber. Nobody here has ever pressed one.
-- Removing it removes the collision ENTIRELY rather than negotiating
-  with it — which is what padding-top had been doing since v138, and
-  what it kept losing. The page top came back from 64px to 12px as a
-  result, which is where Baba wanted it in the first place.
-- THE RUNNING INDICATOR STAYS. It is the only thing up there that says
-  the app is working, and on a slow phone that is the difference
-  between waiting and pressing again.
+1. THE READER CRASHED THE WHOLE APP.
+   edge_tts.exceptions.NoAudioReceived came back as a red wall of Python
+   on his phone, on the tab he opened to hear something read.
+   The BACKGROUND worker two functions above already swallowed its
+   errors — "so one failed block cannot cancel the others" — and the
+   FOREGROUND call, the block he is actually waiting for, had no guard
+   at all. The one that could kill the run was the unguarded one.
+   Edge is free and unauthenticated and refuses sometimes for reasons
+   nobody here controls. It says so now and the app stays standing.
 
-AND THE ORPHAN I HAD LEFT
-- The owner's seven tabs wrapped at 360px with `log` alone underneath —
-  the same shape Baba objected to for `multi`, noted at v130 and not
-  fixed. One row now, nothing clipped, no sideways scroll.
-- My first attempt styled `stSegmentedControl`. The element that
-  actually wraps is `.stButtonGroup`'s inner div; I found it by walking
-  up from the `log` tab and printing each ancestor's computed display
-  and flex-wrap. Same lesson as the add-to-notes link: when a rule does
-  nothing, print the chain instead of guessing at a test-id.
+2. THE STORE WAS OFF AND SAID NOTHING.
+   Baba recorded three times in Emina's session; nothing reached Drive
+   and the log held only `[deliver]` lines. I was wrong twice about why
+   — a timeout logs, a refusal logs — and he corrected me: the log WAS
+   his session. Silence meant the code never tried.
+   `drive_store()` needs four things and disables itself if any is
+   missing, because "a half-configured store that half-works is worse
+   than one that plainly does not". True, and it was also saying
+   nothing. Somebody whose recordings are quietly not being kept
+   deserves to know WHICH of the four is missing.
+   It writes one line to the log now, once per session, naming them:
+   DRIVE_SECRET, SHEETS_URL, SHEETS_TOKEN, or the sheet's own
+   store_audio switch. Verified: "missing: DRIVE_SECRET, SHEETS_URL,
+   SHEETS_TOKEN".
+
+WHAT THIS MEANS FOR THE MISSING text.txt
+- It was never a race and never a refusal. Storage is simply OFF for
+  him now — and his one Drive folder is from 14:36, before he redeployed
+  the main script. Everything since has gone nowhere.
+- The next session should NOT start by reading the store path again. It
+  should read his log tab, which will now name the missing piece.
 
 NUMBERS
-- box 16 · tier 15 · owner edge 5 — green
-- measured on a 360px MOBILE viewport: toolbar hidden, 7 tabs, 1 row,
-  0 clipped, 0 overflow
-- pyflakes clean
+- box 16 — green; reader unchanged
+- verified in AppTest: the log names all three missing secrets
+- pyflakes caught `return` at module level in my first draft of the
+  reader guard, which is exactly what it is for. st.stop() instead.
 
-STILL UNANSWERED FROM BABA
-- "There is no note next to recording, only recording." I do not
-  understand this one and have NOT guessed at it — see the reply.
+STILL OPEN, ASKED AND NOT YET DONE
+- A LANGUAGE PILL IN THE OPEN NOTE. Baba: "there should be also a
+  language pill because I need to change languages while I'm
+  transcribing." Not started.
+- The two-system split and the file explorer — docs/TWO_SYSTEMS.md.
