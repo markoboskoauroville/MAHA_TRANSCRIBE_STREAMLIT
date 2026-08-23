@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v163 (a) (the save link under its own file)"
+APP_VERSION = "v164 (a) (the delete reports in its own row)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4689,11 +4689,10 @@ def recordings_panel():
         st.session_state["_recs"] = store.list()
     recs = st.session_state["_recs"] or []
 
-    # A DELETION IN PROGRESS TAKES THE PANEL OVER. It runs in the render
-    # body because a callback cannot draw — no bar, no name, no clock.
-    if st.session_state.get("_rec_doing"):
-        _run_deletion()
-        return
+    # THE PANEL NO LONGER HANDS ITSELF OVER TO A DELETION. It used to
+    # replace the whole list with one bar, so the rows somebody was
+    # looking at disappeared while they were being deleted. The list
+    # stays now, and the row being removed carries its own bar.
 
     with st.expander("%s · %d" % (t("rec_title"), len(recs))):
         if not recs:
@@ -4750,9 +4749,18 @@ def recordings_panel():
             # there is nothing to match, because it is already there.
             _rec_save_here(rid)
 
+            # AND THE DELETE'S OWN PROGRESS, under the row going away.
+            _rec_delete_here(rid)
+
         _rec_actions(picked, ids, "bottom")
 
     _rec_after_actions(recs)
+
+    # AND ONLY NOW, WITH EVERYTHING DRAWN, the one delete that is queued.
+    # The row and its bar are already on screen, so the wait happens in
+    # front of somebody rather than behind a blank panel.
+    if st.session_state.get("_rec_doing"):
+        _run_one_deletion()
 
 
 def _rec_actions(picked, all_ids, where):
@@ -4822,7 +4830,10 @@ def _rec_actions(picked, all_ids, where):
         if st.session_state.get("_rec_del_armed") and n:
             c3.button(t("rec_del_sure") % n, key="rec_del2_%s" % where,
                       on_click=lambda: st.session_state.update(
-                          {"_rec_doing": list(picked), "_rec_del_armed": False}),
+                          {"_rec_doing": list(picked),
+                           "_rec_doing_total": len(picked),
+                           "_rec_doing_started": time.time(),
+                           "_rec_del_armed": False}),
                       use_container_width=True)
         else:
             c3.button(t("rec_del"), key="rec_del_%s" % where,
@@ -4898,71 +4909,82 @@ def _rec_play_here(row):
               on_click=lambda: st.session_state.update({"_rec_playing": None}))
 
 
-def _run_deletion():
-    """Delete the marked recordings, saying what is happening as it goes.
+def _rec_delete_here(rid):
+    """The delete's own progress, under the row being deleted.
 
-    Baba: "when there is a deletion in process, show on the screen
-    exactly what's going on. Verbose status with progress indicator and
-    time."
+    Baba: "progress bar for delete should appear under the file itself,
+    same as player, same as download. Everything is same logic."
 
-    WHY IT NARRATES AT ALL. Each delete is a network round trip to Apps
-    Script, and Apps Script is not fast. Ten recordings is ten waits, and
-    a screen that sits still through them looks broken — which is the
-    moment somebody presses again, and a second delete of something
-    already gone reads as a failure.
-
-    ONE AT A TIME, ON PURPOSE. A batch call would be quicker and would
-    fail as one lump; this way a failure names the recording it happened
-    to, and everything after it still gets its chance.
+    THE THIRD TIME THIS RULE HAS COME UP, and he is right that it is one
+    rule: whatever an action produces belongs to the row that caused it.
+    The player, the save link, and now this.
     """
-    ids = list(st.session_state.get("_rec_doing") or [])
+    queue = st.session_state.get("_rec_doing") or []
+    if not queue or queue[0] != rid:
+        return
+    total = int(st.session_state.get("_rec_doing_total") or len(queue))
+    done = total - len(queue) + 1
+    st.progress(done / max(total, 1),
+                text=t("rec_del_working") % (done, total))
+
+
+def _run_one_deletion():
+    """Delete the recording at the head of the queue, then come back.
+
+    ONE DELETE PER RENDER, which is what makes the per-row progress
+    honest. The old version looped through every recording inside a
+    single run and drew one bar for the whole batch, so the panel
+    vanished and the list somebody was looking at went away while its
+    rows were being removed.
+
+    THE DRAWING HAS ALREADY HAPPENED by the time this runs: the row and
+    its bar are on screen, and Streamlit streams elements as the script
+    makes them, so the wait happens in front of somebody.
+
+    ONE AT A TIME ALSO MEANS a failure names the recording it happened
+    to and everything after it still gets its chance; a batch call would
+    be quicker and would fail as one lump.
+    """
+    queue = list(st.session_state.get("_rec_doing") or [])
+    if not queue:
+        return
+    rid = queue[0]
     store = drive_store()
-    started = time.time()
+    started = st.session_state.get("_rec_doing_started") or time.time()
 
-    bar = st.progress(0.0, text=t("rec_del_working") % (0, len(ids)))
-    line = st.empty()
-    done, failed = [], []
+    ok = False
+    try:
+        ok = store.delete(rid)
+    except Exception as e:
+        errlog.add(st.session_state, "drive", "delete threw",
+                   "%s: %s" % (rid, e))
+    if not ok:
+        errlog.add(st.session_state, "drive", "could not delete a recording",
+                   "%s: %s" % (rid, store.last_error or "no reason given"))
 
-    for i, rid in enumerate(ids):
-        line.markdown('<div class="readhint">%s</div>' % html.escape(
-            t("rec_del_now") % (i + 1, len(ids), rid,
-                                time.time() - started)),
-            unsafe_allow_html=True)
-        ok = False
-        try:
-            ok = store.delete(rid)
-        except Exception as e:
-            errlog.add(st.session_state, "drive", "delete threw",
-                       "%s: %s" % (rid, e))
-        if ok:
-            done.append(rid)
-        else:
-            failed.append(rid)
-            errlog.add(st.session_state, "drive",
-                       "could not delete a recording",
-                       "%s: %s" % (rid, store.last_error or "no reason given"))
-        bar.progress((i + 1) / max(len(ids), 1),
-                     text=t("rec_del_working") % (i + 1, len(ids)))
+    tally = st.session_state.setdefault("_rec_tally", {"gone": 0, "failed": 0})
+    tally["gone" if ok else "failed"] += 1
 
-    took = time.time() - started
-    line.empty()
-    bar.empty()
+    # THE TICK GOES WITH THE FILE. Leaving it set would offer to delete
+    # something already gone.
+    st.session_state.pop("_rp_%s" % rid, None)
+    st.session_state["_rec_doing"] = queue[1:]
+    st.session_state["_rec_doing_started"] = started
 
-    # THE TICKS GO WITH THE FILES. Leaving them set would offer to delete
-    # things that are already gone, and the next render would carry a
-    # selection nobody made.
-    for rid in ids:
-        st.session_state.pop("_rp_%s" % rid, None)
-    st.session_state.pop("_rec_doing", None)
-    st.session_state.pop("_recs", None)          # stale now; refetch
+    if not queue[1:]:
+        took = time.time() - started
+        # EACH OUTCOME COUNTED SEPARATELY. A single "done" over a batch
+        # where one failed is a lie by omission.
+        st.session_state["_rec_msg"] = (
+            ("bad", t("rec_del_part") % (tally["gone"], tally["failed"], took))
+            if tally["failed"]
+            else ("good", t("rec_del_done") % (tally["gone"], took)))
+        for k in ("_rec_doing", "_rec_doing_total", "_rec_doing_started",
+                  "_rec_tally"):
+            st.session_state.pop(k, None)
+        st.session_state.pop("_recs", None)      # stale now; refetch
 
-    # EACH OUTCOME COUNTED SEPARATELY, and the time it took. A single
-    # "done" over a batch where one failed is a lie by omission.
-    st.session_state["_rec_msg"] = (
-        ("bad", t("rec_del_part") % (len(done), len(failed), took))
-        if failed else ("good", t("rec_del_done") % (len(done), took)))
     st.rerun()
-
 
 def notes_panel():
     """The list: a search field, then the notes. Folded, like recordings.
