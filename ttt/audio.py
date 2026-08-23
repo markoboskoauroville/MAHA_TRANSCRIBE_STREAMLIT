@@ -53,6 +53,110 @@ LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 SAMPLE_FMT = "s16"
 
 
+# ---- THE SECONDS YOU DO NOT SEND ARE FREE -----------------------------
+#
+# Async speech-to-text is billed per second of AUDIO, and dictation is
+# roughly half silence: thinking, breathing, reading the screen. Trimming
+# the gaps is the single biggest saving available and it costs nothing in
+# quality, because what is deleted carried no words.
+#
+# NOT TOO HARD, THOUGH. A clipped first syllable costs a re-record, and a
+# re-record costs more than the silence did. Hence the padding below and
+# the conservative threshold: this is tuned to leave speech alone rather
+# than to squeeze out every last second.
+TRIM_THRESHOLD = "-42dB"     # quieter than this counts as silence
+TRIM_MIN_SILENCE = 0.7       # a gap must last this long to be cut at all
+TRIM_PAD = 0.25              # left around every kept passage, both sides
+
+
+def trim_silence(in_path: str, out_path: str = None):
+    """Cut the silent gaps out. Returns (path, seconds_before, seconds_after).
+
+    RETURNS THE ORIGINAL ON ANY DOUBT. If ffmpeg fails, if the result is
+    empty, or if the trim saved almost nothing, the untouched file comes
+    back — a saving is worth having and it is never worth a lost
+    dictation.
+    """
+    before = duration_seconds(in_path) or 0.0
+    out_path = out_path or (in_path + ".trim.flac")
+    try:
+        # stop_periods=-1 means "every silence, not just the first", which
+        # is what makes this work on a long dictation rather than only
+        # tidying the beginning.
+        _run(["ffmpeg", "-y", "-i", in_path, "-af",
+              ("silenceremove=start_periods=1:start_silence=%.2f"
+               ":start_threshold=%s:stop_periods=-1:stop_silence=%.2f"
+               ":stop_threshold=%s:detection=rms"
+               % (TRIM_PAD, TRIM_THRESHOLD, TRIM_PAD + TRIM_MIN_SILENCE,
+                  TRIM_THRESHOLD)),
+              "-ar", "16000", "-ac", "1", "-sample_fmt", SAMPLE_FMT,
+              "-c:a", "flac", out_path], timeout=1800)
+    except Exception:
+        return in_path, before, before
+
+    after = duration_seconds(out_path) or 0.0
+
+    # AN EMPTY RESULT MEANS THE THRESHOLD WAS WRONG, not that the person
+    # said nothing. Quiet speech on a bad microphone can fall under any
+    # threshold, and sending nothing would lose the dictation entirely.
+    if after < 0.3:
+        cleanup(out_path)
+        return in_path, before, before
+
+    # NOT WORTH THE SECOND FILE. Under a tenth saved, the copy costs more
+    # in disk and confusion than it returns.
+    if before and after > before * 0.9:
+        cleanup(out_path)
+        return in_path, before, before
+
+    return out_path, before, after
+
+
+# A SEPARATE, MUCH LOWER THRESHOLD FOR "IS THERE ANYTHING HERE AT ALL".
+#
+# -42dB is right for TRIMMING, where being wrong costs a few seconds of
+# silence left in. It is far too aggressive for DECIDING NOT TO
+# TRANSCRIBE, where being wrong costs somebody their words: quiet speech
+# on a bad microphone can sit under -42dB and is still speech.
+#
+# So the question "is this worth uploading" is asked at -60dB. If there
+# is nothing even down there, there is nothing.
+SILENCE_THRESHOLD = "-60dB"
+
+
+def is_silent(path: str) -> bool:
+    """Whether there is any sound here at all.
+
+    "Never pay for a clip that turned out to be nothing. Check BEFORE the
+    upload, not after." A silent take should cost nothing and should not
+    reach a provider.
+
+    MY FIRST VERSION ANSWERED FALSE FOR A COMPLETELY SILENT FILE. It
+    called trim_silence, which deliberately returns the ORIGINAL when the
+    trim comes back empty — a guard meant for the quiet-microphone case,
+    which swallowed the very case this function exists to find. Measured,
+    not reasoned about: a synthetic silent take reported "not silent".
+    """
+    before = duration_seconds(path) or 0.0
+    if not before:
+        return False                      # unknown is not "empty"
+    out = path + ".silchk.flac"
+    try:
+        _run(["ffmpeg", "-y", "-i", path, "-af",
+              ("silenceremove=start_periods=1:start_silence=0"
+               ":start_threshold=%s:stop_periods=-1:stop_silence=0"
+               ":stop_threshold=%s:detection=rms"
+               % (SILENCE_THRESHOLD, SILENCE_THRESHOLD)),
+              "-ar", "16000", "-ac", "1", "-sample_fmt", SAMPLE_FMT,
+              "-c:a", "flac", out], timeout=600)
+        left = duration_seconds(out) or 0.0
+    except Exception:
+        return False                      # doubt means send it
+    finally:
+        cleanup(out)
+    return left < 0.3
+
+
 def to_flac16k(in_path: str, out_path: str = None) -> str:
     """16kHz mono FLAC, levelled — Groq's own documented target, and a
     good idea for every other STT too.
