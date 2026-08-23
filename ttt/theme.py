@@ -740,16 +740,25 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
-    /* CLEAR, under the reading box. The same shape as T's "add to
-       notes": a quiet link where you look after reading what is in the
-       box, not a bordered command above it. */
-    [class*="st-key-rd_clear"] {{
-      margin-top: -0.75rem !important;
-      width: 100% !important;
-      display: flex !important;
+    /* copy · clear UNDER EVERY BOX. One rule, one look, in T, R and
+       both halves of TR. Baba: "under all tabs we have text box, copy
+       clear under — as an action link, not an action button."
+       Glued to the box like add-to-notes was, and right-aligned so the
+       panel's actions line up down the same margin. */
+    [class*="st-key-boxlinks_"] {{
+      margin-top: -0.7rem !important;
     }}
-    [class*="st-key-rd_clear"] .stButton {{ width: 100% !important; }}
-    [class*="st-key-rd_clear"] button {{
+    [class*="st-key-boxlinks_"] div[data-testid="stHorizontalBlock"] {{
+      justify-content: flex-end !important;
+      flex-wrap: nowrap !important;
+      gap: 0 !important;
+    }}
+    [class*="st-key-boxlinks_"] div[data-testid="stColumn"] {{
+      flex: 0 0 auto !important;
+      width: auto !important;
+      min-width: 0 !important;
+    }}
+    [class*="st-key-boxlinks_"] .stButton button {{
       background: transparent !important;
       border: 0 !important;
       color: var(--dim) !important;
@@ -758,14 +767,14 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       font-size: 0.72rem !important;
       text-decoration: underline;
       text-underline-offset: 3px;
-      width: 100% !important;
+      white-space: nowrap;
     }}
-    [class*="st-key-rd_clear"] button > div {{
-      width: 100% !important;
-      justify-content: flex-end !important;
+    [class*="st-key-boxlinks_"] .stButton button:hover {{
+      color: var(--amber) !important;
     }}
-    [class*="st-key-rd_clear"] button p {{ text-align: right !important; }}
-    [class*="st-key-rd_clear"] button:hover {{ color: var(--amber) !important; }}
+    [class*="st-key-boxlinks_"] [data-testid="stIFrame"] {{
+      margin: 0 !important;
+    }}
 
     /* FIVE PILLS, ONE LINE. nowrap holds the row together and the type
        shrinks to fit — §27's trade, which lets a cell get smaller but

@@ -28,6 +28,10 @@ to come from the native paste event instead. See HANDOVER §14.
 import json
 
 BG = "#0b0d10"
+# The same dim the app uses for a link at rest. Written here rather than
+# imported, because this module renders inside an IFRAME and cannot see
+# the page's CSS variables — a var(--dim) here resolves to nothing.
+DIM = "#8b8375"
 FG = "#f2ddb4"
 GOLD = "#f59e0b"
 EDGE = "rgba(232,220,192,0.25)"
@@ -149,7 +153,8 @@ def html(text: str, label: str, busy: str, done: str, failed: str,
 
 
 def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
-            label: str = "CP", size: int = CP_SIZE) -> str:
+            label: str = "CP", size: int = CP_SIZE,
+            link: bool = False) -> str:
     """size=0 means a WORD pill rather than a circle — for command rows
     where the label has to be readable ("copy") instead of an initialism.
     Same behaviour and the same state changes either way."""
@@ -164,6 +169,23 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
     payload = _js(text or "")
     labels = _js({"idle": label, "busy": "\u00b7\u00b7\u00b7",
                   "done": done_label, "failed": failed_label})
+
+    # LINK MODE. The copy control has to be a component — nothing else
+    # can reach the clipboard — so it cannot be a Streamlit button
+    # styled into a link like the ones beside it. This makes it LOOK
+    # like one, so a row of copy · clear reads as one kind of thing
+    # rather than a button standing next to two links.
+    LINKCSS = ("""
+  button {
+    height: 22px !important; font-weight: 400 !important;
+    font-size: 0.72rem !important; letter-spacing: 0 !important;
+    text-decoration: underline; text-underline-offset: 3px;
+    color: %s !important; justify-content: flex-end !important;
+    padding-right: 0.75rem !important;
+  }
+  html, body { justify-content: flex-end !important; }
+""" % DIM) if link else ""
+
     return f"""
 <!doctype html>
 <meta charset="utf-8">
@@ -185,6 +207,7 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
     display:flex; align-items:center; justify-content:center;
     transition: transform 90ms ease-out, filter 90ms ease-out;
   }}
+  {LINKCSS}
   button:active:not(:disabled) {{ color:{GOLD}; }}
   button:focus-visible {{ outline:3px solid {GOLD}; outline-offset:3px; }}
   button.failed {{ color:#f48383; }}

@@ -141,7 +141,9 @@ at4 = app()
 at4.session_state["_t1_text"] = "to be cleared"
 at4.session_state["_t1_text_gen"] = 1
 at4.run()
-[b for b in at4.get("button") if b.key == "tx_clear"][0].click().run()
+# CLEAR MOVED UNDER THE BOX (v132), with copy, as a link — one rule for
+# every text box in the app. Its key moved with it.
+[b for b in at4.get("button") if b.key == "bl_clear_tx"][0].click().run()
 check("12 clear empties the box", box_text(at4) == "", box_text(at4))
 at4.run()
 check("13 and it STAYS empty across a rerun", box_text(at4) == "",

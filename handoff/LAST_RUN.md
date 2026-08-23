@@ -1,33 +1,43 @@
-# STEP: one clear, under the box
-STATUS: done, pushed as v131. No deploy needed.
+# STEP: copy and clear under every box
+STATUS: done, pushed as v132. No deploy needed.
 
 WHAT HAPPENED
-- R's command row is gone. Baba: "archive and clear goes away — it
-  should be only clear, as an action link under the text box."
-- `archive` wrote into the OLD archive, which became notes in v98 and
-  is displayed nowhere. The button had been writing into a drawer
-  nobody opens for thirty-odd versions.
-- `clear` is now one quiet link under the box, right-aligned, touching
-  it at −1.8px — the same shape as T's "add to notes", so both modules
-  put their one afterthought action in the same place.
-- It only appears when there is something to clear.
+- ONE RULE, EVERY MODULE. Baba: "under all tabs we have text box, copy
+  clear under. As an action link, not an action button. Copy is more
+  important than clear, that is the rule."
+- `box_links()` is the one helper: T, R, and BOTH halves of TR use it.
+  Before this each had its own arrangement — a bordered command row
+  here, a single link there, copy in one and not the other. Three
+  shapes for one idea is three things to keep in step, and they had
+  already drifted.
+- It renders nothing when the box is empty. Nothing to copy, nothing to
+  clear, and a dead link is a question with no good answer.
+- T's command row now holds only what is particular to T: `new`, plus
+  the studio tools. `add to notes` rides on the links line rather than
+  starting another.
+
+THE COPY BUTTON HAD TO BE TAUGHT TO LOOK LIKE A LINK
+- It is a COMPONENT — nothing else can reach the clipboard — so it
+  cannot be a Streamlit button styled like the ones beside it.
+  cp_html() gained a `link=True` mode. Its colour is written as a hex
+  rather than var(--dim), because the component renders inside an
+  IFRAME and cannot see the page's CSS variables — a var() there
+  resolves to nothing.
 
 NUMBERS
-- reader: only the pre-existing check 8 red, nothing new
-- browser-verified: archive absent, clear present, gap −1.8px
+- box 16 · tier 13 · notes UI 22 · source 19 — green
+- browser-verified in T: copy · clear · add to notes, one line, right
+  aligned, glued to the box
 - pyflakes clean
 
 WHAT BROKE, AND WHAT I UNDID
-- Removing the button orphaned its handler, and pyflakes caught that
-  there were TWO `_keep_text` definitions in the same module. Removed
-  the one I orphaned; the other belongs to the reader's own archive
-  panel and was left alone rather than tidied blind.
+- `tx_clear` moved into the helper and took a new key, which three test
+  files still named. Updated. One of them then failed for a good
+  reason: it checked an EMPTY box, where the links deliberately do not
+  render. It seeds the box now.
 
 STILL OPEN
 - The note's red rec, never seen to work.
 - test_reader 8, red since v101.
-- The owner's tab bar wraps at 360px, seven tabs onto two lines, with
-  `log` orphaned underneath — the same shape he objected to for `multi`.
-- Per-provider test buttons; People and the test result as real tables.
-- THE KEYS IN THE SHEET — its own session, starting from Key Tester and
-  Password Keyring.
+- The owner's tab bar wraps at 360px with `log` orphaned underneath.
+- THE KEYS IN THE SHEET — its own session.

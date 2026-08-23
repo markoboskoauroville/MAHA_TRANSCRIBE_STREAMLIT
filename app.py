@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v131 (a) (one clear, under the box)"
+APP_VERSION = "v132 (a) (copy and clear under every box)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2807,6 +2807,56 @@ def size_controls():
                        on_click=_pick)
 
 
+def box_links(where: str, text: str, on_clear=None, extra=None):
+    """copy · clear, as links, under a text box. Everywhere.
+
+    Baba: "under all tabs we have text box, copy clear under. As an
+    action link, not an action button. Copy is more important than
+    clear, that is the rule."
+
+    ONE HELPER, THREE MODULES. T, R and TR each had their own
+    arrangement — a bordered command row here, a single link there,
+    copy in one and not the other. Three shapes for one idea is three
+    things to keep in step, and they had already drifted.
+
+    `extra` is for a module's own afterthought action — T's "add to
+    notes" — so it lands on this line rather than starting another.
+
+    It renders nothing when the box is empty. There is no copying and
+    no clearing to be done, and a dead link is a question with no good
+    answer.
+    """
+    body = (text or "").strip()
+    if not body:
+        return
+    with st.container(key="boxlinks_%s" % where):
+        items = [("copy", None)]
+        if on_clear is not None:
+            items.append(("clear", on_clear))
+        items += list(extra or [])
+        cols = st.columns([1] * len(items))
+        for col, (kind, cb) in zip(cols, items):
+            with col:
+                if kind == "copy":
+                    # The copy button is a COMPONENT — it has to be, to
+                    # reach the clipboard — so it cannot be a Streamlit
+                    # button styled into a link. Its own stylesheet makes
+                    # it look like one.
+                    components.html(
+                        copybtn.cp_html(body, label=t("copy_word"),
+                                        done_label=t("copy_done_word"),
+                                        failed_label="—", size=0,
+                                        link=True),
+                        height=26)
+                elif kind == "clear":
+                    st.button(t("clear_word"), key="bl_clear_%s" % where,
+                              on_click=cb, use_container_width=True)
+                else:
+                    label, key, fn = kind, cb[0], cb[1]
+                    st.button(label, key=key, on_click=fn,
+                              use_container_width=True)
+
+
 def cmd_row(where: str, items, target_key: str = None, copy_text: str = "",
             with_size: bool = False):
     """THE row. Every command in the app is built here, so there is one
@@ -5047,14 +5097,15 @@ if active == "transcribe":
     _eng = EN.current(st.session_state)
     _studio = bool(_eng and _eng.tier == "studio")
 
-    _cmds = [(t("new_take_word"), "tx_new", _new_take),
-             ("copy", None, None)]
+    # COPY AND CLEAR LEFT THIS ROW (v132). They live under the box now,
+    # with every other box's copy and clear, so the row holds only what
+    # is particular to T: a new take, and the studio tools.
+    _cmds = [(t("new_take_word"), "tx_new", _new_take)]
     if _studio:
         _cmds += [(t("grammar_word"), "tx_grammar", _grammar),
                   (t("reshape_word"), "tx_reshape", _reshape),
                   (t("custom_word"), "tx_custom", _ask_custom)]
-    _cmds += [(t("clear_word"), "tx_clear", _clear_all)]
-    cmd_row("tx", _cmds, copy_text=t1_text())
+    cmd_row("tx", _cmds)
 
     # CUSTOM: say what you want done, and it is done to the text that is
     # already in the box. Studio only, for the same reason as the other
@@ -5130,7 +5181,8 @@ if active == "transcribe":
         #
         # The wrapper is the one element whose width is known, so it
         # becomes the flex row and the button sits at its right end.
-        st.button(t("tx_tonote"), key="tx_tonote", on_click=keep_as_note)
+        box_links("tx", t1_text(), on_clear=_clear_all,
+                  extra=[(t("tx_tonote"), ("tx_tonote", keep_as_note))])
         if st.session_state.pop("_note_kept", None):
             st.caption(t("tx_tonote_done"))
 
@@ -5394,8 +5446,8 @@ elif active == "talk":
         # the box, where you look after reading what is in it.
         st.text_area(t("tab_talk"), key="talk_text", height=150,
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
-        if (st.session_state.get("talk_text") or "").strip():
-            st.button(t("clear_word"), key="rd_clear", on_click=_clear_talk)
+        box_links("rd", st.session_state.get("talk_text", ""),
+                  on_clear=_clear_talk)
         # A GREY LINE SAYING WHAT TO DO NEXT. Baba: "in gray letters
         # under the text box put little note — press play to read."
         #
@@ -5506,12 +5558,10 @@ elif active == "translate":
         do_translate()
         flash("tr_go")
 
-    cmd_row("trsrc", [
-        (t("clear_word"), "tr_clear_src", _clear_src),
-    ], target_key="translate_src_text")
-
     st.text_area("src", key="translate_src_text", height=120,
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
+    box_links("trsrc", st.session_state.get("translate_src_text", ""),
+              on_clear=_clear_src)
 
     # TRANSLATE BELONGS TO THE MATRIX, not to the command row.
     #
@@ -5536,13 +5586,10 @@ elif active == "translate":
         st.session_state["translate_out"] = ""
         flash("tr_out")
 
-    cmd_row("trout", [
-        ("copy", None, None),
-        (t("clear_word"), "tr_clear_out", _clear_out),
-    ], copy_text=st.session_state.get("translate_out", ""))
-
     st.text_area("out", key="translate_out", height=150,
                  label_visibility="collapsed", placeholder=t("translate_out_ph"))
+    box_links("trout", st.session_state.get("translate_out", ""),
+              on_clear=_clear_out)
 
     tab_signature(t("sig_translate"))
 

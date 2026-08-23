@@ -65,7 +65,7 @@ ck("8 THE MAIN BOX IS NOT DRAWN while a note is open",
    not [a for a in at3.text_area if a.key.startswith("tx_area_")],
    [a.key for a in at3.text_area])
 ck("9 the command row is not drawn either",
-   "tx_grammar" not in keys and "tx_clear" not in keys, keys)
+   "tx_grammar" not in keys and "bl_clear_tx" not in keys, keys)
 ck("10 the note has a close button", "note_close" in keys, keys)
 ck("11 and a delete", "note_del" in keys, keys)
 ck("12 the card list is not drawn under it",

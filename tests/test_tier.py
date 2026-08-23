@@ -29,8 +29,19 @@ ck("1 the free tier renders", not at.exception, at.exception)
 ck("2 FREE HAS NO GRAMMAR", "tx_grammar" not in k, k)
 ck("3 free has no reshape", "tx_reshape" not in k, k)
 ck("4 free has no custom", "tx_custom" not in k, k)
-ck("5 but it still has new and clear",
-   "tx_new" in k and "tx_clear" in k, k)
+# `clear` left the command row in v132 — it is under the box now, with
+# copy, like every other box in the app. What the FREE tier still has in
+# the row is `new`, and what it has under the box is copy and clear.
+ck("5 but it still has new", "tx_new" in k, k)
+# THE LINKS APPEAR ONLY WHEN THERE IS TEXT. An empty box has nothing to
+# copy and nothing to clear, and a dead link is a question with no good
+# answer — so this seeds the box first.
+at1b = app("normal")
+at1b.session_state["_t1_text"] = "nesto"
+at1b.session_state["_t1_text_gen"] = 1
+at1b.run()
+ck("5b and clear appears under the box once there is text",
+   "bl_clear_tx" in keys(at1b), keys(at1b))
 
 at2=app("studio"); at2.run()
 k2=keys(at2)
