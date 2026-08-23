@@ -141,10 +141,23 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
          the tabs — the first thing anybody sees and the least useful.
          Trimmed at the top only; the bottom keeps its room so the last
          control is not against the edge. */
-      padding: 4px 14px 20px !important;
+      /* Baba: "the first row is too far away from the top, put it at
+         the top." Streamlit's own top padding plus this one left an
+         empty band above the tabs — the first thing anybody sees and
+         the least useful. The bottom keeps its room so the last control
+         is not against the edge. */
+      padding: 0 12px 16px !important;
       max-width: 640px;
-      margin-top: 0.2rem;
+      margin-top: 0;
     }}
+
+    /* THE PAGE ABOVE THE PANEL. Streamlit reserves room for a header
+       that this app does not use, which is where most of the band came
+       from — the panel's own padding was only part of it. */
+    [data-testid="stMainBlockContainer"] {{
+      padding-top: 0.4rem !important;
+    }}
+    [data-testid="stHeader"] {{ height: 0 !important; }}
 
     /* ---- PILLS ----------------------------------------------------
        Every choice is a pill: quiet by default, amber-filled when
@@ -613,6 +626,22 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       margin-top: 0 !important;
       margin-bottom: 0 !important;
     }}
+
+    /* A SHADE DARKER INSIDE EACH FRAME. Baba: "fill up the frame with
+       some very dark color, just to have some visual distinction
+       between sections."
+
+       Barely a shade — the frames already divide the sections, and this
+       only stops them reading as one long surface with lines drawn on
+       it. Colour still means STATE in this app; this is depth, not
+       colour, which is why it is a step of the same hue rather than a
+       tint of another one. */
+    [class*="st-key-deckbox"], [class*="st-key-noteopen"] {{
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.45rem !important;
+    }}
     iframe {{ display: block; }}
     [data-testid="stIFrame"] {{ margin-bottom: 0 !important; }}
 
@@ -766,14 +795,50 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        nowrap: there is no text_input in it to demand a minimum width.
        Forcing nowrap with the title in the row ran `close` past the
        panel edge, which is why the title moved to its own line. */
-    /* DELETE AND CLOSE, small, at the top right. Same size as the note's
-       own meta line, so they read as part of the frame rather than as
-       two more things to do. */
+    /* DELETE AND CLOSE ARE LINKS, not pills. Baba: "forget pills, make
+       links, glue it to this outline for that box, tiny."
+
+       A pill says "press me, this is a thing you do". These two are
+       ways OUT of a note — reached rarely, and when they are wanted the
+       eye is already in that corner. As links they sit on the frame
+       instead of on the page. */
     [class*="st-key-note_del"] button,
     [class*="st-key-note_close"] button {{
-      font-size: 0.7rem !important;
+      background: transparent !important;
+      border: 0 !important;
       min-height: 0 !important;
-      padding: 0.3rem 0.4rem !important;
+      padding: 0 0.25rem !important;
+      font-size: 0.68rem !important;
+      color: var(--dim) !important;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }}
+    [class*="st-key-note_del"] button:hover,
+    [class*="st-key-note_close"] button:hover {{
+      color: var(--amber) !important;
+    }}
+    /* Armed delete is the one state that earns colour. */
+    [class*="st-key-note_del2"] button {{
+      color: var(--rec, #d9484b) !important;
+      background: transparent !important;
+      border: 0 !important;
+    }}
+
+    /* The date, thinner and quieter than either. It is a mark on the
+       frame, not a label — the word "made" in front of it was
+       explaining what a date already says. */
+    .notewhen {{
+      color: var(--dim);
+      font-size: 0.62rem;
+      opacity: 0.75;
+      line-height: 1.9;
+      white-space: nowrap;
+    }}
+
+    /* GLUED TO THE BOX. The row sits on the note's top edge rather than
+       floating above it, so the three marks read as part of the frame. */
+    [class*="st-key-noteacts"] {{
+      margin-bottom: -0.55rem !important;
     }}
     [class*="st-key-noteopen"] input {{
       font-size: 0.95rem !important;

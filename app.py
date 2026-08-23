@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v121 (a) (the note records, and its transport is a transport)"
+APP_VERSION = "v122 (a) (the editor is back, and the frame is tighter)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3935,7 +3935,13 @@ def note_open_view():
         # what gets aligned, which is the one approach that worked for
         # the notes link after six that did not.
         with st.container(key="noteacts"):
-            dele, back = st.columns([1, 1])
+            # THE DATE SITS WITH THEM, on the left of the pair. Baba:
+            # "made date could go on the top on the left side of delete
+            # and close... do not make it, it is clear that it is made."
+            # The word "made" was explaining what a date already says.
+            when, dele, back = st.columns([2, 1, 1])
+            when.markdown('<div class="notewhen">%s</div>'
+                          % NOTES.when_of(note), unsafe_allow_html=True)
         # STILL TWO PRESSES. One press on a whole note, in an app with no
         # undo anywhere, is not a risk worth taking — and moving it next
         # to `close` makes a mis-tap MORE likely, not less.
@@ -4011,10 +4017,10 @@ def note_open_view():
         # into a place where the note IS the document. And "new note"
         # only closed this one, so it was `close` wearing a second name.
 
-        st.caption("%s %s   %s" % (
-            t("note_made"), note.get("made", note.get("at", "")),
-            ("·  " + t("note_edited") + " " + note["edited"])
-            if note.get("edited") else ""))
+        # The "made … · edited …" caption lived here and is gone: the
+        # date is up beside delete and close now, and one date is
+        # enough. An edited note shows the time it was last touched,
+        # which is the useful one.
     return True
 
 

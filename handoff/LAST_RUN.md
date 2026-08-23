@@ -1,52 +1,48 @@
-# STEP: the note's red button never worked, and its bar was not a transport
-STATUS: fixed and pushed as v121
+# STEP: the note editor would not load, and the frame got tighter
+STATUS: fixed and pushed as v122
 
-THE ERROR BABA PHOTOGRAPHED
-- `'model' is a required property` — a 400, every key tried, nothing
-  returned. The note's own recorder passed model="" meaning "the
-  engine's default", which ttt/providers/groq.py has always understood
-  (`model or FAST_STT`). app.py's SECOND COPY of that call did not.
-- Same two-implementations fault as v120's language bug, in the same
-  function, one version later. That copy has now cost two bugs; it
-  should be deleted and routed through the provider, and that is a real
-  piece of work rather than a patch.
+THE CRASH, AND IT WAS MINE FROM v121
+- "Your app is having trouble loading the app.ttt_note component."
+- v121 removed the cut and line BUTTONS and left their ids in a
+  forEach. getElementById returned null, addEventListener threw, the
+  script died before ready() was ever sent — so Streamlit waited, gave
+  up, and said only that it could not load. The editor was absent and
+  pressing rec did nothing, because nothing was listening.
+- Two more dead lookups were waiting in the render handler for the day
+  Python sent those labels again. Gone, and setLabel() now skips a
+  missing element rather than throwing.
 
-WHAT CHANGED IN THE NOTE
-- The bar is a TRANSPORT: rec, pause, stop. Cut and line are gone — the
-  arrows above already delete what they select, so those two were a
-  second way to do the same thing sitting where the transport belongs.
-- Pause keeps the clock honest: the paused seconds are added back to the
-  start time, so it counts recorded time rather than elapsed time.
-- "to the box" and "new note" removed. Baba: "I don't know what that
-  means." He was right — "to the box" was the old ARCHIVE's habit
-  surviving into a place where the note IS the document, and "new note"
-  only closed this one, so it was `close` under a second name.
-- delete and close now sit small in the upper right corner.
-- REMOVED MY OWN DEBUG LOGGING from note_frontend — three console.log
-  lines from the v101 investigation had been shipped and left there.
+THE TEST THAT WOULD HAVE CAUGHT IT — AND MY FIRST ONE THAT WOULD NOT
+- I wrote a source-reading test first. Its mutation SURVIVED: it looked
+  for getElementById('bCut'), and the real bug used getElementById(id)
+  with the id coming from an array. Invisible to a regex, fatal at
+  runtime.
+- So tests/gastest/test_components.js EXECUTES every component against a
+  fake DOM that knows only the ids really in its markup. Both bugs that
+  have shipped are now caught: v121's dead ids, and v101's label
+  constant declared in the wrong file.
+- Emulating the browser mattered as much as being strict: a browser
+  exposes every id as a global, and cassette_frontend uses `bFile` bare.
+  Without that the deck failed here while working perfectly for Baba —
+  the wrong kind of red.
+
+THE DESIGN, ALL FOUR THINGS HE ASKED FOR
+- Tabs at the top: Streamlit reserves room for a header this app does
+  not use, which was most of the band. Panel padding trimmed too.
+- Each section a shade darker inside its frame — barely a shade, since
+  the frames already divide them and colour still means STATE here.
+- delete and close are LINKS, not pills, glued to the note's top edge.
+- The date is `7:46/23/08/26` — hour without a leading zero, no century,
+  no word "made" in front of it explaining what a date already says.
+  One date, not two: the later of made and edited.
 
 NUMBERS
-- notes UI 22 · box 16 · notes 39 · language 13 — green
-- measured: actions 15px from the panel's right edge, nothing clipped
+- notes 39 · notes UI 22 · box 16 · login 11 · language 13
+- components 25 (source) · 18 (executed in node)
+- both shipped component bugs mutated and caught
 - pyflakes clean
 
-WHAT BROKE, AND WHAT I UNDID
-- Four attempts at the corner placement. Sharing a row with the title
-  ran `close` past the panel edge (a text_input has a minimum width). An
-  empty spacer column collapsed and left both buttons on the left at
-  x=54. What worked was aligning the ROW — the same approach that
-  finally worked for the notes link, which I had already learned once
-  and did not apply.
-- One check drove "to the box", the button this change removed. Rewritten
-  to test what remains true: opening a note takes the module over, and
-  closing it returns the box untouched.
-
-STILL UNSURE
-- The note's recorder has still never been seen to SUCCEED. The model
-  fix is right and the error it threw is gone, but only Baba pressing it
-  proves the whole path.
-
 FOR BABA
-- Open a note, press its red rec, speak, press stop. The words should
-  appear in the note.
+- Open a note and press its red rec. The editor is back, so this is the
+  first time that button has had a chance to work.
 - If it fails, the error is on screen — send me that text.

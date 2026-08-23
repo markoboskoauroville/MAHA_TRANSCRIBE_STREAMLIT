@@ -37,7 +37,21 @@ TITLE_WORDS = 5      # words taken for an untitled note's heading
 
 
 def _stamp():
-    return time.strftime("%Y-%m-%d %H:%M")
+    """Baba's format: 7:36/23/08/26.
+
+    Hour without a leading zero, then day, month, and the year in two
+    digits — no century, because nobody needs telling which one it is.
+    Kept short because it sits in a corner as a mark on the frame, not
+    as a sentence: "made 2026-08-23 07:36" was nineteen characters
+    saying what nine can.
+
+    %-H is not portable (it fails on Windows), so the hour is trimmed by
+    hand.
+    """
+    t = time.localtime()
+    return "%d:%02d/%02d/%02d/%s" % (
+        t.tm_hour, t.tm_min, t.tm_mday, t.tm_mon,
+        time.strftime("%y", t))
 
 
 def _short():
@@ -201,6 +215,17 @@ def clear(state):
 
 def count(state):
     return len(_all(state))
+
+
+def when_of(note):
+    """The one date worth showing: when it was last touched.
+
+    A note carries both `made` and `edited`, and showing both was two
+    timestamps a centimetre apart differing by minutes. The later one
+    answers the only question anybody asks of a note in a list.
+    """
+    return (note.get("edited") or note.get("made")
+            or note.get("at") or "")
 
 
 def heading(note):

@@ -296,6 +296,16 @@ function cutLine() {
 
 /* ------------------------------------------------------------------ */
 
+function setLabel(id, text) {
+  /* A LABEL THAT IS NOT THERE IS NOT AN ERROR. Two lookups for cut and
+     line survived the buttons being removed and sat inside the render
+     handler, waiting for the day Python sent those labels again. This
+     frame has now been killed twice by a null element; it will not be a
+     third time. */
+  var el = document.getElementById(id);
+  if (el && text) el.textContent = text;
+}
+
 function say(text, bad) {
   var el = document.getElementById('msg');
   el.textContent = text || '';
@@ -325,16 +335,23 @@ function changed() {
   setValue({ at: Date.now(), text: ta.value });
 }
 
-['bWL','bWR','bLU','bLD','bAll','bCut','bLine'].forEach(function (id) {
-  document.getElementById(id).addEventListener('click', function (e) {
+/* THE LIST AND THE MARKUP MUST NOT DRIFT APART.
+   v121 removed the cut and line BUTTONS and left them in this list, so
+   getElementById returned null, addEventListener threw, the whole script
+   died before ready() was ever sent — and Streamlit showed "trouble
+   loading the app.ttt_note component". The editor simply was not there,
+   and pressing rec did nothing because nothing was listening.
+   A missing element is skipped now instead of killing the frame. */
+['bWL','bWR','bLU','bLD','bAll'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', function (e) {
     e.preventDefault();
     if (id === 'bWL')  extendWord(-1);
     if (id === 'bWR')  extendWord(1);
     if (id === 'bLU')  extendLine(-1);
     if (id === 'bLD')  extendLine(1);
     if (id === 'bAll') { ta.select(); ta.focus(); report(); }
-    if (id === 'bCut')  cutSelection();
-    if (id === 'bLine') cutLine();
   });
 });
 
@@ -580,12 +597,9 @@ window.addEventListener('message', function (ev) {
   }
   if (a.labels) {
     if (a.labels.rec)  { L_REC = a.labels.rec;
-                         if (!RECORDING)
-                           document.getElementById('lRec').textContent = L_REC; }
+                         if (!RECORDING) setLabel('lRec', L_REC); }
     if (a.labels.stop)  L_STOP = a.labels.stop;
     if (a.labels.pause) { L_PAUSE = a.labels.pause; transportState(); }
-    if (a.labels.cut)  document.getElementById('lCut').textContent = a.labels.cut;
-    if (a.labels.line) document.getElementById('lLine').textContent = a.labels.line;
   }
   /* RECORDING IS OWNED HERE NOW, not by Python. A render arriving
      mid-take must not switch the key back to "rec" while the microphone
