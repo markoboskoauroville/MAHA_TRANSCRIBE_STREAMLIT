@@ -1,36 +1,36 @@
-# STEP: notes fold away too
-STATUS: done, pushed as v160. No deploy needed.
+# STEP: play means play
+STATUS: done, pushed as v161. No deploy needed.
 
 WHAT HAPPENED
-- Baba: "make notes collapsible, same as recordings."
-- Five notes filled his whole screen and the recordings below them were
-  off the bottom edge. Folded, the whole of T fits on a phone again:
-  deck, pills, box, links, `your notes · N`, `your recordings · N`.
-- The count is on the fold's own line, so closed it still answers "how
-  many" — the same shape the recordings and the People list already use.
-  One thing to learn rather than three.
+- Baba: "when I select file and press play, very nice player appears
+  below that. That works, but user needs to press play. Please make it
+  autoplay."
+- He is right and it is worth naming why: he had already ticked the file
+  and pressed a link called `play`. Being asked to press play again is
+  one press too many, and it makes the FIRST press feel as though it did
+  not work.
 
-THE ONE REAL COST, NAMED
-- THE SEARCH FIELD MOVED INSIDE the fold, so you have to open the list
-  to search it. That is the right trade: a search box for a list you
-  cannot see is furniture, and somebody who wants to search is already
-  opening the list.
+WHAT IT TOOK
+- `autoplay` is st.audio's own argument. Nothing to invent and nothing
+  to wrap — the reader has been using it since v88 and the archive
+  player simply never did.
 
-WHAT WOULD HAVE BROKEN QUIETLY
-- Every note card's styling hung off `st-key-notesbox` — the container
-  the notes used to sit in. The expander replaced it, so the gold
-  border, the 12px radius, the left alignment and the gold first line
-  would all have vanished, and nothing would have failed: the cards
-  would just have turned into ordinary grey buttons.
-- Retargeted at `st-key-note_`, which is the card itself. STYLING THAT
-  HANGS OFF A CONTAINER IS STYLING THAT DISAPPEARS THE DAY THE
-  CONTAINER DOES — worth remembering, because it fails silently and
-  looks like a design change nobody made.
-- Same for the search field, now keyed to itself.
+ONLY THE FIRST PIECE
+- A long take is stored as ten-minute pieces. Three players all starting
+  at once would be three voices over each other, which is the opposite
+  of what he asked for. Piece one starts; the rest wait to be pressed.
+- Verified in a browser with a two-part recording: first player
+  autoplay=True, second False.
+
+WHAT MIGHT STILL ASK FOR A PRESS, AND WHY IT IS NOT A BUG TO CHASE
+- Browsers block autoplay with sound until somebody has interacted with
+  the page. By the time this renders, Baba has ticked a checkbox and
+  pressed a link, so the gesture is there. Where a browser refuses
+  anyway, the player is sitting in front of him with its own button —
+  the honest fallback, rather than a fight with a policy that exists for
+  good reasons.
 
 NUMBERS
-- notes UI 27 · notes 53 · box 16 · tier 15 — green
-- browser-checked on a 390px phone: folded, the card is in the DOM and
-  NOT visible; opened, it still has border rgb(245,158,11), radius
-  12px, left-aligned, and the search field is inside
+- box 16 · notes UI 27 — green
+- browser-verified: [autoplay True, autoplay False]
 - pyflakes clean

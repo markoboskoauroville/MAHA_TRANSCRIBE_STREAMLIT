@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v160 (a) (notes fold away too)"
+APP_VERSION = "v161 (a) (play means play)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4728,7 +4728,23 @@ def _rec_play_here(row):
         # new failure mode for no gain.
         if len(blobs) > 1:
             st.caption("%d / %d" % (i + 1, len(blobs)))
-        st.audio(blob, format="audio/flac")
+        # AUTOPLAY, AND ONLY THE FIRST PIECE.
+        #
+        # Baba: "user needs to press play — please make it autoplay."
+        # He is right: he picked the file and pressed play, and being
+        # asked to press play again is one press too many.
+        #
+        # `autoplay` is st.audio's own argument, so there is nothing to
+        # invent here. Only piece ONE starts by itself: three players
+        # all starting at once would be three voices over each other,
+        # which is the opposite of what he asked for.
+        #
+        # A BROWSER MAY REFUSE, and that is not a bug to chase. Autoplay
+        # with sound is blocked until somebody has interacted with the
+        # page — and by the time this renders, Baba has ticked a box and
+        # pressed a link, so the gesture is there. Where a browser still
+        # says no, the player is sitting right there with its own button.
+        st.audio(blob, format="audio/flac", autoplay=(i == 0))
 
     st.button(t("rec_close_play"), key="rec_stop_%s" % rid,
               on_click=lambda: st.session_state.update({"_rec_playing": None}))
