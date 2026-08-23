@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v135 (a) (settings that read as groups)"
+APP_VERSION = "v136 (a) (a recommendation, not a wall)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -609,6 +609,12 @@ STRINGS = {
     "adm_copy":           {"en": "one tap on the corner copies it",
                            "hr": "jedan dodir na kut kopira poruku"},
     # The forced change. A FAMILY screen, so these are full sentences.
+    "must_hint":          {"en": "You are using a password somebody else "
+                                 "chose. Worth changing.",
+                           "hr": "Koristiš lozinku koju je odabrao netko "
+                                 "drugi. Vrijedi je promijeniti."},
+    "must_go":            {"en": "change it",         "hr": "promijeni"},
+    "must_later":         {"en": "later",             "hr": "kasnije"},
     "must_title":         {"en": "Choose your own password",
                            "hr": "Odaberi svoju lozinku"},
     "must_why":           {"en": "This password was made for you. Now "
@@ -1488,7 +1494,7 @@ def log_out():
     st.session_state["_logged_out"] = True
 
 
-def must_change_gate():
+def must_change_notice():
     """A password somebody else chose is a temporary password.
 
     The account was made with one that was typed into a panel, read
@@ -1510,44 +1516,53 @@ def must_change_gate():
     that does not know about the flag simply never sets it, which is why
     a missing field is read as false in ttt/accounts.py.
     """
+    # A RECOMMENDATION, NOT A GATE.
+    #
+    # Baba: "just recommend to change the password, but it should work
+    # immediately without stopping user from using the app... we are not
+    # torturing the user or forcing it to do anything."
+    #
+    # This used to st.stop() the whole app until the password was
+    # changed. For a family that is the wrong trade: the first thing his
+    # mother would meet is a screen she did not ask for, standing
+    # between her and the one thing she opened the app to do.
+    #
+    # WHAT IT COSTS, said plainly: the password Baba handed them stays
+    # valid until they choose to change it. He said it aloud, sent it in
+    # a message, and it is in his own screenshot — so it is a password
+    # several places know. The flag stays set until the change actually
+    # happens, so the reminder returns next session; it is a nudge that
+    # does not give up, rather than a wall.
     if not st.session_state.get("_must_change"):
         return
     if st.session_state.get("_must_done"):
         return
+    if st.session_state.get("_must_later"):
+        return
 
-    st.header(t("must_title"))
-    st.write(t("must_why"))
-
-    old_pw = st.text_input(t("must_old"), type="password", key="_must_old")
-    new_pw = st.text_input(t("must_new"), type="password", key="_must_new")
-    again = st.text_input(t("must_again"), type="password", key="_must_again")
-
-    if st.button(t("must_save"), key="_must_save", type="primary",
-                 use_container_width=True):
-        if new_pw != again:
-            st.error(t("must_nomatch"))
-        else:
-            ok, err = ACCOUNTS.change_password(
-                auth_url(), auth_token(), USER, old_pw, new_pw)
-            if ok:
-                # Cleared in the sheet by the same call. Kept here too so
-                # this screen cannot come back inside one session.
-                st.session_state["_must_done"] = True
-                st.session_state.pop("_must_change", None)
-                for k in ("_must_old", "_must_new", "_must_again"):
-                    st.session_state.pop(k, None)
-                st.success(t("must_done"))
-                st.rerun()
-            else:
-                st.error(err or t("pw_wrong"))
-
-    # A WAY OUT THAT IS NOT THE FRONT DOOR. If they cannot do this now —
-    # wrong password, not their phone — they must still be able to leave.
-    st.button(t("log_out"), key="_must_logout", on_click=log_out)
-    st.stop()
+    with st.container(key="mustnotice"):
+        # THE WORDS ON THEIR OWN LINE, the two actions under them.
+        # Measured at 420px: forced onto one row the sentence was cut at
+        # the panel edge and both buttons were squeezed out of existence
+        # — §27 forbids the first and the second is worse. A sentence
+        # needs a line; two short buttons do not need much of one.
+        st.markdown('<div class="mustsay">%s</div>' % html.escape(
+            t("must_hint")), unsafe_allow_html=True)
+        c2, c3, _msp = st.columns([1.2, 1, 2.2])
+        # STRAIGHT TO THE PLACE IT IS DONE. "Offer the link directly to
+        # that" — the change-password fields live in the grey gear, and
+        # telling somebody to go and find them is most of the friction.
+        c2.button(t("must_go"), key="_must_go", type="primary",
+                  use_container_width=True,
+                  on_click=lambda: st.session_state.update(
+                      {"active_tab": "looks"}))
+        c3.button(t("must_later"), key="_must_later_btn",
+                  use_container_width=True,
+                  on_click=lambda: st.session_state.update(
+                      {"_must_later": True}))
 
 
-must_change_gate()
+must_change_notice()
 
 # Usage logging to the Google Sheet. Created once per session so the
 # session timer is meaningful, and inert unless both secrets are present —
@@ -3455,6 +3470,13 @@ def change_own_password():
         else:
             queue_ls(removes=[AUTH_LS_KEY])
         st.session_state["_pw_msg"] = ("good", t("pw_changed"))
+        # AND THE NUDGE IS SETTLED. Somebody who arrived on a password
+        # Baba chose has done the thing the notice was asking for, and
+        # it must not greet them again on the next login. The script
+        # clears the flag in the sheet on this same call; these two keys
+        # are the session's copy of that.
+        st.session_state["_must_done"] = True
+        st.session_state.pop("_must_change", None)
     elif err == "unreachable":
         st.session_state["_pw_msg"] = ("bad", t("pw_unreachable"))
     elif err.startswith("too short"):

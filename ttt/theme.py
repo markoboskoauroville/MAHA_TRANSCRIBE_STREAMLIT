@@ -740,6 +740,39 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* THE PASSWORD NUDGE. Quiet, one line, with a way past it. It used
+       to be a full screen that stopped the app — Baba: "we are not
+       torturing the user." It is not red and it is not gold: it is not
+       an error and it is not the owner's. */
+    [class*="st-key-mustnotice"] {{
+      background: var(--surface-2);
+      border-radius: 8px;
+      padding: 0.35rem 0.5rem !important;
+      margin-bottom: 0.3rem !important;
+    }}
+    [class*="st-key-mustnotice"] div[data-testid="stHorizontalBlock"] {{
+      align-items: center !important;
+      gap: 0.3rem !important;
+    }}
+    [class*="st-key-mustnotice"] div[data-testid="stColumn"] {{
+      min-width: 0 !important;
+    }}
+    [class*="st-key-mustnotice"] .stButton button {{
+      min-height: 0 !important;
+      padding: 0.2rem 0.4rem !important;
+      font-size: 0.7rem !important;
+    }}
+    .mustsay {{
+      color: var(--dim);
+      font-size: 0.72rem;
+      line-height: 1.35;
+      /* It WRAPS. Held on one line it was cut at the panel edge, which
+         §27 forbids outright — and a sentence is the one thing on a
+         screen that may take two lines without apology. */
+      white-space: normal;
+      margin-bottom: 0.25rem;
+    }}
+
     /* EACH SETTING IN ITS OWN FRAME. Baba: "visually group different
        settings so we know they belong to different groups — put the
        frame, the visual language from the rest of the interface."
