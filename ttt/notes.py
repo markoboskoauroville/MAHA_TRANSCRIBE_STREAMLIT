@@ -205,16 +205,37 @@ def append(state, note_id, text, at=None):
     old = (note.get("text") or "")
 
     if at is None or not old.strip():
+        # APPENDING IS A NEW PASS, so it gets a blank line. A take from
+        # the deck has no cursor and lands at the end, and each burst of
+        # dictation is its own paragraph — that is how somebody talks
+        # into a note, in sittings.
         note["text"] = (old.rstrip() + "\n\n" + more) if old.strip() else more
     else:
+        # INSERTING IS THE MIDDLE OF A SENTENCE, so it gets NOTHING.
+        #
+        # Baba: "it presses Enter or New Line after. I do not want that.
+        # Just insert that sentence, no New Line, no Enter."
+        #
+        # This wrapped every insert in blank lines, which is right for a
+        # new pass and wrong for the thing he is actually doing: putting
+        # the cursor inside a line and speaking a clause into it. The
+        # words arrived and the sentence they belonged to was broken in
+        # three.
+        #
+        # ONE SPACE WHERE ONE IS NEEDED, and none where it is not. A
+        # caret sitting straight after a word needs a space or the two
+        # run together; a caret already after a space or a newline needs
+        # nothing, and adding one would leave a double space that has to
+        # be hunted down later.
+        #
         # CLAMPED, because a caret from a previous render can be past the
         # end of text that has since been shortened — and slicing beyond
         # the end silently drops the tail.
         i = max(0, min(int(at), len(old)))
         before, after = old[:i], old[i:]
-        note["text"] = (before.rstrip() + ("\n\n" if before.strip() else "")
-                        + more
-                        + (("\n\n" + after.lstrip()) if after.strip() else ""))
+        lead = "" if (not before or before[-1].isspace()) else " "
+        tail = "" if (not after or after[0].isspace()) else " "
+        note["text"] = before + lead + more + tail + after
     note.pop(_HAY, None)             # what it says changed; re-fold later
     note["edited"] = _stamp()
     return True

@@ -123,17 +123,35 @@ check("15 appending to a note that is gone is refused, not a crash",
 # a note a log rather than a document: you could add to the bottom and
 # nowhere else.
 s_cur = {}
-c = N.add(s_cur, "prvi red\n\ntreci red")
-N.append(s_cur, c, "drugi red", at=8)          # just after "prvi red"
+c = N.add(s_cur, "Ovo je proba.")
+N.append(s_cur, c, "kratka", at=7)             # inside the sentence
 check("15a A TAKE LANDS WHERE THE CURSOR WAS, not at the end",
-      N.get(s_cur, c)["text"] == "prvi red\n\ndrugi red\n\ntreci red",
+      N.get(s_cur, c)["text"] == "Ovo je kratka proba.",
       repr(N.get(s_cur, c)["text"]))
+check("15a2 AND ADDS NO LINE BREAK. Baba: 'it presses Enter or New Line "
+      "after — I do not want that, just insert that sentence.' The "
+      "words go into the sentence he is in the middle of, and wrapping "
+      "them in blank lines broke that sentence in three",
+      "\n" not in N.get(s_cur, c)["text"], repr(N.get(s_cur, c)["text"]))
+
+# ONE SPACE WHERE ONE IS NEEDED, NONE WHERE IT IS NOT. A caret straight
+# after a word needs a space or the two run together; a caret already
+# after a space needs nothing, or a double space is left to hunt down.
+s_sp = {}
+sp = N.add(s_sp, "Ovo je proba.")
+N.append(s_sp, sp, "kratka", at=6)             # right after "je", no space
+check("15a3 a caret against a word gets one space, not none",
+      N.get(s_sp, sp)["text"] == "Ovo je kratka proba.",
+      repr(N.get(s_sp, sp)["text"]))
+check("15a4 and never two", "  " not in N.get(s_sp, sp)["text"],
+      repr(N.get(s_sp, sp)["text"]))
 
 s_end = {}
 e = N.add(s_end, "sam")
 N.append(s_end, e, "poslije")                  # no caret at all
-check("15b NO CURSOR MEANS THE END — which is what a take from the deck "
-      "gets, since the deck has no cursor to report",
+check("15b NO CURSOR MEANS THE END, with a blank line — that is a new "
+      "PASS, not an insert, and each burst of dictation is its own "
+      "paragraph",
       N.get(s_end, e)["text"] == "sam\n\nposlije",
       repr(N.get(s_end, e)["text"]))
 
@@ -142,7 +160,7 @@ f = N.add(s_far, "kratko")
 N.append(s_far, f, "iza", at=9999)
 check("15c A CARET PAST THE END IS CLAMPED, not sliced past — a stale "
       "caret from a previous render must not drop the tail",
-      N.get(s_far, f)["text"] == "kratko\n\niza",
+      N.get(s_far, f)["text"] == "kratko iza",
       repr(N.get(s_far, f)["text"]))
 
 s_top = {}
