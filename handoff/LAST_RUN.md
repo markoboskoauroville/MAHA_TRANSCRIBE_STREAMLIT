@@ -1,46 +1,35 @@
-# STEP: the reading tab, corrected
-STATUS: done, pushed as v125
+# STEP: white is yours, gold is mine
+STATUS: done, pushed as v126
 
 WHAT HAPPENED
-- The voices are grouped by language again: HR · Gabi · Srećko · ENG ·
-  Sonia · Ryan, all on one row. A REVERSAL, and a deliberate one — the
-  headings were removed once on Baba's own reasoning ("we know Gabrijela
-  and Srećko are Croats"). Both readings are right about different
-  people: he knows which voice speaks what, somebody meeting the app
-  does not. So the tags return as TAGS — dim, small, in the row — not as
-  headings on lines of their own. The row still costs one line, which is
-  what the removal was protecting.
-- "Gabby" is "Gabi". An English shortening of a Croatian name, sitting
-  next to Srećko who kept his diacritic.
-- The tags say HR and ENG, the same words as the pills in T.
-  lang.upper() gave "EN", which is correct and is not what the rest of
-  the app says — two names for one language on two screens is how
-  somebody starts wondering whether they mean the same thing.
-- The voices moved ABOVE the player. Choosing who reads comes before
-  pressing play, so the screen reads in that order.
-- "New text" is gone. The box is always there and typing in it is how a
-  new text begins; the button was a second way to say "finished with
-  this one", which the next press of play says by itself.
-- A grey line under the box: "press play to read". The read button was
-  removed on purpose in §64 and nothing on the screen said where play
-  had gone.
+- THE TAB BAR NOW READS WITHOUT READING. Baba's rule: "everything that
+  is gold belongs to the admin, and it will be grouped to the right
+  side, so I can see what users see and what I see."
+  Now: T · R · TR · ⚙ · H  |  ⚙ · log — user tabs plain, the owner's
+  two in gold at the end. Everything before the first gold tab is what
+  a family member has; for them the gold group is simply absent, so
+  their row ends at help, which is where help was always meant to be.
+- The log tab says `log`, not `L`, and is gold. A single letter needs
+  learning; the word does not, and the colour already says whose it is.
+- H is plain. It belongs to whoever is using the app.
+- Interface language is a thin dim label like TXT, TY and C above it.
+  st.caption is heavier and carries margins, and under this screen's
+  spacing it printed THROUGH the buttons beneath it — the same
+  collision as the engine test result one screen over.
+
+A REVERSAL, NAMED AS ONE
+- v110 put the owner's gear FIRST, on Baba's instruction. This puts it
+  last, on Baba's instruction. The grouping serves the same wish better:
+  he wanted his own things distinguishable, and a group says that more
+  clearly than a position does.
 
 NUMBERS
-- tier 12 — green; R renders with no exception
+- tier 12 · owner edge 5 — green
+- order and colours read in a browser: five plain, two gold
 - pyflakes clean
 
-STILL RED, AND NOT FROM TODAY
-- test_reader check 8, "changing voice DROPS the cache". It fails on
-  v101 as pushed, so it is mine but older than this round. The detail
-  says synth_rebuilt: True and cache_keys: [] — the closure IS rebuilt
-  and the cache is never refilled, which is either a real gap in the
-  rebuild path or a check that cannot be reached from AppTest at all.
-  I did not chase it here rather than half-chase it; it deserves its
-  own pass.
-
-FOR BABA
-- The note's red rec has still never been seen to work. Oldest open
-  thing in the app.
-- And the four items from v124's list are still waiting, one of them on
-  a question: usage as totals only, or totals plus one shared events
-  tab keeping the detail.
+STILL OPEN, unchanged
+- The note's red rec has never been seen to work.
+- test_reader 8, red since v101.
+- The four items from v124, one waiting on his answer: usage as totals
+  only, or totals plus a shared events tab keeping the detail.

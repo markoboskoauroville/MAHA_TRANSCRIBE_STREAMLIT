@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v125 (a) (the reading tab, corrected)"
+APP_VERSION = "v126 (a) (white is yours, gold is mine)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -371,7 +371,11 @@ STRINGS = {
     "tab_looks":          {"en": "\u2699\u200b",      "hr": "\u2699\u200b"},
     "tab_help":           {"en": "H",                "hr": "H"},
 
-    "tab_log":            {"en": "L",                "hr": "L"},
+    # GOLD, AND THE WORD. Baba's rule for the whole bar: "everything
+    # that is gold belongs to the admin... my log should be gold, and
+    # write log there, not only L." A single letter needs learning; the
+    # word does not, and the colour already says whose it is.
+    "tab_log":            {"en": ":orange[log]",     "hr": ":orange[log]"},
     "log_title":          {"en": "Error log",        "hr": "Zapis grešaka"},
     "log_empty":          {"en": "Nothing has gone wrong yet.",
                            "hr": "Zasad nije bilo grešaka."},
@@ -2669,20 +2673,24 @@ def nav_tabs():
     # T and there will be dropdown for the source." Everything after
     # capture was already identical, so a second tab was a second place
     # to keep the same screen in step.
-    tabs = ["transcribe", "talk", "translate"]
+    # WHITE IS YOURS, GOLD IS HIS — and the gold ones are grouped at
+    # the END. Baba: "everything that is gold belongs to the admin, and
+    # it will be grouped to the right side, so I can see what users see
+    # and what I see."
+    #
+    # The whole bar becomes readable without reading: everything up to
+    # the first gold tab is what a family member has, and everything
+    # after it is the owner's. For a family member the gold group is
+    # simply absent, so their row ends at help — which is where help was
+    # always meant to be, at the end of what they have.
+    #
+    # This reverses v110, where the owner's gear was put FIRST on his
+    # own instruction. The grouping serves the same wish better: he
+    # wanted his own things distinguishable, and a group says that more
+    # clearly than a position does.
+    tabs = ["transcribe", "talk", "translate", "looks", "help"]
     if is_admin():
-        # THE OWNER'S GEAR COMES FIRST, before the one everybody has.
-        # Baba: "gear icon should be first — first is orange icon, then
-        # is normal icon." For a family member nothing moves: they never
-        # see the amber one, so their row is unchanged.
-        tabs.append("settings")
-    tabs.append("looks")
-    if is_admin():
-        tabs.append("log")
-    # HELP IS ALWAYS LAST. It is the one tab whose position should never
-    # move as other modules come and go — somebody looking for help looks
-    # at the end of the row.
-    tabs.append("help")
+        tabs += ["settings", "log"]
     return tabs
 
 
@@ -5485,7 +5493,16 @@ elif active == "looks":
     # It is a personal setting, like text size, so it sits in the grey
     # gear where a person can reach their own things. The owner's panel
     # keeps engines and keys.
-    st.caption(t("settings_lang"))
+    # A LABEL LIKE THE OTHERS ON THIS SCREEN. Baba: "interface language
+    # is behind the buttons and it is not reading nicely — should not be
+    # bold, thin letters, save the space."
+    #
+    # st.caption is bold-ish and carries its own margins, and under the
+    # tight spacing here it printed THROUGH the buttons under it — the
+    # same collision as the engine test result, one screen over. TXT, TY
+    # and C above it are already thin dim marks; this is now one of them.
+    st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        t("settings_lang")), unsafe_allow_html=True)
     _lc1, _lc2, _ = st.columns([1, 1, 3])
     _lang_now = st.session_state.get("ui_lang", "en")
     _lc1.button("HR", key="ui_hr",

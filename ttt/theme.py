@@ -740,6 +740,18 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* The label above the interface-language pills. The same thin dim
+       mark as TXT, TY and C further up the same screen — st.caption was
+       heavier and carried margins that printed it through the buttons
+       beneath it. */
+    .setlabel {{
+      color: var(--dim);
+      font-size: 0.62rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 0.4rem 0 0.15rem 0.1rem;
+    }}
+
     /* THE LANGUAGE TAG beside its voices. Dim and small, so the row
        still costs one line — which is what removing the headings was
        protecting in the first place. */
