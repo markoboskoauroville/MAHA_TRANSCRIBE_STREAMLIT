@@ -740,6 +740,25 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* FIVE PILLS, ONE LINE. nowrap holds the row together and the type
+       shrinks to fit — §27's trade, which lets a cell get smaller but
+       never lets a word be cut. Measured at 320 and 360px. */
+    [class*="st-key-langrow"] div[data-testid="stHorizontalBlock"] {{
+      flex-wrap: nowrap !important;
+      gap: 0.25rem !important;
+    }}
+    [class*="st-key-langrow"] div[data-testid="stColumn"] {{
+      min-width: 0 !important;
+    }}
+    [class*="st-key-langrow"] .stButton button {{
+      padding-left: 0.35rem !important;
+      padding-right: 0.35rem !important;
+    }}
+    [class*="st-key-langrow"] .stButton button p {{
+      font-size: 0.72rem !important;
+      white-space: nowrap !important;
+    }}
+
     /* THE COPY BUTTON IS ALWAYS THERE. Baba: "there should be on the
        screen this copy button all the time, not when I am just hovering
        over — if it is hidden, I do not see."

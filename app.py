@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v129 (a) (you choose the password, and copy is visible)"
+APP_VERSION = "v130 (a) (five pills, one line)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4198,7 +4198,19 @@ def _lang_mode_row():
         # `multi` alone underneath, looking orphaned rather than paired
         # with `single`. Splitting them deliberately keeps each pair
         # together: the language on one line, the mode on the next.
-        lcol1, lcol2, lcol3 = st.columns([1.3, 1, 1.1])
+        # ALL FIVE ON ONE LINE. Baba: "auto HR ENG single multi,
+        # everything in one line, not two."
+        #
+        # This reverses v118, which split them precisely because five
+        # pills clipped below 412px. §27 is the rule that decides it and
+        # it allows this: the CELLS may shrink and the TYPE may shrink;
+        # what may never happen is a word being cut. So the type comes
+        # down and the row holds, verified at 320 and 360px.
+        #
+        # The shares follow the word lengths — AUTO and single are the
+        # long ones.
+        lcol1, lcol2, lcol3, mcol1, mcol2 = st.columns(
+            [1.15, 0.8, 0.9, 1.25, 1.05])
         speech_now = st.session_state.get("speech_lang", "hr")
         # AUTO FIRST. Baba's order, and it reads right: the two named
         # languages sit together as a pair, with the "work it out"
@@ -4215,7 +4227,6 @@ def _lang_mode_row():
         # Single or multi, in the same row as the language, because both
         # answer "what happens when I press stop".
         appending = bool(st.session_state.get("append_mode"))
-        mcol1, mcol2, _mspare = st.columns([1.3, 1.2, 0.7])
         mcol1.button(t("mode_single"), key="tr_single",
                      type="secondary" if appending else "primary",
                      on_click=set_append_mode, args=(False,))
