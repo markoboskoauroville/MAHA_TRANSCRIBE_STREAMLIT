@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v156 (a) (your recordings, and what happens to them)"
+APP_VERSION = "v157 (a) (recordings in T, and a delete that narrates)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -521,9 +521,14 @@ STRINGS = {
     "rec_again":          {"en": "transcribe again",  "hr": "prepiši ponovno"},
     "rec_del":            {"en": "delete",            "hr": "obriši"},
     "rec_del_sure":       {"en": "delete %d?",        "hr": "obrisati %d?"},
-    "rec_del_done":       {"en": "%d deleted",        "hr": "obrisano: %d"},
-    "rec_del_part":       {"en": "%d deleted, %d could not be",
-                           "hr": "obrisano %d, nije %d"},
+    "rec_del_done":       {"en": "%d deleted in %.1fs",
+                           "hr": "obrisano %d u %.1fs"},
+    "rec_del_part":       {"en": "%d deleted, %d could not be — %.1fs",
+                           "hr": "obrisano %d, nije %d — %.1fs"},
+    "rec_del_working":    {"en": "deleting %d of %d",
+                           "hr": "brišem %d od %d"},
+    "rec_del_now":        {"en": "%d of %d  ·  %s  ·  %.1fs",
+                           "hr": "%d od %d  ·  %s  ·  %.1fs"},
     "rec_getting":        {"en": "fetching the audio…",
                            "hr": "dohvaćam zvuk…"},
     "rec_gone":           {"en": "That audio could not be fetched whole.",
@@ -4398,33 +4403,6 @@ def keep_as_note():
         open_note(nid)
 
 
-def _rec_delete(rec_ids):
-    """Delete the ticked recordings from Drive. Says what happened.
-
-    ONE AT A TIME, and the count of each outcome, because a batch that
-    half-worked is the case somebody needs told about. A single "done"
-    over three deletions where one failed is a lie by omission.
-    """
-    store = drive_store()
-    gone, failed = 0, []
-    for rid in rec_ids:
-        if store.delete(rid):
-            gone += 1
-        else:
-            failed.append(rid)
-            errlog.add(st.session_state, "drive", "could not delete a recording",
-                       "%s: %s" % (rid, store.last_error or "no reason given"))
-    # THE LIST IS STALE NOW. Dropping it makes the next render fetch a
-    # fresh one, rather than showing rows for files that are gone.
-    st.session_state.pop("_recs", None)
-    st.session_state.pop("_rec_del_armed", None)
-    for rid in rec_ids:
-        st.session_state.pop("_rp_%s" % rid, None)
-    st.session_state["_rec_msg"] = (
-        ("bad", t("rec_del_part") % (gone, len(failed))) if failed
-        else ("good", t("rec_del_done") % gone))
-
-
 def _rec_after_actions(recs):
     """Play or re-transcribe, after the panel has drawn.
 
@@ -4518,6 +4496,167 @@ def note_number(i):
     the note was called when it was made.
     """
     return "%d." % (i + 1)
+
+
+def recordings_panel():
+    """The recordings in Drive: list, play, transcribe again, delete.
+
+    IT LIVES IN T NOW. Baba: "move recording tab from settings screen to
+    transcription screen." He is right — a recording is made here and
+    belongs here. Settings is where you change how the app behaves, not
+    where you go through what you said.
+    """
+    store = drive_store()
+    if not store.enabled:
+        return
+
+    # THE LIST IS FETCHED ONCE PER SESSION, not per render. It is a
+    # network round trip and this panel redraws on every tick of a
+    # checkbox.
+    if "_recs" not in st.session_state:
+        st.session_state["_recs"] = store.list()
+    recs = st.session_state["_recs"] or []
+
+    # A DELETION IN PROGRESS TAKES THE PANEL OVER. It has to run HERE, in
+    # the render body — a callback cannot draw, so a delete started from
+    # on_click could not show a bar, a name or a clock. The press only
+    # records what was asked; this does it and narrates it.
+    if st.session_state.get("_rec_doing"):
+        _run_deletion()
+        return
+
+    with st.expander("%s · %d" % (t("rec_title"), len(recs))):
+        if not recs:
+            st.caption(t("rec_none"))
+            return
+
+        picked = [str(r.get("rec_id")) for r in recs
+                  if st.session_state.get("_rp_%s" % r.get("rec_id"))]
+
+        # THE ACTIONS APPEAR TWICE, top and bottom. Baba asked for it and
+        # the reason shows itself the moment there are twenty rows: a
+        # person who ticks something at the bottom should not have to
+        # scroll back up to act on it, and one who ticks at the top
+        # should not have to scroll down.
+        _rec_actions(picked, "top")
+
+        for r in recs:
+            rid = str(r.get("rec_id") or "")
+            mins = float(r.get("seconds") or 0) / 60.0
+            st.checkbox(
+                "%s · %.1f min%s" % (
+                    str(r.get("created") or "")[:16], mins,
+                    "  ·  " + t("rec_has_text") if r.get("has_text") else ""),
+                key="_rp_%s" % rid)
+
+        _rec_actions(picked, "bottom")
+
+    _rec_after_actions(recs)
+
+
+def _rec_actions(picked, where):
+    """play · transcribe again · delete, for what is ticked.
+
+    Drawn twice per panel, so the keys carry `where` — two Streamlit
+    widgets cannot share a key, and the top and bottom rows are two
+    widgets even though they are one idea.
+    """
+    if not picked:
+        # A delete link with nothing selected is a question with no
+        # answer. The same rule as every other row of links in this app.
+        return
+
+    with st.container(key="recacts_%s" % where):
+        c1, c2, c3 = st.columns([1, 1.4, 1.1])
+        c1.button(t("rec_play"), key="rec_play_%s" % where,
+                  on_click=lambda: st.session_state.update(
+                      {"_rec_play": picked[0]}),
+                  use_container_width=True)
+        c2.button(t("rec_again"), key="rec_again_%s" % where,
+                  on_click=lambda: st.session_state.update(
+                      {"_rec_again": picked[0]}),
+                  use_container_width=True)
+
+        # TWO PRESSES, AND THE SECOND SAYS HOW MANY. "delete 3?" is a
+        # number somebody can check against what they ticked; "are you
+        # sure?" is not.
+        if st.session_state.get("_rec_del_armed"):
+            c3.button(t("rec_del_sure") % len(picked),
+                      key="rec_del2_%s" % where,
+                      on_click=lambda: st.session_state.update(
+                          {"_rec_doing": list(picked), "_rec_del_armed": False}),
+                      use_container_width=True)
+        else:
+            c3.button(t("rec_del"), key="rec_del_%s" % where,
+                      on_click=lambda: st.session_state.update(
+                          {"_rec_del_armed": True}),
+                      use_container_width=True)
+
+
+def _run_deletion():
+    """Delete the marked recordings, saying what is happening as it goes.
+
+    Baba: "when there is a deletion in process, show on the screen
+    exactly what's going on. Verbose status with progress indicator and
+    time."
+
+    WHY IT NARRATES AT ALL. Each delete is a network round trip to Apps
+    Script, and Apps Script is not fast. Ten recordings is ten waits, and
+    a screen that sits still through them looks broken — which is the
+    moment somebody presses again, and a second delete of something
+    already gone reads as a failure.
+
+    ONE AT A TIME, ON PURPOSE. A batch call would be quicker and would
+    fail as one lump; this way a failure names the recording it happened
+    to, and everything after it still gets its chance.
+    """
+    ids = list(st.session_state.get("_rec_doing") or [])
+    store = drive_store()
+    started = time.time()
+
+    bar = st.progress(0.0, text=t("rec_del_working") % (0, len(ids)))
+    line = st.empty()
+    done, failed = [], []
+
+    for i, rid in enumerate(ids):
+        line.markdown('<div class="readhint">%s</div>' % html.escape(
+            t("rec_del_now") % (i + 1, len(ids), rid,
+                                time.time() - started)),
+            unsafe_allow_html=True)
+        ok = False
+        try:
+            ok = store.delete(rid)
+        except Exception as e:
+            errlog.add(st.session_state, "drive", "delete threw",
+                       "%s: %s" % (rid, e))
+        if ok:
+            done.append(rid)
+        else:
+            failed.append(rid)
+            errlog.add(st.session_state, "drive",
+                       "could not delete a recording",
+                       "%s: %s" % (rid, store.last_error or "no reason given"))
+        bar.progress((i + 1) / max(len(ids), 1),
+                     text=t("rec_del_working") % (i + 1, len(ids)))
+
+    took = time.time() - started
+    line.empty()
+    bar.empty()
+
+    # THE TICKS GO WITH THE FILES. Leaving them set would offer to delete
+    # things that are already gone, and the next render would carry a
+    # selection nobody made.
+    for rid in ids:
+        st.session_state.pop("_rp_%s" % rid, None)
+    st.session_state.pop("_rec_doing", None)
+    st.session_state.pop("_recs", None)          # stale now; refetch
+
+    # EACH OUTCOME COUNTED SEPARATELY, and the time it took. A single
+    # "done" over a batch where one failed is a lie by omission.
+    st.session_state["_rec_msg"] = (
+        ("bad", t("rec_del_part") % (len(done), len(failed), took))
+        if failed else ("good", t("rec_del_done") % (len(done), took)))
+    st.rerun()
 
 
 def notes_panel():
@@ -5715,6 +5854,12 @@ if active == "transcribe":
     # and marker-guarded, but calling it twice per render is noise.
     notes_panel()
 
+    # AND THE RECORDINGS UNDER THEM. Baba moved this here from Settings:
+    # a recording is made on this screen and belongs on it. Notes first
+    # because they are what somebody came to write; recordings after,
+    # because they are what was kept.
+    recordings_panel()
+
     # WRITE THEM IF THEY DIFFER FROM WHAT WAS LAST SAVED.
     #
     # Compared against the SAVED copy, not against what was in memory at
@@ -6319,25 +6464,18 @@ elif active == "looks":
     st.button(t("log_out"), key="log_out_btn", on_click=log_out,
               use_container_width=True)
 
-    # ---- YOUR RECORDINGS ---------------------------------------------
+
+    # ---- WHAT HAPPENS TO THE AUDIO -----------------------------------
     #
-    # Baba: "a remote file manager for Google Drive so user can delete
-    # its recording from this interface... just a table of files and
-    # user can mark the check mark and press delete. Nothing fancy, most
-    # basic."
-    #
-    # NO DEPLOY WAS NEEDED FOR ANY OF THIS. `audio_list` and `audio_del`
-    # have been in the deployed script all along, and ttt/drive.py
-    # already had list(), delete() and fetch(). The whole feature was
-    # sitting there unused.
+    # THE SETTING STAYS IN SETTINGS, and the FILES moved to T. That is
+    # the line between the two screens: this is a standing choice about
+    # how the app behaves, made once; the recordings are things you go
+    # through. Moving the panel to T was right and moving this with it
+    # would not have been.
     if drive_store().enabled:
         st.markdown('<div class="setlabel">%s</div>' % html.escape(
-            t("rec_title")), unsafe_allow_html=True)
+            t("rec_keep_label")), unsafe_allow_html=True)
 
-        # KEEP OR DISCARD, and say what it costs. Baba asked for the
-        # choice; the sentence under it exists because "delete
-        # automatically" sounds like tidiness and is actually a decision
-        # about whether these words can ever be recovered.
         _keep_now = bool(st.session_state.get("keep_recordings", True))
 
         def _set_keep():
@@ -6345,71 +6483,16 @@ elif active == "looks":
                 st.session_state.get("_keep_pick") == t("rec_keep"))
             persist_settings()
 
-        # THE RADIO'S LABEL IS ITS OWN WORD, not the panel's. Passing
-        # the heading again printed "your recordings" twice, one line
-        # apart — label_visibility="collapsed" hides the label from
-        # SIGHT but Streamlit still renders it for screen readers, and
-        # here it showed. The heading above is the visible one.
-        st.radio(t("rec_keep_label"),
-                 [t("rec_keep"), t("rec_bin")],
-                 index=0 if _keep_now else 1,
-                 key="_keep_pick", horizontal=True,
-                 label_visibility="collapsed", on_change=_set_keep)
+        st.radio(t("rec_keep_label"), [t("rec_keep"), t("rec_bin")],
+                 index=0 if _keep_now else 1, key="_keep_pick",
+                 horizontal=True, label_visibility="collapsed",
+                 on_change=_set_keep)
+        # SAY WHAT THE CHOICE COSTS. "Delete automatically" sounds like
+        # tidiness and is actually a decision about whether these words
+        # can ever be recovered.
         st.markdown('<div class="readhint">%s</div>' % html.escape(
             t("rec_keep_why") if _keep_now else t("rec_bin_why")),
             unsafe_allow_html=True)
-
-        # THE LIST IS FETCHED ONCE PER SESSION, not per render. It is a
-        # network round trip, and this panel redraws on every tick of a
-        # checkbox.
-        if "_recs" not in st.session_state:
-            st.session_state["_recs"] = drive_store().list()
-        _recs = st.session_state["_recs"] or []
-
-        with st.expander("%s · %d" % (t("rec_title"), len(_recs))):
-            if not _recs:
-                st.caption(t("rec_none"))
-            for _r in _recs:
-                _rid = str(_r.get("rec_id") or "")
-                _mins = float(_r.get("seconds") or 0) / 60.0
-                st.checkbox(
-                    "%s · %.1f min%s" % (str(_r.get("created") or "")[:16],
-                                         _mins,
-                                         "  ·  " + t("rec_has_text")
-                                         if _r.get("has_text") else ""),
-                    key="_rp_%s" % _rid)
-
-            _picked = [str(r.get("rec_id")) for r in _recs
-                       if st.session_state.get("_rp_%s" % r.get("rec_id"))]
-
-            # THE ACTIONS ONLY EXIST WHEN SOMETHING IS TICKED. A delete
-            # link with nothing selected is a question with no answer,
-            # and this app has said so about every other row of links.
-            if _picked:
-                with st.container(key="recacts"):
-                    _a1, _a2, _a3 = st.columns([1, 1.3, 1])
-                    _a1.button(t("rec_play"), key="rec_play",
-                               on_click=lambda: st.session_state.update(
-                                   {"_rec_play": _picked[0]}),
-                               use_container_width=True)
-                    _a2.button(t("rec_again"), key="rec_again",
-                               on_click=lambda: st.session_state.update(
-                                   {"_rec_again": _picked[0]}),
-                               use_container_width=True)
-                    # DELETE IS TWO PRESSES AND SAYS HOW MANY. "Delete 3
-                    # items?" is a number somebody can check against what
-                    # they ticked; "are you sure?" is not.
-                    if st.session_state.get("_rec_del_armed"):
-                        _a3.button(t("rec_del_sure") % len(_picked),
-                                   key="rec_del2", on_click=_rec_delete,
-                                   args=(_picked,), use_container_width=True)
-                    else:
-                        _a3.button(t("rec_del"), key="rec_del",
-                                   on_click=lambda: st.session_state.update(
-                                       {"_rec_del_armed": True}),
-                                   use_container_width=True)
-
-        _rec_after_actions(_recs)
 
     # The password half only for people who HAVE one here. Somebody who
     # came through APP_PASSWORDS has no row to change, and the script
