@@ -20,6 +20,7 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from ttt.providers import assemblyai as AA        # noqa: E402
 from ttt.providers.assemblyai import AssemblyAI   # noqa: E402
 
 passed = failed = 0
@@ -92,6 +93,32 @@ check("9 a file that is not there is refused rather than crashing",
 # --- the shape of the rule --------------------------------------------
 check("10 the safe list is an ALLOW-list holding only what has been read",
       A.SYNC_SAFE_LANGUAGES == frozenset({"en"}), A.SYNC_SAFE_LANGUAGES)
+
+# --- two models, and the arithmetic Baba gave ------------------------
+#
+# His figures: Universal-3.5 Pro pre-recorded at $0.21/hr is about 238
+# hours of the $50 a new account starts with; Universal-Streaming at
+# $0.15/hr is about 333. Both check out, which is why the rates are
+# written down as fact rather than left as an editable box — that box
+# was me hedging because I had found three different prices on the web.
+ids = [m.id for m in AssemblyAI().models()[0]]
+check("11 TWO MODELS AND NO OTHERS. A picker offering a model nobody has "
+      "priced can produce a bill nobody expected, and the hours-left "
+      "figure depends on every path having a known rate",
+      ids == [AA.ASYNC_MODEL, AA.SYNC_MODEL_ID], ids)
+
+check("12 $50 on the pre-recorded model is about 238 hours",
+      237 < AA.hours_for(50) < 239, AA.hours_for(50))
+check("13 and about 333 on streaming",
+      332 < AA.hours_for(50, AA.SYNC_MODEL_ID) < 335,
+      AA.hours_for(50, AA.SYNC_MODEL_ID))
+check("14 an hour of audio costs its rate",
+      abs(AA.cost_of(3600) - 0.21) < 0.001, AA.cost_of(3600))
+check("15 a nonsense figure does not become a nonsense bill",
+      AA.cost_of(-5) == 0.0 and AA.hours_for("nope") == 0.0)
+check("16 an unknown model falls back to the DEARER rate, so a mistake "
+      "over-estimates the cost rather than under-estimating it",
+      abs(AA.cost_of(3600, "made-up") - 0.21) < 0.001)
 
 print("\n{} passed, {} failed".format(passed, failed))
 

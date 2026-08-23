@@ -10,6 +10,50 @@ import time
 
 from .base import Model, Provider, http_json
 
+
+# ---- WHAT ASSEMBLYAI COSTS -------------------------------------------
+#
+# Baba's own figures, and they check out against the $50 a new account
+# starts with: 50 / 0.21 = 238 hours, 50 / 0.15 = 333 hours. Both match
+# the numbers he quoted, which is why these are written down as fact
+# rather than left editable — the earlier plan was a settings box for the
+# rate, and that was me hedging because I had found three different
+# prices on the web. He has the real ones.
+#
+# THEY STILL LIVE IN ONE PLACE. If AssemblyAI changes a price, this is
+# the only line to change, and the picker note, the hours-left figure and
+# the cost-so-far all follow it.
+ASYNC_MODEL = "universal-3-5-pro"      # pre-recorded, the slow safe path
+SYNC_MODEL_ID = "universal-streaming"   # real-time, the fast short path
+
+RATE_PER_HOUR = {
+    ASYNC_MODEL: 0.21,
+    SYNC_MODEL_ID: 0.15,
+}
+
+# What a new AssemblyAI account is given. Used only to fill the box the
+# first time — once somebody has topped up, what they have is theirs to
+# say, not ours to assume.
+FREE_CREDIT_USD = 50.0
+
+
+def hours_for(usd: float, model: str = ASYNC_MODEL) -> float:
+    """How many hours `usd` buys on this model. The whole arithmetic."""
+    rate = RATE_PER_HOUR.get(model, RATE_PER_HOUR[ASYNC_MODEL])
+    try:
+        return max(0.0, float(usd)) / rate
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def cost_of(seconds: float, model: str = ASYNC_MODEL) -> float:
+    """What `seconds` of audio cost on this model."""
+    rate = RATE_PER_HOUR.get(model, RATE_PER_HOUR[ASYNC_MODEL])
+    try:
+        return max(0.0, float(seconds)) / 3600.0 * rate
+    except (TypeError, ValueError):
+        return 0.0
+
 API = "https://api.assemblyai.com"
 
 
@@ -46,10 +90,20 @@ class AssemblyAI(Provider):
         so instead of implying it was fetched. If they add an endpoint,
         this is the one method to change.
         """
+        # TWO MODELS AND NO OTHERS. Baba: "we're going to use only these
+        # 2 models. You need to restrict on these 2 models only."
+        #
+        # `universal-3-pro` and plain `universal` were here and are gone.
+        # A picker that offers models nobody has priced is a picker that
+        # can produce a bill nobody expected — and the whole point of the
+        # hours-left figure is that every path has a known rate.
         known = [
-            Model("universal-3-pro", "Universal 3 Pro", for_task="stt",
-                  recommended=True, note="most accurate"),
-            Model("universal", "Universal", for_task="stt", note="faster"),
+            Model(ASYNC_MODEL, "Universal 3.5 Pro", for_task="stt",
+                  recommended=True,
+                  note="pre-recorded · $%.2f/hr" % RATE_PER_HOUR[ASYNC_MODEL]),
+            Model(SYNC_MODEL_ID, "Universal Streaming", for_task="stt",
+                  note="fast, short clips · $%.2f/hr"
+                       % RATE_PER_HOUR[SYNC_MODEL_ID]),
         ]
         return known, False, None
 
@@ -75,7 +129,14 @@ class AssemblyAI(Provider):
     SYNC_SAFE_LANGUAGES = frozenset({"en"})
 
     SYNC_URL = "https://sync.assemblyai.com/transcribe"
-    SYNC_MODEL = "universal-3-5-pro"
+    # THE SYNC ENDPOINT SENDS Universal 3.5 Pro — that is what TTT mini
+    # puts in its X-AAI-Model header, read from its source rather than
+    # assumed. Which of the two RATES that endpoint bills at is the one
+    # thing here I have not been able to verify, so `cost_of` is called
+    # with the model actually sent, and a real invoice should be checked
+    # against it once. Guessing quietly would put a wrong number under
+    # "hours left", which is the number he asked for.
+    SYNC_MODEL = ASYNC_MODEL
     SYNC_MAX_SECONDS = 120.0
     SYNC_MAX_BYTES = 40 * 1024 * 1024
     # The endpoint rejects anything under 80 ms as too short, so half a
