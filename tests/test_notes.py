@@ -116,6 +116,42 @@ check("14 appending nothing changes nothing", N.append(s, a, "   ") is False)
 check("15 appending to a note that is gone is refused, not a crash",
       N.append(s, "nope", "x") is False)
 
+# --- speaking AT THE CURSOR -------------------------------------------
+#
+# Baba: "it does not insert when I put my cursor — it just appends
+# normally, it ignores my cursor and puts a line at the end." That made
+# a note a log rather than a document: you could add to the bottom and
+# nowhere else.
+s_cur = {}
+c = N.add(s_cur, "prvi red\n\ntreci red")
+N.append(s_cur, c, "drugi red", at=8)          # just after "prvi red"
+check("15a A TAKE LANDS WHERE THE CURSOR WAS, not at the end",
+      N.get(s_cur, c)["text"] == "prvi red\n\ndrugi red\n\ntreci red",
+      repr(N.get(s_cur, c)["text"]))
+
+s_end = {}
+e = N.add(s_end, "sam")
+N.append(s_end, e, "poslije")                  # no caret at all
+check("15b NO CURSOR MEANS THE END — which is what a take from the deck "
+      "gets, since the deck has no cursor to report",
+      N.get(s_end, e)["text"] == "sam\n\nposlije",
+      repr(N.get(s_end, e)["text"]))
+
+s_far = {}
+f = N.add(s_far, "kratko")
+N.append(s_far, f, "iza", at=9999)
+check("15c A CARET PAST THE END IS CLAMPED, not sliced past — a stale "
+      "caret from a previous render must not drop the tail",
+      N.get(s_far, f)["text"] == "kratko\n\niza",
+      repr(N.get(s_far, f)["text"]))
+
+s_top = {}
+tp = N.add(s_top, "bilo sto")
+N.append(s_top, tp, "na vrhu", at=0)
+check("15d and a caret at 0 puts it at the top",
+      N.get(s_top, tp)["text"].startswith("na vrhu"),
+      repr(N.get(s_top, tp)["text"]))
+
 # --- search -----------------------------------------------------------
 s2 = {}
 N.add(s2, "Kupiti kruh i mlijeko")

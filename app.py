@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v137 (a) (settings you can see and type)"
+APP_VERSION = "v138 (a) (the overlap, solved at the root)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4063,7 +4063,7 @@ def transcribe_note_take():
         st.session_state["_note_error"] = t("nothing_heard")
         return
 
-    NOTES.append(st.session_state, note_id, body)
+    NOTES.append(st.session_state, note_id, body, at=take.get("caret"))
     USAGE.log("transcribe", seconds, UNIT_SECONDS, stt.id)
 
 
@@ -4229,6 +4229,10 @@ def note_open_view():
                             "mime": ev.get("mime", ""),
                             "seconds": ev.get("seconds", 0),
                             "note_id": note_id,
+                            # WHERE HIS CURSOR WAS. Only the frame knows;
+                            # it reads it the moment rec is pressed,
+                            # before the press can move it.
+                            "caret": ev.get("caret"),
                         }
                         st.rerun()
         else:

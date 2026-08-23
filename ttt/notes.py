@@ -179,13 +179,22 @@ def update(state, note_id, text=None, title=None):
     return True
 
 
-def append(state, note_id, text):
-    """Speak more into an existing note.
+def append(state, note_id, text, at=None):
+    """Speak more into an existing note — AT THE CURSOR when there is one.
 
-    A BLANK LINE BETWEEN, not a space. Each burst of dictation is a
+    Baba: "it does not insert when I put my cursor, it just appends
+    normally... it ignores my cursor and just puts a line at the end."
+    He is right, and it made the note a log rather than a document: you
+    could add to the bottom and nowhere else.
+
+    `at` is the caret position the editor reported. None means the end,
+    which is what a take from the DECK gets — the deck has no cursor,
+    and appending is the only honest answer there.
+
+    A BLANK LINE AROUND IT, not a space. Each burst of dictation is a
     paragraph — that is how a person talks into a note, in passes — and
-    running them together makes one wall of text nobody can find anything
-    in.
+    running them together makes one wall of text nobody can find
+    anything in.
     """
     note = get(state, note_id)
     if note is None:
@@ -193,8 +202,19 @@ def append(state, note_id, text):
     more = (text or "").strip()
     if not more:
         return False
-    old = (note.get("text") or "").rstrip()
-    note["text"] = (old + "\n\n" + more) if old else more
+    old = (note.get("text") or "")
+
+    if at is None or not old.strip():
+        note["text"] = (old.rstrip() + "\n\n" + more) if old.strip() else more
+    else:
+        # CLAMPED, because a caret from a previous render can be past the
+        # end of text that has since been shortened — and slicing beyond
+        # the end silently drops the tail.
+        i = max(0, min(int(at), len(old)))
+        before, after = old[:i], old[i:]
+        note["text"] = (before.rstrip() + ("\n\n" if before.strip() else "")
+                        + more
+                        + (("\n\n" + after.lstrip()) if after.strip() else ""))
     note.pop(_HAY, None)             # what it says changed; re-fold later
     note["edited"] = _stamp()
     return True

@@ -333,7 +333,7 @@ function changed() {
   height();
   /* The text goes back on every change, stamped, so Python holds the
      truth and a rerun cannot lose what was typed. */
-  setValue({ at: Date.now(), text: ta.value });
+  setValue({ at: Date.now(), text: ta.value, caret: ta.selectionStart });
 }
 
 /* THE LIST AND THE MARKUP MUST NOT DRIFT APART.
@@ -467,6 +467,12 @@ async function startRec() {
     analyser = null;           // no meter is fine; no recording is not
   }
 
+  /* WHERE THE CURSOR WAS WHEN HE PRESSED REC. Pressing the button
+     takes focus off the textarea, and some browsers then report
+     selectionStart as 0 — which would insert every take at the very
+     top. Read it here, before the press has had a chance to move it. */
+  caretAt = ta.selectionStart;
+
   chunks = [];
   try {
     mediaRec = new MediaRecorder(mediaStream);
@@ -513,7 +519,12 @@ function finishRec() {
     var str = String(fr.result || ''), i = str.indexOf(',');
     /* The SAME shape the deck posts, so Python's existing path takes it
        without a second branch to keep in step. */
-    setValue({ at: Date.now(), text: ta.value,
+    /* THE CARET GOES WITH THE TAKE. Baba: "it does not insert when I
+       put my cursor — it just appends at the end."
+       Python cannot know where the cursor is; only this frame can. It
+       is read at the moment the take FINISHES, which is the last place
+       he touched before speaking. */
+    setValue({ at: Date.now(), text: ta.value, caret: caretAt,
                b64: i < 0 ? str : str.slice(i + 1),
                mime: type, seconds: secs, bytes: blob.size });
   };

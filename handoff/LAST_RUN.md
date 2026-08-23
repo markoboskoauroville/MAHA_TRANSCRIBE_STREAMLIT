@@ -1,36 +1,47 @@
-# STEP: settings you can see and type
-STATUS: done, pushed as v137. No deploy needed.
+# STEP: the overlap, solved at the root — and the cursor
+STATUS: done, pushed as v138. No deploy needed.
 
-WHAT HAPPENED
-- TEXT SIZE IS A NUMBER YOU TYPE, with a `default` link beside it. Eight
-  pills covered 80 to 185 in fixed steps and could not reach 200 or 250
-  — the sizes WCAG actually asks about. A box takes any of them.
-- EVERY COLOUR BUTTON WEARS ITS OWN COLOUR. Baba: "each button can be
-  already colored to represent its color — people can see and
-  understand everything." Four words in identical pills asked somebody
-  to imagine what `cyan` would look like; the button is the answer now.
-- Every label sits on the line with its controls, like the interface
-  language. Above them each was a row for one word, and under this
-  screen's spacing they kept touching what came next — the fourth time
-  that collision has appeared, always from the same cause.
+THE OVERLAP, AND WHY IT KEPT COMING BACK
+- Baba asked four times about text overlapping at the top, and I fixed
+  it four times. Four different elements — the tabs, the
+  interface-language label, the engine test result, the password notice
+  — and ONE cause I never looked for.
+- v122 set the header's height to zero, to close an empty band. That
+  does not remove it: Streamlit's header is POSITION: FIXED, so zeroing
+  its height leaves the toolbar where it is and lets the whole page
+  scroll UNDERNEATH it. Whatever is at the top gets printed through.
+- The header stays now, transparent and click-through, and the page has
+  padding-top: 64px — MEASURED, because its box is 60px in a browser
+  and my first guess of 2.4rem still let content under it.
+- Verified: header bottom 60, first element top 65. CLEAR.
+- THE LESSON, and it is in HOW_WE_WORK.md now: four rounds went into
+  moving the thing being overlapped instead of asking what was
+  overlapping it. When a layout fault returns after a fix, the fix was
+  a patch. Measure the geometry.
 
-ONE THING I DID NOT DO AS ASKED, AND WHY
-- Baba said "80 default". 80 is the SMALLEST size the app allows — it
-  looks like the default only because it is the first pill and the one
-  he had chosen. The `default` link resets to 100.
-- Making the smallest text the default, in an app built for people who
-  cannot see well, would be exactly backwards. If he meant it literally
-  he can say so and it is one number.
+AND A TRAP INSIDE THE FIX
+- ttt/theme.py is one f-string, so a brace in a COMMENT is read as
+  code. Writing the offending CSS inside braces in that very note
+  crashed the app with NameError: name 'height' is not defined. Also
+  written down.
+
+THE CURSOR
+- A take now lands WHERE THE CURSOR WAS. Baba: "it ignores my cursor
+  and just puts a line at the end." That made a note a log rather than
+  a document — you could add to the bottom and nowhere else.
+- Python cannot know where a cursor is; only the frame can. It reads
+  selectionStart when rec is PRESSED, before the press takes focus off
+  the textarea — some browsers then report 0, which would put every
+  take at the very top.
+- A stale caret is CLAMPED to the length: slicing past the end silently
+  drops the tail. No caret means the end, which is the honest answer
+  for a take from the deck, since the deck has no cursor.
 
 NUMBERS
-- owner edge 5 · must change 15 — green
-- browser-verified: box and link present, all four borders carrying
-  their own scheme colour
+- notes 43 (was 39) · components 18 executed — green
+- mutation: ignoring the caret fails 2
 - pyflakes clean
 
-STILL OPEN
-- The note's red rec, never seen to work.
-- The reset-password test.
-- test_reader 8, red since v101.
-- The owner's tab bar wraps at 360px.
-- THE KEYS IN THE SHEET — its own session.
+FOR BABA
+- The note's rec, with a cursor placed mid-text — it should land there.
+- And the reset-password test, still owed.

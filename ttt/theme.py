@@ -154,10 +154,39 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     /* THE PAGE ABOVE THE PANEL. Streamlit reserves room for a header
        that this app does not use, which is where most of the band came
        from — the panel's own padding was only part of it. */
-    [data-testid="stMainBlockContainer"] {{
-      padding-top: 0.4rem !important;
+    /* THE ROOT OF EVERY "OVERLAPPING AT THE TOP".
+       ================================================================
+       This set the header's height to zero in v122, to close the empty
+       band above the tabs. (Written in words on purpose: this
+       stylesheet is an f-string, so a brace in a COMMENT is still read
+       as code — the first draft of this very note crashed the app with
+       NameError: name 'height' is not defined.)
+       It does not remove the
+       header. Streamlit's header is POSITION: FIXED, so zeroing its
+       height leaves the toolbar exactly where it was and lets the page
+       scroll UNDERNEATH it — and whatever happens to be at the top of
+       the page is printed through.
+
+       That is why it kept coming back and why every fix was a patch:
+       the thing being overlapped was never the problem. The tabs, the
+       interface-language label, the engine test result, the password
+       notice — four different elements, one cause, four symptom fixes.
+
+       The header stays, invisible, and the page is given room for it.
+       Anything that wants to be higher up the screen must shrink THIS
+       padding, never the header. */
+    [data-testid="stHeader"] {{
+      background: transparent !important;
+      pointer-events: none;
     }}
-    [data-testid="stHeader"] {{ height: 0 !important; }}
+    [data-testid="stHeader"] * {{ pointer-events: auto; }}
+    [data-testid="stMainBlockContainer"] {{
+      /* 64px, MEASURED: the header's own box is 60px tall in a real
+         browser, and 2.4rem (38px) still let content under it. Guessing
+         at this number is what produced four rounds of symptom fixes —
+         it is a measurement, not a taste. */
+      padding-top: 64px !important;
+    }}
 
     /* ---- PILLS ----------------------------------------------------
        Every choice is a pill: quiet by default, amber-filled when

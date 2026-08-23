@@ -89,6 +89,53 @@ and lose his three filled-in secrets in the same move.
 
 ---
 
+## Why things kept overlapping at the top — SOLVED, do not undo it
+
+Baba, four separate times: *"the text is overlapping."* The tabs, the
+interface-language label, the engine test result, the password notice.
+Four different elements, four symptom fixes, one cause.
+
+**The cause.** v122 set the height of Streamlit's header to zero, to
+close an empty band above the tabs. That does not remove the header:
+Streamlit's header is `position: fixed`, so zeroing its height leaves
+the toolbar exactly where it is and lets the whole page scroll
+UNDERNEATH it. Whatever happens to be at the top gets printed through.
+
+**The fix.** The header stays, transparent and click-through, and the
+page is given `padding-top: 64px` — MEASURED, because its box is 60px
+in a real browser and 2.4rem was not enough. Anything that wants to sit
+higher must shrink that padding, never the header.
+
+**The lesson, which is the point of writing this down.** Four rounds
+went into moving the thing being overlapped instead of asking what was
+overlapping it. When a layout fault comes back after a fix, the fix was
+a patch: stop adjusting the victim and measure the geometry.
+
+`ttt/theme.py` is an f-string, so **a brace in a COMMENT is read as
+code**. Writing "height: 0" inside braces in that very note crashed the
+app with `NameError: name 'height' is not defined`. Say such things in
+words there.
+
+---
+
+## Insert where the cursor is, not at the end
+
+Baba: *"it does not insert when I put my cursor — it ignores my cursor
+and just puts a line at the end."*
+
+**Python cannot know where a cursor is.** Only the component can, and
+only if it sends it. `note_frontend` reads `selectionStart` at the
+moment rec is pressed — before the press has taken focus off the
+textarea, which on some browsers reports 0 and would put every take at
+the very top.
+
+A caret arriving from a previous render can be past the end of text
+that has since been shortened, so it is **clamped**; slicing past the
+end silently drops the tail. And no caret means the end, which is the
+honest answer for a take from the deck, since the deck has no cursor.
+
+---
+
 ## The one rule that is never bent
 
 Never `New deployment`.
