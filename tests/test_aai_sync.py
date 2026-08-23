@@ -120,6 +120,37 @@ check("16 an unknown model falls back to the DEARER rate, so a mistake "
       "over-estimates the cost rather than under-estimating it",
       abs(AA.cost_of(3600, "made-up") - 0.21) < 0.001)
 
+# --- the panel Baba asked for three versions ago ----------------------
+#
+# I built the arithmetic and said the panel was "still to come", then did
+# three other things. He had to ask again: "I still don't see a keyring
+# for AssemblyAI. Where are you?" Fair.
+src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
+           encoding="utf-8").read()
+panel = src.split("def assemblyai_panel(", 1)[1].split("\ndef ", 1)[0]
+
+check("17 there is a box to paste a key into", "_aai_new" in panel)
+check("18 THE KEY IS MASKED, never printed. A key on screen is a key in "
+      "the next screenshot, and this whole project has been screenshots",
+      "kr.mask(key)" in panel and 'aai_key") or ""' in panel)
+check("19 it can be tested", "test_key(" in panel)
+check("20 and deleted, in two presses",
+      "_aai_del_armed" in panel and "aai_del2" in panel)
+check("21 a toggle chooses between the free engine and AssemblyAI",
+      "aai_on" in panel and "st.toggle" in panel)
+check("22 the hours left are shown", "aai_left" in panel)
+check("23 AND SAID TO BE AN ESTIMATE. This app counts only what it "
+      "transcribed; a key used elsewhere makes the figure too generous "
+      "and there is no way for the app to know",
+      "aai_estimate" in panel)
+check("24 the rates are shown", "aai_rates" in panel)
+check("25 with a link to pay", "assemblyai.com/pricing" in panel)
+check("26 AND THE CREDIT CAN BE CORRECTED. A number that can only go "
+      "down is wrong the first time somebody tops up",
+      "aai_credit_new" in panel)
+check("27 the key survives a session — saved like every preference",
+      '"aai_key", "aai_on"' in src)
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 if __name__ == "__main__":

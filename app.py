@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v170 (a) (remove silences, as a setting)"
+APP_VERSION = "v171 (a) (the AssemblyAI key panel, at last)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -68,6 +68,7 @@ if getattr(sys, "_ttt_build", None) != _BUILD_STAMP:
 import talk_engine as tk
 import help_text
 from ttt import keyring as kr
+from ttt.providers import assemblyai as AAI
 from ttt import providers as PROVIDERS
 from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
@@ -524,6 +525,44 @@ STRINGS = {
     "rec_close_play":     {"en": "close player",     "hr": "zatvori"},
     "rec_play":           {"en": "play",              "hr": "slušaj"},
     "rec_again":          {"en": "transcribe again",  "hr": "prepiši ponovno"},
+    "aai_title":          {"en": "your AssemblyAI key",
+                           "hr": "tvoj AssemblyAI ključ"},
+    "aai_paste":          {"en": "AssemblyAI key",  "hr": "AssemblyAI ključ"},
+    "aai_paste_ph":       {"en": "paste your key here",
+                           "hr": "zalijepi svoj ključ ovdje"},
+    "aai_save":           {"en": "save key",         "hr": "spremi ključ"},
+    "aai_none":           {"en": "No key yet. Without one, transcription "
+                                 "uses the free engine.",
+                           "hr": "Nema ključa. Bez njega se koristi "
+                                 "besplatni pogon."},
+    "aai_have":           {"en": "key: %s",          "hr": "ključ: %s"},
+    "aai_using_paid":     {"en": "AssemblyAI is doing the transcribing.",
+                           "hr": "AssemblyAI prepisuje."},
+    "aai_using_free":     {"en": "The free engine is doing the transcribing. "
+                                 "Your key is saved but unused.",
+                           "hr": "Prepisuje besplatni pogon. Ključ je "
+                                 "spremljen ali se ne koristi."},
+    "aai_left":           {"en": "about %.0f hours left  ·  $%.2f of credit  "
+                                 "·  %.1f hours used, $%.2f",
+                           "hr": "otprilike %.0f h preostalo  ·  $%.2f "
+                                 "kredita  ·  %.1f h iskorišteno, $%.2f"},
+    "aai_rates":          {"en": "pre-recorded $%.2f/hr  ·  streaming $%.2f/hr",
+                           "hr": "snimljeno $%.2f/h  ·  streaming $%.2f/h"},
+    "aai_estimate":       {"en": "An estimate: this counts only what this "
+                                 "app transcribed.",
+                           "hr": "Procjena: broji samo ono što je ova "
+                                 "aplikacija prepisala."},
+    "aai_pay":            {"en": "AssemblyAI pricing and top-up →",
+                           "hr": "AssemblyAI cijene i nadoplata →"},
+    "aai_test":           {"en": "test key",         "hr": "provjeri ključ"},
+    "aai_ok":             {"en": "the key works",    "hr": "ključ radi"},
+    "aai_del":            {"en": "delete key",       "hr": "obriši ključ"},
+    "aai_del_sure":       {"en": "delete — sure?",   "hr": "obriši — sigurno?"},
+    "aai_fix":            {"en": "topped up? set the credit",
+                           "hr": "nadoplatio? postavi kredit"},
+    "aai_credit_label":   {"en": "credit in dollars",
+                           "hr": "kredit u dolarima"},
+    "aai_credit_save":    {"en": "save credit",      "hr": "spremi kredit"},
     "trim_label":         {"en": "remove silences",  "hr": "ukloni tišine"},
     "trim_why_on":        {"en": "Silent gaps are cut before uploading, so "
                                  "you pay for the words and not the pauses.",
@@ -4723,6 +4762,150 @@ def maybe_trim(flac_path):
     return out
 
 
+def assemblyai_panel():
+    """The person's own AssemblyAI key: paste, test, delete, and the credit.
+
+    Baba asked for this three versions ago and I built the arithmetic
+    underneath it instead, then said so and moved on to the next thing.
+    That was the wrong order — the arithmetic is invisible without this.
+
+    WHERE THE KEY LIVES. In the settings sheet, per person, like every
+    other preference. `_save_server_settings` writes to a disk Streamlit
+    Cloud wipes on every redeploy, so that alone would lose it.
+
+    WHAT IS SHOWN IS AN ESTIMATE AND SAYS SO. The hours left counts down
+    from what THIS APP has transcribed, not from AssemblyAI's own
+    billing. Somebody using their key elsewhere will see a figure that is
+    too generous and there is no way for this app to know.
+    """
+    st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        t("aai_title")), unsafe_allow_html=True)
+
+    key = str(st.session_state.get("aai_key") or "")
+
+    if not key:
+        # NO KEY YET: a box to paste into, and nothing else. Offering a
+        # toggle for a provider nobody can reach is offering a switch
+        # that does nothing.
+        st.text_input(t("aai_paste"), key="_aai_new", type="password",
+                      placeholder=t("aai_paste_ph"),
+                      label_visibility="collapsed")
+
+        def _save_key():
+            fresh = str(st.session_state.get("_aai_new") or "").strip()
+            if not fresh:
+                return
+            st.session_state["aai_key"] = fresh
+            # A NEW KEY STARTS WITH THE FREE CREDIT AND NOTHING SPENT.
+            # If it is not a new account the person can say so — that is
+            # what the credit box is for.
+            st.session_state.setdefault("aai_credit", AAI.FREE_CREDIT_USD)
+            st.session_state["aai_spent_s"] = 0.0
+            st.session_state["_aai_new"] = ""
+            persist_settings()
+
+        st.button(t("aai_save"), key="aai_save", on_click=_save_key,
+                  use_container_width=True)
+        st.markdown('<div class="readhint">%s</div>' % html.escape(
+            t("aai_none")), unsafe_allow_html=True)
+        return
+
+    # A KEY IS HERE. Masked, never shown: a key on screen is a key in the
+    # next screenshot, and this whole session has been screenshots.
+    st.markdown('<div class="readhint">%s</div>' % html.escape(
+        t("aai_have") % kr.mask(key)), unsafe_allow_html=True)
+
+    # WHICH ENGINE DOES THE WORK. Baba: "a toggle to use either Whisper
+    # free or AssemblyAI."
+    def _set_on():
+        st.session_state["aai_on"] = bool(st.session_state.get("_aai_on_pick"))
+        persist_settings()
+
+    st.toggle(" ", key="_aai_on_pick",
+              value=bool(st.session_state.get("aai_on")),
+              label_visibility="collapsed", on_change=_set_on)
+    st.markdown('<div class="readhint">%s</div>' % html.escape(
+        t("aai_using_paid") if st.session_state.get("aai_on")
+        else t("aai_using_free")), unsafe_allow_html=True)
+
+    # ---- WHAT IS LEFT ------------------------------------------------
+    credit = float(st.session_state.get("aai_credit") or 0.0)
+    spent_s = float(st.session_state.get("aai_spent_s") or 0.0)
+    spent = AAI.cost_of(spent_s)
+    left = max(0.0, credit - spent)
+    hours = AAI.hours_for(left)
+
+    st.markdown(
+        '<div class="readhint">%s</div>'
+        % html.escape(t("aai_left") % (hours, left, spent_s / 3600.0, spent)),
+        unsafe_allow_html=True)
+    st.markdown(
+        '<div class="readhint">%s</div>'
+        % html.escape(t("aai_rates") % (AAI.RATE_PER_HOUR[AAI.ASYNC_MODEL],
+                                        AAI.RATE_PER_HOUR[AAI.SYNC_MODEL_ID])),
+        unsafe_allow_html=True)
+    # AN ESTIMATE, SAID PLAINLY. This app only knows what it transcribed.
+    st.markdown('<div class="readhint">%s</div>' % html.escape(
+        t("aai_estimate")), unsafe_allow_html=True)
+    st.markdown(
+        '<a class="paylink" href="https://www.assemblyai.com/pricing" '
+        'target="_blank" rel="noopener">%s</a>' % html.escape(t("aai_pay")),
+        unsafe_allow_html=True)
+
+    # ---- test · correct the credit · delete --------------------------
+    c1, c2 = st.columns([1, 1])
+
+    def _test():
+        try:
+            # `kind` says WHY it failed — dead key versus rate limit —
+            # and the cost document is explicit that condemning a busy
+            # key wastes credit on the next one. Not used yet, so it is
+            # not bound: an unused name is a promise the code is not
+            # keeping.
+            err, _kind = AAI.AssemblyAI().test_key(
+                str(st.session_state.get("aai_key") or ""))
+        except Exception as e:
+            err = "%s: %s" % (type(e).__name__, e)
+        st.session_state["_aai_msg"] = (
+            ("good", t("aai_ok")) if not err else ("bad", str(err)[:160]))
+
+    c1.button(t("aai_test"), key="aai_test", on_click=_test,
+              use_container_width=True)
+
+    if st.session_state.get("_aai_del_armed"):
+        def _delete():
+            for k in ("aai_key", "aai_on", "aai_credit", "aai_spent_s"):
+                st.session_state.pop(k, None)
+            st.session_state.pop("_aai_del_armed", None)
+            persist_settings()
+        c2.button(t("aai_del_sure"), key="aai_del2", on_click=_delete,
+                  use_container_width=True)
+    else:
+        c2.button(t("aai_del"), key="aai_del",
+                  on_click=lambda: st.session_state.update(
+                      {"_aai_del_armed": True}),
+                  use_container_width=True)
+
+    msg = st.session_state.pop("_aai_msg", None)
+    if msg:
+        (st.success if msg[0] == "good" else st.error)(msg[1])
+
+    # TOPPED UP? SAY SO. The app cannot know, and a number that can only
+    # go down is wrong the first time somebody pays.
+    with st.expander(t("aai_fix")):
+        st.number_input(t("aai_credit_label"), key="_aai_credit_new",
+                        value=float(credit), min_value=0.0, step=5.0)
+
+        def _set_credit():
+            st.session_state["aai_credit"] = float(
+                st.session_state.get("_aai_credit_new") or 0.0)
+            st.session_state["aai_spent_s"] = 0.0
+            persist_settings()
+
+        st.button(t("aai_credit_save"), key="aai_credit_save",
+                  on_click=_set_credit, use_container_width=True)
+
+
 def note_number(i):
     """1. 2. 3. — Baba: "please add a serial number next to each note."
 
@@ -6926,6 +7109,9 @@ elif active == "looks":
               use_container_width=True)
 
 
+    # ---- YOUR OWN ASSEMBLYAI KEY --------------------------------------
+    assemblyai_panel()
+
     # ---- SILENCE ------------------------------------------------------
     #
     # Baba asked for this as something to "choose and experiment with",
@@ -6965,7 +7151,13 @@ elif active == "looks":
                 st.session_state.get("_keep_pick") == t("rec_keep"))
             persist_settings()
 
-        st.radio(t("rec_keep_label"), [t("rec_keep"), t("rec_bin")],
+        # A SPACE FOR THE LABEL, not the label again. Baba's screenshot
+        # shows "AFTER TRANSCRIBING" twice: once as the heading above and
+        # once from the radio itself, because label_visibility="collapsed"
+        # hides a label from SIGHT and Streamlit renders it anyway. The
+        # same fault as the recordings heading in v156, in the same file,
+        # two hundred lines apart.
+        st.radio(" ", [t("rec_keep"), t("rec_bin")],
                  index=0 if _keep_now else 1, key="_keep_pick",
                  horizontal=True, label_visibility="collapsed",
                  on_change=_set_keep)
