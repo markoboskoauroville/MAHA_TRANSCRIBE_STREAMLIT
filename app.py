@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v159 (a) (a second reading that says what it is doing)"
+APP_VERSION = "v160 (a) (notes fold away too)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -591,6 +591,7 @@ STRINGS = {
                            "hr": "Nisam ja — prijavi se kao netko drugi"},
     "tx_tonote":          {"en": "add to notes",       "hr": "dodaj u bilješke"},
     "tx_tonote_done":     {"en": "kept",               "hr": "spremljeno"},
+    "notes_title":        {"en": "your notes",       "hr": "tvoje bilješke"},
     "notes_search":       {"en": "Search notes",       "hr": "Traži bilješke"},
     "notes_search_ph":    {"en": "search your notes",  "hr": "traži po bilješkama"},
     "notes_found":        {"en": "{n} of {all}",       "hr": "{n} od {all}"},
@@ -4800,12 +4801,26 @@ def _run_deletion():
 
 
 def notes_panel():
-    """The list: a search field, then the notes."""
+    """The list: a search field, then the notes. Folded, like recordings.
+
+    Baba: "make notes collapsible, same as recordings."
+
+    FIVE NOTES FILLED HIS WHOLE SCREEN, and the recordings below them
+    were off the bottom edge. The count is on the fold's own line, so
+    closed it still answers "how many" — the same shape the recordings
+    and the People list already use, which means one thing to learn
+    rather than three.
+
+    THE SEARCH FIELD MOVED INSIDE. That is the one real cost: you have
+    to open the fold to search. It is the right trade, because a search
+    box for a list you cannot see is furniture, and somebody who wants
+    to search is already opening the list.
+    """
     all_notes = NOTES.items(st.session_state)
     if not all_notes:
         return                      # nothing yet, and no empty furniture
 
-    with st.container(key="notesbox"):
+    with st.expander("%s · %d" % (t("notes_title"), len(all_notes))):
         # THE SEARCH FIELD IS ALWAYS AT THE TOP — Keep's arrangement, and
         # the right one: it is how you reach a note, so it comes before
         # the notes.

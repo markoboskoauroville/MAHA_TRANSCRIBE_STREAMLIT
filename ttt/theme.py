@@ -1238,7 +1238,13 @@ def css(scheme: str = "amber", font: str = "mono",
        of its own: colour is reserved for state, and a note at rest has
        no state. The heading is gold only because it is the thing the eye
        is looking for. */
-    [class*="st-key-notesbox"] .stButton button {{
+    /* TARGETED AT THE CARDS, not at the container they used to sit in.
+       The notes moved into an expander (v160) and `st-key-notesbox` went
+       with it — styling that hangs off a container is styling that
+       disappears the day the container does. The cards carry their own
+       key, and that is the thing that is actually being styled. */
+    [class*="st-key-note_"] .stButton button,
+    [class*="st-key-note_"] button {{
       text-align: left;
       justify-content: flex-start;
       align-items: flex-start;
@@ -1255,16 +1261,16 @@ def css(scheme: str = "amber", font: str = "mono",
     /* The first line is the heading. :first-line is the only way to
        reach it — the two lines are one text node, deliberately, so the
        whole card stays a single press. */
-    [class*="st-key-notesbox"] .stButton button p::first-line {{
+    [class*="st-key-note_"] button p::first-line {{
       color: var(--amber);
       font-weight: 600;
       font-size: 0.82rem;
     }}
-    [class*="st-key-notesbox"] .stButton button:hover {{
+    [class*="st-key-note_"] button:hover {{
       border-color: var(--amber) !important;
     }}
     /* The search field is a field, not a shout. */
-    [class*="st-key-notesbox"] input {{
+    [class*="st-key-notes_q"] input {{
       font-size: 0.8rem !important;
     }}
 
