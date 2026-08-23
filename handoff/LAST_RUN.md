@@ -1,38 +1,34 @@
-# STEP: save a recording to this device
-STATUS: done, pushed as v162. No deploy needed.
+# STEP: the save link under its own file
+STATUS: done, pushed as v163. No deploy needed.
 
 WHAT HAPPENED
-- Baba: "add option to export recorded file to local hard disk. One or
-  multiple? All works. If there are multiples, they should download one
-  after the other."
-- `save` sits with the other links. It works on MANY, like delete —
-  copying a file to a disk is the same act repeated, unlike playing or
-  transcribing, where several at once is not a thing.
+- Baba: "download link should appear under the file, the same as the
+  player does."
+- He had to say it twice, in effect: I had already learned this for the
+  player in v158 and then built the save flow with a stack of buttons at
+  the FOOT of the panel. With ten recordings ticked that is ten names to
+  match against ten rows by reading — while under each row there is
+  nothing to match, because it is already there.
+- `done` belongs to its file now too. Dropping the bytes one recording
+  at a time means somebody saving ten does not hold all ten in memory
+  until the last is pressed.
 
-"ONE AFTER THE OTHER" IS A STACK OF BUTTONS, AND THAT IS NOT A DODGE
-- A browser will not let a page push files at somebody unasked. That is
-  a download bomb, and every browser blocks it after the first. Pressing
-  each in turn is the only honest way to do it — and it is also
-  recoverable: somebody who changes their mind halfway simply stops
-  pressing.
-- Each button carries its NAME AND SIZE, so a person can see what they
-  are about to put on their phone.
+THE BUG INSIDE THE MOVE, AND IT WAS THE WORST KIND
+- The fetch ran in `_rec_after_actions`, which happens once the whole
+  list has already rendered. So the bytes arrived a render too late and
+  the buttons appeared only on the NEXT interaction.
+- NOTHING FAILED. No error, no traceback — the save link simply did not
+  show up. A row can only draw a button for bytes that already exist, so
+  the fetching now happens before the rows are drawn.
 
-THE WAIT IS NARRATED, because it has to be
-- st.download_button needs the bytes at render time, so saving ten
-  recordings means ten fetches BEFORE anything appears. Same bar and
-  same line as the delete and the second reading: "fetching 2 of 3 ·
-  rec-1 · 1.1s".
-
-AND `done` FREES THE MEMORY
-- A dozen recordings held in session state is a dozen recordings this
-  instance cannot spare — the same reason the deck lets a take go once
-  the words are out. The buttons deliberately survive reruns until then,
-  because a button that vanishes on the next render cannot be pressed.
+AND A DEAD STRING REMOVED
+- `rec_save_ready` said "press each one to save it to this device" above
+  the old stack. The buttons sit under their own rows now, where the
+  instruction IS the button — a line of prose explaining a control that
+  is already obvious is a line nobody reads twice.
 
 NUMBERS
-- box 16 · drive text 20 · notes UI 27 · tier 15 — green
-- driven against a fake: two ticked, fetched in 1.1s, two buttons
-  labelled "rec-0.flac · 120 KB"; they survive a rerun; `done` clears
-  both the files and the selection
+- box 16 · notes UI 27 — green
+- driven against a fake: two ticked, two buttons in two different rows,
+  a `done` per file, and clearing one leaves the other
 - pyflakes clean

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v162 (a) (save a recording to this device)"
+APP_VERSION = "v163 (a) (the save link under its own file)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -527,8 +527,11 @@ STRINGS = {
     "rec_save":           {"en": "save",              "hr": "spremi"},
     "rec_save_one":       {"en": "fetching %d of %d  ·  %s  ·  %.1fs",
                            "hr": "dohvaćam %d od %d  ·  %s  ·  %.1fs"},
-    "rec_save_ready":     {"en": "press each one to save it to this device",
-                           "hr": "pritisni svaku da je spremiš na uređaj"},
+    # `rec_save_ready` is gone. It said "press each one to save it to
+    # this device" above a stack of buttons at the foot of the panel.
+    # The buttons sit under their own rows now, where the instruction is
+    # the button — a line of prose explaining a control that is already
+    # obvious is a line nobody reads twice.
     "rec_save_done":      {"en": "done",               "hr": "gotovo"},
     "rec_del":            {"en": "delete",            "hr": "obriši"},
     "rec_del_sure":       {"en": "delete %d?",        "hr": "obrisati %d?"},
@@ -4438,6 +4441,10 @@ def _rec_save(recs):
     multiple? All works. If there are multiples, they should download one
     after the other."
 
+    IT FETCHES; IT DRAWS NOTHING. The buttons are rendered by
+    _rec_save_here, inside the row each file came from — Baba: "download
+    link should appear under the file, the same as the player does."
+
     WHY IT IS A BUTTON PER FILE AND NOT ONE AUTOMATIC RUN.
     A browser will not let a page push files at somebody unasked — that
     is a download bomb, and every browser blocks it after the first. So
@@ -4496,22 +4503,40 @@ def _rec_save(recs):
         bar.empty()
         line.empty()
 
-    with st.container(key="recsave"):
-        st.markdown('<div class="readhint">%s</div>' % html.escape(
-            t("rec_save_ready")), unsafe_allow_html=True)
-        for rid in ids:
-            for name, blob in ready.get(rid, []):
-                st.download_button(
-                    "%s  ·  %.0f KB" % (name, len(blob) / 1024.0),
-                    data=blob, file_name=name, mime="audio/flac",
-                    key="dl_%s" % name, use_container_width=True)
-        # DONE IS A LINK, and it drops the bytes. A dozen recordings held
-        # in session memory is a dozen recordings this instance cannot
-        # spare — the same reason the deck lets a take go once the words
-        # are out.
-        st.button(t("rec_save_done"), key="rec_save_close",
-                  on_click=lambda: (st.session_state.pop("_rec_saving", None),
-                                    st.session_state.pop("_rec_files", None)))
+    # NOTHING IS DRAWN HERE ANY MORE. This function fetches; the buttons
+    # are drawn by _rec_save_here, inside the row each file came from.
+
+
+def _rec_save_here(rid):
+    """The download link for one recording, under its own row."""
+    ready = st.session_state.get("_rec_files") or {}
+    files = ready.get(rid)
+    if not files:
+        return
+
+    for name, blob in files:
+        st.download_button(
+            "%s  ·  %.0f KB" % (name, len(blob) / 1024.0),
+            data=blob, file_name=name, mime="audio/flac",
+            key="dl_%s" % name, use_container_width=True)
+
+    # DONE BELONGS TO THIS FILE, not to the whole batch. Dropping the
+    # bytes one recording at a time means somebody saving ten does not
+    # have to keep all ten in memory until the last is pressed — and a
+    # dozen recordings held in session state is a dozen this instance
+    # cannot spare, the same reason the deck lets a take go once the
+    # words are out.
+    def _clear_one():
+        got = st.session_state.get("_rec_files") or {}
+        got.pop(rid, None)
+        left = st.session_state.get("_rec_saving") or []
+        st.session_state["_rec_saving"] = [i for i in left if i != rid]
+        if not got:
+            st.session_state.pop("_rec_files", None)
+            st.session_state.pop("_rec_saving", None)
+
+    st.button(t("rec_save_done"), key="rec_save_close_%s" % rid,
+              on_click=_clear_one)
 
 
 def _rec_after_actions(recs):
@@ -4525,11 +4550,6 @@ def _rec_after_actions(recs):
     msg = st.session_state.pop("_rec_msg", None)
     if msg:
         (st.success if msg[0] == "good" else st.error)(msg[1])
-
-    # THE DOWNLOAD BUTTONS OUTLIVE ONE RENDER, unlike everything else
-    # here: they have to be there to be pressed. So this reads the state
-    # rather than popping it, and only `done` clears it.
-    _rec_save(recs)
 
     rid = st.session_state.pop("_rec_again", None)
     if not rid:
@@ -4685,6 +4705,18 @@ def recordings_panel():
 
         _rec_actions(picked, ids, "top")
 
+        # FETCH BEFORE THE ROWS ARE DRAWN, not after.
+        #
+        # This lived in _rec_after_actions, which runs once the whole
+        # list has already rendered — so the bytes arrived a render too
+        # late and the buttons appeared only on the NEXT interaction.
+        # Nothing failed; the save link simply did not show up, which is
+        # the worst kind of wrong.
+        #
+        # A row can only draw a download button for bytes that already
+        # exist, so the fetching has to happen first.
+        _rec_save(recs)
+
         playing = st.session_state.get("_rec_playing")
         for r in recs:
             rid = str(r.get("rec_id") or "")
@@ -4705,6 +4737,18 @@ def recordings_panel():
             # in particular.
             if playing == rid:
                 _rec_play_here(r)
+
+            # AND THE SAVE LINK UNDER ITS OWN FILE TOO. Baba: "download
+            # link should appear under the file, the same as the player
+            # does."
+            #
+            # The same reason, and I had already had it once: a control
+            # a long way from the row that summoned it belongs to
+            # nothing in particular. With ten recordings ticked, a stack
+            # of ten buttons at the foot of the panel is ten names to
+            # match against ten rows by reading — while under each row
+            # there is nothing to match, because it is already there.
+            _rec_save_here(rid)
 
         _rec_actions(picked, ids, "bottom")
 
