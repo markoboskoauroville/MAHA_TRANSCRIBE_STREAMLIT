@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v157 (a) (recordings in T, and a delete that narrates)"
+APP_VERSION = "v158 (a) (a file manager that behaves like one)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -517,6 +517,11 @@ STRINGS = {
                                  "Nema se što poslije slušati."},
     "rec_none":           {"en": "nothing stored yet", "hr": "još ništa"},
     "rec_has_text":       {"en": "text", "hr": "tekst"},
+    "rec_all":            {"en": "select all",       "hr": "označi sve"},
+    "rec_none_sel":       {"en": "select none",      "hr": "poništi sve"},
+    "rec_one_only":       {"en": "one file at a time",
+                           "hr": "jedna datoteka odjednom"},
+    "rec_close_play":     {"en": "close player",     "hr": "zatvori"},
     "rec_play":           {"en": "play",              "hr": "slušaj"},
     "rec_again":          {"en": "transcribe again",  "hr": "prepiši ponovno"},
     "rec_del":            {"en": "delete",            "hr": "obriši"},
@@ -4404,86 +4409,54 @@ def keep_as_note():
 
 
 def _rec_after_actions(recs):
-    """Play or re-transcribe, after the panel has drawn.
+    """Re-transcribe, after the panel has drawn.
 
-    BOTH NEED THE AUDIO BACK FROM DRIVE, which is a download and a wait,
-    so neither happens on the press itself — the press records what was
-    asked and this runs it on the next render, where a spinner can say
-    what is going on.
+    PLAY IS NOT HERE ANY MORE. It moved into the row itself, under the
+    file it belongs to. This is only the one action that has nowhere
+    sensible to live inside the list: a second reading fills the box at
+    the top of the screen, so it belongs after the panel, not in it.
     """
     msg = st.session_state.pop("_rec_msg", None)
     if msg:
         (st.success if msg[0] == "good" else st.error)(msg[1])
 
-    want_play = st.session_state.pop("_rec_play", None)
-    want_again = st.session_state.pop("_rec_again", None)
-    if not (want_play or want_again):
+    rid = st.session_state.pop("_rec_again", None)
+    if not rid:
         return
-
-    rid = want_play or want_again
     row = next((r for r in recs if str(r.get("rec_id")) == rid), None)
     if not row:
         return
 
     store = drive_store()
-    tmp = tempfile.mkdtemp(prefix="rec_")
+    tmp = tempfile.mkdtemp(prefix="again_")
     try:
         with st.spinner(t("rec_getting")):
             parts = store.fetch(rid, int(row.get("parts") or 1), tmp)
         if not parts:
-            # fetch() returns [] rather than a partial list on purpose:
-            # a missing middle piece transcribes to a confident
-            # transcript with a hole nobody can see.
             st.error(t("rec_gone"))
             return
-
-        if want_play:
-            # ONE PLAYER PER PART, NOT A MERGED FILE.
-            #
-            # I first wrote `ttt_audio.join(parts)` — a function that
-            # does not exist. There is no joiner in this codebase, and
-            # inventing one here would mean an ffmpeg concat, a temp
-            # file and a new failure mode, for a long take that is
-            # already stored as ten-minute pieces on purpose.
-            #
-            # Numbering them is honest and costs nothing: a person who
-            # recorded for half an hour understands three players in a
-            # row better than they would understand a wait.
-            for _i, _p in enumerate(parts):
-                if len(parts) > 1:
-                    st.caption("%d / %d" % (_i + 1, len(parts)))
-                with open(_p, "rb") as fh:
-                    st.audio(fh.read(), format="audio/flac")
+        with st.spinner(t("transcribing")):
+            text, _m, _r = transcribe_any_size(
+                parts[0], "", str(row.get("language") or ""))
+            for pth in parts[1:]:
+                more, _m2, _r2 = transcribe_any_size(
+                    pth, "", str(row.get("language") or ""))
+                if (more or "").strip():
+                    text = (text or "").rstrip() + "\n\n" + more.strip()
+        if (text or "").strip():
+            # INTO THE BOX, not over the old transcript. A second reading
+            # is a new take of the same audio, and which one is better is
+            # Baba's call, not the app's.
+            t1_set_text(text)
+            st.success(t("rec_again_done"))
         else:
-            with st.spinner(t("transcribing")):
-                # transcribe_any_size ALREADY cuts a long file into
-                # pieces and stitches the results — so it is handed the
-                # first part, and for a multi-part recording each part
-                # is transcribed and joined in turn below.
-                text, _m, _r = transcribe_any_size(
-                    parts[0], "", str(row.get("language") or ""))
-                for _p in parts[1:]:
-                    _more, _m2, _r2 = transcribe_any_size(
-                        _p, "", str(row.get("language") or ""))
-                    if (_more or "").strip():
-                        text = (text or "").rstrip() + "\n\n" + _more.strip()
-            if (text or "").strip():
-                # INTO THE BOX, not over the old transcript. A second
-                # reading is a new take of the same audio, and which one
-                # is better is Baba's call, not the app's.
-                t1_set_text(text)
-                st.success(t("rec_again_done"))
-            else:
-                st.warning(t("nothing_heard"))
+            st.warning(t("nothing_heard"))
     except Exception as e:
         errlog.add(st.session_state, "drive", "could not use that recording",
                    "{}: {}".format(type(e).__name__, e))
         st.error(t("rec_failed"))
     finally:
-        try:
-            shutil.rmtree(tmp, ignore_errors=True)
-        except Exception:
-            pass
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def note_number(i):
@@ -4501,26 +4474,26 @@ def note_number(i):
 def recordings_panel():
     """The recordings in Drive: list, play, transcribe again, delete.
 
-    IT LIVES IN T NOW. Baba: "move recording tab from settings screen to
-    transcription screen." He is right — a recording is made here and
-    belongs here. Settings is where you change how the app behaves, not
-    where you go through what you said.
+    IT LIVES IN T. A recording is made on that screen and belongs on it;
+    Settings is where you change how the app behaves, not where you go
+    through what you said.
+
+    THIS IS A SYSTEM TOOL, and Baba named it as one: "for this kind of
+    interface, when we are doing file management, it's like a system
+    tool." Everything here is a LINK, not a pill. A pill is a choice you
+    are being offered; a link is a thing you do to what you have
+    selected, and file managers have always looked like the second.
     """
     store = drive_store()
     if not store.enabled:
         return
 
-    # THE LIST IS FETCHED ONCE PER SESSION, not per render. It is a
-    # network round trip and this panel redraws on every tick of a
-    # checkbox.
     if "_recs" not in st.session_state:
         st.session_state["_recs"] = store.list()
     recs = st.session_state["_recs"] or []
 
-    # A DELETION IN PROGRESS TAKES THE PANEL OVER. It has to run HERE, in
-    # the render body — a callback cannot draw, so a delete started from
-    # on_click could not show a bar, a name or a clock. The press only
-    # records what was asked; this does it and narrates it.
+    # A DELETION IN PROGRESS TAKES THE PANEL OVER. It runs in the render
+    # body because a callback cannot draw — no bar, no name, no clock.
     if st.session_state.get("_rec_doing"):
         _run_deletion()
         return
@@ -4530,16 +4503,12 @@ def recordings_panel():
             st.caption(t("rec_none"))
             return
 
-        picked = [str(r.get("rec_id")) for r in recs
-                  if st.session_state.get("_rp_%s" % r.get("rec_id"))]
+        ids = [str(r.get("rec_id") or "") for r in recs]
+        picked = [i for i in ids if st.session_state.get("_rp_%s" % i)]
 
-        # THE ACTIONS APPEAR TWICE, top and bottom. Baba asked for it and
-        # the reason shows itself the moment there are twenty rows: a
-        # person who ticks something at the bottom should not have to
-        # scroll back up to act on it, and one who ticks at the top
-        # should not have to scroll down.
-        _rec_actions(picked, "top")
+        _rec_actions(picked, ids, "top")
 
+        playing = st.session_state.get("_rec_playing")
         for r in recs:
             rid = str(r.get("rec_id") or "")
             mins = float(r.get("seconds") or 0) / 60.0
@@ -4549,48 +4518,137 @@ def recordings_panel():
                     "  ·  " + t("rec_has_text") if r.get("has_text") else ""),
                 key="_rp_%s" % rid)
 
-        _rec_actions(picked, "bottom")
+            # THE PLAYER SITS UNDER ITS OWN FILE. Baba: "when user choose
+            # any file and press play, the player should appear below
+            # that file in the list."
+            #
+            # It used to appear at the foot of the panel, which is fine
+            # with three recordings and wrong with thirty: a player a
+            # long way from the row that summoned it belongs to nothing
+            # in particular.
+            if playing == rid:
+                _rec_play_here(r)
+
+        _rec_actions(picked, ids, "bottom")
 
     _rec_after_actions(recs)
 
 
-def _rec_actions(picked, where):
-    """play · transcribe again · delete, for what is ticked.
+def _rec_actions(picked, all_ids, where):
+    """select all · play · transcribe again · delete.
 
-    Drawn twice per panel, so the keys carry `where` — two Streamlit
-    widgets cannot share a key, and the top and bottom rows are two
-    widgets even though they are one idea.
+    Drawn twice, top and bottom, so the keys carry `where` — two
+    Streamlit widgets cannot share a key even when they are one idea.
+
+    ALWAYS DRAWN, never hidden. This is the change from the first
+    version: links that vanish when nothing is ticked make the panel
+    jump as you tick, and a person cannot learn where a control lives if
+    it is not there when they look. They GREY OUT instead.
     """
-    if not picked:
-        # A delete link with nothing selected is a question with no
-        # answer. The same rule as every other row of links in this app.
-        return
+    n = len(picked)
+    everything = len(all_ids) and n == len(all_ids)
 
     with st.container(key="recacts_%s" % where):
-        c1, c2, c3 = st.columns([1, 1.4, 1.1])
-        c1.button(t("rec_play"), key="rec_play_%s" % where,
-                  on_click=lambda: st.session_state.update(
-                      {"_rec_play": picked[0]}),
-                  use_container_width=True)
-        c2.button(t("rec_again"), key="rec_again_%s" % where,
-                  on_click=lambda: st.session_state.update(
-                      {"_rec_again": picked[0]}),
+        c0, c1, c2, c3 = st.columns([1.1, 0.8, 1.5, 1.1])
+
+        # SELECT ALL, and the same link clears it. One control for a
+        # thing and its opposite, because "select all" next to "select
+        # none" is two words for one decision.
+        def _toggle_all():
+            for i in all_ids:
+                st.session_state["_rp_%s" % i] = not everything
+            st.session_state.pop("_rec_del_armed", None)
+
+        c0.button(t("rec_none_sel") if everything else t("rec_all"),
+                  key="rec_all_%s" % where, on_click=_toggle_all,
                   use_container_width=True)
 
-        # TWO PRESSES, AND THE SECOND SAYS HOW MANY. "delete 3?" is a
-        # number somebody can check against what they ticked; "are you
-        # sure?" is not.
-        if st.session_state.get("_rec_del_armed"):
-            c3.button(t("rec_del_sure") % len(picked),
-                      key="rec_del2_%s" % where,
+        # ONE FILE FOR PLAY AND FOR TRANSCRIBE, MANY FOR DELETE.
+        #
+        # Baba: "grey out action links for playing multiple files and
+        # transcribing multiple files. Only deletion of the multiple
+        # files is possible."
+        #
+        # He is right about the asymmetry and it is not arbitrary:
+        # playing two files at once is not a thing, and transcribing
+        # several would produce one box of text with no way to tell
+        # whose words were whose. Deleting many is the one act that
+        # genuinely means the same thing done repeatedly.
+        one = (n == 1)
+        c1.button(t("rec_play"), key="rec_play_%s" % where,
+                  disabled=not one,
+                  help=None if one else t("rec_one_only"),
+                  on_click=lambda: st.session_state.update(
+                      {"_rec_playing": picked[0] if picked else None}),
+                  use_container_width=True)
+        c2.button(t("rec_again"), key="rec_again_%s" % where,
+                  disabled=not one,
+                  help=None if one else t("rec_one_only"),
+                  on_click=lambda: st.session_state.update(
+                      {"_rec_again": picked[0] if picked else None}),
+                  use_container_width=True)
+
+        if st.session_state.get("_rec_del_armed") and n:
+            c3.button(t("rec_del_sure") % n, key="rec_del2_%s" % where,
                       on_click=lambda: st.session_state.update(
                           {"_rec_doing": list(picked), "_rec_del_armed": False}),
                       use_container_width=True)
         else:
             c3.button(t("rec_del"), key="rec_del_%s" % where,
+                      disabled=not n,
                       on_click=lambda: st.session_state.update(
                           {"_rec_del_armed": True}),
                       use_container_width=True)
+
+
+def _rec_play_here(row):
+    """Fetch one recording and play it, right under its own row.
+
+    THE AUDIO IS CACHED FOR THE SESSION. This runs on every render while
+    a player is open — a tick of any checkbox redraws the whole panel —
+    and fetching a recording from Drive each time would make the list
+    unusable.
+    """
+    rid = str(row.get("rec_id") or "")
+    cache = st.session_state.setdefault("_rec_audio", {})
+
+    if rid not in cache:
+        store = drive_store()
+        tmp = tempfile.mkdtemp(prefix="play_")
+        try:
+            with st.spinner(t("rec_getting")):
+                parts = store.fetch(rid, int(row.get("parts") or 1), tmp)
+            if not parts:
+                # fetch() returns [] rather than a partial list on
+                # purpose: a missing middle piece would play as a
+                # recording that simply skips, with nothing to show it.
+                st.error(t("rec_gone"))
+                return
+            blobs = []
+            for pth in parts:
+                with open(pth, "rb") as fh:
+                    blobs.append(fh.read())
+            cache[rid] = blobs
+        except Exception as e:
+            errlog.add(st.session_state, "drive", "could not fetch a recording",
+                       "{}: {}".format(type(e).__name__, e))
+            st.error(t("rec_failed"))
+            return
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    blobs = cache.get(rid) or []
+    for i, blob in enumerate(blobs):
+        # A long take is stored as ten-minute pieces on purpose. They are
+        # numbered rather than merged: there is no joiner in this
+        # codebase, and inventing one would mean an ffmpeg concat and a
+        # new failure mode for no gain.
+        if len(blobs) > 1:
+            st.caption("%d / %d" % (i + 1, len(blobs)))
+        st.audio(blob, format="audio/flac")
+
+    st.button(t("rec_close_play"), key="rec_stop_%s" % rid,
+              on_click=lambda: st.session_state.update({"_rec_playing": None}))
 
 
 def _run_deletion():

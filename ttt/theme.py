@@ -998,6 +998,46 @@ def css(scheme: str = "amber", font: str = "mono",
       white-space: nowrap;
     }}
 
+    /* THE FILE MANAGER IS A SYSTEM TOOL, so its controls are LINKS.
+       Baba: "for this kind of interface, when we are doing file
+       management, it's like a system tool. Don't make pills, make
+       action links."
+       A pill is a choice being offered; a link is a thing you do to
+       what you have selected. File managers have always looked like the
+       second, and this panel is the one place in the app that is about
+       files rather than about words. */
+    [class*="st-key-rec_"] button,
+    [class*="st-key-recacts_"] button {{
+      background: transparent !important;
+      border: 0 !important;
+      min-height: 0 !important;
+      padding: 0.15rem 0 !important;
+      font-size: 0.72rem !important;
+      color: var(--dim) !important;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      justify-content: flex-start !important;
+      white-space: nowrap;
+    }}
+    [class*="st-key-rec_"] button:hover:not(:disabled) {{
+      color: var(--amber) !important;
+    }}
+    /* GREYED, AND VISIBLY SO. A disabled link that looks like a live one
+       is worse than no link: somebody presses it and learns nothing.
+       The underline goes too — that is what says "not now" without a
+       word. */
+    [class*="st-key-rec_"] button:disabled {{
+      color: var(--line) !important;
+      text-decoration: none !important;
+      cursor: default !important;
+    }}
+    /* Delete keeps its warning colour on hover, as it does in the note. */
+    [class*="st-key-rec_del"] button:hover:not(:disabled) {{
+      color: var(--rec, #d9484b) !important;
+    }}
+    /* The rows themselves sit tight — a file list is a list, not a form. */
+    [class*="st-key-_rp_"] {{ margin: 0 !important; }}
+
     /* THE NOTE CARDS: a gold edge, and the words in the reading colour.
        Baba: "note does not have nice outline — add golden outline
        around each note, but the text is supposed to be white, same as
