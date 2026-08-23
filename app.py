@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v130 (a) (five pills, one line)"
+APP_VERSION = "v131 (a) (one clear, under the box)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -5374,21 +5374,28 @@ elif active == "talk":
             st.session_state["talk_text"] = ""
             flash("rd_clear")
 
-        def _keep_text():
-            txt = (st.session_state.get("talk_text") or "").strip()
-            if txt:
-                st.session_state["_archive"] = RT.add_piece(
-                    st.session_state.get("_archive", []), txt)
-                RT.save_archive(archive_store, st.session_state["_archive"])
-            flash("rd_keep")
+        # _keep_text lived here and is gone with the `archive` button it
+        # served. It wrote into the OLD archive, which became notes in
+        # v98 and is displayed nowhere — a drawer nobody opens. The
+        # second copy further down belongs to the reader's own archive
+        # panel and is left alone.
 
-        cmd_row("rd", [
-                (t("archive_word"), "rd_keep", _keep_text),
-            (t("clear_word"), "rd_clear", _clear_talk),
-        ], target_key="talk_text")
-
+        # THE COMMAND ROW IS GONE FROM R. Baba: "archive and clear goes
+        # away — it should be only clear, as an action link under the
+        # text box."
+        #
+        # `archive` kept a copy of the text in the OLD archive, which
+        # became notes in v98 and is not shown anywhere any more, so the
+        # button wrote into a drawer nobody opens. And a bordered row of
+        # two commands above the box was heavier than the two words in
+        # it deserve.
+        #
+        # The same shape as T's "add to notes": one quiet link, under
+        # the box, where you look after reading what is in it.
         st.text_area(t("tab_talk"), key="talk_text", height=150,
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
+        if (st.session_state.get("talk_text") or "").strip():
+            st.button(t("clear_word"), key="rd_clear", on_click=_clear_talk)
         # A GREY LINE SAYING WHAT TO DO NEXT. Baba: "in gray letters
         # under the text box put little note — press play to read."
         #

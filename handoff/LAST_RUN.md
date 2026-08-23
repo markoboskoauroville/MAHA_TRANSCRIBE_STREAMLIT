@@ -1,30 +1,33 @@
-# STEP: five pills, one line
-STATUS: done, pushed as v130. No deploy needed.
+# STEP: one clear, under the box
+STATUS: done, pushed as v131. No deploy needed.
 
 WHAT HAPPENED
-- AUTO · HR · ENG · single · multi, all on one row.
-- A REVERSAL of v118, which split them precisely because five pills
-  clipped below 412px. §27 is the rule that decides it, and it allows
-  this: the CELLS may shrink and the TYPE may shrink; what may never
-  happen is a word being cut. So the type came down to 0.72rem, nowrap
-  holds the row, and the column shares follow the word lengths.
-- Measured at 320, 360 and 412px: one line, nothing clipped, no
-  sideways scroll at any of them.
+- R's command row is gone. Baba: "archive and clear goes away — it
+  should be only clear, as an action link under the text box."
+- `archive` wrote into the OLD archive, which became notes in v98 and
+  is displayed nowhere. The button had been writing into a drawer
+  nobody opens for thirty-odd versions.
+- `clear` is now one quiet link under the box, right-aligned, touching
+  it at −1.8px — the same shape as T's "add to notes", so both modules
+  put their one afterthought action in the same place.
+- It only appears when there is something to clear.
 
 NUMBERS
-- source 19 · box 16 · tier 12 — green
+- reader: only the pre-existing check 8 red, nothing new
+- browser-verified: archive absent, clear present, gap −1.8px
 - pyflakes clean
 
-SEEN WHILE MEASURING, NOT FIXED
-- THE TAB BAR WRAPS FOR THE OWNER at 360px: seven tabs go to two lines,
-  with `log` alone underneath. A family member has five and stays on one
-  line, so this is the owner's screen only — but it is the same orphan
-  shape Baba objected to for `multi`, and it will look wrong to him the
-  moment he notices. Not touched today because he asked for one thing.
+WHAT BROKE, AND WHAT I UNDID
+- Removing the button orphaned its handler, and pyflakes caught that
+  there were TWO `_keep_text` definitions in the same module. Removed
+  the one I orphaned; the other belongs to the reader's own archive
+  panel and was left alone rather than tidied blind.
 
 STILL OPEN
 - The note's red rec, never seen to work.
 - test_reader 8, red since v101.
+- The owner's tab bar wraps at 360px, seven tabs onto two lines, with
+  `log` orphaned underneath — the same shape he objected to for `multi`.
 - Per-provider test buttons; People and the test result as real tables.
-- THE KEYS IN THE SHEET — a session of its own, starting by reading Key
-  Tester and Password Keyring.
+- THE KEYS IN THE SHEET — its own session, starting from Key Tester and
+  Password Keyring.

@@ -740,6 +740,33 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* CLEAR, under the reading box. The same shape as T's "add to
+       notes": a quiet link where you look after reading what is in the
+       box, not a bordered command above it. */
+    [class*="st-key-rd_clear"] {{
+      margin-top: -0.75rem !important;
+      width: 100% !important;
+      display: flex !important;
+    }}
+    [class*="st-key-rd_clear"] .stButton {{ width: 100% !important; }}
+    [class*="st-key-rd_clear"] button {{
+      background: transparent !important;
+      border: 0 !important;
+      color: var(--dim) !important;
+      padding: 0.1rem 0.75rem !important;
+      min-height: 0 !important;
+      font-size: 0.72rem !important;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      width: 100% !important;
+    }}
+    [class*="st-key-rd_clear"] button > div {{
+      width: 100% !important;
+      justify-content: flex-end !important;
+    }}
+    [class*="st-key-rd_clear"] button p {{ text-align: right !important; }}
+    [class*="st-key-rd_clear"] button:hover {{ color: var(--amber) !important; }}
+
     /* FIVE PILLS, ONE LINE. nowrap holds the row together and the type
        shrinks to fit — §27's trade, which lets a cell get smaller but
        never lets a word be cut. Measured at 320 and 360px. */
