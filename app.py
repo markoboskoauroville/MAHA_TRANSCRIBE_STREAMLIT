@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v124 (a) (the tier decides, and one edge not two)"
+APP_VERSION = "v125 (a) (the reading tab, corrected)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -225,7 +225,10 @@ SYM = {
     "go":     "\u2192",   # right arrow: translate INTO
 }
 
-VOICE_SHORT = {"Gabrijela": "Gabby", "Srecko": "Srećko"}
+# CROATIAN SPELLING FOR A CROATIAN VOICE. "Gabby" is an English
+# shortening of a Croatian name, sitting next to Srećko who kept his
+# diacritic. Baba noticed; he is right that it looked borrowed.
+VOICE_SHORT = {"Gabrijela": "Gabi", "Srecko": "Srećko"}
 VOICES_BY_LANG = {"hr": ["Gabrijela", "Srecko"], "en": ["Sonia", "Ryan"]}
 VOICE_TO_VKEY = {"Gabrijela": "hrF", "Srecko": "hrM", "Sonia": "ukF", "Ryan": "ukM"}
 VOICE_LANG = {"Gabrijela": "hr", "Srecko": "hr", "Sonia": "en", "Ryan": "en"}
@@ -462,6 +465,8 @@ STRINGS = {
     "gen_part":           {"en": "Making part {i} of {n}…",
                             "hr": "Pripremam dio {i} od {n}…"},
     "gen_audio":          {"en": "Making the audio…",  "hr": "Pripremam zvuk…"},
+    "rd_hint":            {"en": "press play to read",
+                           "hr": "pritisni play za čitanje"},
     "new_text":           {"en": "New text",           "hr": "Novi tekst"},
     "prev_sentence":      {"en": "Previous sentence",  "hr": "Prethodna rečenica"},
     "next_sentence":      {"en": "Next sentence",      "hr": "Sljedeća rečenica"},
@@ -3307,33 +3312,48 @@ def change_own_password():
 
 
 def voice_picker(prefix: str, on_pick=None):
-    """Every voice on ONE row, short names, no language headings.
+    """Every voice on ONE row, grouped by language.
 
-    Baba: "HR ENG, it's not necessary. Gabrijela Srecko, we know, are
-    Croats. Sonia and Ryan are English people." He is right — the headings
-    cost two lines to say what the names already say, and on a phone that
-    is real estate the text box needs. Gabrijela is shortened to Gabby for
-    the same reason; the full name stays in the tooltip.
+    A REVERSAL, AND A DELIBERATE ONE. The headings were removed once, on
+    Baba's own reasoning: "HR ENG, it's not necessary — Gabrijela and
+    Srećko, we know, are Croats." Now he wants them back: "put HR and
+    then Gabi Srećko, then ENG then Sonia Ryan."
+
+    Both readings are right about different people. He knows which voice
+    speaks which language; somebody meeting the app does not, and four
+    names in a row tell them nothing. So the tags return — but as TAGS,
+    dim and small, not as headings on lines of their own. The row still
+    costs one line, which is what the removal was protecting.
     """
     current = st.session_state.get("voice", "Gabrijela")
-    names = [n for group in VOICES_BY_LANG.values() for n in group]
-    # ONE ROW, ALWAYS. A wrapped fourth voice costs a whole line of a
-    # phone screen to say nothing — the keyed container lets the
-    # stylesheet force nowrap, the same override the command row and the
-    # archive rows already use.
     with st.container(key="voicerow"):
-        cols = st.columns(len(names))
-    for col, name in zip(cols, names):
-        col.button(
-            VOICE_SHORT.get(name, name), key=f"{prefix}_{name}",
-            type="primary" if name == current else "secondary",
-            help=name,
-            # on_pick lets the reader rebuild a reading already in flight
-            # when the voice changes. Nothing else passes it, so every
-            # other caller behaves exactly as before.
-            on_click=(lambda n=name: (pick_voice(n), on_pick and on_pick()))
-            if on_pick else pick_voice,
-            args=() if on_pick else (name,))
+        # A narrow cell for each tag, a wider one for each voice.
+        widths, cells = [], []
+        for lang, names in VOICES_BY_LANG.items():
+            widths.append(0.55)
+            # THE SAME WORDS AS THE PILLS IN T — HR and ENG. lang.upper()
+            # gave "EN", which is correct and is not what the rest of the
+            # app says. Two names for one language on two screens is how
+            # somebody starts wondering whether they mean the same thing.
+            cells.append(("tag", t("lang_" + lang)))
+            for n in names:
+                widths.append(1.0)
+                cells.append(("voice", n))
+        cols = st.columns(widths)
+        for col, (kind, val) in zip(cols, cells):
+            if kind == "tag":
+                col.markdown('<div class="vtag">%s</div>' % html.escape(val),
+                             unsafe_allow_html=True)
+                continue
+            col.button(
+                VOICE_SHORT.get(val, val), key=f"{prefix}_{val}",
+                type="primary" if val == current else "secondary",
+                help=val,
+                # on_pick lets the reader rebuild a reading already in
+                # flight when the voice changes. Nothing else passes it.
+                on_click=(lambda n=val: (pick_voice(n), on_pick and on_pick()))
+                if on_pick else pick_voice,
+                args=() if on_pick else (val,))
 
 
 def do_correct():
@@ -5174,12 +5194,11 @@ elif active == "talk":
         # exactly when it could not be changed.
         _voice_row(engine, sp_ring_talk)
 
-        def _new_text():
-            st.session_state.pop("_talk_job", None)
-            st.session_state.pop("_talk_player_seen", None)
-            st.session_state.pop("_talk_revoice", False)
-
-        st.button(t("new_text"), key="talk_new", on_click=_new_text)
+        # "New text" is gone. Baba: "we do not need new text — there is
+        # text box." He is right: the box is always there and typing in
+        # it is how a new text begins. A button that only cleared the
+        # player was a second way to say "I have finished with this
+        # one", which the next press of play says by itself.
 
         # THREE BLOCKS AHEAD, BUILT IN PARALLEL.
         #
@@ -5222,6 +5241,11 @@ elif active == "talk":
         # redundant." So the separate go button below the box is gone and
         # the transport's own play cell does it — one control for
         # starting and for pausing, in the place a hand already goes.
+        # THE VOICES FIRST. Baba: "these language buttons go above this
+        # wave player, they are at the top." Choosing who reads comes
+        # before pressing play, so the screen reads in that order.
+        synth_fn = _voice_row(engine, sp_ring_talk)
+
         _has_text = bool((st.session_state.get("talk_text") or "").strip())
         _start = False
         if _wave_component is not None:
@@ -5243,7 +5267,6 @@ elif active == "talk":
                     st.session_state["_talk_start_seen"] = _ev0.get("at")
                     _start = True
 
-        synth_fn = _voice_row(engine, sp_ring_talk)
 
         def _clear_talk():
             st.session_state["talk_text"] = ""
@@ -5264,6 +5287,16 @@ elif active == "talk":
 
         st.text_area(t("tab_talk"), key="talk_text", height=150,
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
+        # A GREY LINE SAYING WHAT TO DO NEXT. Baba: "in gray letters
+        # under the text box put little note — press play to read."
+        #
+        # The play that starts a reading is the player's own, up at the
+        # top, and nothing on this screen said so. A person who pastes
+        # text and then looks for a "read" button finds none, because it
+        # was deliberately removed (§64) — this is the one line that
+        # makes that removal make sense.
+        st.markdown('<div class="readhint">%s</div>' % html.escape(t("rd_hint")),
+                    unsafe_allow_html=True)
 
         # THE PLAYER IS ALWAYS HERE, greyed until there is something to
         # play. Baba's rule from the start: "no new elements appearing on

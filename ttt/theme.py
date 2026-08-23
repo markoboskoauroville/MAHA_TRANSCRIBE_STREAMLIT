@@ -740,6 +740,28 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* THE LANGUAGE TAG beside its voices. Dim and small, so the row
+       still costs one line — which is what removing the headings was
+       protecting in the first place. */
+    .vtag {{
+      color: var(--dim);
+      font-size: 0.62rem;
+      letter-spacing: 0.08em;
+      line-height: 2.6;
+      text-align: right;
+      padding-right: 0.2rem;
+      white-space: nowrap;
+    }}
+
+    /* The line under the reading box. Grey, small, and not a control —
+       it says where the play is, since the read button was removed on
+       purpose and nothing else on the screen mentioned it. */
+    .readhint {{
+      color: var(--dim);
+      font-size: 0.7rem;
+      margin: -0.5rem 0 0.2rem 0.2rem;
+    }}
+
     /* THE NOTES — cards, in the app's own quiet register.
        Baba asked for Keep, but "dull colours, not too bright". So the
        card is the same surface as every other panel and gets NO colour
