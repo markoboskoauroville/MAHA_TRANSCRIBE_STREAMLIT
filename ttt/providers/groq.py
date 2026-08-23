@@ -142,13 +142,22 @@ class Groq(Provider):
             try:
                 client = GroqSDK(api_key=key,
                                  default_headers={"User-Agent": USER_AGENT})
-                text = client.audio.transcriptions.create(
-                    file=(path, audio),
-                    model=model or FAST_STT,
-                    language=language,
-                    response_format="text",
-                    temperature=0.0,
-                ).strip()
+                # "auto" AND EMPTY ARE OMITTED, NOT SENT.
+                #
+                # Whisper detects the language itself when the parameter
+                # is absent; sending "auto" or "" is an error. AssemblyAI
+                # spells the same idea differently — it takes
+                # language_detection=True — so the APP stores "auto" and
+                # each provider says it in its own words. Neither the
+                # app nor the other provider has to know how this one
+                # spells it.
+                kw = dict(file=(path, audio),
+                          model=model or FAST_STT,
+                          response_format="text",
+                          temperature=0.0)
+                if language and language != "auto":
+                    kw["language"] = language
+                text = client.audio.transcriptions.create(**kw).strip()
                 return text, None, None
             except Exception as e:
                 return None, str(e)[:250], classify_exception(e)

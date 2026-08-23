@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v117 (a) (add to notes, glued to the box)"
+APP_VERSION = "v118 (a) (auto language)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -285,6 +285,7 @@ STRINGS = {
     "pick_big":  {"en": "That file is too large for the deck — use this box.",
                   "hr": "Datoteka je prevelika za deck — koristi ovaj okvir."},
     "tab_talk":           {"en": "R",                "hr": "R"},
+    "lang_auto":          {"en": "auto",               "hr": "auto"},
     "speech_lang_label":  {"en": "Speech language",  "hr": "Jezik govora"},
     "lang_en":            {"en": "ENG",              "hr": "ENG"},
     "lang_hr":            {"en": "HR",               "hr": "HR"},
@@ -3976,7 +3977,24 @@ def _lang_mode_row():
     the foot of the page.
     """
     with st.container(key="langrow"):
-        lcol1, lcol2, mcol1, mcol2, _ = st.columns([1, 1, 1.4, 1.4, 1.2])
+        # THREE LANGUAGES: HR, ENG, AUTO.
+        #
+        # AUTO lets the engine work it out, which is what somebody who
+        # switches between Croatian and English mid-thought actually
+        # wants. It is not free — naming the language is more accurate
+        # than detecting it, and detection can hear one sentence of
+        # English inside Croatian and change its mind — so it is offered
+        # rather than made the default.
+        #
+        # The app stores "auto" and each provider says it its own way:
+        # AssemblyAI takes language_detection=True, Whisper wants the
+        # parameter left out altogether.
+        # TWO ROWS, EACH A WHOLE GROUP. Five pills do not fit one line
+        # below 412px, and Streamlit wrapped them 4 + 1 — which left
+        # `multi` alone underneath, looking orphaned rather than paired
+        # with `single`. Splitting them deliberately keeps each pair
+        # together: the language on one line, the mode on the next.
+        lcol1, lcol2, lcol3 = st.columns([1, 1, 1.2])
         speech_now = st.session_state.get("speech_lang", "hr")
         lcol1.button(t("lang_hr"), key="tr_hr",
                      type="primary" if speech_now == "hr" else "secondary",
@@ -3984,9 +4002,13 @@ def _lang_mode_row():
         lcol2.button(t("lang_en"), key="tr_en",
                      type="primary" if speech_now == "en" else "secondary",
                      on_click=set_speech_lang, args=("en",))
+        lcol3.button(t("lang_auto"), key="tr_auto",
+                     type="primary" if speech_now == "auto" else "secondary",
+                     on_click=set_speech_lang, args=("auto",))
         # Single or multi, in the same row as the language, because both
         # answer "what happens when I press stop".
         appending = bool(st.session_state.get("append_mode"))
+        mcol1, mcol2, _mspare = st.columns([1.3, 1.2, 0.7])
         mcol1.button(t("mode_single"), key="tr_single",
                      type="secondary" if appending else "primary",
                      on_click=set_append_mode, args=(False,))
