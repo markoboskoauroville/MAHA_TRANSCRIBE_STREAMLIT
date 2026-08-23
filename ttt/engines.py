@@ -48,11 +48,12 @@ class Engine:
     describe only part of the board.
     """
 
-    __slots__ = ("id", "label", "routes", "note")
+    __slots__ = ("id", "label", "routes", "note", "tier")
 
-    def __init__(self, id, label, routes, note=""):
+    def __init__(self, id, label, routes, note="", tier=""):
         self.id = id
         self.label = label
+        self.tier = tier or id
         self.routes = dict(routes)
         self.note = note
 
@@ -76,12 +77,24 @@ class Engine:
 # The names are Baba's own, and they name the PARTS rather than a tier,
 # because "which engine am I on" is answered by reading the vendors.
 ENGINES = [
+    # TWO TIERS, NAMED AS TIERS. Baba: "it is a free tier or studio
+    # tier, that is the thing — not normal and studio."
+    #
+    # `tier` is the word for the corner and for a person's row: short,
+    # and it says what somebody is ON. `label` still names the PARTS,
+    # because in the owner's panel, where he is choosing what to buy,
+    # knowing that studio means Speechify and Claude is the whole point.
+    #
+    # The id stays "normal" on purpose. It is what the deployed script
+    # writes and what the sheet holds after v112's migration; renaming
+    # it would mean another script change, another deploy, and another
+    # migration to say a word differently on screen.
     Engine("normal", "Edge / Groq",
            {"stt": "groq", "tts": "edge", "llm": "groq"},
-           note="the app's own keys"),
+           note="the app's own keys", tier="free"),
     Engine("studio", "Speechify / AssemblyAI / Claude",
            {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
-           note="your own keys"),
+           note="your own keys", tier="studio"),
 ]
 
 BY_ID = {e.id: e for e in ENGINES}

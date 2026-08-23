@@ -1,48 +1,56 @@
-# STEP: the note editor would not load, and the frame got tighter
-STATUS: fixed and pushed as v122
+# STEP: tiers, a required password, and a test result you can read
+STATUS: done, pushed as v123
 
-THE CRASH, AND IT WAS MINE FROM v121
-- "Your app is having trouble loading the app.ttt_note component."
-- v121 removed the cut and line BUTTONS and left their ids in a
-  forEach. getElementById returned null, addEventListener threw, the
-  script died before ready() was ever sent — so Streamlit waited, gave
-  up, and said only that it could not load. The editor was absent and
-  pressing rec did nothing, because nothing was listening.
-- Two more dead lookups were waiting in the render handler for the day
-  Python sent those labels again. Gone, and setLabel() now skips a
-  missing element rather than throwing.
+WHAT HAPPENED
+- FREE and STUDIO, not "normal". Baba: "it is a free tier or studio
+  tier — not normal and studio." Each engine carries a `tier` word now.
+  The stored id stays `normal`, because renaming it means another script
+  change, another deploy and another migration to say one word
+  differently on screen.
+- The status line shows the TIER, not the parts: `transcribe · free ·
+  admin` instead of `Edge / Groq`. "Edge / Groq" answers a question
+  nobody asks at the foot of a page; "free" answers the one they do.
+  The parts are still named in the owner's panel, where he is choosing
+  between them and needs to know what he buys.
+- The note field is gone from Add a person — just username and
+  password. The COLUMN stays in the sheet; it was the form that had a
+  field nobody fills.
+- THE PASSWORD IS NO LONGER OPTIONAL. Empty used to mean "generate one",
+  which reads as optional on a form and is not what he wants: he hands
+  people a password he chose and can say out loud. Empty is refused now,
+  with the reason on screen — and so is an empty name.
+- "check engine" is "test".
 
-THE TEST THAT WOULD HAVE CAUGHT IT — AND MY FIRST ONE THAT WOULD NOT
-- I wrote a source-reading test first. Its mutation SURVIVED: it looked
-  for getElementById('bCut'), and the real bug used getElementById(id)
-  with the id coming from an array. Invisible to a regex, fatal at
-  runtime.
-- So tests/gastest/test_components.js EXECUTES every component against a
-  fake DOM that knows only the ids really in its markup. Both bugs that
-  have shipped are now caught: v121's dead ids, and v101's label
-  constant declared in the wrong file.
-- Emulating the browser mattered as much as being strict: a browser
-  exposes every id as a global, and cassette_frontend uses `bFile` bare.
-  Without that the deck failed here while working perfectly for Baba —
-  the wrong kind of red.
+THE OVERLAP IN HIS SCREENSHOT
+- "all parts answered" printed ACROSS the line beneath it. A caption and
+  a text sitting under this panel's tight spacing, with the gap closed
+  and no line-height given back. The whole verdict is one code block
+  now — a block cannot overlap itself, and it lines up in a column like
+  the people table above it.
 
-THE DESIGN, ALL FOUR THINGS HE ASKED FOR
-- Tabs at the top: Streamlit reserves room for a header this app does
-  not use, which was most of the band. Panel padding trimmed too.
-- Each section a shade darker inside its frame — barely a shade, since
-  the frames already divide them and colour still means STATE here.
-- delete and close are LINKS, not pills, glued to the note's top edge.
-- The date is `7:46/23/08/26` — hour without a leading zero, no century,
-  no word "made" in front of it explaining what a date already says.
-  One date, not two: the later of made and edited.
+WHAT BROKE, AND WHAT I UNDID
+- test_accounts had been SILENTLY BROKEN SINCE v115, when the login
+  became a form: three helpers still used set_value().run(), which
+  submits nothing to a form. Nothing noticed for eight versions because
+  the suite was not run. It has one submit() helper now, like the other
+  two login suites.
+- Four checks asserted the removed note field, the old "normal" label,
+  or a generated password. All moved to what is now true.
 
 NUMBERS
-- notes 39 · notes UI 22 · box 16 · login 11 · language 13
-- components 25 (source) · 18 (executed in node)
-- both shipped component bugs mutated and caught
+- admin users 49 · accounts 51 · engines 28 · engine UI 18 · engine
+  sheet 28 · users 32 · login 11 · notes UI 22 · owner edge 5
+- components 18, executed in node
 - pyflakes clean
 
+STILL UNSURE — AND IT IS A WHOLE SESSION, NOT A FIX
+- The key management Baba described is a project of its own: upload-only
+  entry through a file picker, every key tested on arrival with a
+  reason when it fails, per-key usage so he can invoice studio users,
+  and delete. He named two of his own apps to copy from — Key Tester
+  and Password Keyring — and I have not read either. That should start
+  with reading them, not with writing code here.
+
 FOR BABA
-- Open a note and press its red rec. The editor is back, so this is the
-  first time that button has had a chance to work.
-- If it fails, the error is on screen — send me that text.
+- Open a note and press its red rec. The editor came back in v122 and
+  that button has still never been seen to work.

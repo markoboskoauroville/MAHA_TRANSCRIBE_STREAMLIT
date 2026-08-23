@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v122 (a) (the editor is back, and the frame is tighter)"
+APP_VERSION = "v123 (a) (tiers, a required password, and a readable test)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -484,7 +484,7 @@ STRINGS = {
                             "hr": "Postavkama upravlja vlasnik."},
     "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
     "settings_engine":    {"en": "Engine",             "hr": "Motor"},
-    "eng_check":          {"en": "check engine",       "hr": "provjeri motor"},
+    "eng_check":          {"en": "test",               "hr": "test"},
     "eng_good":           {"en": "all parts answered", "hr": "svi dijelovi rade"},
     "eng_bad":            {"en": "this engine cannot run",
                            "hr": "ovaj motor ne može raditi"},
@@ -568,6 +568,10 @@ STRINGS = {
     "adm_add_title":      {"en": "Add a person",      "hr": "Dodaj osobu"},
     "adm_name":           {"en": "name",              "hr": "ime"},
     "adm_note":           {"en": "note (optional)",   "hr": "bilješka (nije obavezno)"},
+    "adm_need_name":      {"en": "a username is needed",
+                           "hr": "treba korisničko ime"},
+    "adm_need_pw":        {"en": "a password is needed",
+                           "hr": "treba lozinka"},
     "adm_add":            {"en": "add",               "hr": "dodaj"},
     "adm_pw":             {"en": "password (optional)",
                            "hr": "lozinka (nije obavezno)"},
@@ -2238,6 +2242,14 @@ def admin_dense():
     div[data-testid="stVerticalBlock"] {
       gap: 0.18rem !important;
     }
+    /* A LINE-HEIGHT WITH THE TIGHT GAP. Rows sitting on each other is
+       the point of this panel; rows sitting THROUGH each other is not.
+       "all parts answered" printed across the line beneath it because
+       the gap was closed without giving the text room of its own. */
+    [data-testid="stCaptionContainer"], [data-testid="stText"] {
+      line-height: 1.45 !important;
+      margin: 0 !important;
+    }
     [data-testid="stElementContainer"] {
       margin: 0 !important;
     }
@@ -2337,19 +2349,22 @@ def user_admin_panel():
 
     def do_create():
         name = str(st.session_state.get("_adm_name", "")).strip().lower()
-        note = str(st.session_state.get("_adm_note", ""))
-        # EMPTY MEANS "MAKE ME ONE", which is what it did before this
-        # box existed. A typed one is used as it stands.
         chosen = str(st.session_state.get("_adm_pw", ""))
         if not name:
+            st.session_state["_adm_msg"] = t("adm_need_name")
             return
-        pw, err = ACCOUNTS.user_create(url, token, name, "", note,
+        # BOTH ARE REQUIRED. An empty password used to mean "generate
+        # one", which made the field read as optional. Saying no here,
+        # with the reason, is clearer than silently doing something else.
+        if not chosen:
+            st.session_state["_adm_msg"] = t("adm_need_pw")
+            return
+        pw, err = ACCOUNTS.user_create(url, token, name, "", "",
                                        password=chosen)
         if pw:
             st.session_state["_adm_shown"] = (name, pw)
             st.session_state["_adm_msg"] = ""
             st.session_state.pop("_adm_name", None)
-            st.session_state.pop("_adm_note", None)
             st.session_state.pop("_adm_pw", None)
             forget()
         else:
@@ -2455,7 +2470,11 @@ def user_admin_panel():
         # the full names wrapped the row onto two lines with a gap
         # between them — seen with four people on the screen, not
         # predicted.
-        labels_by_id = {"normal": "normal", "studio": "studio"}
+        # THE TIER WORD, from the engines themselves. Two hand-written
+        # strings here would be a third place the names live, and this
+        # panel is exactly where "normal" was still being shown after
+        # v123 renamed it.
+        labels_by_id = {e.id: e.tier for e in EN.ENGINES}
         # AN OLD ROW SAYS 'free' AND MUST NOT LAND ON THE WRONG BUTTON.
         # EN.get resolves the old word to the current engine; anything
         # unreadable falls to the first option rather than to nothing.
@@ -2533,13 +2552,23 @@ def user_admin_panel():
     # A placeholder cannot drift out of alignment, because there is
     # nothing beside it to align WITH. It is also one row shorter per
     # field, which is the whole point of this screen.
-    st.text_input(t("adm_name"), key="_adm_name",
-                  placeholder=t("adm_name"), label_visibility="collapsed")
-    st.text_input(t("adm_note"), key="_adm_note",
-                  placeholder=t("adm_note"), label_visibility="collapsed")
+    # USERNAME AND PASSWORD. Nothing else.
+    #
+    # Baba: "why do I have note, actually I do not need note — just
+    # username, password, and then I add user." The note column stays in
+    # the sheet, where a word about somebody is occasionally useful; it
+    # is the FORM that had a field nobody fills.
+    #
+    # AND THE PASSWORD IS NOT OPTIONAL. It used to mean "make me one if
+    # you leave it empty", which reads as optional on a form and is not
+    # what he wants: he hands people a password he chose and can say out
+    # loud. Empty is refused now, with the reason on screen.
+    #
     # NOT a password field: he is choosing one to read out and send, not
     # typing his own, and a row of dots he cannot check is how a typo
     # becomes a person who cannot log in.
+    st.text_input(t("adm_name"), key="_adm_name",
+                  placeholder=t("adm_name"), label_visibility="collapsed")
     st.text_input(t("adm_pw"), key="_adm_pw",
                   placeholder=t("adm_pw"), label_visibility="collapsed")
     st.button(t("adm_add"), key="ad_add", on_click=do_create)
@@ -5561,10 +5590,22 @@ elif active == "settings":
                 if _res.get("engine") != _now_id:
                     st.caption(t("eng_stale"))
                 else:
+                    # ONE BLOCK, NOT A CAPTION AND THEN LINES.
+                    #
+                    # The verdict was an st.caption and the parts were
+                    # st.text, and under this panel's tight spacing the
+                    # two OVERLAPPED — "all parts answered" printed
+                    # across the line beneath it. Baba: "it is really
+                    # not clear what this is."
+                    #
+                    # A single code block cannot overlap itself, lines
+                    # up in a column, and is the same shape as the
+                    # people table above it.
                     _bad = _res.get("state") == EN.FAIL
-                    st.caption(("✗ " if _bad else "✓ ") +
-                               (t("eng_bad") if _bad else t("eng_good")) +
-                               "  ·  " + _res.get("at", ""))
+                    _lines = ["%s %s   %s" % (
+                        "✗" if _bad else "✓",
+                        t("eng_bad") if _bad else t("eng_good"),
+                        _res.get("at", ""))]
                     for _row in _res.get("rows", []):
                         _p = PROVIDERS.get(_row["provider"])
                         _name = getattr(_p, "label", None) or _row["provider"]
@@ -5574,8 +5615,9 @@ elif active == "settings":
                         ) if _now_id else ""
                         _mark = {EN.OK: "✓", EN.FAIL: "✗", EN.SKIP: "–"}.get(
                             _row["state"], "?")
-                        st.text("  %s %s (%s) %s" % (
+                        _lines.append("  %s %-10s %-22s %s" % (
                             _mark, _name, _jobs, _row.get("detail", "")))
+                    st.code("\n".join(_lines), language=None)
 
             # ---- ONE ENGINE PER PERSON ----------------------------
             # The keyed container is what admin_dense() styles. Nothing

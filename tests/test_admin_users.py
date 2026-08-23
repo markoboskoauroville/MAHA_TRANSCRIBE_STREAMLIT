@@ -302,28 +302,36 @@ check("10 RENAME IS PRESENT AND DISABLED — the main script still builds "
 # ── making somebody ───────────────────────────────────────────────────
 at = panel()
 at.run()
+# The note field is gone (v123) — Baba: "I do not need note, just
+# username, password, and then I add user." The COLUMN stays in the
+# sheet; it was the form that had a field nobody filled.
 field(at, "_adm_name").set_value("deda")
-field(at, "_adm_note").set_value("djed")
+field(at, "_adm_pw").set_value("djedova-lozinka")
 press(at, "ad_add")
 check("11 a new person is created", "deda" in PEOPLE, list(PEOPLE))
-check("12 THE PASSWORD IS SHOWN, once", "made-pw-1" in page(at), page(at)[:300])
+# THE ONE THE SCRIPT SENT BACK, never the one that was typed. An older
+# deployment can ignore a chosen password and generate its own, and the
+# message handed to the person must be the one that works.
+check("12 THE PASSWORD IS SHOWN, once",
+      "djedova-lozinka" in page(at), page(at)[:300])
 # ABOVE THE LIST, measured against the list itself rather than against
 # the "Add a person" heading — v110 replaced that heading with a plain
 # rule, and a check anchored to a label is a check that breaks when the
 # wording changes. The list is the thing it must come before.
 check("13 and it is shown ABOVE the list, not under it — under it, it is "
       "below the fold on a phone",
-      page(at).index("made-pw-1") < page(at).index("admin"),
+      page(at).index("djedova-lozinka") < page(at).index("admin"),
       page(at)[:300])
 check("14 with the instruction to write it down", "Write this down" in page(at))
 
 press(at, "adm_written")
 check("15 AND IT IS NEVER SHOWN AGAIN once dismissed",
-      "made-pw-1" not in page(at), page(at)[:300])
+      "djedova-lozinka" not in page(at), page(at)[:300])
 
 at = panel()
 at.run()
 field(at, "_adm_name").set_value("baba")
+field(at, "_adm_pw").set_value("bilo-koja")
 press(at, "ad_add")
 check("16 a taken name is refused, in the script's own words",
       "taken" in page(at), page(at)[:300])
@@ -425,7 +433,11 @@ check("34 and moved back to normal, which is now a real answer rather "
       PEOPLE["mama"]["engine"] == "normal", PEOPLE["mama"])
 check("34b THE RADIO OFFERS TWO ENGINES AND NO BLANK. The third option "
       "was 'global', a state that is neither of the two real answers",
-      sorted(_engine_options(at)) == ["normal", "studio"], _engine_options(at))
+      # THE TIER WORDS, not the stored ids. Baba: "it is a free tier or
+      # studio tier — not normal and studio." The id is still `normal`
+      # in the sheet, because renaming it would mean another script
+      # change, deploy and migration to say a word differently.
+      sorted(_engine_options(at)) == ["free", "studio"], _engine_options(at))
 
 # ── §1: none of this may ever shut the door ───────────────────────────
 at = panel()
@@ -479,13 +491,25 @@ check("46 the list marks somebody who must still change their password",
       "must" in page(at), page(at)[:400])
 
 # ── an empty box still means "make me one" ────────────────────────────
+# THE PASSWORD IS NOT OPTIONAL ANY MORE (v123). It used to mean "make me
+# one if you leave it empty", which reads as optional on a form and is
+# not what Baba wants: he hands people a password he chose and can say
+# out loud. An empty one is refused, with the reason on screen.
 at = panel()
 at.run()
 field(at, "_adm_name").set_value("sonia")
 press(at, "ad_add")
-check("47 an empty password box asks the script to make one",
-      PEOPLE.get("sonia", {}).get("sent_password") == ""
-      and "made-pw" in page(at), PEOPLE.get("sonia"))
+check("47 an empty password is REFUSED, not quietly generated",
+      "sonia" not in PEOPLE, list(PEOPLE))
+check("47b and it says why", "password" in page(at).lower(), page(at)[:200])
+
+at = panel()
+at.run()
+field(at, "_adm_pw").set_value("bez-imena")
+press(at, "ad_add")
+check("47c an empty NAME is refused too, and says why",
+      "username" in page(at).lower() or "ime" in page(at).lower(),
+      page(at)[:200])
 
 print("\n{} passed, {} failed".format(passed, failed))
 

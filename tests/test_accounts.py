@@ -63,10 +63,28 @@ def sign_in(at, user, pw):
     # A RUN PER BOX, exactly as a person fills the form. Setting both and
     # running once looks the same and is not: the name has to be in
     # session_state before the password fires the attempt.
-    if user:
-        box(at, "_user_input").set_value(user).run()
-    box(at, "_pw_input").set_value(pw).run()
-    return at
+    return submit(at, pw=pw, user=user or None)
+
+
+def submit(at, pw=None, user=None):
+    """Fill the login form and press its button.
+
+    v115 made the login a FORM, because typing and then clicking did
+    nothing without one: the click blurs the field and Streamlit has not
+    committed the value when the callback runs. A form commits every
+    widget inside it and THEN runs the submit callback — so
+    set_value().run() no longer submits anything, which is the form
+    working rather than a regression.
+    """
+    if user is not None:
+        at.session_state["_user_input"] = user
+    if pw is not None:
+        at.session_state["_pw_input"] = pw
+    for b in at.get("button"):
+        if str(b.key or "").startswith("FormSubmitter:login_form"):
+            b.click().run()
+            return at
+    raise AssertionError("no submit button on the login form")
 
 
 print("THE ACCOUNTS SCRIPT\n")
@@ -276,7 +294,7 @@ box(at, "_user_input").set_value("admin").run()
 check("24 typing a name is still not an attempt",
       not sget(at, "_gate_wait"), sget(at, "_gate_wait"))
 for _ in range(6):
-    box(at, "_pw_input").set_value("wrong").run()
+    submit(at, pw="wrong")
 check("25 repeated wrong passwords still trigger the throttle",
       bool(sget(at, "_gate_wait")), sget(at, "_gate_wait"))
 
@@ -300,8 +318,10 @@ check("30 logging out revokes it",
 # ── the login screen stores name+token, never the password ────────────
 at = live()
 at.run()
-box(at, "_user_input").set_value("admin").run()
-box(at, "_pw_input").set_value("moje-lozinka-9").run()
+# THE LOGIN IS A FORM (v115), so set_value().run() submits nothing —
+# a form commits when its button is pressed or Enter is struck in it,
+# and that is the whole reason typing then clicking works at all now.
+submit(at, user="admin", pw="moje-lozinka-9")
 check("31 logged in with Remember me ticked by default",
       sget(at, "_authed") is True and bool(sget(at, "_remember_token")))
 # _pending_ls cannot be watched from out here: app.py POPS it at the top
@@ -339,7 +359,7 @@ def logged_in():
     a = live()
     a.run()
     box(a, "_user_input").set_value("admin").run()
-    box(a, "_pw_input").set_value(ACCOUNT["pw"]).run()
+    submit(a, pw=ACCOUNT["pw"])
     a.session_state["active_tab"] = "looks"
     a.run()
     return a
