@@ -1,36 +1,44 @@
-# STEP: out from under the badge
-STATUS: done, pushed as v153. No deploy needed.
+# STEP: the note keeps its audio too
+STATUS: done, pushed as v154. No deploy needed.
 
-WHAT HAPPENED
-- Baba: "delete and close are behind Manage App. Align everything to the
-  left side. Urgently."
-- STREAMLIT CLOUD PLANTS ITS OWN "Manage app" BADGE IN THE BOTTOM RIGHT
-  of every page. v149 moved the note's actions to the FOOT of the note,
-  right-aligned — which is precisely where that badge sits. On his phone
-  they were underneath it and could not be pressed.
-- Nothing in the app can move that badge. The actions moved instead:
-  date · delete · close, packed left.
-- AND THE SIGNATURE LINE HAD THE SAME PROBLEM, which he did not report
-  but his screenshot shows — the last line of the page read
-  "transcrib", cut by the badge. It keeps its right alignment, because
-  that is where he asked for it, but it now leaves room for the thing
-  sitting on top of it.
+WHAT BABA ASKED
+- "Storage should work for both systems, recording and note."
 
-THE CORNER WORTH REMEMBERING
-- ANYTHING RIGHT-ALIGNED AT THE BOTTOM OF THIS APP IS UNDER SOMETHING
-  STREAMLIT OWNS. That is not a rule about these two buttons; it is
-  true of every future control that lands there, and it is written into
-  the stylesheet where the next person will meet it.
+WHAT I FOUND, AND IT IS THE ANSWER TO DAYS OF CONFUSION
+- transcribe_note_take made a FLAC, transcribed it, and LET IT GO. No
+  start_keeping, no put_text, nothing. Every word spoken into a note has
+  had its audio thrown away since notes gained a recorder in v101.
+- Nothing ever said so, because failing to keep something you never
+  promised to keep raises no error. The deck's takes were kept and the
+  note's were not, and the two look identical from the outside.
+- This is very likely why Baba's Drive holds one folder from 14:36 and
+  nothing since: he moved to recording INSIDE notes, and that path
+  stored nothing at all. It may not be a broken configuration — it may
+  be a feature that was never written.
+
+WHAT IT DOES NOW
+- Starts the upload alongside Whisper, exactly as the deck does, so
+  keeping costs no waiting.
+- Writes the transcript beside the audio afterwards — the same pair, so
+  a note's recording is as findable as any other and neither half can
+  exist alone.
+- AND A FAILED TAKE DOES NOT LEAVE AN ORPHAN. If transcription fails
+  after the upload has started, the recording is finished rather than
+  abandoned half-written, and the log says the audio is there without
+  its words.
+
+FOUR THINGS I GOT WRONG WRITING THE TEST, ALL THE SAME MISTAKE
+- I asserted `stt.transcribe` came before `finish_keeping` — it appears
+  in BOTH engine branches, so the index found the wrong one.
+- Then that `finish_keeping` appears twice — it appears three times,
+  because the failure path sits above the success path in the source.
+- Both times the test said "wrong order" about code that was right.
+  Text position is not execution order, and counting occurrences of
+  something I had just written was guessing at my own shape.
+- What it asserts now: the LAST finish_keeping comes after the upload
+  starts. Mutating start_keeping away fails it.
 
 NUMBERS
-- notes UI 22 · notes 53 — green
-- measured on a 360px mobile viewport: close ends at 233 of 360, clear
-  of the badge; actions packed left
+- notes UI 27 (was 22) · notes 53 — green
+- mutation caught
 - pyflakes clean
-
-STILL OPEN
-- STORAGE IS STILL OFF. His log shows only [deliver] lines. v151 makes
-  it name the missing piece and he has not read it yet — nothing
-  reaches Drive until then.
-- A language pill in the open note. Asked, not started.
-- docs/TWO_SYSTEMS.md — the split and the explorer.

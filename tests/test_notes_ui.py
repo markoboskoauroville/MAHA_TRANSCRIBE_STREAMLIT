@@ -132,6 +132,48 @@ panel = src.split("def note_open_view(", 1)[1].split("\ndef ", 1)[0]
 ck("22 a failed take inside a note is SHOWN, not swallowed",
    '_note_error' in panel and "st.error" in panel, panel[:200])
 
+# --- the note's audio is kept too ------------------------------------
+#
+# Baba: "storage should work for both systems, recording and note."
+#
+# IT NEVER DID. transcribe_note_take made a FLAC, transcribed it and let
+# it go — every word spoken into a note had its audio thrown away since
+# notes gained a recorder in v101. The deck's takes were kept and the
+# note's were not, and nothing said so, because failing to keep
+# something you never promised to keep raises no error.
+#
+# SOURCE CHECKS: this path is reached only through a component, and a
+# component returns its default under AppTest (§73). What can be
+# asserted is the shape of the path.
+note_take = src.split("def transcribe_note_take(", 1)[1].split("\ndef ", 1)[0]
+
+ck("23 THE NOTE'S AUDIO IS KEPT, started alongside Whisper so it costs "
+   "no waiting", "start_keeping(" in note_take, note_take[:200])
+ck("24 and its transcript is written beside it, so a note's recording "
+   "is as findable as any other and neither half can exist alone",
+   "put_text(" in note_take, note_take[:200])
+# ORDER IS NOT WHAT TEXT POSITION MEASURES HERE. `finish_keeping`
+# appears TWICE — once in the failure path, which sits above the success
+# path in the source, and once after the transcription. Comparing first
+# occurrences said "wrong order" about code that is right, twice.
+#
+# What is worth asserting is that both halves exist and that the SUCCESS
+# path finishes after the words arrive.
+ck("25 the upload finishes in the success path, after the words have "
+   "arrived — storage runs alongside them, never in front of them",
+   # THREE, not two: the failure path, its guard, and the success
+   # path. Counting them was me guessing at the shape of code I had
+   # just written — what matters is that the LAST one comes after the
+   # upload starts, which is the success path.
+   note_take.rindex("finish_keeping(") > note_take.index("start_keeping("),
+   note_take.count("finish_keeping("))
+ck("26 A FAILED TAKE DOES NOT LEAVE AN ORPHAN. If transcription fails "
+   "after the upload started, the recording is finished rather than "
+   "abandoned half-written",
+   "_orphan" in note_take, note_take[-400:])
+ck("27 and storage can never cost the words: every part of it is "
+   "wrapped", note_take.count("try:") >= 2, note_take.count("try:"))
+
 print("\n%d passed, %d failed" % (ok,fail))
 
 

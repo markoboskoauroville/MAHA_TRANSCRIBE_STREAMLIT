@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v153 (a) (out from under the badge)"
+APP_VERSION = "v154 (a) (the note keeps its audio too)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4225,6 +4225,11 @@ def transcribe_note_take():
 
     lang = st.session_state.get("speech_lang", "hr")
     seconds = float(take.get("seconds") or 0)
+    # DECLARED BEFORE THE TRY, so a failure that happens before the
+    # upload starts cannot become a NameError further down — and
+    # finish_keeping(None) is already defined to return "" rather than
+    # complain.
+    _nkeeper = None
     try:
         with st.spinner(t("note_working")):
             stt = stt_bridge()
@@ -4236,6 +4241,20 @@ def transcribe_note_take():
             # ttt/audio.py and reached from here rather than copied —
             # §"one implementation, in the module, used from here".
             flac = to_flac16k(raw)
+            # KEEP THE AUDIO. Baba: "storage should work for both
+            # systems, recording and note."
+            #
+            # It never did. This path made a FLAC, transcribed it, and
+            # let it go — every word spoken into a note has had its
+            # audio thrown away since notes gained a recorder in v101.
+            # The deck's takes were kept and the note's were not, and
+            # nothing said so, because failing to keep something you
+            # never promised to keep raises no error.
+            #
+            # Started HERE, alongside Whisper, exactly as the deck does
+            # it: the upload and the transcription run at the same time,
+            # so keeping costs the person no waiting.
+            _nkeeper = start_keeping(flac, audio_seconds(flac), lang)
             if stt.handles_big_files:
                 text = stt.transcribe(flac, lang)
             else:
@@ -4247,7 +4266,40 @@ def transcribe_note_take():
     except Exception as e:
         errlog.add(st.session_state, "note", "take failed", str(e))
         st.session_state["_note_error"] = str(e)
+        # THE UPLOAD MAY ALREADY BE RUNNING. If the transcription failed
+        # after it started, letting this return would leave audio in
+        # Drive with no transcript beside it — the orphan half-pair §60
+        # exists to prevent. Waiting for it means the recording is at
+        # least whole and findable, even though the words were lost.
+        if _nkeeper:
+            try:
+                _orphan = finish_keeping(_nkeeper)
+                if _orphan:
+                    errlog.add(st.session_state, "drive",
+                               "audio kept, but its transcript failed",
+                               "recording %s has no text" % _orphan)
+            except Exception:
+                pass
         return
+
+    # AND FINISH KEEPING IT, with its transcript beside it — the same
+    # pair the deck makes, so a note's audio is as findable as any other
+    # recording and neither half can exist without the other.
+    #
+    # AFTER the transcription, never before: storage is a convenience for
+    # later and must not stand between somebody and the words they just
+    # spoke.
+    try:
+        _nrec = finish_keeping(_nkeeper)
+        if _nrec and (text or "").strip():
+            _nst = drive_store()
+            if not _nst.put_text(_nrec, text):
+                errlog.add(st.session_state, "drive",
+                           "note transcript not stored beside its audio",
+                           _nst.last_error or "no reason given")
+    except Exception as e:
+        errlog.add(st.session_state, "drive", "keeping the note take failed",
+                   "{}: {}".format(type(e).__name__, e))
 
     body = (text or "").strip()
     if not body:
