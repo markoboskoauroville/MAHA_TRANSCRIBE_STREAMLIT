@@ -1,3 +1,14 @@
-streamlit>=1.61.0
-groq>=1.6.0
-edge-tts>=7.0.0
+# AN UPPER BOUND, and it is the difference between a release and a
+# hostage. Streamlit says `st.components.v1.html` "will be removed after
+# 2026-06-01"; that date has passed and this app has six call sites plus
+# six declare_component calls, every one of which is a recorder, a
+# player or an editor. Without a ceiling, Streamlit Cloud rebuilds on
+# its own schedule and the first version that actually drops the API
+# takes the whole app down — for a family who did nothing and changed
+# nothing.
+#
+# 1.61 is what it is tested against. The ceiling comes off the day the
+# components move to st.iframe, and not before.
+streamlit>=1.61.0,<2.0.0
+groq>=1.6.0,<2.0.0
+edge-tts>=7.0.0,<8.0.0

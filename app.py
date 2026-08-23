@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v154 (a) (the note keeps its audio too)"
+APP_VERSION = "v155 (a) (pinned, scanned, and honest about what is left)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1853,6 +1853,19 @@ def _load_server_settings(user: str) -> dict:
 
 
 def _save_server_settings(user: str, settings: dict) -> None:
+    """Keep settings on the server's disk as well as in the browser.
+
+    SILENT ONLY BECAUSE IT IS THE SECOND COPY. Streamlit Cloud's disk is
+    ephemeral — it is wiped on every redeploy — so this is a convenience
+    for a person who returns within the same container, and the BROWSER
+    copy is the one that actually carries settings between sessions.
+    Losing this one costs nothing that the other does not already hold.
+
+    That is a real reason and it is written down, because a bare `pass`
+    here reads identical to the note-storage bug that took days to find:
+    a save that fails and says nothing. The difference is that this one
+    has a backup and that one did not.
+    """
     try:
         with open(_settings_file(user), "w", encoding="utf-8") as f:
             json.dump(settings, f)
