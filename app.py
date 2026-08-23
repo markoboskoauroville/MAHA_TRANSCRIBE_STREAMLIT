@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v169 (a) (the seconds you do not send are free)"
+APP_VERSION = "v170 (a) (remove silences, as a setting)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -524,6 +524,18 @@ STRINGS = {
     "rec_close_play":     {"en": "close player",     "hr": "zatvori"},
     "rec_play":           {"en": "play",              "hr": "slušaj"},
     "rec_again":          {"en": "transcribe again",  "hr": "prepiši ponovno"},
+    "trim_label":         {"en": "remove silences",  "hr": "ukloni tišine"},
+    "trim_why_on":        {"en": "Silent gaps are cut before uploading, so "
+                                 "you pay for the words and not the pauses.",
+                           "hr": "Tišine se režu prije slanja, pa plaćaš "
+                                 "riječi a ne pauze."},
+    "trim_why_off":       {"en": "The whole recording is sent, pauses and "
+                                 "all.",
+                           "hr": "Šalje se cijela snimka, sa svim pauzama."},
+    "trim_saved":         {"en": "silence removed: %.0fs less audio sent "
+                                 "(%.0f%% smaller)",
+                           "hr": "tišina uklonjena: %.0fs manje zvuka "
+                                 "(%.0f%% manje)"},
     "rec_refresh":        {"en": "refresh",           "hr": "osvježi"},
     "rec_seen":           {"en": "list read at %s",   "hr": "popis učitan u %s"},
     "rec_save":           {"en": "save",              "hr": "spremi"},
@@ -1911,7 +1923,7 @@ SETTINGS_KEYS = ("ui_lang", "engine", "rec_source",
                  # name in this module. A settings key and a function
                  # sharing a name is a reader's trap, and one of them
                  # would eventually be mistaken for the other.
-                 "keep_recordings",
+                 "keep_recordings", "trim_silence",
                  # THE PERSON'S OWN ASSEMBLYAI KEY, and what they have
                  # spent against it. In the settings sheet like every
                  # other preference: `_save_server_settings` writes to a
@@ -4338,7 +4350,10 @@ def transcribe_note_take():
             # goes through the chunking wrapper. Written once in
             # ttt/audio.py and reached from here rather than copied —
             # §"one implementation, in the module, used from here".
-            flac = to_flac16k(raw)
+            # BOTH RECORDERS, or the setting would be true of the deck
+            # and not the note — the split that hid the note storage gap
+            # for fifty versions.
+            flac = maybe_trim(to_flac16k(raw))
             # KEEP THE AUDIO. Baba: "storage should work for both
             # systems, recording and note."
             #
@@ -4668,6 +4683,44 @@ def _rec_after_actions(recs):
         st.error(t("rec_failed"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def maybe_trim(flac_path):
+    """Cut the silent gaps, if the person has asked for that.
+
+    Baba: "add option in the settings, remove silences, so user can
+    choose and experiment with the feature."
+
+    A SETTING RATHER THAN A DEFAULT, and that is the right way in. The
+    saving is real — measured at 48% on a clip shaped like dictation —
+    but the cost of being wrong is a clipped first syllable, which costs
+    a re-record. Somebody who can turn it off and compare will find that
+    out in a minute; somebody who cannot will just think the app eats
+    words.
+
+    OFF BY DEFAULT for the same reason. Nobody's dictation changes shape
+    because a new version arrived.
+
+    Returns the path to send. The ORIGINAL on any doubt: ttt/audio.py
+    hands it straight back on a failure, an empty result, or a saving
+    too small to be worth a second file.
+    """
+    if not st.session_state.get("trim_silence"):
+        return flac_path
+    try:
+        out, before, after = ttt_audio.trim_silence(flac_path)
+    except Exception as e:
+        errlog.add(st.session_state, "audio", "could not trim the silence",
+                   "{}: {}".format(type(e).__name__, e))
+        return flac_path
+    if out != flac_path and before:
+        # WORTH SAYING OUT LOUD, because this is the one setting whose
+        # effect is invisible in the result: the words are the same and
+        # only the bill is different. A person experimenting with it
+        # needs to see what it did.
+        st.session_state["_trim_note"] = t("trim_saved") % (
+            before - after, 100.0 * (before - after) / before)
+    return out
 
 
 def note_number(i):
@@ -5830,7 +5883,7 @@ if active == "transcribe":
                     st.error(t("img_unavailable"))
                 elif plan["pipeline"] == "transcribe":
                     with st.spinner(t("preparing_audio")):
-                        flac_path = to_flac16k(raw)
+                        flac_path = maybe_trim(to_flac16k(raw))
                     stage["convert_s"] = time.time() - _t0
                     stage["out"] = "16 kHz mono FLAC"
                     stage["out_kb"] = os.path.getsize(flac_path) // 1024
@@ -6234,6 +6287,15 @@ if active == "transcribe":
     # makes a blank note to speak into, which is what `new` used to do.
     # The guard was invisible from inside box_links and quietly undid
     # the change — the row simply never appeared.
+    # WHAT THE TRIM ACTUALLY DID, once, under the box. This is the only
+    # setting in the app whose effect is invisible in the result — the
+    # words come back the same and only the bill changes — so somebody
+    # experimenting with it has nothing to look at unless it says so.
+    _tn = st.session_state.pop("_trim_note", None)
+    if _tn:
+        st.markdown('<div class="readhint">%s</div>' % html.escape(_tn),
+                    unsafe_allow_html=True)
+
     box_links("tx", t1_text(), on_clear=_clear_all,
               extra=_extra + [(t("tx_tonote"),
                                ("tx_tonote", keep_as_note))])
@@ -6863,6 +6925,27 @@ elif active == "looks":
     st.button(t("log_out"), key="log_out_btn", on_click=log_out,
               use_container_width=True)
 
+
+    # ---- SILENCE ------------------------------------------------------
+    #
+    # Baba asked for this as something to "choose and experiment with",
+    # which is exactly right for a feature whose effect you cannot see in
+    # the transcript — the words come back the same and only the bill is
+    # different.
+    st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        t("trim_label")), unsafe_allow_html=True)
+
+    def _set_trim():
+        st.session_state["trim_silence"] = bool(
+            st.session_state.get("_trim_pick"))
+        persist_settings()
+
+    st.toggle(t("trim_label"), key="_trim_pick",
+              value=bool(st.session_state.get("trim_silence")),
+              label_visibility="collapsed", on_change=_set_trim)
+    st.markdown('<div class="readhint">%s</div>' % html.escape(
+        t("trim_why_on") if st.session_state.get("trim_silence")
+        else t("trim_why_off")), unsafe_allow_html=True)
 
     # ---- WHAT HAPPENS TO THE AUDIO -----------------------------------
     #

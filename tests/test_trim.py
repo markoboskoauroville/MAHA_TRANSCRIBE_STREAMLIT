@@ -117,6 +117,45 @@ check("9 and trimming one hands the original straight back — a saving is "
       "worth having and is never worth a lost dictation",
       gone == "/nowhere/at/all.flac")
 
+# --- the setting, and both recorders ---------------------------------
+#
+# Baba: "add option in the settings, remove silences, so user can choose
+# and experiment with the feature and build it in."
+src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
+           encoding="utf-8").read()
+mt = src.split("def maybe_trim(", 1)[1].split("\ndef ", 1)[0]
+
+check("10 the trim is behind a SETTING, not a default. The saving is real "
+      "but so is the cost of being wrong — a clipped first syllable "
+      "costs a re-record — and somebody who can turn it off and compare "
+      "will find that out in a minute",
+      'st.session_state.get("trim_silence")' in mt, mt[:200])
+# ASKED SO IT FAILS RATHER THAN CRASHES. The first version split on
+# "if not" and indexed [1], so deleting the guard raised IndexError
+# instead of reporting a red check — a test that crashes tells you
+# something is wrong without telling you what, which is most of the
+# value gone.
+_guard = 'if not st.session_state.get("trim_silence"):'
+check("11 off, it hands back exactly what it was given",
+      _guard in mt and "return flac_path" in mt[mt.find(_guard):][:140],
+      "guard missing" if _guard not in mt else mt[:160])
+check("12 and it can never cost a dictation: a failure logs and returns "
+      "the original", "except Exception" in mt)
+check("13 IT SAYS WHAT IT DID. This is the only setting whose effect is "
+      "invisible in the result — the words come back the same and only "
+      "the bill changes — so a person experimenting with it has nothing "
+      "to look at unless it says so",
+      "_trim_note" in mt)
+
+check("14 BOTH RECORDERS USE IT. The deck and the note, or the setting "
+      "would be true of one and not the other — the split that hid the "
+      "note storage gap for fifty versions",
+      src.count("maybe_trim(to_flac16k(raw))") == 2,
+      src.count("maybe_trim(to_flac16k(raw))"))
+
+check("15 and it is saved like every other preference",
+      '"keep_recordings", "trim_silence",' in src)
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 if __name__ == "__main__":
