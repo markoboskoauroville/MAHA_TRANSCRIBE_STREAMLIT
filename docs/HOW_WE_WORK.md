@@ -47,6 +47,48 @@ rule 6 governs it entirely — no exceptions, no judgement calls.
 
 ---
 
+## Deploy prompts: TWO boxes, always
+
+Baba asked for this in his own words: *"for this kind of prompts, give
+Marko two code boxes, one after the other."*
+
+**Box one is the command.** Everything he needs to type, in one line,
+with the real path — including the `git pull`, because a file he has not
+pulled is a file that is not current, and that has already cost a wasted
+deploy:
+
+```bash
+cd ~/Developer/MAHA_TRANSCRIBE_STREAMLIT && git pull && open auth_script/Code.gs
+```
+
+**Box two is the URL, alone.** Nothing else in it, so one tap selects
+the whole thing:
+
+```
+https://script.google.com/home/projects/<id>/edit
+```
+
+Then the words: select all, paste over, save, `Manage deployments` → ✏️
+→ **New version**.
+
+**Why two and not one.** A URL buried in a sentence has to be selected
+by hand on a phone, and a command with a placeholder path in it has to
+be edited before it will run. Both were happening. Two boxes, each
+complete, each copied with one tap.
+
+The two script ids, so neither has to be hunted for:
+
+| project | what it is | id |
+|---|---|---|
+| main | bound to the sheet: usage, Drive, settings | `12NtdbhOSAJNX7UoV8AUrVnZwc5OS62RXeqvJzvu3AMpjRFjPDAET-dNx` |
+| auth | accounts: logins, passwords, people | `1iim9Qzakqq_j2cmFbu3KQFIBXwG_MVwqGs7yR7rETNvmq3AWNppPMHAY` |
+
+**And say WHICH ONE.** They look identical in the editor, and pasting
+the accounts script over the main one would take the family's app down
+and lose his three filled-in secrets in the same move.
+
+---
+
 ## The one rule that is never bent
 
 Never `New deployment`.
