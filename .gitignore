@@ -10,3 +10,18 @@ venv/
 # clasp: holds the id of YOUR script. Copy .clasp.json.example and fill it.
 .clasp.json
 apps_script/.clasp.json
+
+# ANY file with secrets in its name, not just the one we thought of.
+# Baba put his Streamlit secrets in `secrets_streamlit.txt` at the repo
+# root, which .gitignore did not cover — one `git add -A` from being on
+# GitHub forever, where a commit cannot be unsent.
+secrets*.txt
+*secrets*.txt
+*_secrets*
+AUTH_SECRETS*
+
+# The FILLED script. Written by tools/fill_gs.py, holds real secrets,
+# and is the file to paste into the editor. Code.gs stays as it is in
+# git — placeholders and all — so a secret cannot reach GitHub by
+# somebody committing the file they were told to paste.
+apps_script/Code.filled.gs
