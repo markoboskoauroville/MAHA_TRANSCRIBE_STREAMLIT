@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v151 (a) (a voice that refuses, and a store that says why)"
+APP_VERSION = "v152 (a) (an id that cannot collide)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4332,10 +4332,22 @@ def notes_panel():
             # to point at ("open number three"), and a number that no
             # longer matches what somebody is counting is worse than
             # none.
+            # THE INDEX IS IN THE KEY, not just the id.
+            #
+            # A duplicate id crashed the app outright —
+            # StreamlitDuplicateElementKey, a red wall of Python where a
+            # list of notes should be. ttt/notes.py no longer MAKES a
+            # duplicate, and that is the real fix; this is the second
+            # line of defence, because the notebook can also arrive from
+            # the browser or from Drive, and data that came from
+            # somewhere else must never be able to take the app down.
+            #
+            # The position makes it unique whatever the ids say. Clicking
+            # still uses the id, so the right note opens.
             st.button(
                 "%s %s\n\n%s" % (note_number(i), NOTES.heading(n),
                                   NOTES.body_preview(n, 70)),
-                key="note_%s" % n["id"], use_container_width=True,
+                key="note_%d_%s" % (i, n["id"]), use_container_width=True,
                 on_click=open_note, args=(n["id"],))
 
 

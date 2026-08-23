@@ -46,14 +46,21 @@ at.run()
 ck("3 T renders with notes", not at.exception, at.exception)
 ck("4 the search box is there",
    bool([x for x in at.text_input if x.key=="notes_q"]))
-cards=[b.key for b in at.get("button") if b.key.startswith("note_n")]
+# CARD KEYS CARRY THE POSITION NOW: "note_<index>_<id>", not "note_<id>".
+# A duplicate id crashed the app outright, and the position makes the
+# key unique whatever the ids say. These checks ask "is it a card",
+# which is what they meant all along.
+def is_card(k):
+    return bool(k) and k.startswith("note_") and "_n" in k[4:]
+
+cards=[b.key for b in at.get("button") if is_card(b.key)]
 ck("5 one card per note", len(cards)==3, cards)
 
 # search narrows
 at2=app(["kruh i mlijeko","nazvati Kerstin","cekaj me u sumi"])
 at2.run()
 [x for x in at2.text_input if x.key=="notes_q"][0].set_value("kruh").run()
-cards2=[b.key for b in at2.get("button") if b.key.startswith("note_n")]
+cards2=[b.key for b in at2.get("button") if is_card(b.key)]
 ck("6 searching narrows the cards", len(cards2)==1, cards2)
 
 # opening one takes over
@@ -69,7 +76,7 @@ ck("9 the command row is not drawn either",
 ck("10 the note has a close button", "note_close" in keys, keys)
 ck("11 and a delete", "note_del" in keys, keys)
 ck("12 the card list is not drawn under it",
-   not [k for k in keys if k.startswith("note_n") and k[5:].isdigit()], keys)
+   not [k for k in keys if is_card(k)], keys)
 
 # closing brings it back
 [b for b in at3.get("button") if b.key=="note_close"][0].click().run()
@@ -77,7 +84,7 @@ ck("13 closing returns the box",
    bool([a for a in at3.text_area if a.key.startswith("tx_area_")]),
    [a.key for a in at3.text_area])
 ck("14 and the cards", bool([b.key for b in at3.get("button")
-   if b.key.startswith("note_n")]))
+   if is_card(b.key)]))
 
 # delete needs two presses
 at4=app(["jedna","druga"], open_id=0)

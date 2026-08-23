@@ -33,6 +33,36 @@ LIMIT = 200          # notes kept; far more than the archive's 60
 # made in one millisecond got one id, and deleting either deleted both.
 _seq = itertools.count(1)
 
+
+def _fresh_id(notes):
+    """An id that cannot collide with one already in the notebook.
+
+    THE BUG THIS EXISTS FOR, and it crashed the app in Baba's hands:
+    `_seq` is a MODULE-LEVEL counter, so it restarts at 1 every time the
+    process does. Before v140 that was harmless — notes died with the
+    session, so nothing older was around to clash with. Now they come
+    back from the browser and from Drive, keeping their ids, and the
+    first new note of a session asked for `n1` while a restored `n1` was
+    already on screen. Two buttons, one key, StreamlitDuplicateElementKey
+    — a red wall of Python, not a misdrawn card.
+
+    So the id is derived from WHAT IS THERE, not from how many times
+    this process has been asked. The counter stays as the tie-breaker
+    for the empty case.
+    """
+    used = set()
+    highest = 0
+    for n in notes or ():
+        i = str(n.get("id") or "")
+        used.add(i)
+        if i.startswith("n") and i[1:].isdigit():
+            highest = max(highest, int(i[1:]))
+    while True:
+        highest += 1
+        candidate = "n%d" % highest
+        if candidate not in used:
+            return candidate
+
 TITLE_WORDS = 5      # words taken for an untitled note's heading
 
 
@@ -141,7 +171,7 @@ def add(state, text, language="", rec_id="", at="", allow_empty=False):
         if notes and (notes[0].get("text") or "").strip() == body:
             return notes[0].get("id")
         note = {
-            "id": "n%d" % next(_seq),
+            "id": _fresh_id(notes),
             "title": "",                 # empty means "use the first words"
             "text": body,
             "at": at or _short(),

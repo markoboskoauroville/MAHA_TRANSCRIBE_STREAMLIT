@@ -254,6 +254,41 @@ N.update(s_e, first, text="sada ima nesto")
 check("50 once that one has words, a new empty one can be made",
       N.add(s_e, "", allow_empty=True) != first)
 
+# --- ids that survive coming back ------------------------------------
+#
+# THIS CRASHED THE LIVE APP. `_seq` is a module-level counter that
+# restarts at 1 with the process. Before notes persisted that was
+# harmless — nothing older was around to clash with. Now they come back
+# from the browser and from Drive keeping their ids, and the first new
+# note of a session asked for `n1` while a restored `n1` was on screen:
+# two buttons, one key, StreamlitDuplicateElementKey, a red wall of
+# Python where the notes should be.
+# THE COUNTER MUST BE PUT BACK TO WHERE A FRESH PROCESS STARTS, or this
+# passes by luck: by the time these lines run, earlier checks in this
+# file have already advanced _seq past n1, so the collision never
+# happens and the mutation survives. Which it did, the first time.
+import itertools                                          # noqa: E402
+N._seq = itertools.count(1)
+
+s_id = {N.KEY: [{"id": "n1", "text": "vracena", "title": ""},
+                {"id": "n2", "text": "i druga", "title": ""}]}
+new = N.add(s_id, "nova")
+check("51 A NEW NOTE CANNOT TAKE AN ID THAT CAME BACK FROM STORAGE",
+      new not in ("n1", "n2"), new)
+N.add(s_id, "jos jedna")
+ids = [n["id"] for n in s_id[N.KEY]]
+check("52 and every id in the notebook is still unique",
+      len(ids) == len(set(ids)), ids)
+
+# The awkward shapes storage can hand back: an id that is not n-and-a-
+# number, and one that is missing entirely.
+s_odd = {N.KEY: [{"id": "keep-me", "text": "a", "title": ""},
+                 {"id": "", "text": "b", "title": ""}]}
+odd = N.add(s_odd, "nova")
+check("53 an id in an unexpected shape does not stop a new one being "
+      "made, and is not collided with",
+      odd and odd not in ("keep-me", ""), odd)
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 
