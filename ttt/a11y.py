@@ -30,8 +30,27 @@ ignores the reader's own browser and OS font setting — which is the first
 thing a person with low vision will already have turned up.
 """
 
-MIN_SCALE = 0.8
-MAX_SCALE = 2.5          # 250%: WCAG asks for 200 as a floor
+# THE RANGE IS WIDE ON PURPOSE. Baba: "we said any size, I put 12 and I
+# can't. Just don't give something which can make the app unclickable."
+#
+# 0.8 was chosen when the size was a row of eight pills and every step
+# had to earn its place. It is a typed number now, and refusing 12
+# because a designer once picked 80 is the app arguing with the person
+# using it.
+#
+# WHY A FLOOR AT ALL, AND WHY THIS LOW. This scale resizes the READING
+# SURFACES only — the transcript box, the reader, the subtitle. The
+# buttons, the pills and the `default` link beside the box are untouched
+# by it, so a setting too small to read can always be undone with one
+# tap on a control that did not shrink. That is what makes 20 safe: it
+# cannot lock anybody out of the setting that caused it.
+#
+# 0.05 is 5%, just above the "0, 1, 2" Baba said to keep out. He named
+# 12 as a size he wants, and 20 still refused it — a floor picked by me
+# rather than by him. Five is low enough that nothing he might mean is
+# blocked, and not zero, which would be a size that is not a size.
+MIN_SCALE = 0.05
+MAX_SCALE = 4.0          # 400%. WCAG asks for 200 as a floor, not a limit
 STEP = 0.15
 DEFAULT_SCALE = 1.0
 
