@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v139 (a) (everything T does is under the box)"
+APP_VERSION = "v140 (a) (notes survive)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3394,6 +3394,96 @@ if LS_DATA.get(SETTINGS_LS_KEY) and not st.session_state.get("_ls_applied"):
     st.session_state["_ls_applied"] = True
 
 
+# ---- NOTES THAT SURVIVE A RELOAD -------------------------------------
+#
+# Baba: "notes are not surviving between sessions — I create a note, I
+# log in as Emina again, and the note is gone."
+#
+# They lived in session_state alone, which dies with the tab. Everything
+# a person types was being kept exactly as long as they kept the page
+# open, which makes a notebook a scratchpad.
+#
+# THE BROWSER, NOT DRIVE — for now, deliberately. The Drive half is
+# designed (§60: every note already carries the rec_id of its audio) but
+# needs the MAIN script changed and deployed, and Baba's notes are
+# disappearing today. localStorage is already wired, already carries his
+# settings and his remember-token, and costs no deploy.
+#
+# WHAT THAT DOES NOT DO, so nobody discovers it the hard way: notes stay
+# on THIS device. They will not follow Emina to her phone, and clearing
+# the browser loses them. Drive is the durable answer and this is not
+# it — it is the difference between losing a note on reload and losing
+# it on a new device.
+NOTES_LS_KEY = f"maha_notes_{USER}"
+
+
+def persist_notes():
+    """Write the notebook to the browser, IF it differs from the copy
+    already written.
+
+    The guard is not an optimisation. Queueing a write makes the bridge
+    run, and the bridge is a component whose round trip costs a rerun —
+    an unconditional write every render would mean an app that never
+    settles.
+    """
+    try:
+        now = json.dumps(st.session_state.get(NOTES.KEY, []),
+                         ensure_ascii=False, sort_keys=True)
+    except Exception:
+        return                    # never a dependency, never a crash
+    if now == st.session_state.get("_notes_saved"):
+        return
+    st.session_state["_notes_saved"] = now
+    queue_ls(writes={NOTES_LS_KEY: now})
+    # AND ONE MORE RUN, SO THE QUEUE IS ACTUALLY FLUSHED.
+    #
+    # The bridge runs at the TOP of a script run and sends whatever was
+    # queued BEFORE it. A write queued down here therefore waits for the
+    # next run — and if the person stops touching the app, that run never
+    # comes and the note is never written. Measured: localStorage held
+    # `[]` while three notes sat on the screen.
+    #
+    # It cannot loop: `_notes_saved` is set above, so the next run finds
+    # nothing to write and returns before reaching this line.
+    st.rerun()
+
+
+def restore_notes():
+    """Read them back, ONCE per session, and only when there is nothing
+    in memory already.
+
+    The guard matters: this runs on every render, and overwriting live
+    notes with the last-saved copy would undo whatever was said in the
+    seconds before the write landed.
+    """
+    if st.session_state.get("_notes_restored"):
+        return
+
+    # WAIT FOR THE BRIDGE. LS_DATA is filled by a COMPONENT, and a
+    # component reports nothing on the run that creates it — so on the
+    # first render after a reload it is empty, and it is empty in
+    # exactly the same way whether the browser has notes or not.
+    #
+    # My first version set the flag here, before looking. It therefore
+    # gave up on the one render where there was nothing to find yet, and
+    # never tried again: the notes were written to storage correctly and
+    # never read back. Caught by reloading a real browser, not by any
+    # test — AppTest has no component to wait for.
+    if not LS_DATA:
+        return
+
+    st.session_state["_notes_restored"] = True
+    raw = LS_DATA.get(NOTES_LS_KEY)
+    if not raw or st.session_state.get(NOTES.KEY):
+        return
+    try:
+        got = json.loads(raw)
+    except Exception:
+        return
+    if isinstance(got, list):
+        st.session_state[NOTES.KEY] = got
+
+
 def persist_settings():
     values = {k: st.session_state.get(k) for k in SETTINGS_KEYS}
     values["epoch"] = SETTINGS_EPOCH
@@ -4722,6 +4812,10 @@ if active == "transcribe":
     # the main box do not. Two writing surfaces on one screen is two
     # places the words might have gone, and for someone who cannot see
     # well that is the difference between an app and a puzzle.
+    # READ THEM BACK BEFORE ANYTHING LOOKS AT THEM. Once per session,
+    # and only when memory is empty — see restore_notes for why the
+    # guard matters.
+    restore_notes()
     NOTES.adopt_archive(st.session_state)
     _note_is_open = bool(st.session_state.get(OPEN_KEY))
     # Recorder, then Sound, then Picture, then the language switch at the
@@ -5253,6 +5347,19 @@ if active == "transcribe":
     # adopt_archive already ran at the top of this module — it is cheap
     # and marker-guarded, but calling it twice per render is noise.
     notes_panel()
+
+    # WRITE THEM IF THEY DIFFER FROM WHAT WAS LAST SAVED.
+    #
+    # Compared against the SAVED copy, not against what was in memory at
+    # the top of this module. My first version did the latter and would
+    # have missed every change made by a CALLBACK — add to notes, delete,
+    # the title box — because callbacks run BEFORE the script body, so
+    # by the time the top of the module read the notebook the change had
+    # already happened and there was nothing to notice.
+    #
+    # Comparing to the saved copy is also cheaper than wrapping all nine
+    # places that write a note, and it cannot be forgotten by the tenth.
+    persist_notes()
 
     # THE STATUS BOX, MOVED TO THE FOOT OF THE MODULE (v88).
     #

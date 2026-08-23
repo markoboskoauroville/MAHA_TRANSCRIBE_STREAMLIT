@@ -1,36 +1,43 @@
-# STEP: everything T does is under the box
-STATUS: done, pushed as v139. No deploy needed.
+# STEP: notes survive
+STATUS: done, pushed as v140. No deploy needed.
 
 WHAT HAPPENED
-- `new` moved under the text box and became a link. Baba: "it should
-  appear under the text box, not above, and it is not a button, it is
-  an action link."
-- THE COMMAND ROW IS GONE FROM T ENTIRELY. `new` was the last thing in
-  it, and a bordered row holding one word was the widest, emptiest
-  thing on the screen.
-- The studio tools went with it — grammar, reshape, custom act on the
-  same text, so they belong in the same place. The row that held them
-  was a second home for one idea.
-- T now reads: deck, pills, box, then copy · clear · new · grammar ·
-  reshape · custom · add to notes. In the order they are reached: read
-  what came back, then act on it.
+- Baba: "notes are not surviving between sessions — I create a note, I
+  log in as Emina again, and the note is gone." They lived in
+  session_state alone, which dies with the tab. Everything a person
+  typed was kept exactly as long as they kept the page open.
+- They are written to the browser now, under a key that names the
+  person, and read back on the next visit. Verified end to end in a
+  real browser: note made, page reloaded, logged in again, note there.
+
+WHAT THIS IS NOT, so nobody finds out the hard way
+- The notes stay on THAT DEVICE. They will not follow Emina to her
+  phone, and clearing the browser loses them. Drive is the durable
+  answer — it is designed (§60: every note already carries the rec_id
+  of its audio) but needs the MAIN script changed and deployed, and
+  Baba's notes were disappearing today.
+
+THREE FAULTS, AND ONLY A BROWSER FOUND TWO OF THEM
+1. My first version compared the notebook against what was in memory at
+   the top of the module — which would have missed every change made by
+   a CALLBACK, because callbacks run BEFORE the script body. It compares
+   against the last SAVED copy now.
+2. The write was queued at the END of a run, and the bridge sends what
+   was queued BEFORE it. So the write waited for a run that might never
+   come: measured, localStorage held `[]` while a note sat on screen.
+   It asks for one more run now, and cannot loop because the
+   fingerprint is set first.
+3. Restore gave up on the first render after a reload, when LS_DATA is
+   empty because the component has not reported yet — marking the
+   notebook restored and never reading it back. It waits now.
+- FAULTS 2 AND 3 SURVIVED EVERY BEHAVIOURAL CHECK. Both live on the far
+  side of a component, and a component returns its default under
+  AppTest. They have source checks, labelled as such: false comfort
+  from eleven green checks that cannot see the bug is worse than an
+  honest note saying which kind of check this is.
 
 NUMBERS
-- tier 15 (was 13) · box 16 · notes UI 22 — green
-- browser-verified: no command row, links under the box, and v138's
-  header clearance still holding
+- notes persist 14 (new) · notes 43 · notes UI 22 · box 16 — green
+- all four mutations caught
+- browser-verified: SURVIVED THE RELOAD
 - pyflakes clean
-
-WHAT BROKE, AND WHAT I UNDID
-- Four checks looked for the studio tools and `new` in the command row.
-  They live under the box now, which means they need TEXT to appear —
-  the same rule as copy and clear, and the right one: a new take with
-  an empty box is a no-op and there is nothing to fix or reshape.
-- Added a check that the free tier still gets none of the studio tools
-  once its box HAS text, so seeding cannot hide a tier leak.
-
-STILL OPEN
-- The reset-password test.
-- test_reader 8, red since v101.
-- The owner's tab bar wraps at 360px.
-- THE KEYS IN THE SHEET — its own session.
