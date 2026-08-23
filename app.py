@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v164 (a) (the delete reports in its own row)"
+APP_VERSION = "v165 (a) (a new recording shows up)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4380,6 +4380,11 @@ def transcribe_note_take():
     # spoke.
     try:
         _nrec = finish_keeping(_nkeeper)
+        if _nrec:
+            # THE SAME INVALIDATION, both recorders. A note's take is a
+            # recording like any other, and "the list is stale" must be
+            # true of both or the deck refreshes and the note does not.
+            st.session_state.pop("_recs", None)
         if _nrec and (text or "").strip():
             _nst = drive_store()
             if not _nst.put_text(_nrec, text):
@@ -5859,6 +5864,21 @@ if active == "transcribe":
                     if _rec_id:
                         st.session_state["_last_rec_id"] = _rec_id
                         stage["rec_id"] = _rec_id
+                        # THE LIST IS STALE THE MOMENT A RECORDING IS
+                        # MADE. Baba: "I'm just recording audio and it
+                        # doesn't automatically come on the recording
+                        # after every record stop."
+                        #
+                        # `_recs` is fetched once per session, because
+                        # the panel redraws on every tick of a checkbox
+                        # and a round trip each time would make it
+                        # unusable. That was right and it was only half
+                        # the rule: the cache was dropped after a DELETE
+                        # and never after a STORE, so the newest
+                        # recording — the one he had just made and would
+                        # most want to see — was the one thing the list
+                        # could not show.
+                        st.session_state.pop("_recs", None)
                         # THE PAIR IS COMPLETED HERE, and it cannot be
                         # done any earlier: the audio upload runs
                         # alongside Whisper, so at the moment it starts
