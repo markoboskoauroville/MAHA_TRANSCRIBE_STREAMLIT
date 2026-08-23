@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v166 (a) (the list says when it was read)"
+APP_VERSION = "v167 (a) (the sync path, on TTT mini's rules)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1911,7 +1911,14 @@ SETTINGS_KEYS = ("ui_lang", "engine", "rec_source",
                  # name in this module. A settings key and a function
                  # sharing a name is a reader's trap, and one of them
                  # would eventually be mistaken for the other.
-                 "keep_recordings")
+                 "keep_recordings",
+                 # THE PERSON'S OWN ASSEMBLYAI KEY, and what they have
+                 # spent against it. In the settings sheet like every
+                 # other preference: `_save_server_settings` writes to a
+                 # disk Streamlit Cloud wipes on every redeploy, so that
+                 # alone would lose the key on the next deploy.
+                 "aai_key", "aai_on", "aai_rate", "aai_credit",
+                 "aai_spent_s")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 

@@ -5,6 +5,7 @@ tiered chunking in ttt/audio.py — that machinery exists for Groq's 25MB
 limit and stays where the limit is.
 """
 
+import os
 import time
 
 from .base import Model, Provider, http_json
@@ -51,6 +52,71 @@ class AssemblyAI(Provider):
             Model("universal", "Universal", for_task="stt", note="faster"),
         ]
         return known, False, None
+
+    # ---- THE SYNC PATH ---------------------------------------------
+    #
+    # Ported from TTT mini's MaProviders, on Baba's instruction to use it
+    # as the model. Its reasoning is better than anything I would have
+    # arrived at here, so the rules come across intact and so do the
+    # reasons.
+    #
+    # AN ALLOW-LIST, NOT A DENY-LIST, and that direction is the whole
+    # point. AssemblyAI's own sync endpoint does not accept `hr` at all —
+    # its language list is en, es, de, fr, it, pt, tr, nl, sv, no, da,
+    # fi, hi, vi, ar, he, ja, ur, zh — so Croatian sent up that path
+    # comes back as FLUENT CROATIAN THAT IS THE WRONG WORDS. Not
+    # garbled, not empty, not obviously broken: plausible sentences
+    # nobody would question without knowing what was said.
+    #
+    # A wrong answer that looks right is worse than an error, because
+    # there is nothing to notice. So only a language whose sync output
+    # somebody has actually READ belongs on this list, and today that is
+    # English alone.
+    SYNC_SAFE_LANGUAGES = frozenset({"en"})
+
+    SYNC_URL = "https://sync.assemblyai.com/transcribe"
+    SYNC_MODEL = "universal-3-5-pro"
+    SYNC_MAX_SECONDS = 120.0
+    SYNC_MAX_BYTES = 40 * 1024 * 1024
+    # The endpoint rejects anything under 80 ms as too short, so half a
+    # second is a comfortable floor for something meant to be speech.
+    MIN_SYNC_SECONDS = 0.5
+    # The service rejects at 120 s and our figure is CALCULATED from the
+    # file while theirs is measured, so the last two seconds are left as
+    # room for the two to disagree.
+    SYNC_SECONDS_MARGIN = 2.0
+
+    def use_sync(self, language: str, path: str, seconds=None) -> bool:
+        """Whether this recording goes up the sync path.
+
+        EVERY CONDITION HERE IS A REASON TO SAY NO, and that asymmetry is
+        deliberate — TTT mini's words, and they are right: "Fast is a
+        preference; arriving is not." A recording that cannot take the
+        fast path takes the slow one and nobody is told, because the only
+        difference anybody can see is how long the words take.
+
+        AUTO COLLAPSES TO NO. A language this app has not been told is
+        English is treated as one that might be Croatian, and the safe
+        answer to "might be" is async. That is the same choice TTT mini
+        makes for an install still carrying an old "detect" setting.
+        """
+        if str(language or "").lower() not in self.SYNC_SAFE_LANGUAGES:
+            return False
+        try:
+            if os.path.getsize(path) > self.SYNC_MAX_BYTES:
+                return False
+        except OSError:
+            return False
+        # NOT KNOWING HOW LONG THE AUDIO IS COUNTS AS TOO LONG. A header
+        # that will not parse is not a thing to gamble a dictation on.
+        if seconds is None:
+            return False
+        try:
+            secs = float(seconds)
+        except (TypeError, ValueError):
+            return False
+        return (secs >= self.MIN_SYNC_SECONDS
+                and secs <= self.SYNC_MAX_SECONDS - self.SYNC_SECONDS_MARGIN)
 
     def test_key(self, key: str):
         _, err, kind = self._call(key, "/v2/transcript?limit=1", timeout=30)
