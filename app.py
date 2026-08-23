@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v118 (a) (auto language)"
+APP_VERSION = "v119 (a) (AUTO first, and the link finally on the right)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -285,7 +285,7 @@ STRINGS = {
     "pick_big":  {"en": "That file is too large for the deck — use this box.",
                   "hr": "Datoteka je prevelika za deck — koristi ovaj okvir."},
     "tab_talk":           {"en": "R",                "hr": "R"},
-    "lang_auto":          {"en": "auto",               "hr": "auto"},
+    "lang_auto":          {"en": "AUTO",               "hr": "AUTO"},
     "speech_lang_label":  {"en": "Speech language",  "hr": "Jezik govora"},
     "lang_en":            {"en": "ENG",              "hr": "ENG"},
     "lang_hr":            {"en": "HR",               "hr": "HR"},
@@ -3994,17 +3994,20 @@ def _lang_mode_row():
         # `multi` alone underneath, looking orphaned rather than paired
         # with `single`. Splitting them deliberately keeps each pair
         # together: the language on one line, the mode on the next.
-        lcol1, lcol2, lcol3 = st.columns([1, 1, 1.2])
+        lcol1, lcol2, lcol3 = st.columns([1.3, 1, 1.1])
         speech_now = st.session_state.get("speech_lang", "hr")
-        lcol1.button(t("lang_hr"), key="tr_hr",
-                     type="primary" if speech_now == "hr" else "secondary",
-                     on_click=set_speech_lang, args=("hr",))
-        lcol2.button(t("lang_en"), key="tr_en",
-                     type="primary" if speech_now == "en" else "secondary",
-                     on_click=set_speech_lang, args=("en",))
-        lcol3.button(t("lang_auto"), key="tr_auto",
+        # AUTO FIRST. Baba's order, and it reads right: the two named
+        # languages sit together as a pair, with the "work it out"
+        # option ahead of them rather than wedged behind.
+        lcol1.button(t("lang_auto"), key="tr_auto",
                      type="primary" if speech_now == "auto" else "secondary",
                      on_click=set_speech_lang, args=("auto",))
+        lcol2.button(t("lang_hr"), key="tr_hr",
+                     type="primary" if speech_now == "hr" else "secondary",
+                     on_click=set_speech_lang, args=("hr",))
+        lcol3.button(t("lang_en"), key="tr_en",
+                     type="primary" if speech_now == "en" else "secondary",
+                     on_click=set_speech_lang, args=("en",))
         # Single or multi, in the same row as the language, because both
         # answer "what happens when I press stop".
         appending = bool(st.session_state.get("append_mode"))
@@ -4846,8 +4849,17 @@ if active == "transcribe":
         # as a report on something that had happened, not as a thing to
         # press. Against the edge it reads as part of the box — the
         # bottom of the writing surface, where the action belongs.
-        st.button(t("tx_tonote"), key="tx_tonote", on_click=keep_as_note,
-                  use_container_width=True)
+        # ONE BUTTON, PUSHED RIGHT BY ITS WRAPPER.
+        #
+        # Not a column: st.columns STACKS below 640px, so on a phone the
+        # spacer and the link end up one above the other and nothing is
+        # placed at all — §7's trap, measured again at 248px off the
+        # edge. Not use_container_width either: Streamlit nests a <p> in
+        # a <div> in the button and each layer has its own idea of width.
+        #
+        # The wrapper is the one element whose width is known, so it
+        # becomes the flex row and the button sits at its right end.
+        st.button(t("tx_tonote"), key="tx_tonote", on_click=keep_as_note)
         if st.session_state.pop("_note_kept", None):
             st.caption(t("tx_tonote_done"))
 

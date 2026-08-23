@@ -1,43 +1,45 @@
-# STEP: a third language — auto
-STATUS: done, pushed as v118
+# STEP: AUTO first and in caps, and the link on the right
+STATUS: done, pushed as v119
 
 WHAT HAPPENED
-- HR · ENG · auto. Auto lets the engine work the language out, which is
-  what somebody who switches between Croatian and English mid-thought
-  actually wants. Offered rather than made the default: naming the
-  language is more accurate than detecting it, and detection can hear
-  one English sentence inside Croatian and change its mind.
-- THE APP STORES "auto" AND EACH PROVIDER SAYS IT ITS OWN WAY.
-  AssemblyAI already understood it — language_detection=True. Groq did
-  not: it always sent `language=`, and sending "auto" or "" to Whisper
-  is an error. It omits the parameter now, which is how Whisper is told
-  to detect. Neither the app nor either provider has to know how the
-  other spells it.
-- Five pills do not fit one line below 412px, and Streamlit wrapped them
-  4 + 1, leaving `multi` alone underneath looking orphaned rather than
-  paired with `single`. Split deliberately into two rows, each a whole
-  group: language on one, mode on the next. Verified at 320 and 360px —
-  both groups intact, no clipping, no sideways scroll.
+- AUTO · HR · ENG, in that order, AUTO in caps like the other two.
+- "add to notes" now sits at the right edge, 11px in — the button's own
+  padding — lined up with the tab signature below it.
+
+THE PART WORTH READING: SEVEN ROUNDS TO MOVE A LINK
+- I changed the CSS six times and measured no improvement, or a small
+  one, every time. The reason was not Streamlit being difficult. It was
+  that I kept styling the thing I wanted to move instead of measuring
+  what was holding it.
+- The nesting is button > div > p, and each layer had its own answer:
+  the ELEMENT CONTAINER was 128px inside a 390px parent; the BUTTON had
+  `width: 100%` immediately followed by `width: auto` — a leftover from
+  an earlier attempt, so the last one won and every rule after it argued
+  with a line I had forgotten to delete; and the DIV inside the button
+  is a flex with justify-content: center, so a full-width button still
+  centred a 104px paragraph.
+- What ended it was walking the ancestor chain and printing the computed
+  width of every level. That took one command and should have been the
+  FIRST thing, not the seventh.
+- Two wrong turns worth recording: I blamed st.columns stacking (they do
+  not stack here — the language pills prove it), and I blamed a column
+  flex direction (it is a row). Both were guesses dressed as diagnoses.
 
 NUMBERS
-- source 19 · box 16 · login 11 — green
-- pyflakes clean across app.py, ttt/ and ttt/providers/
+- inset from right: 11px, measured
+- pyflakes clean
 
 WHAT BROKE, AND WHAT I UNDID
-- Nothing in the app. But I booted a server after my own cleanup had
-  removed the stub secrets FOUR times in this session, each costing an
-  attempt — including twice after writing "write the secrets after the
-  cleanup, not before" into the previous handoff. Writing a lesson down
-  is not the same as following it.
+- Nothing in the app. But I booted a dead server SIX more times because
+  my cleanup removes the stub secrets and I keep writing the boot before
+  the secrets. Third handoff running that this appears in.
 
 STILL UNSURE
-- Auto has not been tested against a real recording — no key here. The
-  wiring is right on both providers; whether Whisper detects Croatian
-  reliably from a short take is Baba's ear, not mine.
+- Nothing here.
 
 FOR BABA
-- Try auto with a Croatian sentence and an English one, and see whether
+- Still waiting from v114: open a note, press the DECK's rec — the words
+  should join the note. Then the note's own red button; if it fails its
+  error is on screen now.
+- And auto: try a Croatian sentence and an English one and see whether
   it holds.
-- Still waiting from v114: open a note, press the DECK's rec (the words
-  should join the note), then the note's own red button — its error is
-  on screen now if it fails.

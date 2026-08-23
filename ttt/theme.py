@@ -647,9 +647,30 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        floated loose and read as a status report rather than an action.
        Left-aligned to the box's own text inset so the words line up
        with the transcript above them. */
+    /* THE WRAPPER IS THE FLEX ROW. Its width is the one that is known —
+       the button's is not, and neither is its inner paragraph's. Making
+       the wrapper a row and pushing its end is the only version of this
+       that measured right. */
+    /* WIDTH FIRST, THEN ALIGNMENT. The element container was itself
+       only 128px wide inside a 390px parent, so every attempt to push
+       its contents right was pushing them to the right of 128px — which
+       is where they already were. Four rounds of CSS went past this
+       because I kept styling the thing being moved instead of measuring
+       the thing that held it.
+
+       Read the ancestor chain when a rule "does nothing": the answer was
+       one line of computed widths. */
     [class*="st-key-tx_tonote"] {{
       margin-top: -0.75rem !important;
+      width: 100% !important;
+      /* NOTHING TO ALIGN AT THIS LEVEL. Measured, after five rounds of
+         guessing at it: the container is a ROW and its child .stButton
+         already fills all 330px of it. So there is no free space here
+         for justify-content or align-items to distribute — the words
+         sit left because the BUTTON's own label sits left inside a
+         full-width button. That is the only place left to fix, below. */
     }}
+    [class*="st-key-tx_tonote"] .stButton {{ width: 100% !important; }}
     [class*="st-key-tx_tonote"] button {{
       background: transparent !important;
       border: 0 !important;
@@ -659,8 +680,29 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       font-size: 0.76rem !important;
       text-decoration: underline;
       text-underline-offset: 3px;
-      justify-content: flex-start !important;
-      text-align: left !important;
+      /* RIGHT-ALIGNED, where `copy` and the tab signature sit, so the
+         panel's actions line up down the right margin. The button is
+         full width; these two lines are what put its LABEL at the right
+         end of it, and the <p> Streamlit wraps the label in needs
+         telling as well as the button. */
+      /* ONE width, not two. This read `width: 100%` and then
+         `width: auto` on the next line — left over from an earlier
+         attempt — so the last one won and the button stayed 128px wide
+         while every rule after it argued with a line I had forgotten to
+         delete. THAT is why five rounds of alignment moved nothing. */
+      width: 100% !important;
+    }}
+    /* AND THE DIV INSIDE THE BUTTON. Streamlit puts a flex div between
+       the button and its label, with justify-content: center — so a
+       full-width button still centred a 104px paragraph. Measured, not
+       guessed: button 330, inner div 306, paragraph 104 sitting in the
+       middle of it. */
+    [class*="st-key-tx_tonote"] button > div {{
+      width: 100% !important;
+      justify-content: flex-end !important;
+    }}
+    [class*="st-key-tx_tonote"] button p {{
+      text-align: right !important;
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
