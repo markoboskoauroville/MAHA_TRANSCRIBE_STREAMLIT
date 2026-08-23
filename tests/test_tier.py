@@ -34,8 +34,11 @@ ck("4 free has no custom", "tx_custom" not in k, k)
 # the row is `new`, and what it has under the box is copy and clear.
 # `new` moved under the box with the rest (v139), so it needs text too.
 # That is right: a new take with an empty box is a no-op.
-ck("5 the free tier's row is only the pills — nothing above the box",
-   not any(x.startswith("tx_") for x in k), k)
+# AN EMPTY BOX STILL OFFERS ONE THING (v147): `add to notes`, which
+# now makes a BLANK note to speak into — what `new` used to do. copy
+# and clear stay away, because there is nothing to copy or clear.
+ck("5 an empty box offers add-to-notes and nothing else",
+   "tx_tonote" in k and "bl_clear_tx" not in k, k)
 # THE LINKS APPEAR ONLY WHEN THERE IS TEXT. An empty box has nothing to
 # copy and nothing to clear, and a dead link is a question with no good
 # answer — so this seeds the box first.
@@ -46,7 +49,10 @@ at1b.run()
 _k1b = keys(at1b)
 ck("5b and clear appears under the box once there is text",
    "bl_clear_tx" in _k1b, _k1b)
-ck("5c so does new", "tx_new" in _k1b, _k1b)
+# `new` IS GONE (v147). Baba: "we do not need new — copy copies, clear
+# clears for new transcription, add to notes if it is empty creates a
+# new note." Two words for one act.
+ck("5c and `new` is gone entirely", "tx_new" not in _k1b, _k1b)
 ck("5d but NOT the studio tools — the tier still decides",
    "tx_grammar" not in _k1b and "tx_custom" not in _k1b, _k1b)
 

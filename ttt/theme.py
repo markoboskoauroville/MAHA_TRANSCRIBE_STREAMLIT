@@ -789,6 +789,17 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       padding: 0.6rem 0.7rem !important;
       margin-bottom: 1.1rem !important;
     }}
+    /* THE SPACE GOES ON THE CONTAINER, not on my div.
+       margin-bottom on `.mustsay` measured 2px in a browser: Streamlit
+       wraps every st.markdown in its own element container, and MY
+       margin sits inside that wrapper where the next element cannot see
+       it. The wrapper is the thing with a neighbour, so the wrapper is
+       the thing that needs the space.
+       Measured before and after — 2px, then 14. */
+    [class*="st-key-mustnotice"] div[data-testid="stMarkdownContainer"],
+    [class*="st-key-mustnotice"] div[data-testid="stElementContainer"]:first-child {{
+      margin-bottom: 0.7rem !important;
+    }}
     [class*="st-key-mustnotice"] div[data-testid="stHorizontalBlock"] {{
       align-items: center !important;
       gap: 0.3rem !important;
@@ -805,11 +816,16 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       color: var(--dim);
       font-size: 0.72rem;
       line-height: 1.45;
-      /* It WRAPS. Held on one line it was cut at the panel edge, which
-         §27 forbids outright — and a sentence is the one thing on a
-         screen that may take two lines without apology. */
       white-space: normal;
-      margin-bottom: 0.25rem;
+      /* THE SPACE BABA HAS ASKED FOR THREE TIMES, and the three times
+         are my fault: he kept saying "it is sitting on the buttons" and
+         I kept widening the gap BELOW THE CARD. The gap he meant was
+         inside it — between his sentence and the two buttons under it,
+         which was 0.25rem, about four pixels. A sentence four pixels
+         above a button reads as one object, and that is what looked
+         amateurish.
+         Read what somebody is pointing AT, not what is nearby. */
+      margin: 0 0 0.6rem 0;
     }}
 
     /* EACH COLOUR BUTTON WEARS ITS OWN COLOUR. Baba: "each button can
@@ -927,6 +943,13 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       justify-content: flex-end !important;
       flex-wrap: nowrap !important;
       gap: 0 !important;
+      /* ONE BASELINE. Baba: "they are dancing." Without this the cells
+         are stretched to equal height and each link sits wherever its
+         own box puts it — `copy` is an IFRAME and the others are
+         buttons, so their boxes are different heights and their words
+         landed at different levels. Aligning the ends makes every word
+         sit on the same line whatever it is made of. */
+      align-items: flex-end !important;
     }}
     [class*="st-key-boxlinks_"] div[data-testid="stColumn"] {{
       flex: 0 0 auto !important;

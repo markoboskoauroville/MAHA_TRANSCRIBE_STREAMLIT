@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v146 (a) (any size means any size)"
+APP_VERSION = "v147 (a) (three words, not four)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2854,12 +2854,20 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
     answer.
     """
     body = (text or "").strip()
-    if not body:
+    # THE ROW IS ALWAYS THERE when a module offers extras, because one
+    # of them — add to notes — now has a job to do on an EMPTY box:
+    # making a blank note to speak into. Hiding the row would hide that.
+    #
+    # copy and clear still only appear when there is something to copy
+    # or clear: a dead link is a question with no good answer.
+    if not body and not extra:
         return
     with st.container(key="boxlinks_%s" % where):
-        items = [("copy", None)]
-        if on_clear is not None:
-            items.append(("clear", on_clear))
+        items = []
+        if body:
+            items.append(("copy", None))
+            if on_clear is not None:
+                items.append(("clear", on_clear))
         items += list(extra or [])
         cols = st.columns([1] * len(items))
         for col, (kind, cb) in zip(cols, items):
@@ -4210,9 +4218,14 @@ def keep_as_note():
     rather than the raw transcript, so whatever he has done to it since —
     grammar, reshape, a hand edit — is what gets kept.
     """
+    # AN EMPTY BOX MAKES AN EMPTY NOTE. Baba: "add to notes, if it is
+    # empty then it simply adds empty note."
+    #
+    # That is what `new` used to be for, and it is the more useful half
+    # of it: a blank note to open and speak into, rather than a blank
+    # box. It used to return here and do nothing at all, which read as
+    # a broken button.
     body = t1_text().strip()
-    if not body:
-        return
     NOTES.add(st.session_state, body,
               language=st.session_state.get("last_lang", ""),
               rec_id=st.session_state.get("_last_rec_id", ""))
@@ -5295,7 +5308,15 @@ if active == "transcribe":
     # The studio tools ride there too — they act on the same text, so
     # they belong in the same place, and the row that used to hold them
     # was a second home for one idea.
-    _extra = [(t("new_take_word"), ("tx_new", _new_take))]
+    # `new` IS GONE. Baba: "we do not need new — copy copies, clear
+    # clears for new transcription, add to notes if it is empty creates
+    # a new note. New goes out."
+    #
+    # He is right that it was two words for one act. `new` cleared the
+    # box for a fresh take; `clear` already does that. What `new` also
+    # did — start a fresh note — is what `add to notes` now does when
+    # the box is empty.
+    _extra = []
     if _studio:
         _extra += [(t("grammar_word"), ("tx_grammar", _grammar)),
                    (t("reshape_word"), ("tx_reshape", _reshape)),
@@ -5346,40 +5367,22 @@ if active == "transcribe":
     # what gets operated on, which is what Baba asked for.
     #
     # No new furniture: the same terminal row of cells as everywhere else.
-    # ---- ADD TO NOTES -------------------------------------------
+    # ---- WHAT YOU CAN DO WITH THE TEXT --------------------------
     #
-    # A LINE, NOT A BUTTON. Baba asked for "just an orange line link",
-    # and he is right about the weight: the box already carries five
-    # command keys above it, and a sixth full-width button would compete
-    # with them. This is an afterthought action — you read what came
-    # back, and then you decide to keep it.
+    # copy · clear · add to notes, under the box, as links. The order is
+    # the order they are reached: read what came back, then act on it.
     #
-    # It takes what is IN THE BOX, not what came back from Whisper, so a
-    # correction, a grammar pass or a hand edit is what gets kept.
-    _body = t1_text().strip()
-    if _body:
-        # FULL WIDTH AND GLUED TO THE BOX. Baba: "close to the text
-        # field as much as possible, almost touching it, so they come
-        # together, otherwise it looks like status." He is right about
-        # what the gap was saying: floating loose under the box it read
-        # as a report on something that had happened, not as a thing to
-        # press. Against the edge it reads as part of the box — the
-        # bottom of the writing surface, where the action belongs.
-        # ONE BUTTON, PUSHED RIGHT BY ITS WRAPPER.
-        #
-        # Not a column: st.columns STACKS below 640px, so on a phone the
-        # spacer and the link end up one above the other and nothing is
-        # placed at all — §7's trap, measured again at 248px off the
-        # edge. Not use_container_width either: Streamlit nests a <p> in
-        # a <div> in the button and each layer has its own idea of width.
-        #
-        # The wrapper is the one element whose width is known, so it
-        # becomes the flex row and the button sits at its right end.
-        box_links("tx", t1_text(), on_clear=_clear_all,
-                  extra=_extra + [(t("tx_tonote"),
-                                   ("tx_tonote", keep_as_note))])
-        if st.session_state.pop("_note_kept", None):
-            st.caption(t("tx_tonote_done"))
+    # NO OUTER GUARD. An `if _body:` lived here from v114, when the only
+    # thing on this row was "add to notes" and an empty box had nothing
+    # to keep. It has outlived that: `add to notes` on an empty box now
+    # makes a blank note to speak into, which is what `new` used to do.
+    # The guard was invisible from inside box_links and quietly undid
+    # the change — the row simply never appeared.
+    box_links("tx", t1_text(), on_clear=_clear_all,
+              extra=_extra + [(t("tx_tonote"),
+                               ("tx_tonote", keep_as_note))])
+    if st.session_state.pop("_note_kept", None):
+        st.caption(t("tx_tonote_done"))
 
     # ---- THE NOTES ----------------------------------------------
     #
