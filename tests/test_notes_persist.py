@@ -166,6 +166,30 @@ check("14 RESTORE WAITS FOR THE BRIDGE. On the first render after a "
       "never read back",
       "if not LS_DATA:" in rsrc, rsrc[:300])
 
+# --- and Drive, beside the recordings ----------------------------------
+#
+# Baba: "notes should be saved in the same location where audio files
+# are saved, and a simple text file as a backup in Google Drive."
+#
+# SOURCE CHECKS. The Drive store is off without secrets and its calls go
+# over the network, so the behaviour cannot be reached here. What the
+# GAS side does is tested for real in tests/gastest/test_notes_drive.js,
+# against the actual Code.gs in a fake Drive.
+check("15 THE BROWSER IS THE FAST COPY AND DRIVE IS THE TRUE ONE — a "
+      "save goes to both", "put_notes" in psrc, psrc[-400:])
+check("16 and Drive never blocks the browser copy: it is wrapped, so a "
+      "notebook that cannot reach Drive still saves locally and the "
+      "person can still type",
+      "try:" in psrc.split("put_notes")[0][-200:], psrc[-400:])
+check("17 RESTORE FALLS BACK TO DRIVE when the browser has nothing — a "
+      "new device, or a cleared browser, which is the one case the "
+      "browser copy cannot cover",
+      "get_notes" in rsrc, rsrc[-400:])
+check("18 and only when the browser is EMPTY, never as a merge: two "
+      "copies edited in two places cannot be merged without deciding "
+      "which edit loses",
+      rsrc.index("if not raw:") < rsrc.index("get_notes"), "order wrong")
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 if __name__ == "__main__":

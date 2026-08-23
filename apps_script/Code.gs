@@ -195,6 +195,8 @@ function doPost(e) {
     if (body.what === 'audio_put')  return json(putAudio_(body));
     if (body.what === 'audio_reg')  return json(registerRec_(body));
     if (body.what === 'audio_del')  return json(deleteRec_(body));
+    if (body.what === 'notes_put')  return json(notesPut_(body));
+    if (body.what === 'notes_get')  return json(notesGet_(body));
     if (body.what === 'text_put')   return json(putText_(body));
     if (body.what === 'text_get')   return json(getText_(body));
     if (body.what === 'set_put')    return json(putSetting_(body));
@@ -720,9 +722,68 @@ function childFolder_(parent, name) {
 }
 
 /** <root>/<user>/<recId>/ — created on first write, as §17 says. */
+// The notebook's filename, in the person's own folder beside their
+// recordings. A plain .txt on purpose: Baba asked for "a simple text
+// file as a backup", and a backup nobody can open without the app is
+// not a backup.
+var NOTES_FILE = 'notes.txt';
+
 function recFolder_(user, recId) {
   var root = DriveApp.getFolderById(DRIVE_ROOT_ID);
   return childFolder_(childFolder_(root, user), recId);
+}
+
+/**
+ * THE NOTEBOOK, as one text file in the person's own folder.
+ *
+ * Baba: "to survive between sessions, notes should be saved in the same
+ * location where audio files are saved, and a simple text file as a
+ * backup in Google Drive."
+ *
+ * WHY NOT putText_, which already writes text to Drive: that one
+ * REFUSES a rec_id with no row in the index, deliberately — writing
+ * text for an unknown recording would mint a folder holding a
+ * transcript and no audio, which is the half of a pair that must never
+ * exist. A notebook is not half of a pair. It belongs to the person,
+ * not to a recording, so it sits beside their recordings rather than
+ * inside one.
+ *
+ * ONE FILE, REPLACED WHOLE. Notes are small — a lifetime of dictation
+ * is well under a megabyte of text — and a whole-file write cannot
+ * leave a half-updated notebook the way a per-note write could.
+ */
+function notesPut_(body) {
+  var user = safeName_(body.user);
+  if (!user) return { ok: false, error: 'user required' };
+
+  var text = String(body.text == null ? '' : body.text);
+  var root = DriveApp.getFolderById(DRIVE_ROOT_ID);
+  var folder = childFolder_(root, user);
+
+  var it = folder.getFilesByName(NOTES_FILE);
+  if (it.hasNext()) {
+    var f = it.next();
+    f.setContent(text);
+    // Any older duplicate goes, so there is never a question of which
+    // file is the notebook.
+    while (it.hasNext()) it.next().setTrashed(true);
+  } else {
+    folder.createFile(NOTES_FILE, text, MimeType.PLAIN_TEXT);
+  }
+  return { ok: true, bytes: text.length };
+}
+
+function notesGet_(body) {
+  var user = safeName_(body.user);
+  if (!user) return { ok: false, error: 'user required' };
+
+  var root = DriveApp.getFolderById(DRIVE_ROOT_ID);
+  var folder = childFolder_(root, user);
+  var it = folder.getFilesByName(NOTES_FILE);
+  // NOT AN ERROR. Somebody who has never made a note has no file, and
+  // that must read as "no notes yet" rather than as a fault.
+  if (!it.hasNext()) return { ok: true, text: null };
+  return { ok: true, text: it.next().getBlob().getDataAsString() };
 }
 
 /** A user id that cannot climb out of its own folder or collide. */

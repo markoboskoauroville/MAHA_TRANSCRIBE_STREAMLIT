@@ -26,6 +26,10 @@ class FakeFile {
   }
   getId() { return this.id; }
   getName() { return this.name; }
+  // setContent replaces a text file whole, as the real one does. Without
+  // it notesPut_ silently did nothing on the second save and the
+  // notebook would have frozen at whatever it held first.
+  setContent(text) { this.bytes = String(text); return this; }
   setTrashed(v) { this.trashed = !!v; return this; }
   isTrashed() { return this.trashed; }
   getBlob() {
@@ -63,8 +67,15 @@ class FakeFolder {
     this.trashed = !!v;
     return this;
   }
-  createFile(blob) {
-    const f = new FakeFile(blob._name, blob._data, blob._mime);
+  createFile(a, b, c) {
+    // BOTH SHAPES, because the real DriveApp has both:
+    // createFile(blob) and createFile(name, content, mimeType). The fake
+    // knew only the first, so notesPut_ would have thrown here while
+    // working perfectly in Drive — the wrong kind of red, and the kind
+    // that teaches you to distrust the harness.
+    const f = (typeof a === 'string')
+      ? new FakeFile(a, b, c || 'text/plain')
+      : new FakeFile(a._name, a._data, a._mime);
     this.files.push(f);
     return f;
   }

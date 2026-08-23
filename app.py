@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v142 (a) (the links match, measured)"
+APP_VERSION = "v143 (a) (notes in Drive, beside the recordings)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3440,6 +3440,26 @@ def persist_notes():
         return
     st.session_state["_notes_saved"] = now
     queue_ls(writes={NOTES_LS_KEY: now})
+
+    # AND TO DRIVE, beside the recordings. Baba: "notes should be saved
+    # in the same location where audio files are saved, and a simple
+    # text file as a backup."
+    #
+    # THE BROWSER IS THE FAST COPY AND DRIVE IS THE TRUE ONE. The
+    # browser answers instantly and works with the sheet disconnected;
+    # Drive follows a person to another device and survives a cleared
+    # browser. Neither alone is enough, and Drive alone would put a
+    # network round trip in front of every note.
+    #
+    # It NEVER blocks and never raises: a notebook that will not save to
+    # Drive must still save to the browser, and the person must still be
+    # able to type.
+    try:
+        store = drive_store()
+        if store is not None and getattr(store, "enabled", False):
+            store.put_notes(now)
+    except Exception:
+        pass
     # AND ONE MORE RUN, SO THE QUEUE IS ACTUALLY FLUSHED.
     #
     # The bridge runs at the TOP of a script run and sends whatever was
@@ -3479,6 +3499,24 @@ def restore_notes():
 
     st.session_state["_notes_restored"] = True
     raw = LS_DATA.get(NOTES_LS_KEY)
+
+    # DRIVE WHEN THE BROWSER HAS NOTHING. A new device, or a cleared
+    # browser: the notebook is not here but it is in Drive, and that is
+    # exactly the case the browser copy cannot cover.
+    #
+    # Only when the browser is empty — not as a merge. Two copies of a
+    # notebook edited in two places cannot be merged without deciding
+    # which edit loses, and guessing at that would lose somebody's
+    # words. The browser is the working copy; Drive is what fills it
+    # when it is empty.
+    if not raw:
+        try:
+            store = drive_store()
+            if store is not None and getattr(store, "enabled", False):
+                raw = store.get_notes()
+        except Exception:
+            raw = None
+
     if not raw or st.session_state.get(NOTES.KEY):
         return
     try:

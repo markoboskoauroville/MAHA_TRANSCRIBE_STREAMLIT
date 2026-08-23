@@ -190,6 +190,30 @@ class DriveStore:
                            "text": "" if text is None else str(text)},
                           TIMEOUT_SMALL)
 
+    # -- the notebook ----------------------------------------------------
+    #
+    # NOT put_text. That one refuses a rec_id with no row in the index,
+    # deliberately: text for an unknown recording would be half of a
+    # pair that must never exist. A notebook is not half of a pair — it
+    # belongs to the PERSON, so it sits beside their recordings rather
+    # than inside one, as a plain notes.txt anybody can open.
+
+    def put_notes(self, text: str):
+        """Write the whole notebook. Replaces what was there."""
+        return self._post({"what": "notes_put",
+                           "text": "" if text is None else str(text)},
+                          TIMEOUT_SMALL)
+
+    def get_notes(self):
+        """Read it back. None means no notebook stored — which is not the
+        same as a failure, and both look like None here, so the caller
+        must treat a missing notebook as 'nothing yet' either way."""
+        out = self._post({"what": "notes_get"}, TIMEOUT_SMALL)
+        if not out:
+            return None
+        text = out.get("text")
+        return None if text is None else str(text)
+
     def get_text(self, rec_id: str):
         """Read the transcript back — instant and free, against a
         retranscribe which costs a fetch and a Whisper call. Returns the
