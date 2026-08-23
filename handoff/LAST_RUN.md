@@ -1,44 +1,53 @@
-# STEP: the note keeps its audio too
-STATUS: done, pushed as v154. No deploy needed.
+# STEP: your recordings, and what happens to them
+STATUS: done, pushed as v156. **NO DEPLOY NEEDED.**
 
-WHAT BABA ASKED
-- "Storage should work for both systems, recording and note."
+WHAT BABA ASKED FOR
+- "A remote file manager for Google Drive so user can delete its
+  recording from this interface... just a table of files, mark the check
+  mark and press delete. Nothing fancy, most basic."
+- "A radio button to keep audio files after transcription or delete them
+  automatically."
+- "An audio player for stored files and retranscribe option."
 
-WHAT I FOUND, AND IT IS THE ANSWER TO DAYS OF CONFUSION
-- transcribe_note_take made a FLAC, transcribed it, and LET IT GO. No
-  start_keeping, no put_text, nothing. Every word spoken into a note has
-  had its audio thrown away since notes gained a recorder in v101.
-- Nothing ever said so, because failing to keep something you never
-  promised to keep raises no error. The deck's takes were kept and the
-  note's were not, and the two look identical from the outside.
-- This is very likely why Baba's Drive holds one folder from 14:36 and
-  nothing since: he moved to recording INSIDE notes, and that path
-  stored nothing at all. It may not be a broken configuration — it may
-  be a feature that was never written.
+WHAT WAS ALREADY THERE, UNUSED
+- `audio_list` and `audio_del` have been in the DEPLOYED script all
+  along, and ttt/drive.py already had list(), delete() and fetch().
+  The whole feature was sitting there waiting. No deploy, no script
+  change, nothing to paste.
 
-WHAT IT DOES NOW
-- Starts the upload alongside Whisper, exactly as the deck does, so
-  keeping costs no waiting.
-- Writes the transcript beside the audio afterwards — the same pair, so
-  a note's recording is as findable as any other and neither half can
-  exist alone.
-- AND A FAILED TAKE DOES NOT LEAVE AN ORPHAN. If transcription fails
-  after the upload has started, the recording is finished rather than
-  abandoned half-written, and the log says the audio is there without
-  its words.
+WHAT IT DOES
+- A fold in the grey gear: one row per recording, date · minutes · a
+  mark if it has a transcript. Tick what you want.
+- The actions appear ONLY when something is ticked, because a delete
+  link with nothing selected is a question with no answer.
+- `play` and `transcribe again` act on the first ticked; `delete` acts
+  on all of them, in two presses, and the second one SAYS HOW MANY —
+  "delete 3?" is a number somebody can check against what they ticked,
+  "are you sure?" is not.
+- Delete reports each outcome separately: "2 deleted, 1 could not be".
+  A single "done" over a batch that half-worked is a lie by omission.
+- KEEP AUDIO / DELETE AFTER, with a sentence under it saying what the
+  choice costs. "Delete automatically" sounds like tidiness and is
+  actually a decision about whether these words can ever be recovered.
+  It obeys in BOTH recorders — the deck and the note — or "delete after"
+  would be true of one and not the other, which is exactly the split
+  that hid the note storage gap for fifty versions.
 
-FOUR THINGS I GOT WRONG WRITING THE TEST, ALL THE SAME MISTAKE
-- I asserted `stt.transcribe` came before `finish_keeping` — it appears
-  in BOTH engine branches, so the index found the wrong one.
-- Then that `finish_keeping` appears twice — it appears three times,
-  because the failure path sits above the success path in the source.
-- Both times the test said "wrong order" about code that was right.
-  Text position is not execution order, and counting occurrences of
-  something I had just written was guessing at my own shape.
-- What it asserts now: the LAST finish_keeping comes after the upload
-  starts. Mutating start_keeping away fails it.
+THREE THINGS I GOT WRONG WRITING IT
+- I called `ttt_audio.join(parts)`. THERE IS NO JOINER IN THIS CODEBASE.
+  Inventing one would have meant an ffmpeg concat, a temp file and a new
+  failure mode, for a long take that is stored as pieces on purpose. It
+  plays the parts in order, numbered, which is honest and costs nothing.
+- I named the setting `keep_audio` — there is already a FUNCTION called
+  that in the same module. A settings key and a function sharing a name
+  is a reader's trap and one would eventually be mistaken for the other.
+  It is `keep_recordings`.
+- The radio printed the panel's heading a second time:
+  label_visibility="collapsed" hides a label from SIGHT but Streamlit
+  still renders it, and here it showed.
 
 NUMBERS
-- notes UI 27 (was 22) · notes 53 — green
-- mutation caught
+- box 16 · drive text 20 · owner edge 5 · notes UI 27 · must change 15
+- driven end to end against a fake Drive in a real browser: two rows
+  listed, one ticked, "delete 1?", then "1 deleted" and one row left
 - pyflakes clean

@@ -16,6 +16,7 @@ import threading
 import time
 import hashlib
 import io
+import shutil
 import tempfile
 import subprocess
 import base64
@@ -23,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v155 (a) (pinned, scanned, and honest about what is left)"
+APP_VERSION = "v156 (a) (your recordings, and what happens to them)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -501,6 +502,36 @@ STRINGS = {
                             "hr": "Ovdje će se pojaviti prijevod"},
     "settings_owner_only": {"en": "Settings are managed by the owner.",
                             "hr": "Postavkama upravlja vlasnik."},
+    "rec_title":          {"en": "your recordings",   "hr": "tvoje snimke"},
+    "rec_keep_label":     {"en": "after transcribing",
+                           "hr": "nakon prepisivanja"},
+    "rec_keep":           {"en": "keep audio",       "hr": "čuvaj zvuk"},
+    "rec_bin":            {"en": "delete after",     "hr": "obriši poslije"},
+    "rec_keep_why":       {"en": "Audio is kept, so it can be played or "
+                                 "transcribed again.",
+                           "hr": "Zvuk se čuva pa se može ponovno slušati "
+                                 "ili prepisati."},
+    "rec_bin_why":        {"en": "Audio is deleted once the words are out. "
+                                 "Nothing to play back later.",
+                           "hr": "Zvuk se briše čim su riječi gotove. "
+                                 "Nema se što poslije slušati."},
+    "rec_none":           {"en": "nothing stored yet", "hr": "još ništa"},
+    "rec_has_text":       {"en": "text", "hr": "tekst"},
+    "rec_play":           {"en": "play",              "hr": "slušaj"},
+    "rec_again":          {"en": "transcribe again",  "hr": "prepiši ponovno"},
+    "rec_del":            {"en": "delete",            "hr": "obriši"},
+    "rec_del_sure":       {"en": "delete %d?",        "hr": "obrisati %d?"},
+    "rec_del_done":       {"en": "%d deleted",        "hr": "obrisano: %d"},
+    "rec_del_part":       {"en": "%d deleted, %d could not be",
+                           "hr": "obrisano %d, nije %d"},
+    "rec_getting":        {"en": "fetching the audio…",
+                           "hr": "dohvaćam zvuk…"},
+    "rec_gone":           {"en": "That audio could not be fetched whole.",
+                           "hr": "Zvuk se nije mogao dohvatiti cijeli."},
+    "rec_again_done":     {"en": "transcribed again — it is in the box",
+                           "hr": "ponovno prepisano — u okviru je"},
+    "rec_failed":         {"en": "That recording could not be used.",
+                           "hr": "Ta snimka se nije mogla upotrijebiti."},
     "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
     "settings_engine":    {"en": "Engine",             "hr": "Motor"},
     "eng_check":          {"en": "test",               "hr": "test"},
@@ -1833,7 +1864,16 @@ SETTINGS_KEYS = ("ui_lang", "engine", "rec_source",
                  # otherwise somebody who shrinks the app finds it big
                  # again at their next login, which reads as the setting
                  # not working rather than not being kept.
-                 "ui_scale")
+                 "ui_scale",
+                 # KEEP OR DISCARD THE AUDIO. Saved like every other
+                 # preference — a choice about whether recordings can
+                 # ever be recovered must not quietly reset itself.
+                 #
+                 # NOT "keep_audio": there is already a FUNCTION of that
+                 # name in this module. A settings key and a function
+                 # sharing a name is a reader's trap, and one of them
+                 # would eventually be mistaken for the other.
+                 "keep_recordings")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -4310,6 +4350,13 @@ def transcribe_note_take():
                 errlog.add(st.session_state, "drive",
                            "note transcript not stored beside its audio",
                            _nst.last_error or "no reason given")
+            # THE SAME SETTING, THE SAME PLACE IN THE SEQUENCE. A note's
+            # take obeys it too, or "delete after" would be true of one
+            # recorder and not the other — which is exactly the split
+            # that hid the note storage gap for fifty versions.
+            if not st.session_state.get("keep_recordings", True):
+                _nst.delete(_nrec)
+                st.session_state.pop("_recs", None)
     except Exception as e:
         errlog.add(st.session_state, "drive", "keeping the note take failed",
                    "{}: {}".format(type(e).__name__, e))
@@ -4349,6 +4396,116 @@ def keep_as_note():
     # list is where it belongs.
     if nid and not body:
         open_note(nid)
+
+
+def _rec_delete(rec_ids):
+    """Delete the ticked recordings from Drive. Says what happened.
+
+    ONE AT A TIME, and the count of each outcome, because a batch that
+    half-worked is the case somebody needs told about. A single "done"
+    over three deletions where one failed is a lie by omission.
+    """
+    store = drive_store()
+    gone, failed = 0, []
+    for rid in rec_ids:
+        if store.delete(rid):
+            gone += 1
+        else:
+            failed.append(rid)
+            errlog.add(st.session_state, "drive", "could not delete a recording",
+                       "%s: %s" % (rid, store.last_error or "no reason given"))
+    # THE LIST IS STALE NOW. Dropping it makes the next render fetch a
+    # fresh one, rather than showing rows for files that are gone.
+    st.session_state.pop("_recs", None)
+    st.session_state.pop("_rec_del_armed", None)
+    for rid in rec_ids:
+        st.session_state.pop("_rp_%s" % rid, None)
+    st.session_state["_rec_msg"] = (
+        ("bad", t("rec_del_part") % (gone, len(failed))) if failed
+        else ("good", t("rec_del_done") % gone))
+
+
+def _rec_after_actions(recs):
+    """Play or re-transcribe, after the panel has drawn.
+
+    BOTH NEED THE AUDIO BACK FROM DRIVE, which is a download and a wait,
+    so neither happens on the press itself — the press records what was
+    asked and this runs it on the next render, where a spinner can say
+    what is going on.
+    """
+    msg = st.session_state.pop("_rec_msg", None)
+    if msg:
+        (st.success if msg[0] == "good" else st.error)(msg[1])
+
+    want_play = st.session_state.pop("_rec_play", None)
+    want_again = st.session_state.pop("_rec_again", None)
+    if not (want_play or want_again):
+        return
+
+    rid = want_play or want_again
+    row = next((r for r in recs if str(r.get("rec_id")) == rid), None)
+    if not row:
+        return
+
+    store = drive_store()
+    tmp = tempfile.mkdtemp(prefix="rec_")
+    try:
+        with st.spinner(t("rec_getting")):
+            parts = store.fetch(rid, int(row.get("parts") or 1), tmp)
+        if not parts:
+            # fetch() returns [] rather than a partial list on purpose:
+            # a missing middle piece transcribes to a confident
+            # transcript with a hole nobody can see.
+            st.error(t("rec_gone"))
+            return
+
+        if want_play:
+            # ONE PLAYER PER PART, NOT A MERGED FILE.
+            #
+            # I first wrote `ttt_audio.join(parts)` — a function that
+            # does not exist. There is no joiner in this codebase, and
+            # inventing one here would mean an ffmpeg concat, a temp
+            # file and a new failure mode, for a long take that is
+            # already stored as ten-minute pieces on purpose.
+            #
+            # Numbering them is honest and costs nothing: a person who
+            # recorded for half an hour understands three players in a
+            # row better than they would understand a wait.
+            for _i, _p in enumerate(parts):
+                if len(parts) > 1:
+                    st.caption("%d / %d" % (_i + 1, len(parts)))
+                with open(_p, "rb") as fh:
+                    st.audio(fh.read(), format="audio/flac")
+        else:
+            with st.spinner(t("transcribing")):
+                # transcribe_any_size ALREADY cuts a long file into
+                # pieces and stitches the results — so it is handed the
+                # first part, and for a multi-part recording each part
+                # is transcribed and joined in turn below.
+                text, _m, _r = transcribe_any_size(
+                    parts[0], "", str(row.get("language") or ""))
+                for _p in parts[1:]:
+                    _more, _m2, _r2 = transcribe_any_size(
+                        _p, "", str(row.get("language") or ""))
+                    if (_more or "").strip():
+                        text = (text or "").rstrip() + "\n\n" + _more.strip()
+            if (text or "").strip():
+                # INTO THE BOX, not over the old transcript. A second
+                # reading is a new take of the same audio, and which one
+                # is better is Baba's call, not the app's.
+                t1_set_text(text)
+                st.success(t("rec_again_done"))
+            else:
+                st.warning(t("nothing_heard"))
+    except Exception as e:
+        errlog.add(st.session_state, "drive", "could not use that recording",
+                   "{}: {}".format(type(e).__name__, e))
+        st.error(t("rec_failed"))
+    finally:
+        try:
+            shutil.rmtree(tmp, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def note_number(i):
@@ -5239,6 +5396,20 @@ if active == "transcribe":
                                     st.session_state, "drive",
                                     "transcript not stored beside the audio",
                                     _st.last_error or "no reason given")
+                            # AND THROW IT AWAY IF THAT IS WHAT HE ASKED
+                            # FOR. Baba's setting: keep audio, or delete
+                            # it once the words are out.
+                            #
+                            # The whole recording goes, text and all —
+                            # audio_del takes the folder and the row
+                            # together, and half a pair is the one thing
+                            # §60 exists to prevent. The words are in the
+                            # box either way, which is the point: this
+                            # setting trades "I can hear it again" for
+                            # "my Drive does not fill up".
+                            if not st.session_state.get("keep_recordings", True):
+                                _st.delete(_rec_id)
+                                st.session_state.pop("_recs", None)
                     # And let the recording go: a 7 MB take is ~7 MB of
                     # bytes plus ~9 MB of base64 still held by the
                     # component, which is memory this instance cannot
@@ -6147,6 +6318,98 @@ elif active == "looks":
     # page that must never be hidden by a condition.
     st.button(t("log_out"), key="log_out_btn", on_click=log_out,
               use_container_width=True)
+
+    # ---- YOUR RECORDINGS ---------------------------------------------
+    #
+    # Baba: "a remote file manager for Google Drive so user can delete
+    # its recording from this interface... just a table of files and
+    # user can mark the check mark and press delete. Nothing fancy, most
+    # basic."
+    #
+    # NO DEPLOY WAS NEEDED FOR ANY OF THIS. `audio_list` and `audio_del`
+    # have been in the deployed script all along, and ttt/drive.py
+    # already had list(), delete() and fetch(). The whole feature was
+    # sitting there unused.
+    if drive_store().enabled:
+        st.markdown('<div class="setlabel">%s</div>' % html.escape(
+            t("rec_title")), unsafe_allow_html=True)
+
+        # KEEP OR DISCARD, and say what it costs. Baba asked for the
+        # choice; the sentence under it exists because "delete
+        # automatically" sounds like tidiness and is actually a decision
+        # about whether these words can ever be recovered.
+        _keep_now = bool(st.session_state.get("keep_recordings", True))
+
+        def _set_keep():
+            st.session_state["keep_recordings"] = (
+                st.session_state.get("_keep_pick") == t("rec_keep"))
+            persist_settings()
+
+        # THE RADIO'S LABEL IS ITS OWN WORD, not the panel's. Passing
+        # the heading again printed "your recordings" twice, one line
+        # apart — label_visibility="collapsed" hides the label from
+        # SIGHT but Streamlit still renders it for screen readers, and
+        # here it showed. The heading above is the visible one.
+        st.radio(t("rec_keep_label"),
+                 [t("rec_keep"), t("rec_bin")],
+                 index=0 if _keep_now else 1,
+                 key="_keep_pick", horizontal=True,
+                 label_visibility="collapsed", on_change=_set_keep)
+        st.markdown('<div class="readhint">%s</div>' % html.escape(
+            t("rec_keep_why") if _keep_now else t("rec_bin_why")),
+            unsafe_allow_html=True)
+
+        # THE LIST IS FETCHED ONCE PER SESSION, not per render. It is a
+        # network round trip, and this panel redraws on every tick of a
+        # checkbox.
+        if "_recs" not in st.session_state:
+            st.session_state["_recs"] = drive_store().list()
+        _recs = st.session_state["_recs"] or []
+
+        with st.expander("%s · %d" % (t("rec_title"), len(_recs))):
+            if not _recs:
+                st.caption(t("rec_none"))
+            for _r in _recs:
+                _rid = str(_r.get("rec_id") or "")
+                _mins = float(_r.get("seconds") or 0) / 60.0
+                st.checkbox(
+                    "%s · %.1f min%s" % (str(_r.get("created") or "")[:16],
+                                         _mins,
+                                         "  ·  " + t("rec_has_text")
+                                         if _r.get("has_text") else ""),
+                    key="_rp_%s" % _rid)
+
+            _picked = [str(r.get("rec_id")) for r in _recs
+                       if st.session_state.get("_rp_%s" % r.get("rec_id"))]
+
+            # THE ACTIONS ONLY EXIST WHEN SOMETHING IS TICKED. A delete
+            # link with nothing selected is a question with no answer,
+            # and this app has said so about every other row of links.
+            if _picked:
+                with st.container(key="recacts"):
+                    _a1, _a2, _a3 = st.columns([1, 1.3, 1])
+                    _a1.button(t("rec_play"), key="rec_play",
+                               on_click=lambda: st.session_state.update(
+                                   {"_rec_play": _picked[0]}),
+                               use_container_width=True)
+                    _a2.button(t("rec_again"), key="rec_again",
+                               on_click=lambda: st.session_state.update(
+                                   {"_rec_again": _picked[0]}),
+                               use_container_width=True)
+                    # DELETE IS TWO PRESSES AND SAYS HOW MANY. "Delete 3
+                    # items?" is a number somebody can check against what
+                    # they ticked; "are you sure?" is not.
+                    if st.session_state.get("_rec_del_armed"):
+                        _a3.button(t("rec_del_sure") % len(_picked),
+                                   key="rec_del2", on_click=_rec_delete,
+                                   args=(_picked,), use_container_width=True)
+                    else:
+                        _a3.button(t("rec_del"), key="rec_del",
+                                   on_click=lambda: st.session_state.update(
+                                       {"_rec_del_armed": True}),
+                                   use_container_width=True)
+
+        _rec_after_actions(_recs)
 
     # The password half only for people who HAVE one here. Somebody who
     # came through APP_PASSWORDS has no row to change, and the script
