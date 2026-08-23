@@ -1,47 +1,36 @@
-# STEP: the overlap, solved at the root — and the cursor
-STATUS: done, pushed as v138. No deploy needed.
+# STEP: everything T does is under the box
+STATUS: done, pushed as v139. No deploy needed.
 
-THE OVERLAP, AND WHY IT KEPT COMING BACK
-- Baba asked four times about text overlapping at the top, and I fixed
-  it four times. Four different elements — the tabs, the
-  interface-language label, the engine test result, the password notice
-  — and ONE cause I never looked for.
-- v122 set the header's height to zero, to close an empty band. That
-  does not remove it: Streamlit's header is POSITION: FIXED, so zeroing
-  its height leaves the toolbar where it is and lets the whole page
-  scroll UNDERNEATH it. Whatever is at the top gets printed through.
-- The header stays now, transparent and click-through, and the page has
-  padding-top: 64px — MEASURED, because its box is 60px in a browser
-  and my first guess of 2.4rem still let content under it.
-- Verified: header bottom 60, first element top 65. CLEAR.
-- THE LESSON, and it is in HOW_WE_WORK.md now: four rounds went into
-  moving the thing being overlapped instead of asking what was
-  overlapping it. When a layout fault returns after a fix, the fix was
-  a patch. Measure the geometry.
-
-AND A TRAP INSIDE THE FIX
-- ttt/theme.py is one f-string, so a brace in a COMMENT is read as
-  code. Writing the offending CSS inside braces in that very note
-  crashed the app with NameError: name 'height' is not defined. Also
-  written down.
-
-THE CURSOR
-- A take now lands WHERE THE CURSOR WAS. Baba: "it ignores my cursor
-  and just puts a line at the end." That made a note a log rather than
-  a document — you could add to the bottom and nowhere else.
-- Python cannot know where a cursor is; only the frame can. It reads
-  selectionStart when rec is PRESSED, before the press takes focus off
-  the textarea — some browsers then report 0, which would put every
-  take at the very top.
-- A stale caret is CLAMPED to the length: slicing past the end silently
-  drops the tail. No caret means the end, which is the honest answer
-  for a take from the deck, since the deck has no cursor.
+WHAT HAPPENED
+- `new` moved under the text box and became a link. Baba: "it should
+  appear under the text box, not above, and it is not a button, it is
+  an action link."
+- THE COMMAND ROW IS GONE FROM T ENTIRELY. `new` was the last thing in
+  it, and a bordered row holding one word was the widest, emptiest
+  thing on the screen.
+- The studio tools went with it — grammar, reshape, custom act on the
+  same text, so they belong in the same place. The row that held them
+  was a second home for one idea.
+- T now reads: deck, pills, box, then copy · clear · new · grammar ·
+  reshape · custom · add to notes. In the order they are reached: read
+  what came back, then act on it.
 
 NUMBERS
-- notes 43 (was 39) · components 18 executed — green
-- mutation: ignoring the caret fails 2
+- tier 15 (was 13) · box 16 · notes UI 22 — green
+- browser-verified: no command row, links under the box, and v138's
+  header clearance still holding
 - pyflakes clean
 
-FOR BABA
-- The note's rec, with a cursor placed mid-text — it should land there.
-- And the reset-password test, still owed.
+WHAT BROKE, AND WHAT I UNDID
+- Four checks looked for the studio tools and `new` in the command row.
+  They live under the box now, which means they need TEXT to appear —
+  the same rule as copy and clear, and the right one: a new take with
+  an empty box is a no-op and there is nothing to fix or reshape.
+- Added a check that the free tier still gets none of the studio tools
+  once its box HAS text, so seeding cannot hide a tier leak.
+
+STILL OPEN
+- The reset-password test.
+- test_reader 8, red since v101.
+- The owner's tab bar wraps at 360px.
+- THE KEYS IN THE SHEET — its own session.

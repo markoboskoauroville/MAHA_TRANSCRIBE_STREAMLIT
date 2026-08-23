@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v138 (a) (the overlap, solved at the root)"
+APP_VERSION = "v139 (a) (everything T does is under the box)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -5142,12 +5142,24 @@ if active == "transcribe":
     # COPY AND CLEAR LEFT THIS ROW (v132). They live under the box now,
     # with every other box's copy and clear, so the row holds only what
     # is particular to T: a new take, and the studio tools.
-    _cmds = [(t("new_take_word"), "tx_new", _new_take)]
+    # THE COMMAND ROW IS GONE FROM T TOO.
+    #
+    # Baba: "it should appear under the text box, not above, and it is
+    # not a button, it is an action link."
+    #
+    # `new` was the last thing in it, and a bordered row holding one
+    # word was the widest, emptiest thing on the screen. Everything T
+    # does to its text now sits under the box with copy and clear, in
+    # the order they are reached: read what came back, then act on it.
+    #
+    # The studio tools ride there too — they act on the same text, so
+    # they belong in the same place, and the row that used to hold them
+    # was a second home for one idea.
+    _extra = [(t("new_take_word"), ("tx_new", _new_take))]
     if _studio:
-        _cmds += [(t("grammar_word"), "tx_grammar", _grammar),
-                  (t("reshape_word"), "tx_reshape", _reshape),
-                  (t("custom_word"), "tx_custom", _ask_custom)]
-    cmd_row("tx", _cmds)
+        _extra += [(t("grammar_word"), ("tx_grammar", _grammar)),
+                   (t("reshape_word"), ("tx_reshape", _reshape)),
+                   (t("custom_word"), ("tx_custom", _ask_custom))]
 
     # CUSTOM: say what you want done, and it is done to the text that is
     # already in the box. Studio only, for the same reason as the other
@@ -5224,7 +5236,8 @@ if active == "transcribe":
         # The wrapper is the one element whose width is known, so it
         # becomes the flex row and the button sits at its right end.
         box_links("tx", t1_text(), on_clear=_clear_all,
-                  extra=[(t("tx_tonote"), ("tx_tonote", keep_as_note))])
+                  extra=_extra + [(t("tx_tonote"),
+                                   ("tx_tonote", keep_as_note))])
         if st.session_state.pop("_note_kept", None):
             st.caption(t("tx_tonote_done"))
 

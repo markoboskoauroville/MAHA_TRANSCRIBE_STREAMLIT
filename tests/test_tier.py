@@ -32,7 +32,10 @@ ck("4 free has no custom", "tx_custom" not in k, k)
 # `clear` left the command row in v132 — it is under the box now, with
 # copy, like every other box in the app. What the FREE tier still has in
 # the row is `new`, and what it has under the box is copy and clear.
-ck("5 but it still has new", "tx_new" in k, k)
+# `new` moved under the box with the rest (v139), so it needs text too.
+# That is right: a new take with an empty box is a no-op.
+ck("5 the free tier's row is only the pills — nothing above the box",
+   not any(x.startswith("tx_") for x in k), k)
 # THE LINKS APPEAR ONLY WHEN THERE IS TEXT. An empty box has nothing to
 # copy and nothing to clear, and a dead link is a question with no good
 # answer — so this seeds the box first.
@@ -40,10 +43,20 @@ at1b = app("normal")
 at1b.session_state["_t1_text"] = "nesto"
 at1b.session_state["_t1_text_gen"] = 1
 at1b.run()
+_k1b = keys(at1b)
 ck("5b and clear appears under the box once there is text",
-   "bl_clear_tx" in keys(at1b), keys(at1b))
+   "bl_clear_tx" in _k1b, _k1b)
+ck("5c so does new", "tx_new" in _k1b, _k1b)
+ck("5d but NOT the studio tools — the tier still decides",
+   "tx_grammar" not in _k1b and "tx_custom" not in _k1b, _k1b)
 
-at2=app("studio"); at2.run()
+# EVERYTHING T DOES TO ITS TEXT IS UNDER THE BOX NOW (v139), so it
+# needs text to be there — the same rule as copy and clear. An empty
+# box has nothing to fix, nothing to reshape and nothing to keep.
+at2=app("studio")
+at2.session_state["_t1_text"]="nesto za popraviti"
+at2.session_state["_t1_text_gen"]=1
+at2.run()
 k2=keys(at2)
 ck("6 the studio tier renders", not at2.exception, at2.exception)
 ck("7 STUDIO HAS GRAMMAR", "tx_grammar" in k2, k2)
