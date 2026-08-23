@@ -1,30 +1,31 @@
-# STEP: a new recording shows up
-STATUS: done, pushed as v165. No deploy needed.
+# STEP: the list says when it was read
+STATUS: done, pushed as v166. No deploy needed.
 
-WHAT HAPPENED
-- Baba: "I'm just recording audio and it doesn't automatically come on
-  the recording after every record stop."
-- `_recs` is fetched ONCE per session, because the panel redraws on
-  every tick of a checkbox and a network round trip each time would make
-  the list unusable. That was right — and it was only half a rule.
-- THE CACHE WAS DROPPED AFTER A DELETE AND NEVER AFTER A STORE. So the
-  newest recording, the one he had just made and would most want to see,
-  was the one thing the list could not show. It appeared next session,
-  which reads as the app losing it and finding it again.
-- Dropped on store now, in BOTH recorders. A note's take is a recording
-  like any other; "the list is stale" has to be true of both, or the
-  deck refreshes and the note does not — which is exactly the split that
-  hid the note storage gap for fifty versions.
+WHAT BABA DESCRIBED
+- "After user clicks stop, you send one copy to Whisper, one copy to
+  Google Drive, link it to your recordings, and then the number is +1."
+- That is exactly what the code does, and I CHECKED THE ORDER rather
+  than assuming: the store runs at line 5863 and the panel at 6222, so
+  the cache dropped by v165 is refetched in the SAME pass. The count
+  should already be right.
 
-WHAT I NEARLY GOT WRONG CHECKING IT
-- My verification searched the 600 characters after `finish_keeping` for
-  the cache drop and reported FALSE. The edit was there — at the
-  nineteenth line, pushed past my window by the comment explaining it.
-  I widened the window rather than "fixing" code that was already
-  correct. A check that is too narrow reports the same thing as a bug.
+SO WHY ADD ANYTHING
+- Because I have guessed wrong twice today about his Drive, and a cached
+  remote list should never be something somebody has to TRUST.
+- The fold now says WHEN the list was read — "list read at 20:02:11" —
+  and carries a `refresh` link beside it.
+- That is the honest answer to "why is my recording not here": one press
+  settles it, instead of a conversation about whose fault it is. And if
+  the count is ever stale, the timestamp shows it rather than leaving
+  somebody to wonder.
+
+WHAT PYFLAKES CAUGHT, IMMEDIATELY
+- I copied the button line out of `_rec_actions`, which is drawn twice
+  and keys itself with `where`. This panel is drawn ONCE and there is no
+  `where` here. Undefined name, caught the moment I ran it — which is
+  exactly what it is for, and cheaper than finding it on his phone.
 
 NUMBERS
 - box 16 · notes UI 27 — green
-- confirmed both paths drop the cache after a successful store, and that
-  dropping it causes a real refetch
+- verified: read at 20:02:11, refresh pressed, re-read at 20:02:12
 - pyflakes clean

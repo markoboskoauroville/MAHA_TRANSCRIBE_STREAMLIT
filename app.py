@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v165 (a) (a new recording shows up)"
+APP_VERSION = "v166 (a) (the list says when it was read)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -524,6 +524,8 @@ STRINGS = {
     "rec_close_play":     {"en": "close player",     "hr": "zatvori"},
     "rec_play":           {"en": "play",              "hr": "slušaj"},
     "rec_again":          {"en": "transcribe again",  "hr": "prepiši ponovno"},
+    "rec_refresh":        {"en": "refresh",           "hr": "osvježi"},
+    "rec_seen":           {"en": "list read at %s",   "hr": "popis učitan u %s"},
     "rec_save":           {"en": "save",              "hr": "spremi"},
     "rec_save_one":       {"en": "fetching %d of %d  ·  %s  ·  %.1fs",
                            "hr": "dohvaćam %d od %d  ·  %s  ·  %.1fs"},
@@ -4692,6 +4694,9 @@ def recordings_panel():
 
     if "_recs" not in st.session_state:
         st.session_state["_recs"] = store.list()
+        # WHEN, not just what. A list that cannot say when it was read
+        # is a list nobody can tell is stale.
+        st.session_state["_recs_at"] = time.strftime("%H:%M:%S")
     recs = st.session_state["_recs"] or []
 
     # THE PANEL NO LONGER HANDS ITSELF OVER TO A DELETION. It used to
@@ -4706,6 +4711,32 @@ def recordings_panel():
 
         ids = [str(r.get("rec_id") or "") for r in recs]
         picked = [i for i in ids if st.session_state.get("_rp_%s" % i)]
+
+        # REFRESH, AND WHEN THE LIST WAS LAST READ.
+        #
+        # Baba expects the count to go up the moment a recording is
+        # stored, and the code does that: the store happens earlier in
+        # the run than this panel, so the dropped cache is refetched in
+        # the same pass. But a cached remote list should never be a
+        # thing somebody has to TRUST — if it can be stale, it must say
+        # when it was read and offer to read it again.
+        #
+        # This is also the honest answer to "why is my recording not
+        # here": one press settles it, instead of a guess about whose
+        # fault it is.
+        _rc1, _rc2 = st.columns([1, 2.2])
+        # ONE KEY, no top/bottom suffix: this sits in the PANEL, drawn
+        # once, not in the action row that is drawn twice. The `where`
+        # in my first draft was copied from _rec_actions and referred to
+        # a variable that does not exist here — pyflakes caught it
+        # immediately, which is exactly what it is for.
+        _rc1.button(t("rec_refresh"), key="rec_refresh",
+                    on_click=lambda: st.session_state.pop("_recs", None),
+                    use_container_width=True)
+        _seen = st.session_state.get("_recs_at")
+        if _seen:
+            _rc2.markdown('<div class="readhint">%s</div>' % html.escape(
+                t("rec_seen") % _seen), unsafe_allow_html=True)
 
         _rec_actions(picked, ids, "top")
 
