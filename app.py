@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v127 (a) (the owner is trusted, and the actions are links)"
+APP_VERSION = "v128 (a) (the panel gets out of its own way)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2444,6 +2444,13 @@ def user_admin_panel():
     if people:
         # The whole table in one glance: who, which engine, whether they
         # have a password yet, and their note.
+        # THE LIST FOLDS AWAY. Baba: "if I have 300 people it will fill
+        # up my whole interface — just make it a folder, a small greater
+        # than sign, and then I click and I see who the people are."
+        #
+        # Three names fit; thirty do not, and the panel is meant to be
+        # read at a glance. The count is on the fold's own line, so
+        # closed it still answers "how many".
         rows = []
         for person in people:
             known = EN.get(person.get("engine") or "")
@@ -2457,7 +2464,8 @@ def user_admin_panel():
                 known.id if known else EN.DEFAULT,
                 mark,
                 (person.get("note") or "")[:28]))
-        st.code("\n".join(rows), language=None)
+        with st.expander("%s · %d" % (t("adm_title"), len(people))):
+            st.code("\n".join(rows), language=None)
 
         # A DROPDOWN FOR PEOPLE, a radio for the engine. Baba: "each user
         # should appear under the dropdown list, and then I am dropping
@@ -2555,20 +2563,53 @@ def user_admin_panel():
         # selected, and the strip names them so the wrong row cannot be
         # deleted by a mis-tap higher up.
         if ask[1] == who and ask[0] in ("delete", "reset"):
-            st.text((t("adm_ask_delete") if ask[0] == "delete"
-                     else t("adm_ask_reset")) % who)
+            # A RED FRAME ONLY FOR DELETE. Baba: "when I delete any
+            # user, confirm should be in a red frame, and confirm should
+            # be a red button — not too much red, so I know I am
+            # deleting."
+            #
+            # Not for reset: a reset is recoverable, a delete is not, and
+            # red that appears for both says nothing about either. Red
+            # is reserved for the one action with no way back — the same
+            # reservation the recording dot lives under.
+            _danger = ask[0] == "delete"
+            with st.container(key="askstrip_danger" if _danger
+                              else "askstrip"):
+                st.text((t("adm_ask_delete") if _danger
+                         else t("adm_ask_reset")) % who)
             # NO PASSWORD BOX. It used to sit here, BELOW the confirm
             # buttons — so pressing yes sent an empty one and the script
             # refused, which reads as being asked for something there is
             # nowhere to type. Baba asked for it gone; auth_script no
             # longer requires it. The two presses remain, because one
             # press on a whole account is still not a risk worth taking.
-            yn = st.columns([1, 1])
-            yn[0].button(t("adm_yes"), key="ad_yes", type="primary",
-                         on_click=do_delete if ask[0] == "delete" else do_reset,
-                         args=(who,), use_container_width=True)
-            yn[1].button(t("adm_cancel"), key="ad_no",
-                         on_click=close_ask, use_container_width=True)
+                yn = st.columns([1, 1])
+                yn[0].button(t("adm_yes"),
+                             key="ad_yes_danger" if _danger else "ad_yes",
+                             type="primary",
+                             on_click=do_delete if _danger else do_reset,
+                             args=(who,), use_container_width=True)
+                yn[1].button(t("adm_cancel"), key="ad_no",
+                             on_click=close_ask, use_container_width=True)
+
+    # ---- add a person, UNLESS something is being confirmed ------------
+    #
+    # Baba: "at that time I want the name and password to disappear...
+    # if I am deleting, there should be no name, password, add or other
+    # unnecessary stuff."
+    #
+    # He is right, and it explains the confusion he reported: pressing
+    # RESET seemed to ask for a name AND a password, because the add-a-
+    # person form sits directly under the confirm strip and reads as
+    # part of it. Nothing was wrong; two things were adjacent.
+    #
+    # THIS IS A DELIBERATE EXCEPTION to "no new elements appearing on
+    # the screen. Everything is already there, only greyed out." That
+    # rule protects a person who is trying to find a control. This is
+    # the opposite case: the owner has already found one, and is about
+    # to end an account. Fewer things on screen is the kindness here.
+    if st.session_state.get("_adm_ask"):
+        return
 
     # ---- add a person ------------------------------------------------
     #
@@ -5693,7 +5734,11 @@ elif active == "settings":
         # hidden rather than disabled, because a dead button invites a
         # question that has no good answer for the person asking it.
         with st.container(key="statusbox_engine"):
-            elab, ecol1, ecol2 = st.columns([1.1, 2.1, 2.8])
+            # TEST SITS WITH THE ENGINES. Baba: "put test next to the
+            # engines in one line, so we do not have this hanging
+            # button or orphan button." It acts on whichever engine is
+            # chosen, so it belongs beside them rather than underneath.
+            elab, ecol1, ecol2, ecol3 = st.columns([0.9, 2.0, 2.6, 0.9])
             elab.text(t("settings_engine"))
             _now = engine_now()
             _now_id = _now.id if _now else ""
@@ -5703,6 +5748,8 @@ elif active == "settings":
                            help=eng.note,
                            on_click=pick_engine, args=(eng.id,),
                            use_container_width=True)
+            ecol3.button(t("eng_check"), key="eng_check",
+                         on_click=run_engine_check, use_container_width=True)
 
             # Did the global save land? A global setting that quietly
             # did not save is worse than one that never claimed to.
@@ -5710,10 +5757,7 @@ elif active == "settings":
                 st.caption(t("eng_saved") if st.session_state["_engine_saved"]
                            else t("eng_notsaved"))
 
-            # CHECK ENGINE. Baba: "it will just check if it can connect,
-            # it means keys are good, engine can work."
-            st.button(t("eng_check"), key="eng_check",
-                      on_click=run_engine_check)
+
 
             _res = st.session_state.get("_engine_check")
             if _res:

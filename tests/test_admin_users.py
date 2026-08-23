@@ -353,7 +353,7 @@ pick(at, "baba"); press(at, "ad_del")
 check("18 delete asks first, and names the person",
       "Delete baba" in page(at), page(at)[:300])
 check("19 the strip is about the SELECTED person, and names them",
-      "ad_yes" in keys(at) and "Delete baba" in page(at), page(at)[:200])
+      "ad_yes_danger" in keys(at) and "Delete baba" in page(at), page(at)[:200])
 check("20 and it says the recordings are kept", "recordings are kept" in page(at))
 
 # THE SECOND FACTOR IS GONE (v127). These two used to assert that a
@@ -373,7 +373,7 @@ check("22 and the strip names WHO it is about",
 at = panel()
 at.run()
 pick(at, "baba"); press(at, "ad_del")
-pick(at, "baba"); press(at, "ad_yes")
+pick(at, "baba"); press(at, "ad_yes_danger")
 check("23 the right password deletes", "baba" not in PEOPLE, list(PEOPLE))
 # NOT "baba" not in page(at) — the panel says "baba is gone", so the
 # name is rightly on the screen. What must disappear is the ROW.
@@ -410,7 +410,7 @@ check("27 cancel deletes nobody", "baba" in PEOPLE, list(PEOPLE))
 # something other than the widget; it is not what makes this true.
 pick(at, "baba"); press(at, "ad_del")
 check("28 reopening the strip asks again rather than acting",
-      "ad_yes" in keys(at), keys(at))
+      "ad_yes_danger" in keys(at), keys(at))
 check("28b and nothing was deleted along the way", "baba" in PEOPLE, list(PEOPLE))
 
 # ── resetting ─────────────────────────────────────────────────────────
@@ -421,6 +421,11 @@ check("29 reset asks first too", "New password for baba" in page(at),
       page(at)[:300])
 check("30 and warns that their devices are signed out",
       "signed out" in page(at), page(at)[:300])
+# RESET KEEPS THE PLAIN KEY. Only delete gets `ad_yes_danger`, which is
+# what the red frame and the red button hang off — a reset is
+# recoverable and red that appears for both says nothing about either.
+check("30b and the reset strip is NOT the red one",
+      "ad_yes" in keys(at) and "ad_yes_danger" not in keys(at), keys(at))
 pick(at, "baba"); press(at, "ad_yes")
 check("31 the new password is shown once", "reset-pw-1" in page(at),
       page(at)[:300])

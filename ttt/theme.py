@@ -740,6 +740,24 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* THE DELETE STRIP WEARS RED. Baba: "confirm should be in a red
+       frame, and confirm should be a red button — not too much red, so
+       I know I am deleting."
+       Only delete: a reset is recoverable, a delete is not, and red
+       that appears for both says nothing about either. */
+    [class*="st-key-askstrip_danger"] {{
+      border: 1px solid var(--rec, #d9484b);
+      border-radius: 8px;
+      padding: 0.5rem 0.6rem !important;
+      background: rgba(217, 72, 75, 0.06);
+    }}
+    [class*="st-key-ad_yes_danger"] button {{
+      background: var(--rec, #d9484b) !important;
+      border-color: var(--rec, #d9484b) !important;
+      color: #14181d !important;
+      font-weight: 600;
+    }}
+
     /* THE PERSON'S ACTIONS ARE LINKS, not buttons. Baba: "these should
        be links at the top, not buttons — we make it a nice and compact
        user interface." Three bordered pills for actions taken once in a
