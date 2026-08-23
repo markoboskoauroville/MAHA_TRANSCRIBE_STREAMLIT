@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v141 (a) (the armed delete stays readable)"
+APP_VERSION = "v142 (a) (the links match, measured)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2871,7 +2871,7 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
                                         done_label=t("copy_done_word"),
                                         failed_label="—", size=0,
                                         link=True),
-                        height=26)
+                        height=24)
                 elif kind == "clear":
                     st.button(t("clear_word"), key="bl_clear_%s" % where,
                               on_click=cb, use_container_width=True)

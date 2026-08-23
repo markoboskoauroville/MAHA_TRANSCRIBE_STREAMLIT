@@ -31,7 +31,7 @@ BG = "#0b0d10"
 # The same dim the app uses for a link at rest. Written here rather than
 # imported, because this module renders inside an IFRAME and cannot see
 # the page's CSS variables — a var(--dim) here resolves to nothing.
-DIM = "#8b8375"
+DIM = "#b1a389"   # measured off the page: rgb(177,163,137)
 FG = "#f2ddb4"
 GOLD = "#f59e0b"
 EDGE = "rgba(232,220,192,0.25)"
@@ -175,16 +175,41 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
     # styled into a link like the ones beside it. This makes it LOOK
     # like one, so a row of copy · clear reads as one kind of thing
     # rather than a button standing next to two links.
+    # LINK MODE, IN PIXELS — NOT rem. AND NOT SCALED.
+    #
+    # WHY THE LINKS LOOKED DIFFERENT SIZES: this said `0.72rem`, and rem
+    # inside an IFRAME resolves against the iframe's own root font-size,
+    # which is whatever the browser defaults to — not the page's. Two
+    # numbers that read the same in two stylesheets and mean different
+    # things in two documents.
+    #
+    # 11.5px IS 0.72rem AT THE PAGE'S ROOT, which is 16px and stays 16px:
+    # Baba's text-size setting resizes the TEXT AREAS and the reading
+    # surfaces, not the root. I first made this scale with that setting
+    # and it was wrong in the other direction — the copy link would have
+    # grown while `clear` beside it stayed put. Checked before shipping,
+    # not after.
+    #
+    # The wide copy button at the top of this file already knew the
+    # lesson: "font and colour are PASSED IN, not fixed here. This
+    # component is an iframe, so it inherits none of the page's CSS
+    # variables." Forty lines above the mistake.
+    # 14px AND THIS EXACT GREY, both MEASURED off the real page rather
+    # than derived. `clear` computes to 14px / rgb(177,163,137) in a
+    # browser — not the 11.5px the stylesheet's 0.72rem suggests, and
+    # not the --dim this file was guessing at. Two stylesheets cannot be
+    # kept in step by reasoning about them; they can be measured.
+    px = 14
     LINKCSS = ("""
   button {
-    height: 22px !important; font-weight: 400 !important;
-    font-size: 0.72rem !important; letter-spacing: 0 !important;
+    height: %dpx !important; font-weight: 400 !important;
+    font-size: %dpx !important; letter-spacing: 0 !important;
     text-decoration: underline; text-underline-offset: 3px;
     color: %s !important; justify-content: flex-end !important;
-    padding-right: 0.75rem !important;
+    padding: 0 12px 0 0 !important; min-height: 0 !important;
   }
-  html, body { justify-content: flex-end !important; }
-""" % DIM) if link else ""
+  html, body { justify-content: flex-end !important; align-items: flex-start; }
+""" % (px + 8, px, DIM)) if link else ""
 
     return f"""
 <!doctype html>

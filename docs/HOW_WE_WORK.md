@@ -136,6 +136,46 @@ honest answer for a take from the deck, since the deck has no cursor.
 
 ---
 
+## Why a component never quite matches the page
+
+Baba: *"the style of copy, clear, add to notes are different — they look
+different, not aligned, not same size. Put in MD why this is happening,
+that styles are coming from different sources."*
+
+He is exactly right about the cause. **`copy` is a COMPONENT and its
+neighbours are not.** It has to be: nothing but a real button in a real
+document can reach the clipboard. So it lives in an IFRAME, with its own
+stylesheet in `ttt/copybtn.py`, while `clear`, `new` and `add to notes`
+are Streamlit buttons styled in `ttt/theme.py`.
+
+Two stylesheets, two documents. Three specific traps:
+
+**`rem` means different things.** Inside an iframe `rem` resolves
+against the IFRAME's root font-size, not the page's. The link mode said
+`0.72rem` and the page said `0.72rem`, and they rendered at different
+sizes — the same number in two files meaning two things.
+
+**CSS variables do not cross.** `var(--dim)` inside the component
+resolves to nothing at all, because the iframe cannot see the page's
+`:root`. Colours have to be written as literal hex there, which means a
+colour changed on the page does not follow.
+
+**The page's own rules are not what the stylesheet says.** `clear`
+computes to **14px / rgb(177,163,137)** in a browser, not the 11.5px
+its `0.72rem` implies — other rules win. Deriving the component's
+numbers from the stylesheet gave the wrong answer twice.
+
+**So: MEASURE BOTH SIDES AND COPY THE NUMBER.** Not the rule, the
+computed value, read off a real browser. Two stylesheets cannot be kept
+in step by reasoning about them.
+
+I also got this wrong in the other direction first — I made the
+component scale with Baba's text-size setting, which would have made
+`copy` grow while `clear` beside it stayed put. That setting resizes
+text areas and reading surfaces, not the page root.
+
+---
+
 ## The one rule that is never bent
 
 Never `New deployment`.

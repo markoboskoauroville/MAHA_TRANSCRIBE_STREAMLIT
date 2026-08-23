@@ -1,35 +1,36 @@
-# STEP: the armed delete stays readable
-STATUS: done, pushed as v141. No deploy needed.
+# STEP: the links match, measured
+STATUS: done, pushed as v142. No deploy needed.
 
 WHAT HAPPENED
-- Baba: "it has changed the colour and it is not visible — please do
-  not change the colour, keep it the same."
-- The armed delete was red on a dark panel. That red was chosen for a
-  FILLED button, where the text sits on it in dark ink and reads
-  perfectly; as link text on the panel's own background it is nearly
-  invisible. One colour, two jobs, and it only worked in one of them.
-- It keeps the link's own colour now, identical to `close` — measured,
-  same computed value. THE WORDS ARE THE SIGNAL, which is enough: a
-  person who has just pressed delete does not need telling in red that
-  they pressed delete.
-- The admin panel's confirm is untouched. That one IS a filled red
-  button with dark text on it, which is the shape this colour is for.
+- copy · clear · new · add to notes are now one size and one colour —
+  14px, rgb(177,163,137), MEASURED on both sides in a browser.
+- Baba named the cause himself: "styles are coming from different
+  sources." `copy` is a COMPONENT and its neighbours are not. It has to
+  be — nothing but a real button in a real document can reach the
+  clipboard — so it lives in an iframe with its own stylesheet.
 
-AND A SECOND FAULT, FOUND BY LOOKING
-- "delete — sure?" was WIDER than the "delete user" it replaces, so it
-  was cut at the panel edge — §27 forbids a cut word outright. It says
-  `sure?` now: shorter than what it replaces rather than longer, and
-  the question mark carries the whole message.
+THE THREE TRAPS, NOW IN HOW_WE_WORK.md
+1. `rem` INSIDE AN IFRAME resolves against the iframe's root, not the
+   page's. Both files said 0.72rem and they rendered at different
+   sizes: the same number in two files meaning two things.
+2. CSS VARIABLES DO NOT CROSS. var(--dim) in the component resolves to
+   nothing; colours must be literal hex, so a colour changed on the
+   page does not follow.
+3. THE PAGE'S COMPUTED VALUE IS NOT WHAT ITS STYLESHEET SAYS. `clear`
+   computes to 14px, not the 11.5px its 0.72rem implies — other rules
+   win. Deriving the component's numbers from the stylesheet gave the
+   wrong answer TWICE.
+
+WHAT I GOT WRONG ON THE WAY
+- My first fix made the component scale with Baba's text-size setting.
+  That would have made `copy` GROW while `clear` beside it stayed put,
+  because the setting resizes text areas and reading surfaces, not the
+  page root. Caught by measuring before shipping rather than after.
+- My second used a colour this file had been guessing at. Also wrong,
+  also only visible once measured.
 
 NUMBERS
-- notes UI 22 · notes persist 14 — green
-- browser-measured: armed colour rgb(177,163,137), identical to close;
-  not clipped
+- box 16 · tier 15 — green
+- browser-measured: clear ['14px','rgb(177,163,137)'], copy the same.
+  MATCH: True
 - pyflakes clean
-
-STILL OPEN
-- The reset-password test, oldest thing outstanding.
-- test_reader 8, red since v101.
-- The owner's tab bar wraps at 360px.
-- Notes are per-DEVICE until Drive is wired (v140).
-- THE KEYS IN THE SHEET — its own session.
