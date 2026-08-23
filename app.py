@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v143 (a) (notes in Drive, beside the recordings)"
+APP_VERSION = "v144 (a) (the notice has room)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -614,10 +614,13 @@ STRINGS = {
     "adm_copy":           {"en": "one tap on the corner copies it",
                            "hr": "jedan dodir na kut kopira poruku"},
     # The forced change. A FAMILY screen, so these are full sentences.
-    "must_hint":          {"en": "You are using a password somebody else "
-                                 "chose. Worth changing.",
-                           "hr": "Koristiš lozinku koju je odabrao netko "
-                                 "drugi. Vrijedi je promijeniti."},
+    # SHORT ENOUGH FOR ONE LINE. The first wording ran to two, breaking
+    # mid-sentence — "Worth / changing." — which made the widest thing on
+    # the screen the one saying the least. Baba: "it looks
+    # unprofessional and amateurish", and a sentence broken in the wrong
+    # place is most of why.
+    "must_hint":          {"en": "This password was chosen for you.",
+                           "hr": "Ovu lozinku je odabrao netko drugi."},
     "must_go":            {"en": "change it",         "hr": "promijeni"},
     "must_later":         {"en": "later",             "hr": "kasnije"},
     "must_title":         {"en": "Choose your own password",

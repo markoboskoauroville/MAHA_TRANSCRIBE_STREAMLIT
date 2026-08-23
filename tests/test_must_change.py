@@ -153,9 +153,15 @@ check("1 the app renders", not at.exception, at.exception)
 # and cannot yet type, is the larger harm. The flag is NOT cleared by
 # dismissing, so the nudge returns next session: a reminder that does
 # not give up, rather than a wall.
-check("2 it says why, in one line",
-      "somebody else" in page(at) or "netko drugi" in page(at),
-      page(at)[:200])
+# SHORT ENOUGH FOR ONE LINE. The first wording ran to two and broke
+# mid-sentence — "Worth / changing." — which made the widest thing on
+# the screen the one saying the least. Baba: "it looks unprofessional
+# and amateurish", and a sentence broken in the wrong place was most of
+# why. The check is on the MEANING, not on the exact words, so a better
+# sentence does not fail it.
+_p = page(at).lower()
+check("2 it says why",
+      "chosen for you" in _p or "odabrao netko drugi" in _p, page(at)[:200])
 
 keys = [b.key for b in at.get("button")]
 check("3 THE APP IS RIGHT THERE. Not stopped, not hidden — the notice "

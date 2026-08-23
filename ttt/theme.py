@@ -776,8 +776,18 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     [class*="st-key-mustnotice"] {{
       background: var(--surface-2);
       border-radius: 8px;
-      padding: 0.35rem 0.5rem !important;
-      margin-bottom: 0.3rem !important;
+      /* ROOM TO BREATHE, INSIDE AND BELOW. Baba: "it is again too close
+         to the buttons, it looks unprofessional and amateurish."
+         He is right, and the cause is the same one that made the
+         sections read as one long list before v135: this app's default
+         gap is tight, which is correct BETWEEN things that belong
+         together and wrong between things that do not. The notice and
+         the tab row are strangers, so the space between them has to say
+         so. The padding grew with it — a card whose text touches its
+         own edge looks like a mistake even when the spacing below it is
+         right. */
+      padding: 0.6rem 0.7rem !important;
+      margin-bottom: 1.1rem !important;
     }}
     [class*="st-key-mustnotice"] div[data-testid="stHorizontalBlock"] {{
       align-items: center !important;
@@ -794,7 +804,7 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     .mustsay {{
       color: var(--dim);
       font-size: 0.72rem;
-      line-height: 1.35;
+      line-height: 1.45;
       /* It WRAPS. Held on one line it was cut at the panel edge, which
          §27 forbids outright — and a sentence is the one thing on a
          screen that may take two lines without apology. */
