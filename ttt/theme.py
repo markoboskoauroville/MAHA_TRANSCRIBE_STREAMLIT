@@ -76,15 +76,31 @@ MONO = ('ui-monospace, "JetBrains Mono", "Cascadia Mono", "SF Mono", '
         'Menlo, Consolas, monospace')
 
 
-def css(scheme: str = "amber", font: str = "mono") -> str:
+def css(scheme: str = "amber", font: str = "mono",
+        ui_scale: float = 1.0) -> str:
     t = dict(TOKENS)
     sc = SCHEMES.get(scheme) or SCHEMES["amber"]
     t["amber"] = sc["accent"]
     t["amber_hi"] = sc["accent_hi"]
     t["prose"] = sc["prose"]
     mono = FONTS.get(font) or FONTS["mono"]
+    # 16px is the browser default every rem here was written against.
+    ui_px = round(16.0 * max(0.5, min(float(ui_scale or 1.0), 2.0)), 2)
     return f"""
     <style>
+    /* INTERFACE SIZE. Baba: "so the whole interface can be shrunk or
+       enlarged."
+       It moves the ROOT font size, which is what every rem in this
+       stylesheet is measured against — so the pills, the labels, the
+       links and the padding all move together and the layout keeps its
+       proportions. Text size is separate and multiplies on top of it,
+       because they answer different questions: "I cannot read the
+       transcript" and "the whole thing is too small".
+
+       NOT on the component iframes, which cannot see this — see
+       HOW_WE_WORK.md on why a component never quite matches the page. */
+    html {{ font-size: {ui_px}px; }}
+
     :root {{
       --bg: {t['bg']};
       --surface: {t['surface']};
@@ -796,9 +812,12 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        it. The wrapper is the thing with a neighbour, so the wrapper is
        the thing that needs the space.
        Measured before and after — 2px, then 14. */
-    [class*="st-key-mustnotice"] div[data-testid="stMarkdownContainer"],
-    [class*="st-key-mustnotice"] div[data-testid="stElementContainer"]:first-child {{
-      margin-bottom: 0.7rem !important;
+    /* A LINE'S WORTH, NOT A GULF. 0.7rem measured 41px once Streamlit's
+       own container margin was added to it, which is as wrong in the
+       other direction — Baba: "you create another mess." The gap wanted
+       is about one line of text. */
+    [class*="st-key-mustnotice"] div[data-testid="stMarkdownContainer"] {{
+      margin-bottom: 0.15rem !important;
     }}
     [class*="st-key-mustnotice"] div[data-testid="stHorizontalBlock"] {{
       align-items: center !important;
@@ -931,13 +950,48 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       white-space: nowrap;
     }}
 
+    /* THE NOTE CARDS: a gold edge, and the words in the reading colour.
+       Baba: "note does not have nice outline — add golden outline
+       around each note, but the text is supposed to be white, same as
+       transcription text."
+       The edge says a card is a THING you can open; the prose colour
+       says what is inside it is the same kind of stuff as the
+       transcript. The number stays dim, because it is a label on the
+       card rather than part of what was said. */
+    [class*="st-key-note_"] button {{
+      border: 1px solid var(--amber) !important;
+      background: transparent !important;
+      color: var(--prose) !important;
+      text-align: left !important;
+      justify-content: flex-start !important;
+      font-weight: 400 !important;
+    }}
+    [class*="st-key-note_"] button p {{
+      text-align: left !important;
+      color: var(--prose) !important;
+    }}
+    [class*="st-key-note_"] button:hover {{
+      border-color: var(--amber-hi) !important;
+      background: var(--surface-2) !important;
+    }}
+
     /* copy · clear UNDER EVERY BOX. One rule, one look, in T, R and
        both halves of TR. Baba: "under all tabs we have text box, copy
        clear under — as an action link, not an action button."
        Glued to the box like add-to-notes was, and right-aligned so the
        panel's actions line up down the same margin. */
     [class*="st-key-boxlinks_"] {{
+      /* GLUED TO THE BOX, which is right when there is text — the links
+         read as the bottom edge of the writing surface. Baba noticed it
+         is wrong when the box is EMPTY: with nothing in the box the
+         single link sits on the border and reads as part of it. The
+         empty case gets its own rule below. */
       margin-top: -0.7rem !important;
+    }}
+    /* AFTER the rule above, so it wins: both selectors match an empty
+       row and the later one takes it. */
+    [class*="_empty"][class*="st-key-boxlinks_"] {{
+      margin-top: 0.25rem !important;
     }}
     [class*="st-key-boxlinks_"] div[data-testid="stHorizontalBlock"] {{
       justify-content: flex-end !important;

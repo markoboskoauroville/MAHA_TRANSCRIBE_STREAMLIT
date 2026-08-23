@@ -1,42 +1,40 @@
-# STEP: three words, not four
-STATUS: done, pushed as v147. No deploy needed.
+# STEP: numbered notes, and an interface you can resize
+STATUS: done, pushed as v148. No deploy needed.
 
-WHAT HAPPENED
-- `new` is gone. Baba: "we do not need new — copy copies, clear clears
-  for new transcription, add to notes if it is empty creates a new
-  note." Two words for one act.
-- ADD TO NOTES ON AN EMPTY BOX MAKES A BLANK NOTE, which is the useful
-  half of what `new` did: a note to open and speak into, rather than a
-  blank box. It used to return and do nothing, which reads as a broken
-  button.
-- The links row now appears even with an empty box, showing only
-  `add to notes` — copy and clear stay away, because there is nothing
-  to copy or clear.
-
-THE TWO ALIGNMENT FAULTS, AND WHY I KEPT MISSING ONE
-- "It is sitting on the buttons. Still did not fix. I asked 2-3 times."
-  He was right, and three times I widened the gap BELOW the card. The
-  gap he meant was INSIDE it — between his sentence and the buttons
-  under it. Read what somebody is pointing AT, not what is nearby.
-- And even then my margin did nothing: Streamlit wraps every markdown
-  in its own element container, so MY margin sat inside that wrapper
-  where the next element could not see it. The wrapper is the thing
-  with a neighbour, so the wrapper needed the space. 2px, then 41.
-- The links were "dancing" because the row had no align-items: each
-  cell stretched to equal height and each link sat wherever its own box
-  put it — and `copy` is an IFRAME while the others are buttons, so
-  their boxes are different heights. Aligned to flex-end, all on one
-  baseline.
-
-AND A GUARD THAT UNDID THE WHOLE CHANGE
-- An `if _body:` from v114 still wrapped the T links, from when the row
-  held only "add to notes" and an empty box had nothing to keep. It was
-  invisible from inside box_links and quietly cancelled the new
-  behaviour — the row simply never appeared on an empty box. Found by
-  testing the empty case rather than the full one.
+SIX THINGS, AND TWO OF THEM WERE MY MESS
+1. THE CONFIRM WAS STILL DARK — asked twice, wrong both times. v141 took
+   the red away and I stopped there; the real cause was
+   `type="primary"`, which gives Streamlit's own colour rules and they
+   win over the link styling beside it. Measured now: `sure?` and
+   `close` are the same rgb(177,163,137).
+2. THE NOTICE GAP WENT FROM 2px TO 41px — Baba: "you create another
+   mess." Correct in direction and absurd in size, because Streamlit's
+   container margin added to mine. 0.15rem now, about one line.
+3. Serial numbers on the note cards: 1. 2. 3. The POSITION in the list,
+   not an id — it exists to point at, so it must match what somebody is
+   counting on the screen.
+4. The cards have a gold edge and prose-coloured words. The edge says a
+   card is a thing you can open; the colour says what is inside is the
+   same stuff as the transcript.
+5. `add to notes` stood on the box's border when the box was EMPTY. The
+   glue is right with text and wrong without it, so the key now carries
+   the state — a Streamlit container cannot be given a class, but it
+   can be given a different key.
+6. INTERFACE SIZE, beside text size. It moves the ROOT font size, which
+   every rem in the stylesheet is measured against, so pills, labels,
+   links and padding move together. Text size multiplies on top of it.
+   Two questions, two controls: "I cannot read the transcript" and "the
+   whole thing is too small".
 
 NUMBERS
-- tier 15 · box 16 · notes UI 22 · must change 15 — green
-- browser-measured: notice gap 2px -> 41px; links share one baseline;
-  empty box shows only `add to notes` and pressing it says `kept`
+- tier 15 · box 16 · notes 46 · notes UI 22 · must change 15 ·
+  owner edge 5 — green
+- browser-measured: card border rgb(245,158,11), text rgb(242,221,180);
+  `sure?` identical to `close`; interface size 8px/16px/32px at
+  50/100/200
 - pyflakes clean
+
+STILL OPEN
+- The reset-password test.
+- test_reader 8, red since v101.
+- THE KEYS IN THE SHEET — its own session.

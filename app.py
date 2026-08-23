@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v147 (a) (three words, not four)"
+APP_VERSION = "v148 (a) (numbered notes, and an interface you can resize)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -153,7 +153,8 @@ st.markdown(
 # matters: a11y must be able to override anything theme sets about text,
 # because the reader's chosen size outranks the design.
 st.markdown(theme.css(st.session_state.get("scheme", "amber"),
-                      st.session_state.get("font_family", "mono")),
+                      st.session_state.get("font_family", "mono"),
+                      st.session_state.get("ui_scale", 1.0)),
             unsafe_allow_html=True)
 
 # The reading stylesheet, regenerated from the person's own text size on
@@ -685,6 +686,7 @@ STRINGS = {
     # FULL WORDS. Baba: "full name." TXT, TY and C are initialisms only
     # their author can read — and this is the screen a family member
     # opens when they cannot see the text well enough.
+    "looks_iface":        {"en": "interface size",   "hr": "veličina sučelja"},
     "looks_default":      {"en": "default",           "hr": "zadano"},
     "looks_size":         {"en": "text size",        "hr": "veličina teksta"},
     "looks_font":         {"en": "typeface",         "hr": "pismo"},
@@ -1822,7 +1824,12 @@ SETTINGS_KEYS = ("ui_lang", "engine", "rec_source",
                  "speech_lang", "voice", "voice_engine", "sp_voice",
                  "transcribe_engine",
                  "route_stt", "route_tts", "route_llm", "text_scale",
-                 "scheme", "font_family", "append_mode")
+                 "scheme", "font_family", "append_mode",
+                 # INTERFACE SIZE, saved like every other preference —
+                 # otherwise somebody who shrinks the app finds it big
+                 # again at their next login, which reads as the setting
+                 # not working rather than not being kept.
+                 "ui_scale")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
 
@@ -2862,7 +2869,11 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
     # or clear: a dead link is a question with no good answer.
     if not body and not extra:
         return
-    with st.container(key="boxlinks_%s" % where):
+    # THE KEY SAYS WHETHER THE BOX IS EMPTY, because a Streamlit
+    # container cannot be given a class and the stylesheet has to tell
+    # the two cases apart: glued to the box when there is text, and
+    # standing off it when there is not.
+    with st.container(key="boxlinks_%s%s" % (where, "" if body else "_empty")):
         items = []
         if body:
             items.append(("copy", None))
@@ -4232,6 +4243,18 @@ def keep_as_note():
     st.session_state["_note_kept"] = True
 
 
+def note_number(i):
+    """1. 2. 3. — Baba: "please add a serial number next to each note."
+
+    THE POSITION IN THE LIST, not an id. It changes when notes are
+    deleted or when a search narrows the list, and that is right: the
+    number exists to point at — "open number three" — so it has to match
+    what somebody is counting on the screen in front of them, not what
+    the note was called when it was made.
+    """
+    return "%d." % (i + 1)
+
+
 def notes_panel():
     """The list: a search field, then the notes."""
     all_notes = NOTES.items(st.session_state)
@@ -4254,13 +4277,21 @@ def notes_panel():
             st.caption(t("notes_none"))
             return
 
-        for n in shown:
+        for i, n in enumerate(shown):
             # ONE CARD, ONE PRESS, WHOLE WIDTH. A card with a tick, a
             # title and a menu is three targets in a row on a phone. Here
             # the card IS the target, and everything else lives inside
             # the note once it is open.
+            #
+            # NUMBERED. Baba: "please add a serial number next to each
+            # note." It is the position in the list, not an id — it
+            # changes when notes are deleted, which is right: it exists
+            # to point at ("open number three"), and a number that no
+            # longer matches what somebody is counting is worse than
+            # none.
             st.button(
-                "%s\n\n%s" % (NOTES.heading(n), NOTES.body_preview(n, 70)),
+                "%s %s\n\n%s" % (note_number(i), NOTES.heading(n),
+                                  NOTES.body_preview(n, 70)),
                 key="note_%s" % n["id"], use_container_width=True,
                 on_click=open_note, args=(n["id"],))
 
@@ -4328,9 +4359,13 @@ def note_open_view():
         # undo anywhere, is not a risk worth taking — and moving it next
         # to `close` makes a mis-tap MORE likely, not less.
             if st.session_state.get("_note_del_armed") == note_id:
+                # NOT type="primary". That is why it stayed dark after
+                # v141 took the red away: Streamlit gives a primary
+                # button its own colour rules and they win over the
+                # link styling beside it. Baba asked twice; I fixed the
+                # red the first time and this the second.
                 dele.button(t("note_del_sure"), key="note_del2",
-                            type="primary", on_click=_del_do,
-                            use_container_width=True)
+                            on_click=_del_do, use_container_width=True)
             else:
                 dele.button(t("note_del"), key="note_del",
                             on_click=_del_arm, use_container_width=True)
@@ -5830,7 +5865,7 @@ elif active == "looks":
     # an app built for people who cannot see well would be exactly
     # backwards.
     with st.container(key="looksgroup_size"):
-        _sl, _sb, _sd, _ = st.columns([1.3, 1.1, 1, 1.6])
+        _sl, _sb, _sd, _il, _ib = st.columns([1.15, 0.85, 0.8, 1.25, 0.8])
         _sl.markdown('<div class="setlabel">%s</div>' % html.escape(
             t("looks_size")), unsafe_allow_html=True)
         _now_pct = int(round(a11y.clamp(st.session_state.get(
@@ -5856,6 +5891,32 @@ elif active == "looks":
             label_visibility="collapsed", on_change=_size_typed)
         _sd.button(t("looks_default"), key="size_default",
                    on_click=_size_default, use_container_width=True)
+
+        # INTERFACE SIZE, on the same line. Baba: "text size affects only
+        # text — add another property in the same line, interface size,
+        # so the whole interface can be shrunk or enlarged."
+        #
+        # TWO DIFFERENT THINGS, DELIBERATELY SEPARATE. Text size is for
+        # somebody who can see the app but not read the transcript;
+        # interface size is for somebody who finds the whole thing too
+        # small, or wants more of it on the screen at once. One control
+        # doing both would force a compromise on both.
+        _iface = int(round(float(st.session_state.get("ui_scale", 1.0)) * 100))
+
+        def _iface_typed():
+            raw = st.session_state.get("_iface_pct", _iface)
+            try:
+                st.session_state["ui_scale"] = max(0.5, min(float(raw) / 100.0, 2.0))
+            except (TypeError, ValueError):
+                pass
+            persist_settings()
+
+        _il.markdown('<div class="setlabel">%s</div>' % html.escape(
+            t("looks_iface")), unsafe_allow_html=True)
+        _ib.number_input(
+            t("looks_iface"), key="_iface_pct", value=_iface,
+            min_value=50, max_value=200, step=5,
+            label_visibility="collapsed", on_change=_iface_typed)
 
     # LABEL ON THE LINE, like the interface language. Above the buttons
     # it was a row for one word, and under this screen's spacing it kept
