@@ -87,6 +87,37 @@ for _ in range(6):
 check("7 repeated WRONG PASSWORDS still trigger the throttle",
       bool(sget(at5, "_gate_wait")), sget(at5, "_gate_wait"))
 
+# --- THE VISIBLE WAY IN ------------------------------------------------
+#
+# Enter always worked and always was invisible. Baba's mother has to be
+# TOLD about an invisible control, and this screen is the first thing she
+# meets. The button is the one that must not break.
+at8 = fresh()
+at8.run()
+check("8 there is a visible Log in button",
+      "login_now" in [b.key for b in at8.get("button")],
+      [b.key for b in at8.get("button")])
+
+box(at8, "_pw_input").set_value("stub")
+[b for b in at8.get("button") if b.key == "login_now"][0].click().run()
+check("9 PRESSING IT LOGS YOU IN — not just Enter",
+      sget(at8, "_authed") is True, sget(at8, "_authed"))
+
+at9 = fresh()
+at9.run()
+box(at9, "_pw_input").set_value("wrong")
+[b for b in at9.get("button") if b.key == "login_now"][0].click().run()
+check("10 and a wrong password through the button is still refused",
+      sget(at9, "_authed") is not True, sget(at9, "_authed"))
+
+at10 = fresh()
+at10.run()
+[b for b in at10.get("button") if b.key == "login_now"][0].click().run()
+check("11 pressing it with an EMPTY password does nothing, and does not "
+      "spend a throttle attempt",
+      sget(at10, "_authed") is not True and not sget(at10, "_gate_wait"),
+      sget(at10, "_gate_wait"))
+
 print("\n{} passed, {} failed".format(passed, failed))
 
 

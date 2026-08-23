@@ -333,16 +333,16 @@ demandera plus le mot de passe sur ce téléphone.
 #
 # Anything the login screen prints belongs in here.
 LOGIN_LABELS = {
-    "hr": {"username": "Korisnik", "password": "Lozinka",
+    "hr": {"login": "Prijava", "username": "Korisnik", "password": "Lozinka",
            "remember": "Zapamti me", "wrong": "Pogrešna lozinka.",
            "continue": "Nastavi kao {who}"},
-    "en": {"username": "Username", "password": "Password",
+    "en": {"login": "Log in", "username": "Username", "password": "Password",
            "remember": "Remember me", "wrong": "Wrong password.", "continue": "Continue as {who}"},
-    "it": {"username": "Utente", "password": "Password",
+    "it": {"login": "Accedi", "username": "Utente", "password": "Password",
            "remember": "Ricordami", "wrong": "Password errata.", "continue": "Continua come {who}"},
-    "de": {"username": "Benutzer", "password": "Passwort",
+    "de": {"login": "Anmelden", "username": "Benutzer", "password": "Passwort",
            "remember": "Angemeldet bleiben", "wrong": "Falsches Passwort.", "continue": "Weiter als {who}"},
-    "fr": {"username": "Utilisateur", "password": "Mot de passe",
+    "fr": {"login": "Se connecter", "username": "Utilisateur", "password": "Mot de passe",
            "remember": "Se souvenir de moi", "wrong": "Mot de passe incorrect.", "continue": "Continuer comme {who}"},
 }
 

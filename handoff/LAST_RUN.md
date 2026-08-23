@@ -1,61 +1,43 @@
-# STEP: build the four accounts changes
-STATUS: done and pushed. **Deploy the accounts script before using it.**
+# STEP: the login had no button, and froze
+STATUS: done, pushed as v113
 
 WHAT HAPPENED
-- Two engines: `normal` and `studio`. The blank "follow the global row"
-  state is gone. `free` still resolves everywhere, forever — old rows do
-  not stop meaning something just because we renamed the word.
-- A password you choose on create, optional, same 8-character floor.
-  Empty still means "make me one".
-- Must-change-on-first-login: a tenth column, set by create and by
-  reset, cleared only by an actual password change. The screen it drives
-  is the WHOLE screen — no tabs, no deck behind it.
-- One message you can copy: name, username, password, and the sentence
-  saying a change is coming. `st.code` puts the copy button in its
-  corner. It carries a link only if you set `APP_URL`.
+- A visible "Log in" button, gold, under the password. Enter still
+  works — but Enter is invisible, and an invisible control is one
+  somebody has to be told about. This screen is the first thing Baba's
+  mother meets.
+- THE FREEZE, and it was not the login failing. Ticking Remember me
+  queues a localStorage write, and that write is a COMPONENT: it needs a
+  frontend round trip that does not come on that run. The page sat grey
+  with the spinner turning until a manual refresh forced another run.
+  The login had already SUCCEEDED; only the paint was missing. It now
+  calls st.rerun() straight after a successful login rather than waiting
+  on the storage cycle.
+- The label is in LOGIN_LABELS in all five languages, like everything
+  else on that screen.
 
 NUMBERS
-- auth script (node)  ->  66 checks, was 46
-- admin panel         ->  47 checks, was 39
-- must-change (new)   ->  12 checks
-- pytest tests/       ->  20 passed, 1 skipped (layout, no app served)
-- pyflakes            ->  clean
-- mutation-tested     ->  8 sabotages in the script, 5 in the app, all caught
+- login 11 (was 7) · calm login 32 — green
+- pyflakes clean
 
 WHAT BROKE, AND WHAT I UNDID
-- Three real faults the tests found, all fixed, none of them in the part
-  I was building:
-  * `log_out` was defined 1,600 lines BELOW the new gate, which stops
-    the script — so the way OFF that screen was a crash. Moved up.
-  * A radio whose options change crashes on a stored value that is no
-    longer one of them (`ValueError: '' is not in list`, thrown inside
-    Streamlit) — a white panel. It now clears a stale value first.
-  * The engine tick in the corner compared ids as strings, so a verdict
-    recorded as `free` would have silently lost its tick.
-- One of my own checks was worthless: it passed while the entire app
-  rendered underneath the gate. Rewritten to measure against the real
-  app, then re-mutated to prove it fails.
-- Two sabotages ran against `app.py` and `auth_script/Code.gs` and were
-  restored from copies held aside; `git status` is clean apart from the
-  intended changes.
+- My first attempt at adding the label inserted it INSIDE the {who}
+  placeholder of the continue string. Caught by the syntax error, file
+  reverted, redone by inserting at each language block's opening brace.
 
-STILL UNSURE
-- Nothing was tested against the REAL deployed script — the suites run a
-  stub and a fake Apps Script runtime. The first real proof is you
-  creating one person after deploying.
-- The Croatian in the new screens is mine. Worth reading once: the
-  message you will send to Emina and Marinko is in it.
+STILL UNSURE — AND THIS ONE MATTERS
+- THE REPAINT FIX HAS NO TEST, and I could not write one. Its mutation
+  SURVIVED: removing st.rerun() left all 11 checks green, because
+  AppTest has no browser and never hits the component round trip that
+  caused the freeze. The button half is covered and its mutation fails.
+  The freeze half is reasoned, not proven.
+- So Baba's own login is the only real proof. If it still greys out with
+  Remember me ticked, the cause is elsewhere and I was wrong.
 
 FOR BABA
-1. **Deploy the accounts script** — Manage deployments → pencil → New
-   version. Until then: pressing `normal` fails loudly with "not an
-   engine", a chosen password is ignored (the message still shows the
-   one that works), and nobody is asked to change anything.
-2. In the accounts editor, run `migrateEnginesPreview()`, read the log,
-   then `migrateEnginesRun()`.
-3. Make one test person and watch it end to end: the copy message, then
-   log in as them in a private window and meet the change screen.
-4. Then Emina and Marinko.
-- Older queue, unchanged: `ADMIN_USER = "admin"`, `AUTH_ADMIN_TOKEN` in
-  the Streamlit secrets, and step 1 of `SELF_UPGRADE.md` — the live
-  Claude API check — is still unrun.
+1. Log in on the live app with Remember me ticked. Tell me whether it
+   still needs a refresh.
+2. Then the test person: amber gear, Add a person, name `test`, leave
+   the password EMPTY. Watch for the password shown once and the
+   copyable message.
+3. Then log in as `test` in a private window and meet the change screen.

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v111 (a) (people in a dropdown)"
+APP_VERSION = "v113 (a) (a Log in button, and a login that repaints)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1254,6 +1254,15 @@ def check_password() -> bool:
                     queue_ls(writes={AUTH_LS_KEY: json.dumps({"u": who, "t": tok})})
                 else:
                     queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
+            # REPAINT NOW, do not wait for the browser-storage component.
+            #
+            # Ticking Remember me queues a localStorage write, and that
+            # write is a COMPONENT — it needs a frontend round trip that
+            # does not come on this run. The page sat greyed out with the
+            # spinner turning until a manual refresh forced another run,
+            # which is exactly what Baba described. The login had already
+            # succeeded; only the paint was missing.
+            st.rerun()
         else:
             gate.record_failure(tstate, time.time())
             _, wait = gate.check(tstate, time.time())
@@ -1308,6 +1317,16 @@ def check_password() -> bool:
     st.text_input(labels["password"], type="password", key="_pw_input",
                   placeholder="••••••••" if _rem.get("user") else "",
                   on_change=_entered)
+
+    # A VISIBLE WAY IN. Baba: "give me an action button immediately, Log
+    # in, just that button... we have a rule not to hide anything from
+    # the view, no hiding please."
+    #
+    # Enter still works and always did — but it is invisible, and an
+    # invisible control is one somebody has to be TOLD about. This screen
+    # is the first thing his mother meets.
+    st.button(labels.get("login", "Log in"), key="login_now",
+              type="primary", use_container_width=True, on_click=_entered)
 
     if _rem.get("user"):
         # ONE BUTTON, NO EXPLANATION.
