@@ -740,6 +740,21 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
     }}
     [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
 
+    /* THE COPY BUTTON IS ALWAYS THERE. Baba: "there should be on the
+       screen this copy button all the time, not when I am just hovering
+       over — if it is hidden, I do not see."
+       Streamlit fades it in on hover, which on a phone means it appears
+       only after a press that might have done something else. A control
+       nobody can see is a control that has to be explained, and the
+       line explaining it is gone now. */
+    [data-testid="stCode"] button,
+    [data-testid="stCodeBlock"] button,
+    .stCode button {{
+      opacity: 1 !important;
+      visibility: visible !important;
+      color: var(--amber) !important;
+    }}
+
     /* THE DELETE STRIP WEARS RED. Baba: "confirm should be in a red
        frame, and confirm should be a red button — not too much red, so
        I know I am deleting."

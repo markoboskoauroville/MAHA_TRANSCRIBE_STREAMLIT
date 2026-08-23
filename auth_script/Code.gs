@@ -619,7 +619,20 @@ function userPassword_(body) {
     var row = rowOf_(userRows_(), u);
     if (!row) return { ok: false, error: 'no such user' };
 
-    var pw = makePassword_();
+    // A CHOSEN PASSWORD, LIKE CREATE. Baba: "I don't want this password
+    // to be automatically generated — I am assigning password as I
+    // like." userCreate_ has taken one since v112 and reset never did,
+    // so half the app let him choose and half did not.
+    //
+    // Same floor as everywhere else, so reset cannot be a way around
+    // the minimum length. Empty still generates, which is what it has
+    // always done and is the right answer when he has nothing in mind.
+    var chosen = String(body.password == null ? '' : body.password);
+    if (chosen && chosen.length < MIN_PASSWORD) {
+      return { ok: false, error: 'too short: at least ' + MIN_PASSWORD + ' characters' };
+    }
+
+    var pw = chosen || makePassword_();
     var salt = makeSalt_();
     // Re-hashed at TODAY'S cost, not the cost it was made at. A reset is
     // the moment an old, cheaper row quietly becomes a current one.

@@ -1,49 +1,43 @@
-# STEP: the panel gets out of its own way
-STATUS: done, pushed as v128. No deploy needed.
+# STEP: you choose the password, and copy is visible
+STATUS: done, pushed as v129. **DEPLOY THE ACCOUNTS SCRIPT.**
 
-THE CONFUSION BABA REPORTED, AND WHAT IT ACTUALLY WAS
-- "I clicked Reset Password and I got the name AND password. This is
-  confusing." Nothing was wrong — the ADD-A-PERSON form sits directly
-  under the confirm strip, and two adjacent things read as one. The
-  fix is not to explain it but to remove it: while anything is being
-  confirmed, the add form does not render.
-- A DELIBERATE EXCEPTION to "no new elements appearing on the screen,
-  everything is already there, only greyed out." That rule protects
-  somebody hunting for a control. This is the opposite case: the owner
-  has already found one and is about to end an account. Fewer things on
-  screen is the kindness here, and the exception is written at the line
-  that makes it.
-
-THE REST
-- RED, AND ONLY FOR DELETE. A red frame and a red confirm. Not for
-  reset: a reset is recoverable, a delete is not, and red that appears
-  for both says nothing about either. Same reservation the recording
-  dot lives under.
-- THE PEOPLE LIST FOLDS. "If I have 300 people it will fill up my whole
-  interface — just make it a folder." Three names fit; thirty do not.
-  The count is on the fold's own line, so closed it still answers "how
-  many".
-- `test` moved onto the engine line. It acts on whichever engine is
-  chosen, so it belongs beside them rather than hanging underneath.
+WHAT HAPPENED
+- RESET NOW TAKES A CHOSEN PASSWORD. Baba: "I don't want this password
+  to be automatically generated — I am assigning password as I like."
+  userCreate_ has taken one since v112 and reset never did, so half the
+  app let him choose and half did not. Empty still generates, which is
+  the right answer when he has nothing in mind; it is simply no longer
+  the only answer.
+- THE COPY BUTTON IS ALWAYS VISIBLE. Streamlit fades it in on hover,
+  which on a phone means it appears only after a press that might have
+  done something else. A control nobody can see has to be explained —
+  and the line explaining it is now gone, because it does not need to be.
+- Two lines removed: "one tap on the corner copies it" explained that
+  button, and "Write this down NOW" told him to do the thing he had
+  just done. Both were true when the app generated passwords and nobody
+  knew them. They stopped being true and stayed on screen.
+- The dismiss stays. It is the only thing that takes a password off the
+  screen, and a password that lingers through a session is a password in
+  the next screenshot.
 
 NUMBERS
-- admin users 50 · engine UI 18 — green
-- browser-verified: red frame rgb(217,72,75), add form absent during a
-  confirm, People folded, test on the engine row
+- admin users 50 · auth script 66 — green
 - pyflakes clean
 
 WHAT BROKE, AND WHAT I UNDID
-- Delete's confirm needed its own key for the red styling to hang off,
-  and my blanket rename gave that key to RESET's confirm too — in two
-  places. Reset keeps the plain key, and there is now a check asserting
-  that the reset strip is NOT the red one.
+- MY EDIT TO ttt/accounts.py SILENTLY DID NOT APPLY, twice. The script
+  reported success and the file was unchanged — the same class of fault
+  §74 earned a rule about, and my assert did not catch it because it
+  passed against a stale read. Done with a direct edit instead, and the
+  signature printed to prove it.
+- A duplicate string key: `adm_newpw` already existed as the "write this
+  down" warning, so my new one collided. Renamed to `adm_setpw`.
+- Check 14 asserted the removed warning; it now asserts the dismiss,
+  which is what has to survive.
 
-STILL NOT DONE, from Baba's two messages
-- Per-provider test buttons (test Edge, test Groq separately, and one
-  each for the studio three).
-- The People list and the engine test result as real tables.
-- THE KEYS IN THE SHEET — Speechify, AssemblyAI and Claude stored in
-  the Google Sheet, read-only there, managed from the app: list, test,
-  delete, copying his Key Tester app. This REVERSES his earlier "I will
-  never enter the keys table, delete those." It is a session of its own
-  and starts by reading Key Tester and Password Keyring.
+FOR BABA
+1. DEPLOY THE ACCOUNTS SCRIPT (New version). Until then reset ignores
+   the password you type and generates one — and the message will show
+   the generated one, which is the one that works.
+2. Then: press reset password on somebody, type a password you choose,
+   confirm, and check the message shows YOURS.

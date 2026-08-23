@@ -207,18 +207,30 @@ def user_create(url: str, token: str, username: str,
 
 
 def user_password(url: str, token: str, username: str,
-                  admin_user: str, admin_password: str):
+                  admin_user: str, admin_password: str,
+                  password: str = ""):
     """A new password for somebody. Returns (password, error).
 
     IT SIGNS THEIR DEVICES OUT TOO. The script clears their remember
     tokens, because a reset exists to get somebody OUT as much as to let
     them back in, and a phone that stayed logged in would defeat half of
     that. Say so where the button is.
+
+    THE PASSWORD MAY BE CHOSEN, as it may on create. Baba: "I don't want
+    this password to be automatically generated — I am assigning
+    password as I like." Empty still generates, which is the right
+    answer when he has nothing in mind; it is simply no longer the only
+    answer, which it was until v129.
     """
     out = _post(url, token, {"what": "user_password",
                              "username": str(username or ""),
                              "admin_user": str(admin_user or ""),
-                             "admin_password": str(admin_password or "")},
+                             "admin_password": str(admin_password or ""),
+                             # An older deployment ignores this and
+                             # generates as before — which is why the
+                             # caller shows what CAME BACK, never what it
+                             # sent.
+                             "password": str(password or "")},
                 timeout=ADMIN_TIMEOUT)
     if out is None:
         return "", "unreachable"

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v128 (a) (the panel gets out of its own way)"
+APP_VERSION = "v129 (a) (you choose the password, and copy is visible)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -641,6 +641,8 @@ STRINGS = {
                            "hr": "preimenovanje čeka da glavna skripta "
                                  "čita zamrznuti stupac mape — sada bi "
                                  "snimke ostale pod starim imenom"},
+    "adm_setpw":          {"en": "new password (or leave empty)",
+                           "hr": "nova lozinka (ili prazno)"},
     "adm_yourpw":         {"en": "your own password",
                            "hr": "tvoja vlastita lozinka"},
     "adm_ask_delete":     {"en": "Delete %s? Their recordings are kept.",
@@ -2339,8 +2341,15 @@ def user_admin_panel():
         link = str(st.secrets.get("APP_URL", "") or "")
         st.code(((t("adm_ready_url") % link) if link else "")
                 + t("adm_ready") % (who.capitalize(), who, pw), language=None)
-        st.text(t("adm_copy"))
-        st.text(t("adm_newpw"))
+        # TWO LINES REMOVED. "one tap on the corner copies it" explained
+        # a button that is now simply visible, and "Write this down NOW"
+        # told him to do the thing he had just done — he chose the
+        # password himself, so it is already written down. Both were
+        # true when the app generated passwords and nobody knew them.
+        #
+        # The dismiss stays: it is the only thing that takes a password
+        # off the screen, and a password that lingers through a session
+        # is a password in the next screenshot.
         st.button(t("adm_written"), key="adm_written",
                   on_click=lambda: st.session_state.pop("_adm_shown", None))
 
@@ -2388,7 +2397,10 @@ def user_admin_panel():
             st.session_state["_adm_msg"] = err
 
     def do_reset(who):
-        pw, err = ACCOUNTS.user_password(url, token, who, USER, proof())
+        pw, err = ACCOUNTS.user_password(
+            url, token, who, USER, proof(),
+            password=str(st.session_state.get("_adm_newpw", "")))
+        st.session_state.pop("_adm_newpw", None)
         if pw:
             st.session_state["_adm_shown"] = (who, pw)
             st.session_state["_adm_msg"] = ""
@@ -2577,6 +2589,15 @@ def user_admin_panel():
                               else "askstrip"):
                 st.text((t("adm_ask_delete") if _danger
                          else t("adm_ask_reset")) % who)
+                if not _danger:
+                    # THE NEW PASSWORD, CHOSEN. Baba: "I am assigning
+                    # password as I like." Empty still means "make me
+                    # one", which is the right answer when he has
+                    # nothing in mind — but it is no longer the ONLY
+                    # answer, which it was until now.
+                    st.text_input(t("adm_setpw"), key="_adm_newpw",
+                                  placeholder=t("adm_setpw"),
+                                  label_visibility="collapsed")
             # NO PASSWORD BOX. It used to sit here, BELOW the confirm
             # buttons — so pressing yes sent an empty one and the script
             # refused, which reads as being asked for something there is

@@ -324,7 +324,15 @@ check("13 and it is shown ABOVE the list, not under it — under it, it is "
       "below the fold on a phone",
       page(at).index("djedova-lozinka") < page(at).index("admin"),
       page(at)[:300])
-check("14 with the instruction to write it down", "Write this down" in page(at))
+# "Write this down NOW" is gone (v129). It told him to do the thing he
+# had just done — he chooses the password himself now, so it is already
+# written down. It was true when the app generated passwords and nobody
+# knew them; it stopped being true and stayed on screen.
+#
+# What must remain is the way to TAKE IT OFF the screen. A password that
+# lingers through a session is a password in the next screenshot.
+check("14 there is a way to dismiss it",
+      "adm_written" in keys(at), keys(at))
 
 press(at, "adm_written")
 check("15 AND IT IS NEVER SHOWN AGAIN once dismissed",
