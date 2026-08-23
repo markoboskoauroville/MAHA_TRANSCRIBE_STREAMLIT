@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v123 (a) (tiers, a required password, and a readable test)"
+APP_VERSION = "v124 (a) (the tier decides, and one edge not two)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -475,6 +475,11 @@ STRINGS = {
                             "hr": "Ovdje će se pojaviti tvoje riječi"},
     "new_take_word":      {"en": "new",               "hr": "novo"},
     "archive_word":       {"en": "archive",           "hr": "arhiva"},
+    "custom_word":        {"en": "custom",             "hr": "po želji"},
+    "custom_hint":        {"en": "say what to change",
+                           "hr": "reci što promijeniti"},
+    "custom_do":          {"en": "do it",              "hr": "napravi"},
+    "custom_cancel":      {"en": "cancel",             "hr": "odustani"},
     "clear_word":         {"en": "clear",             "hr": "obriši"},
     "copy_word":          {"en": "copy",              "hr": "kopiraj"},
     "copy_done_word":     {"en": "copied",            "hr": "kopirano"},
@@ -4883,13 +4888,69 @@ if active == "transcribe":
         _apply_transform("tidy", "")
         flash("tx_reshape")
 
-    cmd_row("tx", [
-        (t("new_take_word"), "tx_new", _new_take),
-        ("copy", None, None),
-        (t("grammar_word"), "tx_grammar", _grammar),
-        (t("reshape_word"), "tx_reshape", _reshape),
-        (t("clear_word"), "tx_clear", _clear_all),
-    ], copy_text=t1_text())
+    def _ask_custom():
+        st.session_state["_tx_custom_open"] = True
+
+    def _run_custom():
+        """Whatever he asked for, done to the text in the box.
+
+        The instruction goes through the SAME transform path as grammar
+        and reshape — the only difference is that the words come from
+        him instead of from a preset. One implementation, three doors.
+        """
+        want = str(st.session_state.get("_tx_custom_ask", "")).strip()
+        if not want:
+            return
+        # NO PRESET. Naming one makes _apply_transform fetch that
+        # preset's wording from the sheet and then discard it, because
+        # an explicit instruction wins. Empty says what is true: there
+        # is no preset here, only his words.
+        _apply_transform("", want)
+        st.session_state["_tx_custom_open"] = False
+        st.session_state["_tx_custom_ask"] = ""
+        flash("tx_custom")
+
+    # THE TIER DECIDES WHAT IS ON THIS ROW.
+    #
+    # Baba: "grammar and reshape only in the tier of Studio. We remove
+    # this from the free user... they do not pay."
+    #
+    # And it is not only a price: grammar and reshape send the text to a
+    # language model, which on the free tier means Baba's own Groq keys
+    # paying for somebody else's rewriting. Transcription is the service;
+    # rewriting is the extra.
+    #
+    # NOT HIDDEN FROM THE OWNER — he is on whatever tier he chose, like
+    # everybody else, so he sees exactly what that tier gives.
+    _eng = EN.current(st.session_state)
+    _studio = bool(_eng and _eng.tier == "studio")
+
+    _cmds = [(t("new_take_word"), "tx_new", _new_take),
+             ("copy", None, None)]
+    if _studio:
+        _cmds += [(t("grammar_word"), "tx_grammar", _grammar),
+                  (t("reshape_word"), "tx_reshape", _reshape),
+                  (t("custom_word"), "tx_custom", _ask_custom)]
+    _cmds += [(t("clear_word"), "tx_clear", _clear_all)]
+    cmd_row("tx", _cmds, copy_text=t1_text())
+
+    # CUSTOM: say what you want done, and it is done to the text that is
+    # already in the box. Studio only, for the same reason as the other
+    # two, and it opens rather than sitting open — a prompt box on a
+    # screen that is mostly a recorder would be the loudest thing on it.
+    if _studio and st.session_state.get("_tx_custom_open"):
+        with st.container(key="customrow"):
+            st.text_input(t("custom_word"), key="_tx_custom_ask",
+                          placeholder=t("custom_hint"),
+                          label_visibility="collapsed")
+            _c1, _c2 = st.columns([1, 1])
+            _c1.button(t("custom_do"), key="tx_custom_go",
+                       type="primary", use_container_width=True,
+                       on_click=_run_custom)
+            _c2.button(t("custom_cancel"), key="tx_custom_no",
+                       use_container_width=True,
+                       on_click=lambda: st.session_state.update(
+                           {"_tx_custom_open": False}))
 
     # A VIEW OF _t1_text, never the owner of it. The key carries the
     # generation, so delivering text mounts a new widget that takes the

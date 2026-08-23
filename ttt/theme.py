@@ -636,11 +636,16 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
        it. Colour still means STATE in this app; this is depth, not
        colour, which is why it is a step of the same hue rather than a
        tint of another one. */
+    /* NO SECOND EDGE. Baba: "recording has its edge, and there is some
+       other edge around it — when I said colour I meant the edge which
+       is already there, not to add an additional one."
+       The deck draws its own frame inside the iframe and the note editor
+       draws its own too, so v122's border put a line around a line. The
+       FILL is what he asked for and the fill is all that stays. */
     [class*="st-key-deckbox"], [class*="st-key-noteopen"] {{
       background: var(--surface-2);
-      border: 1px solid var(--line);
       border-radius: 10px;
-      padding: 0.45rem !important;
+      padding: 0.35rem !important;
     }}
     iframe {{ display: block; }}
     [data-testid="stIFrame"] {{ margin-bottom: 0 !important; }}
