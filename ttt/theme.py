@@ -637,6 +637,24 @@ def css(scheme: str = "amber", font: str = "mono") -> str:
       width: 100%;
     }}
 
+    /* ADD TO NOTES — a line, not a button.
+       Baba asked for "just an orange line link". The box already carries
+       five command keys above it; a sixth full-width button would
+       compete with them for an action that is an afterthought — you read
+       what came back, THEN you decide to keep it. */
+    [class*="st-key-tx_tonote"] button {{
+      background: transparent !important;
+      border: 0 !important;
+      color: var(--amber) !important;
+      padding: 0.15rem 0 !important;
+      min-height: 0 !important;
+      font-size: 0.76rem !important;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      width: auto !important;
+    }}
+    [class*="st-key-tx_tonote"] button:hover {{ color: var(--amber-hi) !important; }}
+
     /* THE NOTES — cards, in the app's own quiet register.
        Baba asked for Keep, but "dull colours, not too bright". So the
        card is the same surface as every other panel and gets NO colour

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v113 (a) (a Log in button, and a login that repaints)"
+APP_VERSION = "v114 (a) (add to notes, and the deck feeds the open note)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -511,6 +511,8 @@ STRINGS = {
     "login_continue":     {"en": "Continue as {who}", "hr": "Nastavi kao {who}"},
     "login_notme":        {"en": "Not me — sign in as someone else",
                            "hr": "Nisam ja — prijavi se kao netko drugi"},
+    "tx_tonote":          {"en": "add to notes",       "hr": "dodaj u bilješke"},
+    "tx_tonote_done":     {"en": "kept",               "hr": "spremljeno"},
     "notes_search":       {"en": "Search notes",       "hr": "Traži bilješke"},
     "notes_search_ph":    {"en": "search your notes",  "hr": "traži po bilješkama"},
     "notes_found":        {"en": "{n} of {all}",       "hr": "{n} od {all}"},
@@ -3768,6 +3770,22 @@ def transcribe_note_take():
     USAGE.log("transcribe", seconds, UNIT_SECONDS, stt.id)
 
 
+def keep_as_note():
+    """Keep what is in the box as a note.
+
+    The ONE way a transcript becomes a note now. It reads `t1_text()`
+    rather than the raw transcript, so whatever he has done to it since —
+    grammar, reshape, a hand edit — is what gets kept.
+    """
+    body = t1_text().strip()
+    if not body:
+        return
+    NOTES.add(st.session_state, body,
+              language=st.session_state.get("last_lang", ""),
+              rec_id=st.session_state.get("_last_rec_id", ""))
+    st.session_state["_note_kept"] = True
+
+
 def notes_panel():
     """The list: a search field, then the notes."""
     all_notes = NOTES.items(st.session_state)
@@ -3835,6 +3853,14 @@ def note_open_view():
                         label_visibility="collapsed", on_change=_save_title)
         back.button(t("note_close"), key="note_close",
                     on_click=close_note, use_container_width=True)
+
+        # SAY WHEN A TAKE FAILED. _note_error was written in two places
+        # and displayed in none, so a failed transcription inside a note
+        # was completely silent — record, wait, nothing. The §47 shape
+        # again: a failure that looks exactly like nothing happening.
+        _err = st.session_state.pop("_note_error", None)
+        if _err:
+            st.error(_err)
 
         if _note_component is not None:
             ev = _note_component(
@@ -4001,20 +4027,37 @@ def deliver_text(new_text: str, keep: bool = True) -> None:
     new_text = (new_text or "").strip()
     if not new_text:
         return
-    # KEPT BEFORE IT IS SHOWN. Every route arrives here — recorder, opened
-    # file, pasted text — so archiving here catches all of them and cannot
-    # be forgotten when a fourth route is added later.
-    if keep:
-        # THE REC_ID TRAVELS WITH THE TEXT. Session state dies on reload;
-        # Drive does not. An archive row that carries the rec_id can still
-        # be retranscribed or deleted in a session that starts tomorrow,
-        # which is the whole reason for storing the audio at all.
-        # ONE STORE, NOT TWO. archive.add() went on running here after
-        # v98 replaced the archive with notes, filling a sixty-item list
-        # nothing displayed — the same words kept twice, and the classic
-        # way for two copies to drift apart. adopt_archive still reads
-        # anything a previous session left behind, so nothing is lost.
-        note_from_transcript(new_text)
+    # NOTHING IS KEPT HERE ANY MORE.
+    #
+    # This block used to archive every take, and then to make a note of
+    # every take. Both are gone: the archive became notes in v98, and
+    # notes became a DECISION in v114 — Baba: "under the textbox just an
+    # orange line, add to notes."
+    #
+    # `keep` is therefore no longer read. It stays in the signature
+    # because three callers pass it and because the distinction it names
+    # is still real: loading something back into the box is not the same
+    # act as a new take arriving. If anything ever needs to tell those
+    # apart again, this is where it goes.
+    #
+    # Nothing is lost by not keeping: the audio and its text.txt are
+    # already in Drive (§60), so an unkept take is still recoverable.
+    # What changed is that the notebook holds only what he chose.
+
+    # A NOTE IS OPEN: THE WORDS GO INTO IT, NOT INTO THE BOX.
+    #
+    # This is the bug Baba reported as "it does not insert what I say to
+    # note", and it was mine. v98's comment says the deck is "the note's
+    # own record button" — the code never made that true. It wrote to
+    # _t1_text as always, and with a note open the box is NOT DRAWN
+    # (that is the takeover working), so the words landed on a surface
+    # nobody could see. Not lost, just invisible, which is worse: the
+    # app looked broken rather than wrong.
+    open_id = st.session_state.get(OPEN_KEY)
+    if open_id and NOTES.get(st.session_state, open_id):
+        NOTES.append(st.session_state, open_id, new_text)
+        return
+
     if st.session_state.get("append_mode"):
         old = t1_text().rstrip()
         # A blank line between takes: they are separate sittings and read
@@ -4723,6 +4766,23 @@ if active == "transcribe":
     # what gets operated on, which is what Baba asked for.
     #
     # No new furniture: the same terminal row of cells as everywhere else.
+    # ---- ADD TO NOTES -------------------------------------------
+    #
+    # A LINE, NOT A BUTTON. Baba asked for "just an orange line link",
+    # and he is right about the weight: the box already carries five
+    # command keys above it, and a sixth full-width button would compete
+    # with them. This is an afterthought action — you read what came
+    # back, and then you decide to keep it.
+    #
+    # It takes what is IN THE BOX, not what came back from Whisper, so a
+    # correction, a grammar pass or a hand edit is what gets kept.
+    _body = t1_text().strip()
+    if _body:
+        st.markdown('<div class="tolink"></div>', unsafe_allow_html=True)
+        st.button(t("tx_tonote"), key="tx_tonote", on_click=keep_as_note)
+        if st.session_state.pop("_note_kept", None):
+            st.caption(t("tx_tonote_done"))
+
     # ---- THE NOTES ----------------------------------------------
     #
     # Baba: "imagine the first tab is Keep from Google, with the ability

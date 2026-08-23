@@ -94,6 +94,37 @@ ck("17 the second press deletes", len(sget(at4,N.KEY,[]))==before-1,
    len(sget(at4,N.KEY,[])))
 ck("18 and the note closes", sget(at4,"_open_note") is None)
 
+# ── speaking while a note is open ────────────────────────────────────
+#
+# THE BUG THIS EXISTS FOR: the deck wrote to the box no matter what, and
+# with a note open the box is not drawn — so the words went to a surface
+# nobody could see. Not lost, INVISIBLE, which is worse: the app looked
+# broken rather than wrong. Nothing tested WHERE the words went.
+#
+# A SOURCE CHECK, and here is why rather than a better one. deliver_text
+# is reached only from the recorder, an opened file or the paste
+# component — all three are components, and components return their
+# default under AppTest, so not one of those doors can be opened from a
+# test. Same limit as §73. Asserting on the source is worth more than a
+# behavioural check that cannot reach the behaviour.
+src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
+           encoding="utf-8").read()
+body = src.split("def deliver_text(", 1)[1].split("\ndef ", 1)[0]
+
+ck("19 deliver_text asks whether a note is open",
+   "OPEN_KEY" in body, body[:200])
+ck("20 and when one is, it APPENDS THERE",
+   "NOTES.append(st.session_state, open_id" in body, body[:200])
+ck("21 and returns without touching the box — the box is not drawn, so "
+   "writing to it is writing into the dark",
+   "NOTES.append(st.session_state, open_id, new_text)\n        return" in body,
+   body[:200])
+
+# And the failure that used to be silent is now on the screen.
+panel = src.split("def note_open_view(", 1)[1].split("\ndef ", 1)[0]
+ck("22 a failed take inside a note is SHOWN, not swallowed",
+   '_note_error' in panel and "st.error" in panel, panel[:200])
+
 print("\n%d passed, %d failed" % (ok,fail))
 
 
