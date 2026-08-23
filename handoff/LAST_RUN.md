@@ -1,43 +1,38 @@
-# STEP: copy and clear under every box
-STATUS: done, pushed as v132. No deploy needed.
+# STEP: the status line says the tier, at last
+STATUS: done, pushed as v133. No deploy needed.
 
 WHAT HAPPENED
-- ONE RULE, EVERY MODULE. Baba: "under all tabs we have text box, copy
-  clear under. As an action link, not an action button. Copy is more
-  important than clear, that is the rule."
-- `box_links()` is the one helper: T, R, and BOTH halves of TR use it.
-  Before this each had its own arrangement — a bordered command row
-  here, a single link there, copy in one and not the other. Three
-  shapes for one idea is three things to keep in step, and they had
-  already drifted.
-- It renders nothing when the box is empty. Nothing to copy, nothing to
-  clear, and a dead link is a question with no good answer.
-- T's command row now holds only what is particular to T: `new`, plus
-  the studio tools. `add to notes` rides on the links line rather than
-  starting another.
+- The foot of every page reads `transcribe · free · emina`: tab name,
+  tier, person. The ORDER was already right; only the middle word was
+  wrong.
+- Baba: "their technical names are going bye bye — it is free or it is
+  studio." "Edge / Groq" answers a question nobody asks at the foot of
+  a page. The parts are still named in the owner's panel, where he is
+  choosing between them and needs to know what he buys.
 
-THE COPY BUTTON HAD TO BE TAUGHT TO LOOK LIKE A LINK
-- It is a COMPONENT — nothing else can reach the clipboard — so it
-  cannot be a Streamlit button styled like the ones beside it.
-  cp_html() gained a `link=True` mode. Its colour is written as a hex
-  rather than var(--dim), because the component renders inside an
-  IFRAME and cannot see the page's CSS variables — a var() there
-  resolves to nothing.
+THE PART WORTH READING
+- v123 CLAIMED TO HAVE MADE THIS CHANGE AND DID NOT. The comment was
+  written, the commit message described it, and the line still read
+  `eng.label`. It shipped that way for nine versions.
+- THIRD SILENT WRITE FAILURE OF THIS SESSION. My scripted edit reported
+  success and the file was unchanged — the same fault §74 earned a rule
+  about, and the assert did not catch it because it passed against a
+  stale read. Done with a direct edit and verified in a browser.
+- AND THE TEST AGREED WITH THE BUG. test_engine_ui 9 asserted "Edge"
+  and "Groq" were in the corner, so it passed happily through all nine
+  versions. It asserts the tier now, and the mutation back to the parts
+  fails it — which it would not have done before.
 
 NUMBERS
-- box 16 · tier 13 · notes UI 22 · source 19 — green
-- browser-verified in T: copy · clear · add to notes, one line, right
-  aligned, glued to the box
+- engine UI 18 · owner edge 5 — green
+- mutation applied and caught
+- browser-read on all three tabs: transcribe · free, read · free,
+  translate · free
 - pyflakes clean
 
-WHAT BROKE, AND WHAT I UNDID
-- `tx_clear` moved into the helper and took a new key, which three test
-  files still named. Updated. One of them then failed for a good
-  reason: it checked an EMPTY box, where the links deliberately do not
-  render. It seeds the box now.
-
-STILL OPEN
-- The note's red rec, never seen to work.
-- test_reader 8, red since v101.
-- The owner's tab bar wraps at 360px with `log` orphaned underneath.
-- THE KEYS IN THE SHEET — its own session.
+THE LESSON, WRITTEN DOWN
+- A comment saying what the code does is not evidence that it does it.
+  Three times this session a scripted edit has silently done nothing
+  while reporting success. When a change matters, read the line back or
+  measure the result — the commit message is the least reliable witness
+  in the room.

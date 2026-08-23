@@ -112,8 +112,16 @@ check("8 choosing free patches them back",
 at3 = app("transcribe")
 at3.run()
 sig = corner(at3)
-check("9 the corner names the running engine",
-      "Edge" in sig and "Groq" in sig, sig[:160])
+# THE TIER, NOT THE PARTS (v133). Baba: "their technical names are
+# going bye bye — it is free or it is studio." "Edge / Groq" answers a
+# question nobody asks at the foot of a page; "free" answers the one
+# they do. The parts are still named in the owner's panel, where he is
+# choosing between them.
+#
+# This check asserted the parts, so it went on passing for the nine
+# versions in which v123 CLAIMED to have made this change and had not.
+check("9 the corner names the TIER",
+      "free" in sig and "Edge" not in sig, sig[:160])
 check("10 and carries NO tick before any check has run",
       "✓" not in sig and "✗" not in sig, sig[:160])
 

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v132 (a) (copy and clear under every box)"
+APP_VERSION = "v133 (a) (the status line says the tier, at last)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -2934,7 +2934,19 @@ def tab_signature(name: str):
     # a tick that means "probably" is the thing this corner must never
     # say.
     eng = EN.current(st.session_state)
-    label = eng.label if eng else t("eng_mixed")
+    # THE TIER, NOT THE PARTS. Baba: "their technical names are going
+    # bye bye — it is free or it is studio."
+    #
+    # "Edge / Groq" answers a question nobody asks at the foot of a
+    # page. "free" answers the one they do: which one am I on, and is
+    # this the paid one. The parts are still named in the owner's panel,
+    # where he is CHOOSING between them and needs to know what he buys.
+    #
+    # v123 claimed to have done this and did not — the comment was
+    # written and the line was not changed, which is why the foot of the
+    # page went on saying "Edge / Groq" for nine versions while the
+    # commit message said otherwise.
+    label = (eng.tier if eng else t("eng_mixed"))
     res = st.session_state.get("_engine_check") or {}
     mark = ""
     # THROUGH EN.get, NOT BY STRING. A verdict recorded before the engine
