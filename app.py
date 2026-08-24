@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v181 (the TR cassette deck, polyglot)"
+APP_VERSION = "v182 (VR — virtual rehearsal, 24 voices and 18 emotions)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -74,6 +74,7 @@ from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR_
 from ttt import eta as ETA
+from ttt import vr as VR
 from ttt import vision
 from ttt import notes as NOTES
 from ttt.providers.groq import FAST_STT as GROQ_FAST_STT
@@ -346,6 +347,28 @@ STRINGS = {
     "tr_voice_m":         {"en": "male",            "hr": "muški"},
     "tr_deck_idle":       {"en": "nothing loaded",  "hr": "ništa nije učitano"},
     "tr_reading":         {"en": "making the voice…", "hr": "pripremam glas…"},
+    "tab_vr":             {"en": "VR",               "hr": "VR"},
+    "sig_vr":             {"en": "virtual rehearsal","hr": "virtualna proba"},
+    "vr_text_ph":         {"en": "Paste the line to rehearse",
+                           "hr": "Zalijepi rečenicu za probu"},
+    "vr_speak":           {"en": "rehearse",         "hr": "probaj"},
+    "vr_voices":          {"en": "the cast",         "hr": "glumci"},
+    "vr_emotions":        {"en": "the direction",    "hr": "redateljska uputa"},
+    "vr_note_ph":         {"en": "your own direction (optional)",
+                           "hr": "vlastita uputa (neobavezno)"},
+    "vr_no_key":          {"en": "No Hume key yet — the owner adds one in Settings.",
+                           "hr": "Nema Hume ključa — vlasnik ga dodaje u postavkama."},
+    "vr_empty":           {"en": "Hume answered with no audio.",
+                           "hr": "Hume nije vratio zvuk."},
+    "vr_all_busy":        {"en": "Every Hume key is busy right now.",
+                           "hr": "Svi Hume ključevi su trenutno zauzeti."},
+    "vr_coffee":          {"en": "Hume AI is drinking coffee ☕ — %d seconds",
+                           "hr": "Hume AI pije kavu ☕ — %d sekundi"},
+    "vr_too_many":        {"en": "Four directions at once is already a lot — the rest are ignored.",
+                           "hr": "Četiri upute odjednom su već mnogo — ostale se zanemaruju."},
+    "vr_nothing":         {"en": "Nothing to rehearse yet.",
+                           "hr": "Još nema što probati."},
+    "vr_now":             {"en": "reading as: %s",   "hr": "čita kao: %s"},
     "eta_learning":       {"en": "learning how long this takes",
                            "hr": "učim koliko ovo traje"},
     "transcribing":       {"en": "Transcribing…",    "hr": "Transkribiranje…"},
@@ -3114,7 +3137,9 @@ def nav_tabs():
     # own instruction. The grouping serves the same wish better: he
     # wanted his own things distinguishable, and a group says that more
     # clearly than a position does.
-    tabs = ["transcribe", "talk", "translate", "looks", "help"]
+    # VR SITS AFTER TR, so the tabs read T · R · TR · VR — the two
+    # reading tabs, then the two that transform before they read.
+    tabs = ["transcribe", "talk", "translate", "vr", "looks", "help"]
     if is_admin():
         tabs += ["settings", "log"]
     return tabs
@@ -3409,6 +3434,157 @@ def sp_call(key: str, path: str, payload=None, method: str = "GET", timeout: int
         return None, sp_error_message(e.code, body), sp_error_kind(e.code)
     except Exception as e:
         return None, f"Could not reach Speechify: {e}", "soft"
+
+
+# ---------------------------------------------------------------------
+# HUME — VR's provider. The same ring, the same rotation, the same
+# vocabulary of dead / cool / soft as Speechify and Groq, because a
+# fourth way of handling keys is a fourth thing to get wrong.
+#
+# ONE DIFFERENCE, AND IT IS THE IMPORTANT ONE: Hume's limit is PER MINUTE
+# and 429 is COMMON RATHER THAN EXCEPTIONAL. On the other providers a 429
+# means something is wrong; here it means the app went too fast. So a 429
+# does NOT rotate to another key first — it is reported as a wait, and
+# VR.wait_left is what stops it happening at all.
+# ---------------------------------------------------------------------
+
+# Hume is behind Cloudflare and refuses a request with no User-Agent.
+# See hume_call for the measurement.
+HUME_UA = "TTT-LLL/1.0 (+https://ttt-lll.streamlit.app)"
+
+
+def hume_error_kind(status: int) -> str:
+    if status in (401, 402):
+        # 401 rejected, 402 out of credit — rotating to another key is
+        # the right move for both.
+        return "dead"
+    if status == 429:
+        return "cool"
+    if status == 403:
+        # NOT "dead". Cloudflare returns 403 for a browser-signature ban
+        # (error 1010) that has nothing to do with the key, and burning
+        # every key in the ring over it would take VR down for good
+        # while every key was perfectly fine.
+        return "soft"
+    return "soft"
+
+
+def hume_error_message(status: int, body: str) -> str:
+    msgs = {400: "Hume refused the request (400) — usually the voice name.",
+            401: "Hume rejected the key (401).",
+            402: "No Hume credit left on this account (402).",
+            403: "Hume refused the request (403). If this says 1010 it is "
+                 "Cloudflare, not the key.",
+            404: "Hume does not know that voice (404).",
+            429: "Hume is drinking coffee (429) — it limits per minute."}
+    if status in msgs:
+        return msgs[status]
+    return "Hume error %d" % status
+
+
+def hume_call(key: str, payload: dict, timeout: int = 120):
+    """One POST to Hume. Returns (data, error, kind).
+
+    THE KEY IS NEVER IN THE RETURNED TEXT. Hume quotes the request back
+    in some error bodies, so the body is scrubbed of anything key-shaped
+    before it can reach a screen or a log.
+    """
+    req = _ureq.Request(
+        "https://api.hume.ai/v0/tts",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"X-Hume-Api-Key": key, "Content-Type": "application/json",
+                 "Accept": "application/json",
+                 # A USER-AGENT IS NOT DECORATION HERE. Hume sits behind
+                 # Cloudflare, which answers urllib's DEFAULT agent with
+                 # 403 "error code: 1010" — a browser-signature ban that
+                 # looks exactly like a rejected key. Measured 24.8.2026:
+                 # no UA -> 403 every time; ANY ordinary UA -> 200 every
+                 # time, same key, same body, same second.
+                 #
+                 # This is why the app names itself on every request.
+                 "User-Agent": HUME_UA},
+        method="POST")
+    try:
+        with _ureq.urlopen(req, timeout=timeout) as r:
+            body = r.read().decode("utf-8", "replace")
+        return (json.loads(body) if body.strip() else {}), None, None
+    except _uerr.HTTPError as e:
+        try:
+            raw = e.read().decode("utf-8", "replace")
+        except Exception:
+            raw = ""
+        raw = _re.sub(r"[A-Za-z0-9_\-]{32,}", "[redacted]", raw)[:200]
+        return None, hume_error_message(e.code, raw), hume_error_kind(e.code)
+    except Exception as e:
+        return None, "Could not reach Hume: %s" % e, "soft"
+
+
+def hume_speak(ring: dict, text: str, voice_name: str, direction: str):
+    """(wav bytes, seconds) or (None, error). Rotates the ring exactly as
+    Speechify does, and treats 429 as a wait rather than a bad key."""
+    keys = ring["keys"]
+    n = len(keys)
+    if not n:
+        return None, t("vr_no_key")
+    payload = {"utterances": [{"text": text[:VR.TEXT_CAP],
+                               "description": direction,
+                               "voice": {"name": voice_name,
+                                         "provider": "HUME_AI"}}],
+               "format": {"type": "wav"}, "num_generations": 1}
+    idx = ring.get("active", 0) % n
+    last = ""
+    for _ in range(n):
+        i = ring_pick(ring, idx)
+        if i is None:
+            break
+        k = keys[i]
+        data, err, kind = hume_call(k["key"], payload)
+        if not err:
+            k["state"] = "ok"
+            k["last_error"] = ""
+            k["calls"] = k.get("calls", 0) + 1
+            ring["active"] = i
+            try:
+                gen = (data.get("generations") or [])[0]
+                return (_b64.b64decode(gen["audio"]),
+                        float(gen.get("duration") or 0)), None
+            except (IndexError, KeyError, TypeError, ValueError):
+                return None, t("vr_empty")
+        last = err
+        if kind == "dead":
+            k["state"] = "dead"
+            k["last_error"] = err
+            idx = (i + 1) % n
+            continue
+        if kind == "cool":
+            # A MINUTE, NOT TWO. Hume's window is per minute, so parking
+            # a key for 120s the way Speechify does would idle a working
+            # key for twice as long as it needs.
+            k["state"] = "cool"
+            k["cool_until"] = time.time() + 60
+            k["last_error"] = err
+            idx = (i + 1) % n
+            continue
+        return None, err
+    return None, last or t("vr_all_busy")
+
+
+def hume_test_one(key: str):
+    """Cheapest possible proof a key works: list one voice, generate
+    nothing. A test that synthesises would spend a rate-limit slot the
+    person is about to want."""
+    req = _ureq.Request(
+        "https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=1",
+        headers={"X-Hume-Api-Key": key, "Accept": "application/json",
+                 "User-Agent": HUME_UA})
+    try:
+        with _ureq.urlopen(req, timeout=30) as r:
+            r.read()
+        return None, None
+    except _uerr.HTTPError as e:
+        return hume_error_message(e.code, ""), hume_error_kind(e.code)
+    except Exception as e:
+        return "Could not reach Hume: %s" % e, "soft"
 
 
 def sp_request(ring: dict, path: str, payload=None, method: str = "GET", timeout: int = 60):
@@ -7619,6 +7795,129 @@ elif active == "translate":
                   on_click=tr_read, args=("out",))
 
     tab_signature(t("sig_translate"))
+
+
+elif active == "vr":
+    # VR — VIRTUAL REHEARSAL. Baba: "this one is to experiment with human
+    # emotions. Pills for each emotion, a deck that reads, a box to paste
+    # into. Many voices — one pill per voice. We don't save on pills."
+    #
+    # THE SAME SHAPE AS EVERY OTHER TAB: transport at the top, the thing
+    # you are working on under it, actions under that. A fourth tab that
+    # invented its own arrangement would be a fourth thing to learn.
+    st.session_state.setdefault("vr_voice", VR.DEFAULT_VOICE)
+    st.session_state.setdefault("vr_text", "")
+
+    _vr_audio = st.session_state.get("_vr_audio")
+    if _wave_component is not None:
+        _wave_component(
+            src=("data:audio/wav;base64," + _b64.b64encode(_vr_audio).decode()
+                 if _vr_audio else ""),
+            cues=[], words=[], wtimes=[],
+            labels={"play": t("wave_play"), "pause": t("wave_pause"),
+                    "back": t("wave_back"), "next": t("wave_next"),
+                    "save": t("wave_save")},
+            part=1 if _vr_audio else 0, parts=1 if _vr_audio else 0,
+            startable=bool(_vr_audio),
+            scale=a11y.clamp(st.session_state.get("text_scale",
+                                                 a11y.DEFAULT_SCALE)),
+            autoplay=bool(st.session_state.pop("_vr_autoplay", False)),
+            key="vr_player", default=None)
+
+    _vr_err = st.session_state.pop("_vr_error", None)
+    if _vr_err:
+        st.error(_vr_err)
+    _vr_said = st.session_state.pop("_vr_said", None)
+    if _vr_said:
+        st.caption(t("vr_now") % _vr_said)
+
+    st.text_area("vr", key="vr_text", height=120,
+                 label_visibility="collapsed", placeholder=t("vr_text_ph"))
+
+    def _vr_clear():
+        st.session_state["vr_text"] = ""
+
+    box_links("vrbox", st.session_state.get("vr_text", ""), on_clear=_vr_clear)
+
+    # THE CAST. One pill per voice, twelve women and twelve men, each
+    # showing its accent so a name that means nothing still tells you
+    # something. Baba asked for many and this is many on purpose.
+    st.markdown('<div class="vtag">%s</div>' % html.escape(t("vr_voices")),
+                unsafe_allow_html=True)
+    _cur_voice = st.session_state.get("vr_voice", VR.DEFAULT_VOICE)
+    for _g in ("F", "M"):
+        _rows = VR.VOICES[_g]
+        for _start in range(0, len(_rows), 3):
+            _cols = st.columns(3)
+            for _col, (_vn, _acc, _age) in zip(_cols, _rows[_start:_start + 3]):
+                _col.button(
+                    _vn, key="vrv_%s" % _vn.replace(" ", "_").replace("'", ""),
+                    type="primary" if _vn == _cur_voice else "secondary",
+                    help="%s · %s" % (_acc, _age),
+                    on_click=lambda v=_vn: st.session_state.update(
+                        {"vr_voice": v}),
+                    use_container_width=True)
+
+    # THE DIRECTION. Checkboxes, not one choice: Baba asked for "one
+    # emotion or a combination", and that is also what acting is — grief
+    # that is angry reads differently from either alone.
+    st.markdown('<div class="vtag">%s</div>' % html.escape(t("vr_emotions")),
+                unsafe_allow_html=True)
+    for _start in range(0, len(VR.EMOTIONS), 3):
+        _cols = st.columns(3)
+        for _col, (_eid, _lbl, _phr) in zip(_cols,
+                                            VR.EMOTIONS[_start:_start + 3]):
+            _col.checkbox(_lbl, key="vre_%s" % _eid, help=_phr)
+
+    _picked = [e for e in VR.EMOTION_IDS if st.session_state.get("vre_%s" % e)]
+    if len(_picked) > VR.MAX_EMOTIONS:
+        st.caption(t("vr_too_many"))
+
+    st.text_input("vrnote", key="vr_note", placeholder=t("vr_note_ph"),
+                  label_visibility="collapsed")
+
+    # THE PACE, STATED IN SECONDS. Baba: "if I need to wait 30 seconds
+    # between two reads, no problem — just write, please wait, Hume AI is
+    # drinking coffee." Measured in his own brief: 3s is refused, 12s
+    # holds. So the button is disabled and says how long, rather than
+    # firing into a 429 and blaming the person.
+    _left = VR.wait_left(st.session_state.get("_vr_last_at"), time.time())
+    _has = bool((st.session_state.get("vr_text") or "").strip())
+
+    def _vr_go():
+        raw = (st.session_state.get("vr_text") or "").strip()
+        if not raw:
+            st.session_state["_vr_error"] = t("vr_nothing")
+            return
+        if VR.wait_left(st.session_state.get("_vr_last_at"), time.time()):
+            return          # the button was disabled; belt and braces
+        picked = [e for e in VR.EMOTION_IDS
+                  if st.session_state.get("vre_%s" % e)]
+        direction = VR.build_direction(picked, st.session_state.get("vr_note", ""))
+        ring = get_ring("hume")
+        # STAMPED BEFORE THE CALL, not after. A call that takes 20
+        # seconds and is stamped afterwards lets the next press come 12
+        # seconds after it FINISHED, which is 32 seconds of real spacing
+        # — slower than asked. Stamping first paces the REQUESTS.
+        st.session_state["_vr_last_at"] = time.time()
+        got, err = hume_speak(ring, raw, st.session_state.get(
+            "vr_voice", VR.DEFAULT_VOICE), direction)
+        save_rings()
+        if err:
+            st.session_state["_vr_error"] = err
+            return
+        audio, secs = got
+        st.session_state["_vr_audio"] = audio
+        st.session_state["_vr_autoplay"] = True
+        st.session_state["_vr_said"] = VR.summarise(picked)
+        USAGE.log("read", len(raw), UNIT_CHARS, "hume")
+
+    with st.container(key="nact_vr"):
+        st.button(t("vr_coffee") % _left if _left else t("vr_speak"),
+                  key="nact_vr_go", disabled=bool(_left) or not _has,
+                  on_click=_vr_go)
+
+    tab_signature(t("sig_vr"))
 
 
 elif active == "looks":

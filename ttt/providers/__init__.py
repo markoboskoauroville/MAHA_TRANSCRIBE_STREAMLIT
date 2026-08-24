@@ -14,6 +14,7 @@ from .anthropic import Anthropic
 from .assemblyai import AssemblyAI
 from .edge import Edge
 from .groq import Groq
+from .hume import Hume
 from .speechify import Speechify
 
 REGISTRY = {
@@ -21,6 +22,7 @@ REGISTRY = {
     Speechify.id: Speechify(),
     AssemblyAI.id: AssemblyAI(),
     Groq.id: Groq(),            # keys injected at startup by the entrypoint
+    Hume.id: Hume(),            # VR's voice — paced, see ttt/vr.py
     Anthropic.id: Anthropic(),
 }
 
