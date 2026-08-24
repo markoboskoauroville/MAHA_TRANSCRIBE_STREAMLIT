@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v182 (VR — virtual rehearsal, 24 voices and 18 emotions)"
+APP_VERSION = "v183 (Hume pairs, sheet-backed keys, 21-account fallback)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -360,6 +360,10 @@ STRINGS = {
                            "hr": "Nema Hume ključa — vlasnik ga dodaje u postavkama."},
     "vr_empty":           {"en": "Hume answered with no audio.",
                            "hr": "Hume nije vratio zvuk."},
+    "vr_all_dead":        {"en": "No Hume account is usable — check the keys in Settings.",
+                           "hr": "Nijedan Hume račun nije upotrebljiv — provjeri ključeve."},
+    "vr_ready_n":         {"en": "%d of %d accounts ready",
+                           "hr": "%d od %d računa spremno"},
     "vr_all_busy":        {"en": "Every Hume key is busy right now.",
                            "hr": "Svi Hume ključevi su trenutno zauzeti."},
     "vr_coffee":          {"en": "Hume AI is drinking coffee ☕ — %d seconds",
@@ -3453,6 +3457,65 @@ def sp_call(key: str, path: str, payload=None, method: str = "GET", timeout: int
 HUME_UA = "TTT-LLL/1.0 (+https://ttt-lll.streamlit.app)"
 
 
+def hume_keys_from_sheet() -> int:
+    """Pull Hume accounts out of the sheet into this session's ring, ONCE.
+
+    Baba: "it stores the API keys in Google Sheet, and they are fetched
+    at the time of app starting and stored temporarily in the Streamlit
+    Cloud account."
+
+    So: the sheet is the store, the session is the cache, and nothing is
+    written to disk. A key already in the ring is never duplicated — the
+    ring is matched on the key itself, so importing by file and pulling
+    from the sheet cannot produce two entries that share one rate limit.
+
+    Silent on failure and cheap to call: no sheet, no keys, no error in
+    front of anybody. VR then says it has no key, which is true.
+    """
+    if st.session_state.get("_hume_pulled"):
+        return 0
+    st.session_state["_hume_pulled"] = True
+    try:
+        url, token = _sheet_pair()
+        if not url or not token:
+            return 0
+        rows = SHEET.get_keys(url, token, "hume")
+        if not rows:
+            return 0
+        ring = get_ring("hume")
+        have = {k.get("key") for k in ring.setdefault("keys", [])}
+        added = 0
+        for r in rows:
+            key = str(r.get("key") or "").strip()
+            if not key or key in have:
+                continue
+            ring["keys"].append({
+                "key": key, "secret": str(r.get("secret") or ""),
+                "fp": kr.fingerprint(key), "state": "new",
+                "label": str(r.get("label") or "hume account"),
+                "last_error": "", "calls": 0, "chars": 0,
+                "cool_until": 0, "added": int(time.time()), "last_used": 0.0,
+            })
+            have.add(key)
+            added += 1
+        if added:
+            save_rings()
+        return added
+    except Exception:
+        return 0
+
+
+def hume_keys_to_sheet() -> bool:
+    """Push the ring back to the sheet after an import, so the next
+    restart finds them. Best effort: a failure costs persistence, never
+    the keys already in this session."""
+    try:
+        url, token = _sheet_pair()
+        return SHEET.put_keys(url, token, "hume", get_ring("hume")["keys"])
+    except Exception:
+        return False
+
+
 def hume_error_kind(status: int) -> str:
     if status in (401, 402):
         # 401 rejected, 402 out of credit — rotating to another key is
@@ -3531,13 +3594,25 @@ def hume_speak(ring: dict, text: str, voice_name: str, direction: str):
                                "voice": {"name": voice_name,
                                          "provider": "HUME_AI"}}],
                "format": {"type": "wav"}, "num_generations": 1}
-    idx = ring.get("active", 0) % n
+    # THE RESTED KEY, NOT THE NEXT ONE. Hume limits per minute per
+    # ACCOUNT, so with 21 accounts the app rotates to whichever has
+    # rested rather than asking anybody to wait. Measured against the
+    # real pacing: 20 rehearsals cost 171s of waiting on one account and
+    # 0s on twenty-one.
+    start, _wait = VR.pick_rested(keys, time.time())
+    if start is None:
+        return None, t("vr_all_dead")
+    idx = start
     last = ""
     for _ in range(n):
         i = ring_pick(ring, idx)
         if i is None:
             break
         k = keys[i]
+        # STAMPED BEFORE THE CALL. A key is spent the moment the request
+        # leaves, not when it returns; stamping after would let a slow
+        # call make the next use of this key look further away than it is.
+        k["last_used"] = time.time()
         data, err, kind = hume_call(k["key"], payload)
         if not err:
             k["state"] = "ok"
@@ -7807,6 +7882,10 @@ elif active == "vr":
     # invented its own arrangement would be a fourth thing to learn.
     st.session_state.setdefault("vr_voice", VR.DEFAULT_VOICE)
     st.session_state.setdefault("vr_text", "")
+    # THE KEYS COME FROM THE SHEET, once per session. Done here rather
+    # than at module top so a person who never opens VR never pays for
+    # the fetch, and so a slow sheet cannot delay the login screen.
+    hume_keys_from_sheet()
 
     _vr_audio = st.session_state.get("_vr_audio")
     if _wave_component is not None:
@@ -7881,7 +7960,13 @@ elif active == "vr":
     # drinking coffee." Measured in his own brief: 3s is refused, 12s
     # holds. So the button is disabled and says how long, rather than
     # firing into a 429 and blaming the person.
-    _left = VR.wait_left(st.session_state.get("_vr_last_at"), time.time())
+    # HOW LONG, ASKED OF THE WHOLE RING. With one account this is the
+    # familiar 12-second wait; with 21 it is almost always 0, and the
+    # coffee message simply never appears.
+    _vr_ring = get_ring("hume")
+    _vr_i, _left = VR.pick_rested(_vr_ring["keys"], time.time())
+    if _vr_i is None:
+        _left = 0               # no usable key: that is an error, not a wait
     _has = bool((st.session_state.get("vr_text") or "").strip())
 
     def _vr_go():
@@ -7889,17 +7974,13 @@ elif active == "vr":
         if not raw:
             st.session_state["_vr_error"] = t("vr_nothing")
             return
-        if VR.wait_left(st.session_state.get("_vr_last_at"), time.time()):
+        ring = get_ring("hume")
+        _i, _w = VR.pick_rested(ring["keys"], time.time())
+        if _i is not None and _w:
             return          # the button was disabled; belt and braces
         picked = [e for e in VR.EMOTION_IDS
                   if st.session_state.get("vre_%s" % e)]
         direction = VR.build_direction(picked, st.session_state.get("vr_note", ""))
-        ring = get_ring("hume")
-        # STAMPED BEFORE THE CALL, not after. A call that takes 20
-        # seconds and is stamped afterwards lets the next press come 12
-        # seconds after it FINISHED, which is 32 seconds of real spacing
-        # — slower than asked. Stamping first paces the REQUESTS.
-        st.session_state["_vr_last_at"] = time.time()
         got, err = hume_speak(ring, raw, st.session_state.get(
             "vr_voice", VR.DEFAULT_VOICE), direction)
         save_rings()
@@ -8269,9 +8350,21 @@ elif active == "settings":
                     if f is not None:
                         raw += f.getvalue().decode("utf-8", "replace")
                     raw += " " + (st.session_state.get(f"{pid}_key_paste") or "")
-                    added = kr.import_keys(get_ring(pid), raw,
-                                           prefixes=pr.key_prefixes)
+                    # HUME COMES IN PAIRS. Its two tokens carry no
+                    # prefix, so the generic importer would take 21
+                    # accounts as 42 keys — half of them secrets that
+                    # authenticate nothing, in a ring where every second
+                    # key fails for no visible reason.
+                    if pid == "hume":
+                        added = kr.import_pairs(get_ring(pid), raw)
+                    else:
+                        added = kr.import_keys(get_ring(pid), raw,
+                                               prefixes=pr.key_prefixes)
                     save_rings()
+                    if pid == "hume" and added:
+                        # STRAIGHT TO THE SHEET, so the next redeploy
+                        # does not ask for 21 accounts again.
+                        st.session_state["_hume_saved"] = hume_keys_to_sheet()
                     st.session_state["_key_msg"] = (
                         f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
 

@@ -136,11 +136,14 @@ ck("30 the button is DISABLED while the wait runs, rather than firing "
 ck("31 and it SAYS the wait in seconds — Baba: 'just write, please "
    "wait, Hume AI is drinking coffee'",
    'vr_coffee' in SRC and '%d seconds' in SRC)
-ck("32 THE STAMP IS TAKEN BEFORE THE CALL, not after: a 20-second call "
-   "stamped afterwards would space the next press 32 seconds out, "
-   "which is slower than asked",
-   SRC.index('st.session_state["_vr_last_at"] = time.time()')
-   < SRC.index("got, err = hume_speak("))
+# The global stamp this once guarded is gone: pacing is now PER KEY, so
+# the same rule applies to the key's own stamp inside hume_speak.
+_hs = SRC[SRC.index("def hume_speak("):]
+_hs = _hs[:_hs.index("\ndef ", 1)]
+ck("32 A KEY IS STAMPED BEFORE ITS CALL, not after: a key is spent the "
+   "moment the request leaves, and stamping on return would make a "
+   "slow call look like a longer rest than it was",
+   _hs.index('k["last_used"] = time.time()') < _hs.index("data, err, kind ="))
 ck("33 a 429 rests a Hume key for ONE minute, not two — its window is "
    "per minute, and parking it longer idles a working key",
    'k["cool_until"] = time.time() + 60' in SRC)
@@ -172,6 +175,100 @@ ck("38 403 IS NOT TREATED AS A DEAD KEY — Cloudflare says 403 too, and "
    'if status in (401, 402):' in SRC
    and 'return "soft"' in SRC[SRC.index("def hume_error_kind"):
                               SRC.index("def hume_error_message")])
+
+# --- MANY ACCOUNTS, SO NOBODY WAITS ----------------------------------
+def K(last_used=0.0, state="new", cool=0):
+    return {"key": "k", "last_used": last_used, "state": state,
+            "cool_until": cool}
+
+
+ck("39 a fresh key is ready at once",
+   VR.pick_rested([K()], 1000) == (0, 0))
+ck("40 THE RESTED KEY IS CHOSEN, not merely the next one — Hume limits "
+   "per minute PER ACCOUNT, so rotating is what turns 21 accounts into "
+   "21x the throughput instead of no gain at all",
+   VR.pick_rested([K(1000), K(0)], 1000) == (1, 0))
+# Key 0 was used at 1000 and key 1 at 1004; at 1006 neither has rested
+# 12s, and the one used EARLIER comes free first. My first version of
+# this check had that backwards — the code was right.
+ck("41 when none has rested, it reports the SOONEST and a true number "
+   "of seconds — the key used earliest is free first",
+   VR.pick_rested([K(1000), K(1004)], 1006) == (0, 6),
+   VR.pick_rested([K(1000), K(1004)], 1006))
+ck("42 A DEAD KEY IS SKIPPED ENTIRELY, never waited for",
+   VR.pick_rested([K(0, "dead"), K(0)], 1000) == (1, 0))
+ck("43 all dead is not a wait, it is an error the tab must name",
+   VR.pick_rested([K(0, "dead")], 1000) == (None, 0))
+ck("44 a key parked by a 429 is respected until its cool_until passes",
+   VR.pick_rested([K(0, "cool", 1030), K(1000)], 1000)[1] > 0)
+ck("45 and once it has passed, it is usable again",
+   VR.pick_rested([K(0, "cool", 999)], 1000) == (0, 0))
+ck("46 usable_count ignores dead keys",
+   VR.usable_count([K(), K(0, "dead"), K()]) == 2)
+
+
+# The claim that this is worth doing at all, measured rather than
+# asserted: 20 rehearsals three seconds apart.
+def _sim(nkeys):
+    keys = [K() for _ in range(nkeys)]
+    now, waited = 1000.0, 0
+    for _ in range(20):
+        i, w = VR.pick_rested(keys, now)
+        if w:
+            waited += w
+            now += w
+            i, w = VR.pick_rested(keys, now)
+        keys[i]["last_used"] = now
+        now += 3.0
+    return waited
+
+
+_one, _many = _sim(1), _sim(21)
+ck("47 ONE ACCOUNT MAKES A PERSON WAIT MINUTES over 20 rehearsals",
+   _one > 120, _one)
+ck("48 TWENTY-ONE ACCOUNTS MAKE THEM WAIT NOTHING — this is the whole "
+   "reason the pace is per key and not one global stamp",
+   _many == 0, _many)
+
+# --- PAIRS -----------------------------------------------------------
+from ttt import keyring as _kr                                # noqa: E402
+_sample = ("my.account\nAPI key\n" + "A" * 48 +
+           "\nSecret key\n" + "B" * 64 + "\n"
+           "other.account\nAPI key\n" + "C" * 48 +
+           "\nSecret key\n" + "D" * 64 + "\n")
+_r = _kr.new_ring()
+_n = _kr.import_pairs(_r, _sample)
+ck("49 TWO ACCOUNTS IMPORT AS TWO KEYS, NOT FOUR — neither Hume token "
+   "carries a prefix, so the generic importer would take the secrets "
+   "as keys and build a ring where every second key fails",
+   _n == 2 and len(_r["keys"]) == 2, (_n, len(_r["keys"])))
+ck("50 each keeps its secret, because Hume's account auth needs both",
+   all(k.get("secret") for k in _r["keys"]))
+ck("51 and its account name, so a dead key can be found in the "
+   "dashboard by a human",
+   [k["label"] for k in _r["keys"]] == ["my.account", "other.account"],
+   [k["label"] for k in _r["keys"]])
+ck("52 the api key is what is stored as the key, never the secret",
+   _r["keys"][0]["key"].startswith("A"))
+ck("53 re-importing the same file adds nothing",
+   _kr.import_pairs(_r, _sample) == 0)
+ck("54 every imported key starts unused, so none is falsely resting",
+   all(k.get("last_used") == 0.0 for k in _r["keys"]))
+ck("55 the admin panel uses the PAIR importer for hume and the plain "
+   "one for everyone else",
+   'if pid == "hume":' in SRC and "kr.import_pairs(get_ring(pid), raw)" in SRC)
+
+# --- THE SHEET -------------------------------------------------------
+ck("56 keys are pulled from the sheet ONCE per session",
+   '_hume_pulled' in SRC)
+ck("57 a key already in the ring is never duplicated by the pull — two "
+   "entries for one account would rotate through a shared rate limit "
+   "believing they were two",
+   "if not key or key in have:" in SRC)
+ck("58 an unreachable sheet costs keys, never an error in somebody's "
+   "face", "    except Exception:\n        return 0" in SRC)
+ck("59 an import is pushed back to the sheet, so a redeploy does not "
+   "ask for 21 accounts again", "hume_keys_to_sheet()" in SRC)
 
 print("\n%d ok, %d failed" % (passed, failed))
 

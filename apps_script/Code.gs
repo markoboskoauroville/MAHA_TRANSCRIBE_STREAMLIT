@@ -203,6 +203,8 @@ function doPost(e) {
     if (body.what === 'login')      return json(login_(body));
     if (body.what === 'users')      return json({ ok: true, users: listUsers_() });
     if (body.what === 'user_engine') return json(setUserEngine_(body));
+    if (body.what === 'keys_put')   return json(keysPut_(body));
+    if (body.what === 'keys_get')   return json(keysGet_(body));
     if (body.what === 'eta_put')    return json(etaPut_(body));
     if (body.what === 'eta_get')    return json(etaGet_(body));
     if (body.what === 'audio_list') {
@@ -1135,4 +1137,68 @@ function etaGet_(b) {
                ratio:   Number(rows[i][3]) });
   }
   return { ok: true, what: 'eta_get', samples: out };
+}
+
+
+// ---------------------------------------------------------------------
+// PROVIDER KEYS IN THE SHEET.
+//
+// WHY: Streamlit Cloud wipes its disk on every redeploy, so keys
+// imported through the admin file picker vanish the next time the app
+// restarts and Baba has to import 21 accounts again. The sheet is the
+// one store that survives, and it is already the app's private back
+// office.
+//
+// THIS TAB IS AS SENSITIVE AS THE SHEET ITSELF. Anyone who can open the
+// spreadsheet can read these, exactly as they can read k_groq and the
+// other key tabs that already live here. That is the existing trust
+// boundary, not a new one — but it IS the boundary, and the tab is
+// created hidden so it is not the first thing a shared screen shows.
+// ---------------------------------------------------------------------
+
+function keysSheet_(provider) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var name = 'k_' + String(provider || '').replace(/[^a-z0-9_]/gi, '');
+  var s = ss.getSheetByName(name);
+  if (!s) {
+    s = ss.insertSheet(name);
+    s.appendRow(['key', 'secret', 'label']);
+    s.getRange(1, 1, 1, 3).setFontWeight('bold');
+    s.setFrozenRows(1);
+    s.hideSheet();
+  }
+  return s;
+}
+
+function keysPut_(b) {
+  var rows = b.keys;
+  if (!Array.isArray(rows)) return { ok: false, error: 'keys must be a list' };
+  var s = keysSheet_(b.provider);
+  // REPLACE, NOT APPEND. The app sends the whole ring, so appending
+  // would double every key on the second save and the ring would then
+  // rotate through duplicates that share a rate limit.
+  var n = s.getLastRow() - 1;
+  if (n > 0) s.deleteRows(2, n);
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i] || {};
+    if (!r.key) continue;
+    out.push([String(r.key), String(r.secret || ''), String(r.label || '')]);
+  }
+  if (out.length) s.getRange(2, 1, out.length, 3).setValues(out);
+  return { ok: true, what: 'keys_put', stored: out.length };
+}
+
+function keysGet_(b) {
+  var s = keysSheet_(b.provider);
+  var n = s.getLastRow() - 1;
+  if (n < 1) return { ok: true, what: 'keys_get', keys: [] };
+  var rows = s.getRange(2, 1, n, 3).getValues();
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i][0]) continue;
+    out.push({ key: String(rows[i][0]), secret: String(rows[i][1] || ''),
+               label: String(rows[i][2] || '') });
+  }
+  return { ok: true, what: 'keys_get', keys: out };
 }

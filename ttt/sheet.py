@@ -256,3 +256,37 @@ def get_timings(url: str, token: str, engine: str = "", limit: int = 40):
         return []
     got = out.get("samples")
     return got if isinstance(got, list) else []
+
+
+# ---------------------------------------------------------------------
+# PROVIDER KEYS. Streamlit Cloud wipes its disk on redeploy; the sheet
+# does not. So keys imported once through the admin file picker survive
+# a restart instead of needing 21 accounts re-imported by hand.
+# ---------------------------------------------------------------------
+
+def put_keys(url: str, token: str, provider: str, keys) -> bool:
+    """Store a provider's whole ring. True only when the deployed script
+    named keys_put back — an older deployment answers ok to a request it
+    did not understand, which would silently lose every key."""
+    if not url or not token:
+        return False
+    rows = [{"key": k.get("key", ""), "secret": k.get("secret", ""),
+             "label": k.get("label", "")}
+            for k in (keys or []) if k.get("key")]
+    out = _post(url, token, {"what": "keys_put", "provider": provider,
+                             "keys": rows}, timeout=30)
+    return bool(out) and out.get("what") == "keys_put"
+
+
+def get_keys(url: str, token: str, provider: str):
+    """A provider's stored keys, or [] on any failure — the caller must
+    never have to tell 'none stored' from 'sheet unreachable', because
+    both mean the same thing to it: carry on with what is in memory."""
+    if not url or not token:
+        return []
+    out = _post(url, token, {"what": "keys_get", "provider": provider},
+                timeout=30)
+    if not out or out.get("what") != "keys_get":
+        return []
+    got = out.get("keys")
+    return got if isinstance(got, list) else []

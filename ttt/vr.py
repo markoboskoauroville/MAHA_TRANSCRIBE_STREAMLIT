@@ -193,3 +193,52 @@ def wait_left(last_at, now, pace: int = PACE_SECONDS) -> int:
 
 def ready(last_at, now, pace: int = PACE_SECONDS) -> bool:
     return wait_left(last_at, now, pace) == 0
+
+
+# ---------------------------------------------------------------------
+# MANY ACCOUNTS, SO NOBODY WAITS. Baba supplied 21 Hume accounts, all 21
+# verified working on 24.8.2026.
+#
+# THE INSIGHT THAT MAKES THIS ENTERPRISE-GRADE RATHER THAN MERELY
+# CORRECT: Hume's limit is per MINUTE and per ACCOUNT. One account means
+# one call every 12 seconds. Twenty-one accounts, each rested in turn,
+# means twenty-one calls in the time one account would take — and in
+# practice nobody ever sees the coffee message, because by the time the
+# rotation comes back round to a key, its minute has long passed.
+#
+# So the pace is PER KEY, not global. A global stamp would have made 21
+# working accounts no faster than 1, which is the whole point missed.
+# ---------------------------------------------------------------------
+
+def pick_rested(keys, now, pace: int = PACE_SECONDS):
+    """(index, wait) — the best key to use right now.
+
+    Returns the first key that has rested long enough, with wait 0. If
+    none has, returns the one that will be ready SOONEST and how many
+    seconds that is, so the caller can say a true number rather than a
+    round guess.
+
+    Skips dead keys entirely and resting ones until their cool_until has
+    passed — a key parked by a 429 is not merely unrested, it has been
+    told to stop.
+    """
+    best_i, best_wait = None, None
+    for i, k in enumerate(keys or ()):
+        if (k.get("state") or "") == "dead":
+            continue
+        cool = float(k.get("cool_until") or 0)
+        if cool and cool > now:
+            wait = int(cool - now) + 1
+        else:
+            wait = wait_left(k.get("last_used"), now, pace)
+        if wait == 0:
+            return i, 0
+        if best_wait is None or wait < best_wait:
+            best_i, best_wait = i, wait
+    if best_i is None:
+        return None, 0          # nothing usable at all — not a wait
+    return best_i, best_wait
+
+
+def usable_count(keys) -> int:
+    return sum(1 for k in (keys or ()) if (k.get("state") or "") != "dead")

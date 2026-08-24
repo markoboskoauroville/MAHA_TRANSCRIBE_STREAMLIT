@@ -135,6 +135,62 @@ def import_keys(ring: dict, raw: str, prefixes=(), min_len: int = 16,
     return added
 
 
+def import_pairs(ring: dict, raw: str) -> int:
+    """Import Hume-style ACCOUNT PAIRS, where a credential is two tokens.
+
+    Hume's dashboard exports:
+
+        <account name>
+        API key
+        <api key>
+        Secret key
+        <secret key>
+
+    WHY import_keys CANNOT DO THIS. Neither token carries a prefix, so
+    both are just long alphanumeric runs — the generic pass would import
+    21 accounts as 42 keys, half of them secrets that authenticate
+    nothing. The person would then watch a ring of 42 where every second
+    key fails, with no way to tell which half was real.
+
+    So the LABELS are read rather than the shapes, exactly as the Key
+    Tester's KeyParser does it: the words "API key" and "Secret key"
+    announce what follows, and the line above the pair is the account
+    name. Same convention, same repo family, one thing to learn.
+    """
+    lines = [l.strip() for l in (raw or "").replace("\r\n", "\n").split("\n")]
+    have = {k.get("key") for k in ring.setdefault("keys", [])}
+    added = 0
+    label = ""
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.lower() == "api key" and i + 1 < len(lines):
+            api = lines[i + 1]
+            secret = ""
+            if i + 3 < len(lines) and lines[i + 2].lower() == "secret key":
+                secret = lines[i + 3]
+            if api and api not in have:
+                ring["keys"].append({
+                    "key": api, "secret": secret, "fp": fingerprint(api),
+                    "state": "new", "label": label or "hume account",
+                    "last_error": "", "calls": 0, "chars": 0,
+                    "cool_until": 0, "added": int(time.time()),
+                    # PER-KEY PACING lives here, not in one global stamp.
+                    # See ttt/vr.py: with many accounts the app rotates
+                    # instead of asking anybody to wait.
+                    "last_used": 0.0,
+                })
+                have.add(api)
+                added += 1
+            label = ""
+            i += 4 if secret else 2
+            continue
+        if line and line.lower() not in ("api key", "secret key"):
+            label = line
+        i += 1
+    return added
+
+
 def mark_dead(ring: dict, idx: int, err: str) -> None:
     k = ring["keys"][idx]
     k["state"] = "dead"
