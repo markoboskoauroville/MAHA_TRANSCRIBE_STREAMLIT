@@ -11,17 +11,21 @@ from .base import Model, Provider, Voice, http_json, classify_standard
 
 API = "https://api.speechify.ai"
 
-# The curated simba-3.2 set. Four seats are shown at a time, two women and
-# two men, which is what MA Reader settled on as the whole picker.
+# The seats, per language — Baba's list, 24.8.2026. English is four
+# British voices on simba-3.2. Croatian: no hr-HR exists on any model
+# (all 988 catalogue voices walked live, 24.8.2026), so Croatian is read
+# the Slavic way on simba-multilingual, Lesya first. beatrice_32 sits in
+# BOTH sets with DIFFERENT models — the model belongs to the seat, which
+# is why voices(lang) must be answered per language and never flattened.
 CURATED = [
     Voice("beatrice_32", "Beatrice", "en", "F", "simba-3.2"),
     Voice("imogen_32",   "Imogen",   "en", "F", "simba-3.2"),
-    Voice("geffen_32",   "Geffen",   "en", "M", "simba-3.2"),
-    Voice("dominic_32",  "Dominic",  "en", "M", "simba-3.2"),
-    Voice("harper_32",   "Harper",   "en", "F", "simba-3.2"),
     Voice("edmund_32",   "Edmund",   "en", "M", "simba-3.2"),
     Voice("hugh_32",     "Hugh",     "en", "M", "simba-3.2"),
-    Voice("wyatt_32",    "Wyatt",    "en", "M", "simba-3.2"),
+    Voice("lesya",       "Lesya",    "hr", "F", "simba-multilingual"),
+    Voice("beatrice_32", "Beatrice", "hr", "F", "simba-multilingual"),
+    Voice("dominika",    "Dominika", "hr", "F", "simba-multilingual"),
+    Voice("daria",       "Daria",    "hr", "F", "simba-multilingual"),
 ]
 
 

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v175 (a) (quick settings, two keyrings, and the pills read after)"
+APP_VERSION = "v176 (speechify voices per language — the Slavic four for Croatian)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1973,9 +1973,15 @@ DEFAULT_SETTINGS = {"ui_lang": "en", "engine": EN.DEFAULT,
                     "rec_source": "mic",
                     "speech_lang": "hr", "voice": "Gabrijela",
                     "voice_engine": "edge", "sp_voice": "beatrice_32",
+                    # UPGRADE, v175 -> v176: stored settings from before the
+                    # per-language sets carry sp_voice but no sp_model. Every
+                    # pick that COULD have been stored then was a _32 voice,
+                    # and simba-3.2 is right for all of them — so this
+                    # default is the correct model for every old pick.
+                    "sp_model": "simba-3.2",
                     "transcribe_engine": "groq", "text_scale": a11y.DEFAULT_SCALE}
 SETTINGS_KEYS = ("ui_lang", "engine", "rec_source",
-                 "speech_lang", "voice", "voice_engine", "sp_voice",
+                 "speech_lang", "voice", "voice_engine", "sp_voice", "sp_model",
                  "transcribe_engine",
                  "route_stt", "route_tts", "route_llm", "text_scale",
                  "scheme", "font_family", "append_mode",
@@ -3191,8 +3197,47 @@ def save_rings() -> None:
 
 # ---------- Speechify ----------
 SPEECHIFY_PREFIXES = ("sk_", "sws_", "sa_", "spk_")
-SP_CURATED = ["beatrice_32", "dominic_32", "edmund_32", "geffen_32",
-              "harper_32", "hugh_32", "imogen_32", "wyatt_32"]
+# THE SPEECHIFY SEATS, PER LANGUAGE — Baba's own list, 24.8.2026.
+# English: four British voices on simba-3.2, the curated set.
+# Croatian: Speechify has no hr-HR on any model (all 988 catalogue voices
+# walked live, 24.8.2026), so Croatian is read the Slavic way — Ukrainian,
+# Polish and Russian voices on simba-multilingual, Lesya first.
+#
+# THE MODEL SITS BESIDE THE VOICE, PER ROW, NEVER GLOBALLY. beatrice_32
+# appears in BOTH rows and needs simba-3.2 for English but
+# simba-multilingual for Croatian — the _32 suffix rule cannot know that,
+# which is why each seat carries its model. All eight seats verified
+# against the live API: ids found in the catalogue, one real synth per
+# model path, billed character counts matching sent counts exactly.
+SP_VOICES_BY_LANG = {
+    "hr": [("lesya",       "Lesya",    "simba-multilingual"),
+           ("beatrice_32", "Beatrice", "simba-multilingual"),
+           ("dominika",    "Dominika", "simba-multilingual"),
+           ("daria",       "Daria",    "simba-multilingual")],
+    "en": [("beatrice_32", "Beatrice", "simba-3.2"),
+           ("imogen_32",   "Imogen",   "simba-3.2"),
+           ("edmund_32",   "Edmund",   "simba-3.2"),
+           ("hugh_32",     "Hugh",     "simba-3.2")],
+}
+
+# What a finger held on the name learns — Baba's own descriptions.
+SP_VOICE_HELP = {
+    ("hr", "lesya"):       "Lesya — Ukrainian female, Slavic sounds",
+    ("hr", "beatrice_32"): "Beatrice — British female, warm, speaks Slavic",
+    ("hr", "dominika"):    "Dominika — Polish female",
+    ("hr", "daria"):       "Daria — Russian female",
+    ("en", "beatrice_32"): "Beatrice — British female, warm",
+    ("en", "imogen_32"):   "Imogen — British female",
+    ("en", "edmund_32"):   "Edmund — British male",
+    ("en", "hugh_32"):     "Hugh — British male",
+}
+
+def sp_default_voice(lang: str):
+    """(voice_id, model) of a language's first seat — Lesya for Croatian,
+    Beatrice for English, English if the language has no seats."""
+    rows = SP_VOICES_BY_LANG.get(lang) or SP_VOICES_BY_LANG["en"]
+    return rows[0][0], rows[0][2]
+
 
 
 def sp_error_kind(status: int) -> str:
@@ -3665,8 +3710,12 @@ def pick_voice(name: str):
     persist_settings()
 
 
-def pick_sp_voice(voice_id: str):
+def pick_sp_voice(voice_id: str, model: str = None):
+    # THE MODEL TRAVELS WITH THE PICK. beatrice_32 exists in both language
+    # rows with different models, so the id alone is ambiguous; whoever
+    # renders the button knows which row it sat in and says so here.
     st.session_state["sp_voice"] = voice_id
+    st.session_state["sp_model"] = model or sp_model_for(voice_id)
     persist_settings()
 
 
@@ -3813,9 +3862,21 @@ def read_this():
     the language just transcribed, and start reading — no popup, no extra tap."""
     st.session_state["talk_text"] = t1_text()
     lang = st.session_state.get("last_lang", "hr")
-    current = st.session_state.get("voice", "Gabrijela")
-    if VOICE_LANG.get(current) != lang:
-        st.session_state["voice"] = VOICES_BY_LANG[lang][0]
+    if str(st.session_state.get("voice_engine") or "edge") == "speechify":
+        # The same courtesy Speechify's picker gets as Edge's: Croatian
+        # text arrives with a Slavic voice ready, English with a British
+        # one. A pick already in the right language row is kept.
+        rows = SP_VOICES_BY_LANG.get(lang) or ()
+        cur = (st.session_state.get("sp_voice"),
+               st.session_state.get("sp_model"))
+        if rows and not any((vid, model) == cur for vid, _l, model in rows):
+            vid, model = sp_default_voice(lang)
+            st.session_state["sp_voice"] = vid
+            st.session_state["sp_model"] = model
+    else:
+        current = st.session_state.get("voice", "Gabrijela")
+        if VOICE_LANG.get(current) != lang:
+            st.session_state["voice"] = VOICES_BY_LANG[lang][0]
     st.session_state["active_tab"] = "talk"
     st.session_state["_auto_read"] = True
 
@@ -4196,9 +4257,11 @@ def _voice_row_synth_only(engine, sp_ring_talk):
     """
     if engine == "speechify":
         current_sp = st.session_state.get("sp_voice", "beatrice_32")
+        current_model = (st.session_state.get("sp_model")
+                         or sp_model_for(current_sp))
 
         def synth_fn(text):
-            return sp_synthesize(sp_ring_talk, text, current_sp)
+            return sp_synthesize(sp_ring_talk, text, current_sp, current_model)
         return synth_fn
 
     vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
@@ -4216,19 +4279,36 @@ def _voice_row(engine, sp_ring_talk):
     it could not be changed.
     """
     if engine == "speechify":
+        # THE SAME SHAPE AS THE EDGE PICKER: a language tag, then its
+        # voices, HR first — one visual language across engines, the tags
+        # saying the same words the pills in T say. One row per language
+        # because eight names and two tags will not fit one line on a
+        # 390px phone, and a wrapped row reads as a broken one.
         current_sp = st.session_state.get("sp_voice", "beatrice_32")
-        quick = list(SP_CURATED)
-        if current_sp not in quick:
-            quick.insert(0, current_sp)
-        cols = st.columns(4)
-        for i, vid in enumerate(quick[:8]):
-            cols[i % 4].button(
-                vid.split("_")[0].replace("-", " ").title(), key=f"talksp_{vid}",
-                type="primary" if vid == current_sp else "secondary",
-                on_click=lambda v=vid: (pick_sp_voice(v), _revoice()))
+        current_model = (st.session_state.get("sp_model")
+                         or sp_model_for(current_sp))
+        for lang, rows in SP_VOICES_BY_LANG.items():
+            # The container key contains "voicerow" so the one-line CSS in
+            # theme.py applies to these rows exactly as it does to Edge's.
+            with st.container(key=f"voicerowsp_{lang}"):
+                cols = st.columns([0.55] + [1.0] * len(rows))
+                cols[0].markdown('<div class="vtag">%s</div>'
+                                 % html.escape(t("lang_" + lang)),
+                                 unsafe_allow_html=True)
+                for col, (vid, label, model) in zip(cols[1:], rows):
+                    # beatrice_32 sits in both rows, so "current" is the
+                    # (voice, model) pair — the id alone would light both.
+                    col.button(
+                        label, key=f"talksp_{lang}_{vid}",
+                        type=("primary" if (vid == current_sp
+                                            and model == current_model)
+                              else "secondary"),
+                        help=SP_VOICE_HELP.get((lang, vid), label),
+                        on_click=lambda v=vid, m=model: (
+                            pick_sp_voice(v, m), _revoice()))
 
         def synth_fn(text):
-            return sp_synthesize(sp_ring_talk, text, current_sp)
+            return sp_synthesize(sp_ring_talk, text, current_sp, current_model)
         return synth_fn
 
     voice_picker("talkvoice", on_pick=_revoice)
