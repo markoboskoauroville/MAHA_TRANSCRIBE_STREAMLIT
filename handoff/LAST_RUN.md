@@ -1,136 +1,123 @@
-# DELIVERY RECORD — TTT-LLL v183 — 24.8.2026
+# LAST RUN — TTT-LLL — 24.8.2026, evening
 
-Hume keys come in PAIRS, live in the SHEET, and fall back across 21
-accounts so nobody waits.
+Deployed and current: **v184**. Apps Script MAIN **deployed today**, same
+URL, `k_hume` and `eta` tabs exist. Tree clean, HEAD = origin/main.
 
-    VERSION    new: v183   previous: v182
-    TOUCHED    app.py, ttt/keyring.py, ttt/vr.py, ttt/sheet.py,
-               apps_script/Code.gs, tests/test_vr.py
+Read this file, then `docs/HOW_WE_WORK.md`. Per-version detail is in
+`handoff/DELIVERY_RECORD_v176..v183.md`.
 
-## ⚠️ THE APPS SCRIPT NEEDS A DEPLOY
+---
 
-`keys_put` and `keys_get` are new branches, alongside `eta_put`/`eta_get`
-from v177 which were never deployed either. Until then keys live only in
-the session and vanish on redeploy.
+## ⚠️ THERE IS A LIVE BUG. START HERE.
 
-    Deploy -> Manage deployments -> ✏️ -> Version: NEW VERSION
+**Transcription text does not reach the text box.** Baba records, the
+audio goes, no words come back. Reported 24.8.2026 against v182–v184.
 
-## WHAT THE KEY TESTER TAUGHT
+**DO NOT GUESS AT THIS.** Two diagnoses were made this session and both
+were wrong:
 
-Rather than invent a convention, the KEY_TESTER repo was read. Its
-KeyParser documents Hume exactly: the dashboard exports an account name,
-then "API key", then the key, then "Secret key", then the secret. Both
-tokens are plain alphanumeric with NO PREFIX. Its Providers.kt tests a
-pair with Basic base64(api:secret) against /oauth2-cc/token.
+1. "`stt` is undefined at line 7016, NameError." **FALSE.** `stt` is
+   bound at module level at line 6835, and line 6839 already uses
+   `stt.id`. A fix was written, tested, and reverted.
+2. "The five bad Speechify keys are in the `k_speechify` sheet tab."
+   **FALSE.** `persist_keys()` is browser-only by deliberate design —
+   see its comment. That tab is empty and correct.
 
-Both were adopted verbatim, so the two repos agree.
+Both cost Baba an evening. Read the transcribe path properly. The
+suspect set includes v177's additions to the deck path
+(`braille_line`, `eta_seconds`, `remember_timing`, `audio_seconds`)
+because they are new and sit in that exact flow — but VERIFY BY
+EXECUTION, not by reading and pattern-matching.
 
-## MEASURED WITH ALL 21 ACCOUNTS
+**Nothing in this repo tests the recorder path.** No test makes a real
+recording, which is why v177–v184 shipped through the gate with this
+live. Whatever the cause turns out to be, the fix is incomplete without
+a check that would have caught it.
 
-    pair auth (oauth2-cc)   21 of 21 returned an access token
-    api key alone (TTS)     21 of 21 returned 200
-    import                  21 accounts -> 21 keys, labels intact,
-                            re-import adds 0
-    REAL FALLBACK           a ring of 5 fabricated keys followed by 3
-                            real ones: walked all 5, marked each dead,
-                            produced audio from the 6th. 3 survivors
-                            still usable, none wrongly burned
+---
 
-## THE THING THAT MAKES THIS ENTERPRISE-GRADE
+## WHAT WAS BUILT THIS SESSION (v176 → v184)
 
-Hume limits per minute PER ACCOUNT. v182 paced globally at 12s, which
-meant 21 working accounts were exactly as slow as one. The pace is now
-PER KEY, and the ring hands out whichever account has rested.
+    v176  Speechify voices per language; the Slavic four for Croatian
+    v177  SPA pill, braille status line, ETA that learns (sheet-backed)
+    v178  Notes: select, delete, read into R
+    v179  Notes actions styled like the recordings actions
+    v180  Disabled controls readable again (1.45:1 -> 5.41:1, measured)
+    v181  TR cassette deck, polyglot — reads both boxes, female/male
+    v182  VR tab — Hume AI, 24 voices, 18 emotions, 12s pacing
+    v183  Hume pairs, sheet-backed keys, 21-account fallback
+    v184  Hume key handling aligned with MANTRA_MANIFEST/apis/hume.md
 
-Measured, 20 rehearsals three seconds apart:
+## RULES BABA LOCKED THIS SESSION — in docs/HOW_WE_WORK.md
 
-    1 account    171 seconds of waiting
-    3 accounts    18 seconds
-    21 accounts    0 seconds
+1. **Copy and clear, nailed to the wall.** Every text box has two action
+   links beneath it, always, greyed when unavailable, NEVER absent.
+   **WRITTEN BUT NOT IMPLEMENTED** — `box_links()` still returns early
+   on an empty box, which is the opposite of the rule. Five call sites.
+2. **Two languages, locked** — hr and en for transcription, reading in
+   T and R, and the interface. **TR is exempt**: "translation tab is
+   free, it's a free soul, he is multilingual polyglot." A language
+   joining the TR grid must bring BOTH an Edge voice, female and male.
+   Enforced by `tests/test_langs.py`.
 
-With 21 accounts the coffee message should never appear at all. It is
-still there, still true, and still the thing that shows if the ring ever
-runs dry.
+## OPEN WORK, in Baba's priority order
 
-## THE PAIR IMPORTER, AND THE BUG IT PREVENTS
+1. **The transcription bug** (above).
+2. **Key import.** Needs: a Replace / Add choice on import; a parser
+   that imports NOTHING when a provider declares prefixes and no token
+   matches; a way to DELETE a key; and imported keys persisting to the
+   sheet the way Hume's now do.
+   *Known fault:* five AssemblyAI 32-hex keys are in Baba's Speechify
+   ring, rejected 401, because `import_keys`' generic fallback grabs any
+   long alphanumeric token when no prefixed one is found.
+3. **Tiers replace engines.** Remove the Engine row from the admin panel
+   (`Edge / Groq` vs `Speechify / AssemblyAI / Claude`, and its `test`
+   button). People get two tiers only: **free — Edge/Whisper** and
+   **studio — all models**, labelled next to the radio buttons. No
+   per-engine switching for people.
+4. **Quick Settings labels are wrong.** Shows "transcribe: free" —
+   transcription is Whisper, not free. Talk: Edge is correct.
+5. **Test all keys**, with statistics, as `Key_Tester` does it — so keys
+   need not be tested one at a time. Read that repo; do not re-derive.
+6. **Interface size is missing its `default` link** (text size has one).
+7. **Free ↔ studio must refresh the session.** Today Baba must log out,
+   log in and reload before a tier change takes effect. Force it.
+8. **Long login.** Typing name and password then pressing login waits a
+   long time. Cause unknown, not investigated.
+9. **Engine in parentheses under the recorder** after the audio is
+   sent — the braille line was built for this in v177 and Baba reports
+   not seeing it. Related to item 1; check together.
+10. **Apps Script `eta_*` is deployed but unproven** — no timing row has
+    ever been written. First real transcription should produce one.
+11. **VR ships raw WAV** (~96 KB/second). Baba's own Hume brief says
+    convert to Opus, 31x smaller. ffmpeg is available.
 
-`import_keys` would have taken 21 accounts as 42 keys — neither token
-carries a prefix, so its generic pass grabs both. The ring would then
-have rotated through 21 secrets that authenticate nothing, failing every
-second call with no visible pattern. `import_pairs` reads the LABELS
-instead, exactly as Key Tester does.
+## SECRETS AND ACCOUNTS
 
-Mutated to prove it: made the importer also store secrets as keys, and
-check 49 went red with (4, 4) where 2 was correct.
+- All 21 Hume accounts verified working, both as pairs (oauth2-cc) and
+  as API keys. In the ring and in `k_hume`.
+- Baba pasted his full Streamlit secrets and 21 Hume pairs into a chat.
+  **He knows, and intends to rotate everything once development
+  settles.** `DRIVE_ROOT_ID` is not a secret and needs no rotation.
+- `APP_PASSWORDS` is the recovery door when the Google auth script is
+  unreachable. Baba is reducing it from three people's passwords to one
+  random owner key. He has TESTED that a recovery login gets admin
+  rights. Never remove the working door before the replacement is
+  proven.
 
-## GATES
+## THE GATE — §15 findings from eight runs, for MANTRA_MANIFEST
 
-    G1 PROVENANCE   pass    clean tree, v183 > v182, main
-    G2 SECRETS      pass    THREE scans, not one: prefixed shapes in the
-                            staged diff -> 0; BABA'S ACTUAL 21 keys and
-                            21 secrets searched for literally in the
-                            diff -> 0; every tracked file searched for a
-                            real key prefix -> none. Error bodies are
-                            still scrubbed of 32+ char runs before
-                            display
-    G3 ANALYSIS     pass    72 python files, pyflakes 0 findings;
-                            Code.gs parses clean as JS
-    G4 DEAD CODE    pass    import_pairs, pick_rested, usable_count,
-                            hume_keys_from_sheet, hume_keys_to_sheet,
-                            put_keys, get_keys — all referenced
-    G5 DEAD LOOPS   pass    pick_rested is a single bounded pass over
-                            the ring; sheet calls carry _post's 8s
-                            timeout; hume_call 120s
-    G6 STRESS       partial 166 checks green (61 in VR, 21 new).
-                            MUTATED: importer storing secrets as keys
-                            (red), pick_rested seeing only the first key
-                            (3 red), dead keys not skipped (2 red).
-                            TWO EARLIER MUTATIONS WERE INEFFECTIVE and
-                            are recorded as such below rather than
-                            counted as passes
-    G7 BUDGETS      base+   166 checks (was 145)
-    G8 UPGRADE      pass    keys gain "secret" and "last_used"; both are
-                            read with .get() and default safely, so a
-                            ring stored by v182 loads unchanged. A v182
-                            app reading a v183 ring ignores both extra
-                            fields
-    G9 RECORD       this document
-
-## NOT TESTED
-
-    THE SHEET ROUND TRIP    keys_put/keys_get are written and parse, but
-                            NOTHING HAS BEEN STORED OR FETCHED — the
-                            script is not deployed. This is the largest
-                            untested surface in this delivery
-    NO PHONE, NO LISTENING  still true from v182: nobody has heard VR
-    429 NEVER PROVOKED      with 21 accounts it is now even harder to
-                            reach, so the cool-down path stays unproven
-    WAV NOT OPUS            still shipping ~96KB per second of speech
-    THE ADMIN PANEL         the pair import path is asserted by reading;
-                            nobody has pushed the button
-    STILL OPEN              copy/clear rule, ETA sheet deploy,
-                            AssemblyAI round trip, HR->ENG and
-                            single->multi mid-recording, Speechify
-                            test-key button, TR deck audio
-
-## WHAT WAS WRONG WITH THE GATE — §15, eighth report
-
-**TWO OF MY MUTATIONS THIS SESSION CHANGED NOTHING.** One narrowed a
-condition that another branch immediately satisfied; one moved an index
-in a parser that keys off labels, not offsets. Both produced a green
-suite, which reads exactly like "the check is weak" and is in fact "the
-mutation was". The module says to make each check fail on purpose; it
-should also say to CONFIRM THE MUTATION ACTUALLY CHANGED BEHAVIOUR —
-an ineffective mutation is worse than none, because it certifies a check
+Reported in the delivery records: G8 has no row for a web app; G2's
+history scan degrades silently on a shallow clone; G6 cannot record what
+was mutated; nothing catches VISUAL DRIFT (a control that looks wrong);
+nothing catches a FAILURE PATH THAT DOES THE WRONG THING CONFIDENTLY
+(403 was classified as a dead key and would have burned a 21-key ring);
+harness failures masquerade as artefact failures; and — the big one from
+today — **two mutations changed nothing and still read as passes**. A
+mutation must be confirmed to change behaviour, or it certifies a check
 that was never exercised.
 
-**G2 should require searching for the ACTUAL secret, not only its
-shape.** Every previous report scanned for patterns. Today there were 42
-real credentials in play, and the only honest check was to search the
-diff for each of them literally. Shape scanning would have missed a key
-pasted into a comment as an example.
-
-**Still true from v176-v182:** G8 has no web-app row, G2's history scan
-degrades silently on a shallow clone, G6 cannot record mutations,
-nothing catches visual drift, and nothing checks that a failure path
-does the right thing.
+**And the finding this session earned the hard way:** nine gates passed
+on every version from v177 to v184 while the recorder was broken. The
+gate cannot see a path no test executes. That is not a gap in the code.
+It is a gap in the gate.
