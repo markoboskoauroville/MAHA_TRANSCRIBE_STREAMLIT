@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v177 (SPA pill, braille status line, and an ETA that learns)"
+APP_VERSION = "v178 (notes: select, delete, and read into R)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -334,6 +334,13 @@ STRINGS = {
     "remember_me":        {"en": "Remember me",      "hr": "Zapamti me"},
     "preparing_audio":    {"en": "Preparing audio…", "hr": "Priprema zvuka…"},
     "eta_working":        {"en": "transcribing",     "hr": "prepisujem"},
+    "note_all":           {"en": "select all",      "hr": "označi sve"},
+    "note_none_sel":      {"en": "select none",     "hr": "odznači sve"},
+    "note_del_n":         {"en": "delete",          "hr": "obriši"},
+    "note_del_n_sure":    {"en": "delete %d — sure?", "hr": "obriši %d — sigurno?"},
+    "note_read":          {"en": "read",            "hr": "čitaj"},
+    "note_one_only":      {"en": "one note at a time", "hr": "jedna bilješka odjednom"},
+    "note_sel_help":      {"en": "Tick to select",  "hr": "Označi za odabir"},
     "eta_learning":       {"en": "learning how long this takes",
                            "hr": "učim koliko ovo traje"},
     "transcribing":       {"en": "Transcribing…",    "hr": "Transkribiranje…"},
@@ -3973,15 +3980,16 @@ def do_correct():
         st.session_state["_correct_error"] = str(e)
 
 
-def read_this():
-    """Move to the Talk tab, carry the text over, pick the voice that matches
-    the language just transcribed, and start reading — no popup, no extra tap."""
-    st.session_state["talk_text"] = t1_text()
-    lang = st.session_state.get("last_lang", "hr")
+def _match_voice_to(lang: str):
+    """Pick a voice that speaks `lang`, in whichever engine is talking.
+
+    Lifted out of read_this so the note path and the transcript path
+    cannot drift — when the Speechify seats changed at v176, one copy
+    would have been updated and the other would not.
+    """
+    if lang not in VOICES_BY_LANG:
+        lang = "hr"
     if talking_engine() == "speechify":
-        # The same courtesy Speechify's picker gets as Edge's: Croatian
-        # text arrives with a Slavic voice ready, English with a British
-        # one. A pick already in the right language row is kept.
         rows = SP_VOICES_BY_LANG.get(lang) or ()
         cur = (st.session_state.get("sp_voice"),
                st.session_state.get("sp_model"))
@@ -3993,6 +4001,14 @@ def read_this():
         current = st.session_state.get("voice", "Gabrijela")
         if VOICE_LANG.get(current) != lang:
             st.session_state["voice"] = VOICES_BY_LANG[lang][0]
+
+
+def read_this():
+    """Move to the Talk tab, carry the text over, pick the voice that matches
+    the language just transcribed, and start reading — no popup, no extra tap."""
+    st.session_state["talk_text"] = t1_text()
+    # ONE IMPLEMENTATION, used from here and from read_note().
+    _match_voice_to(st.session_state.get("last_lang", "hr"))
     st.session_state["active_tab"] = "talk"
     st.session_state["_auto_read"] = True
 
@@ -4457,6 +4473,31 @@ def open_note(note_id):
 def close_note():
     st.session_state.pop(OPEN_KEY, None)
     st.session_state.pop("_note_seen", None)
+
+
+def read_note(note_id: str):
+    """Send one note to R and start reading it.
+
+    Baba: "user can open any note and press Read, and this note goes to
+    the generation and plays automatically through the player above."
+
+    THE SAME HANDOFF `read_this` ALREADY DOES from T, reusing its voice
+    logic rather than copying it — app.py has been bitten twice by two
+    copies of one idea drifting apart, and this is exactly that shape.
+    The only difference is where the words come from.
+    """
+    note = NOTES.get(st.session_state, note_id)
+    if note is None:
+        return
+    body = (note.get("text") or "").strip()
+    if not body:
+        return          # nothing to read, and a silent player is a fault report
+    st.session_state["talk_text"] = body
+    _match_voice_to(note.get("language")
+                    or st.session_state.get("speech_lang", "hr"))
+    close_note()        # the note gave up the screen; R is taking over
+    st.session_state["active_tab"] = "talk"
+    st.session_state["_auto_read"] = True
 
 
 def note_from_transcript(text):
@@ -5582,6 +5623,83 @@ def _run_one_deletion():
 
     st.rerun()
 
+def _note_actions(picked, all_ids, where):
+    """select all · read · delete — the recordings panel's row, for notes.
+
+    Baba: "notes need the same way of deleting and selecting as the
+    audio part just below it."
+
+    MIRRORED, NOT INVENTED. The recordings panel already settled every
+    question this row asks — where select-all lives, that it doubles as
+    select-none, that delete arms before it fires, and that the links are
+    ALWAYS DRAWN and grey out rather than vanishing. Two lists on one
+    screen that behave differently is two things to learn.
+
+    READ IS ONE NOTE ONLY, and greyed for many, for the same reason
+    `play` is in the recordings row: reading two notes at once is not a
+    thing. Deleting many is the one act that genuinely means the same
+    thing repeated.
+    """
+    n = len(picked)
+    everything = len(all_ids) and n == len(all_ids)
+
+    with st.container(key="noteacts_%s" % where):
+        c0, c1, c2 = st.columns([1.1, 0.9, 1.1])
+
+        def _toggle_all():
+            for i in all_ids:
+                st.session_state["_np_%s" % i] = not everything
+            st.session_state.pop("_note_del_armed_many", None)
+
+        c0.button(t("note_none_sel") if everything else t("note_all"),
+                  key="note_all_%s" % where, on_click=_toggle_all,
+                  use_container_width=True)
+
+        one = (n == 1)
+        c1.button(t("note_read"), key="note_read_%s" % where,
+                  disabled=not one,
+                  help=None if one else t("note_one_only"),
+                  on_click=lambda: read_note(picked[0]) if picked else None,
+                  use_container_width=True)
+
+        if st.session_state.get("_note_del_armed_many") and n:
+            c2.button(t("note_del_n_sure") % n, key="note_deln2_%s" % where,
+                      on_click=lambda: st.session_state.update(
+                          {"_note_del_many": list(picked),
+                           "_note_del_armed_many": False}),
+                      use_container_width=True)
+        else:
+            c2.button(t("note_del_n"), key="note_deln_%s" % where,
+                      disabled=not n,
+                      on_click=lambda: st.session_state.update(
+                          {"_note_del_armed_many": True}),
+                      use_container_width=True)
+
+
+def _note_delete_pending():
+    """Carry out an armed multi-delete, once, at the top of a rerun.
+
+    NOT INSIDE THE on_click. Removing notes while the list that draws
+    them is mid-render is how a widget key disappears under Streamlit's
+    feet; the recordings panel learned the same lesson (_rec_doing).
+    The ticks are cleared too, or a deleted note's tick would survive
+    and select whatever note later took its place in the list.
+    """
+    doomed = st.session_state.pop("_note_del_many", None)
+    if not doomed:
+        return
+    for nid in doomed:
+        NOTES.remove(st.session_state, nid)
+        st.session_state.pop("_np_%s" % nid, None)
+    # A note that was open and has just been deleted must not stay open.
+    if st.session_state.get(OPEN_KEY) in doomed:
+        close_note()
+    # NO persist_notes() HERE. The foot of the module already writes the
+    # notebook whenever it differs from the saved copy — that guard exists
+    # precisely so the tenth place that changes a note cannot forget to
+    # save, and this is the tenth place.
+
+
 def notes_panel():
     """The list: a search field, then the notes. Folded, like recordings.
 
@@ -5598,6 +5716,11 @@ def notes_panel():
     box for a list you cannot see is furniture, and somebody who wants
     to search is already opening the list.
     """
+    # BEFORE THE LIST IS READ, not after. A delete carried out mid-render
+    # would leave the rows drawn from a notebook that no longer matches
+    # the ticks.
+    _note_delete_pending()
+
     all_notes = NOTES.items(st.session_state)
     if not all_notes:
         return                      # nothing yet, and no empty furniture
@@ -5617,6 +5740,14 @@ def notes_panel():
         if not shown:
             st.caption(t("notes_none"))
             return
+
+        # SELECT ALL WORKS ON WHAT IS ON SCREEN, not on the whole
+        # notebook. With a search term typed, "select all" meaning the
+        # 200 notes you cannot see is how somebody deletes their
+        # notebook while looking at three results.
+        ids = [x["id"] for x in shown]
+        picked = [i_ for i_ in ids if st.session_state.get("_np_%s" % i_)]
+        _note_actions(picked, ids, "top")
 
         for i, n in enumerate(shown):
             # ONE CARD, ONE PRESS, WHOLE WIDTH. A card with a tick, a
@@ -5642,7 +5773,15 @@ def notes_panel():
             #
             # The position makes it unique whatever the ids say. Clicking
             # still uses the id, so the right note opens.
-            st.button(
+            # THE TICK SITS BESIDE THE CARD, not inside it. A checkbox
+            # inside a button is not a thing Streamlit can draw, and the
+            # recordings list already answered this the same way: the
+            # tick is its own control, small, to the left.
+            tick, card = st.columns([0.14, 1.0])
+            tick.checkbox("", key="_np_%s" % n["id"],
+                          help=t("note_sel_help"),
+                          label_visibility="collapsed")
+            card.button(
                 "%s %s\n\n%s" % (note_number(i), NOTES.heading(n),
                                   NOTES.body_preview(n, 70)),
                 key="note_%d_%s" % (i, n["id"]), use_container_width=True,
@@ -5754,7 +5893,20 @@ def note_open_view():
             # now — the stylesheet packs them to the left, and a wide
             # first column would push the pair back under the badge
             # this move was to escape.
-            when, dele, back = st.columns([1, 1, 1])
+            # READ JOINS THE ROW. Baba: "user can open any note and press
+            # a Read action link, and this note goes to the generation
+            # and plays automatically through the player above."
+            #
+            # An ACTION LINK in the row where the note's other actions
+            # already are — not a button of its own somewhere else. The
+            # note's whole vocabulary is this one line at the foot.
+            when, read, dele, back = st.columns([1, 1, 1, 1])
+            _body = (note.get("text") or "").strip()
+            read.button(t("note_read"), key="note_read_open",
+                        disabled=not _body,
+                        help=None if _body else t("notes_none"),
+                        on_click=read_note, args=(note_id,),
+                        use_container_width=True)
             when.markdown('<div class="notewhen">%s</div>'
                           % NOTES.when_of(note), unsafe_allow_html=True)
         # STILL TWO PRESSES. One press on a whole note, in an app with no
