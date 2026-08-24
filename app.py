@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v178 (notes: select, delete, and read into R)"
+APP_VERSION = "v179 (notes actions look like the recordings actions)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -5643,7 +5643,7 @@ def _note_actions(picked, all_ids, where):
     n = len(picked)
     everything = len(all_ids) and n == len(all_ids)
 
-    with st.container(key="noteacts_%s" % where):
+    with st.container(key="nactrow_%s" % where):
         c0, c1, c2 = st.columns([1.1, 0.9, 1.1])
 
         def _toggle_all():
@@ -5652,24 +5652,24 @@ def _note_actions(picked, all_ids, where):
             st.session_state.pop("_note_del_armed_many", None)
 
         c0.button(t("note_none_sel") if everything else t("note_all"),
-                  key="note_all_%s" % where, on_click=_toggle_all,
+                  key="nact_all_%s" % where, on_click=_toggle_all,
                   use_container_width=True)
 
         one = (n == 1)
-        c1.button(t("note_read"), key="note_read_%s" % where,
+        c1.button(t("note_read"), key="nact_read_%s" % where,
                   disabled=not one,
                   help=None if one else t("note_one_only"),
                   on_click=lambda: read_note(picked[0]) if picked else None,
                   use_container_width=True)
 
         if st.session_state.get("_note_del_armed_many") and n:
-            c2.button(t("note_del_n_sure") % n, key="note_deln2_%s" % where,
+            c2.button(t("note_del_n_sure") % n, key="nact_deln2_%s" % where,
                       on_click=lambda: st.session_state.update(
                           {"_note_del_many": list(picked),
                            "_note_del_armed_many": False}),
                       use_container_width=True)
         else:
-            c2.button(t("note_del_n"), key="note_deln_%s" % where,
+            c2.button(t("note_del_n"), key="nact_deln_%s" % where,
                       disabled=not n,
                       on_click=lambda: st.session_state.update(
                           {"_note_del_armed_many": True}),
@@ -5902,7 +5902,7 @@ def note_open_view():
             # note's whole vocabulary is this one line at the foot.
             when, read, dele, back = st.columns([1, 1, 1, 1])
             _body = (note.get("text") or "").strip()
-            read.button(t("note_read"), key="note_read_open",
+            read.button(t("note_read"), key="nact_read_open",
                         disabled=not _body,
                         help=None if _body else t("notes_none"),
                         on_click=read_note, args=(note_id,),

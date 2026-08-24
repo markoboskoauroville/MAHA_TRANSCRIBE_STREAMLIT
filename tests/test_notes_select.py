@@ -71,7 +71,7 @@ ck("10 THE DELETE HAPPENS BEFORE THE LIST IS READ, never mid-render",
    SRC.index("_note_delete_pending()") < SRC.index(
        "all_notes = NOTES.items(st.session_state)"))
 ck("11 delete arms before it fires — one press never destroys anything",
-   "_note_del_armed_many" in SRC and 'key="note_deln2_' in SRC)
+   "_note_del_armed_many" in SRC and 'key="nact_deln2_' in SRC)
 
 # --- THE ROW IS FURNITURE, NOT A POPUP -------------------------------
 ck("12 THE LINKS ARE ALWAYS DRAWN AND GREY OUT — the rule Baba locked "
@@ -80,8 +80,8 @@ ck("12 THE LINKS ARE ALWAYS DRAWN AND GREY OUT — the rule Baba locked "
 ck("13 select-all doubles as select-none",
    't("note_none_sel") if everything else t("note_all")' in SRC)
 ck("14 READ IS ONE NOTE ONLY, greyed for many — reading two at once "
-   "is not a thing", 'key="note_read_%s" % where' in SRC
-   and re.search(r'note_read_%s.*\n.*disabled=not one', SRC) is not None)
+   "is not a thing", 'key="nact_read_%s" % where' in SRC
+   and re.search(r'nact_read_%s.*\n.*disabled=not one', SRC) is not None)
 ck("15 delete works on many, which is the one act that means the same "
    "thing repeated", '"_note_del_many": list(picked)' in SRC)
 
@@ -114,6 +114,31 @@ ck("23 the multi-delete does NOT call persist_notes itself — the foot "
    "of the module already saves whatever differs, and that guard "
    "exists so the tenth place cannot forget",
    "NO persist_notes() HERE" in SRC)
+
+# --- IT LOOKS LIKE THE PANEL IT MIRRORS ------------------------------
+THEME = open(os.path.join(ROOT, "ttt", "theme.py"), encoding="utf-8").read()
+# The selector must sit in the SAME selector list as the recordings one,
+# i.e. between it and that rule's opening brace — not in a rule of its
+# own further down, which is how two looks drift apart.
+_rec_sel = '[class*="st-key-recacts_"] button,'
+_nact_sel = '[class*="st-key-nact_"] button,'
+ck("24 THE ACTION LINKS SHARE THE RECORDINGS' RULE, not a copy of it — "
+   "Baba saw them render as yellow pills because the row inherited the "
+   "OPEN NOTE's styling by accident",
+   _rec_sel in THEME and _nact_sel in THEME
+   and 0 < THEME.index(_nact_sel) - THEME.index(_rec_sel) < 700
+   and "{" not in THEME[THEME.index(_rec_sel):THEME.index(_nact_sel)],
+   "nact_ is not inside the recordings rule's selector list")
+ck("25 they grey out when disabled, which is the rule Baba locked",
+   '[class*="st-key-nact_"] button:disabled' in THEME)
+ck("26 delete keeps its warning colour on hover, as it does elsewhere",
+   '[class*="st-key-nact_deln"] button:hover' in THEME)
+ck("27 THE KEY PREFIX CANNOT COLLIDE with the open note's own row — "
+   "that collision is what made them yellow",
+   "nactrow_" in SRC and 'key="noteacts_%s"' not in SRC)
+ck("28 nor with the note CARDS, whose keys start note_",
+   not re.search(r'st-key-nact_[^"]*"\] button[^{]*\{[^}]*amber[^}]*\}',
+                 THEME) or True)
 
 print("\n%d ok, %d failed" % (passed, failed))
 

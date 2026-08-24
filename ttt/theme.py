@@ -1037,7 +1037,16 @@ def css(scheme: str = "amber", font: str = "mono",
        second, and this panel is the one place in the app that is about
        files rather than about words. */
     [class*="st-key-rec_"] button,
-    [class*="st-key-recacts_"] button {{
+    [class*="st-key-recacts_"] button,
+    /* THE NOTES LIST IS THE SAME KIND OF PANEL. Baba, seeing v178 on a
+       phone: "make the action links exactly the same look as in the
+       audio file storage — not yellow, grey underlined action links."
+       He is right, and the reason is the one written above: this row
+       acts on files you have selected, so it is a link, not a pill.
+       ADDED TO THE SAME RULE rather than copied into a new one — two
+       rules for one look drift, and this app has paid for that. */
+    [class*="st-key-nact_"] button,
+    [class*="st-key-nactrow_"] button {{
       background: transparent !important;
       border: 0 !important;
       min-height: 0 !important;
@@ -1049,24 +1058,28 @@ def css(scheme: str = "amber", font: str = "mono",
       justify-content: flex-start !important;
       white-space: nowrap;
     }}
-    [class*="st-key-rec_"] button:hover:not(:disabled) {{
+    [class*="st-key-rec_"] button:hover:not(:disabled),
+    [class*="st-key-nact_"] button:hover:not(:disabled) {{
       color: var(--amber) !important;
     }}
     /* GREYED, AND VISIBLY SO. A disabled link that looks like a live one
        is worse than no link: somebody presses it and learns nothing.
        The underline goes too — that is what says "not now" without a
        word. */
-    [class*="st-key-rec_"] button:disabled {{
+    [class*="st-key-rec_"] button:disabled,
+    [class*="st-key-nact_"] button:disabled {{
       color: var(--line) !important;
       text-decoration: none !important;
       cursor: default !important;
     }}
     /* Delete keeps its warning colour on hover, as it does in the note. */
-    [class*="st-key-rec_del"] button:hover:not(:disabled) {{
+    [class*="st-key-rec_del"] button:hover:not(:disabled),
+    [class*="st-key-nact_deln"] button:hover:not(:disabled) {{
       color: var(--rec, #d9484b) !important;
     }}
     /* The rows themselves sit tight — a file list is a list, not a form. */
     [class*="st-key-_rp_"] {{ margin: 0 !important; }}
+    [class*="st-key-_np_"] {{ margin: 0 !important; }}
 
     /* THE NOTE CARDS: a gold edge, and the words in the reading colour.
        Baba: "note does not have nice outline — add golden outline
