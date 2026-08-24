@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v184 (Hume key handling aligned with the manifest)"
+APP_VERSION = "v185 (the deck is acknowledged before the words are fetched)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1035,12 +1035,49 @@ def groq_keys() -> list:
     return [k for k in keys if k]
 
 
+def _named_people() -> dict:
+    """Who may enter: name (lowercased) -> is this the owner.
+
+    ONE implementation, read from Secrets and nowhere else, used by the
+    start-up check and by the door. Two copies of "who is allowed in" is
+    the shape of fault that lets somebody through one and not the other.
+
+    ADMIN_USER is the owner. NORMAL_USER1..3 are the family. Adding a
+    person is a line in Streamlit Cloud - Settings - Secrets, no code
+    change, which is the same rule the engine keys already follow.
+
+    Read fresh on every call rather than captured at import, so a name
+    added in Settings is live on the next login instead of on the next
+    redeploy.
+    """
+    out = {}
+    for key in ("NORMAL_USER1", "NORMAL_USER2", "NORMAL_USER3"):
+        name = str(st.secrets.get(key, "") or "").strip()
+        if name:
+            out[name.lower()] = False
+    owner = str(st.secrets.get("ADMIN_USER", "") or "").strip()
+    if owner:
+        out[owner.lower()] = True          # last, so the owner always wins
+    return out
+
+
 PASSWORDS = app_passwords()
 # English is the default interface language. This line used to say
 # "hr" and quietly won over every other change, which is why the app
 # kept coming back in Croatian however many defaults were switched.
 st.session_state.setdefault("ui_lang", "en")
-if not PASSWORDS:
+# WHAT MUST BE SET FOR THE APP TO START AT ALL (v185).
+#
+# It used to be APP_PASSWORDS, and without it the app stopped on a red
+# line before drawing anything. The door is names now, so the thing that
+# must exist is a NAME — ADMIN_USER, or one of NORMAL_USER1..3.
+#
+# APP_PASSWORDS is still read and still works if it is set: it is the
+# recovery door for the day the accounts script is unreachable, and
+# LAST_RUN's rule is that a working door is never removed before its
+# replacement is proven. This stops REQUIRING it, which is a different
+# thing from removing it.
+if not (PASSWORDS or _named_people()):
     st.error(t("no_password_secret"))
     st.stop()
 
@@ -1363,7 +1400,17 @@ def enter_remembered():
 
 
 if not st.session_state.get("_authed"):
-    _try_remembered()
+    # THE REMEMBERED LOGIN IS OFF (v185). It asked the browser for a
+    # stored token and then asked the accounts script to validate it,
+    # before the first screen could be drawn — a network round trip and
+    # an Apps Script wake-up that every person paid for on every visit,
+    # including the ones who were going to type their name anyway.
+    #
+    # Baba's door is now a name he types, so there is nothing to
+    # remember. _try_remembered and enter_remembered are left in place,
+    # unused, because the accounts system they belong to is still there
+    # and this is one line to put back.
+    pass
 
 
 # Small constants that app.py needs are read through a guard, NEVER
@@ -1413,276 +1460,65 @@ def _more_label(lang: str) -> str:
 
 
 def check_password() -> bool:
-    def _entered():
-        """RECORD THE ATTEMPT. Do not perform it.
+    """THE WHOLE DOOR: a name, and one key marked L.
 
-        A callback cannot repaint: `st.rerun()` inside one is a no-op and
-        Streamlit says so on screen. v113 put the rerun here and it never
-        ran — the warning Baba photographed IS that fix failing.
+    Baba, 24.8.2026: "First screen of an app doesn't have anything, only
+    one entry box. There is no title, no text, zero."
 
-        So the callback does the one thing callbacks are for: it captures
-        what was typed and clears the box. The login itself happens in
-        the main body below, where finishing simply falls through to the
-        app — no repaint to ask for, because the run that draws the app
-        is the run that logged you in.
-        """
-        typed = st.session_state.get("_pw_input", "")
-        st.session_state["_pw_input"] = ""
+    So that is what this is. An empty screen, a box with no label, and a
+    single key. No welcome, no language pills, no fold-out, no password,
+    no Remember me, no round trip to the accounts script before anybody
+    is allowed in.
 
-        # AN EMPTY PASSWORD IS A REMEMBERED PERSON'S PRESS — but only
-        # because this is now a FORM. The reason it was forbidden in v114
-        # was that both boxes fired this handler, so typing a USERNAME
-        # went straight through with nothing confirmed. A form submits
-        # only when the button is pressed or Enter is struck in it, so
-        # "empty" here means somebody deliberately asked to go in, not
-        # that they are halfway through filling the form.
-        _r = st.session_state.get("_remembered") or {}
-        _name = (st.session_state.get("_user_input") or "").strip().lower()
-        if not typed and _r.get("user") and _name in ("", _r["user"]):
-            # AND THE NAME MUST STILL BE THEIRS.
-            #
-            # Without that last condition this was the v114 bug wearing a
-            # new coat: type "emina" over the filled-in "baba", submit
-            # with an empty password, and BABA was signed in — somebody
-            # let into an account under a name they did not type. Caught
-            # by the tests, which is the whole reason they name the
-            # person rather than only checking that a login happened.
-            enter_remembered()
-            return
+    WHO MAY ENTER LIVES IN SECRETS AND NOWHERE ELSE. ADMIN_USER is the
+    owner; NORMAL_USER1..3 are the family. Adding a person is a line in
+    Streamlit Cloud - Settings - Secrets and no code change, which is the
+    same rule the engine keys already follow.
 
-        st.session_state["_login_try"] = typed
+    AND IT IS LOCAL, WHICH IS THE POINT. The old screen asked the Google
+    auth script whether the name was real before it would open, so every
+    login paid for a network round trip and a cold Apps Script wake-up.
+    Comparing three strings costs nothing. Open item 8 - "typing name and
+    password then pressing login waits a long time" - should go with it.
 
-    def _attempt(entered):
-
-        # BOTH BOXES FIRE THIS. Now that there is a username field above
-        # the password, on_change runs when someone finishes typing their
-        # NAME — with the password still empty. Treating that as an
-        # attempt marked the login wrong before they had typed it and
-        # spent one of the throttle's tries, so a person could throttle
-        # themselves simply by filling the form top to bottom.
-        #
-        # An empty password is not an attempt. Nothing to compare, no
-        # verdict, no failure recorded — AND NO WAY IN.
-        #
-        # It used to enter a remembered person here, on the reasoning
-        # that an empty password was their press. It is not: BOTH BOXES
-        # FIRE THIS HANDLER, so typing a USERNAME and pressing Enter —
-        # the most ordinary thing anybody does on a login screen — went
-        # straight through with no password and nothing confirmed. The
-        # v100 login exists precisely so that nobody is thrown inside
-        # before they know who they are, and this branch was quietly
-        # undoing it.
-        #
-        # `enter_remembered()` is now reachable from ONE place: the
-        # Continue as {name} button. A press, and only a press.
-        if not entered:
-            return
-
-        # Refuse to even compare while the throttle is running, so a
-        # guesser gains nothing by hammering. See ttt/gate.py for what
-        # this does and does not protect against.
-        tstate = st.session_state.setdefault("_gate", {})
-        allowed, wait = gate.check(tstate, time.time())
-        if not allowed:
-            st.session_state["_authed"] = False
-            st.session_state["_gate_wait"] = wait
-            return
-
-        # THE ACCOUNTS SCRIPT IS ASKED FIRST, when a username was given.
-        #
-        # NOT the main sheet script any more. That one compared the
-        # password as PLAIN TEXT against column 2, and leaving it in the
-        # chain would mean anyone who typed a password back into that
-        # column had a way in that skipped the hashing entirely — the
-        # whole point, quietly undone by a spreadsheet edit.
-        #
-        # Baba: "Username, password, I am defining in the sheet. These
-        # users are my family." So identity is a NAME now, not the
-        # password itself — which is what makes per-user settings, Drive
-        # folders and usage rows readable instead of being labelled with
-        # a secret.
-        #
-        # IT CANNOT LOCK ANYONE OUT. An unreachable sheet, a missing
-        # users tab and a wrong password are all just "no", and the
-        # built-in APP_PASSWORDS are then tried exactly as before. §1 is
-        # the reason this is written so carefully: a failure on the login
-        # screen is total, because nobody can get past it to reach
-        # anything else.
-        matched = None
-        who = ""
-        name = (st.session_state.get("_user_input") or "").strip()
-        if name:
-            try:
-                got = ACCOUNTS.login(
-                    auth_url(), auth_token(), name, entered,
-                    remember=bool(st.session_state.get("_remember_me")))
-            except Exception:
-                got = None            # never a dependency, never a crash
-            if got:
-                matched = entered
-                who = got["user"]
-                st.session_state["_via_accounts"] = True
-                if got.get("remember"):
-                    st.session_state["_remember_token"] = got["remember"]
-                # Their own engine. Every row has one of two answers
-                # now; an older row saying 'free' resolves through
-                # EN.get, and anything unreadable leaves the routes
-                # alone rather than guessing.
-                if EN.get(got.get("engine", "")):
-                    st.session_state["_assigned_engine"] = got["engine"]
-                if got.get("must_change"):
-                    st.session_state["_must_change"] = True
-
-        if matched is None:
-            matched = next((p for p in PASSWORDS
-                            if hmac.compare_digest(entered, p)), None)
-            who = matched or ""
-
-        st.session_state["_authed"] = matched is not None
-        if matched is not None:
-            gate.record_success(tstate)
-            st.session_state.pop("_gate_wait", None)
-            st.session_state["_user"] = who
-            if st.session_state.get("_remember_me"):
-                # THE NAME AND A TOKEN for an accounts user; the old
-                # digest for the owner's built-in password. Never the
-                # password itself, in either shape.
-                tok = st.session_state.get("_remember_token")
-                if tok and st.session_state.get("_via_accounts"):
-                    queue_ls(writes={AUTH_LS_KEY: json.dumps({"u": who, "t": tok})})
-                else:
-                    queue_ls(writes={AUTH_LS_KEY: _digest(matched)})
-            # REPAINT NOW, do not wait for the browser-storage component.
-            #
-            # Ticking Remember me queues a localStorage write, and that
-        else:
-            gate.record_failure(tstate, time.time())
-            _, wait = gate.check(tstate, time.time())
-            st.session_state["_gate_wait"] = wait
-
-    def _set_login_lang(code):
-        st.session_state["login_lang"] = code
-        # Picking a language happens INSIDE the fold-out, and Streamlit
-        # collapses an expander on every rerun unless told otherwise.
-        # Without this, choosing your language slams the panel shut in
-        # your face — and the welcome text you were about to read
-        # disappears.
-        st.session_state["_login_open"] = True
-
-    # THE LOGIN HAPPENS HERE, in the main body, not in the callback.
-    # Whatever the callback captured is spent exactly once.
-    _try = st.session_state.pop("_login_try", None)
-    if _try:
-        _attempt(_try)
-
+    is_admin() is untouched: it still compares the signed-in name to
+    admin_user(), which still reads ADMIN_USER. The owner's gold edge and
+    the two owner tabs work exactly as before.
+    """
     if st.session_state.get("_authed"):
         return True
 
-    # ENGLISH BY DEFAULT. Baba: "everything must be in English." The five
-    # pills are still there and the choice sticks for the session, so his
-    # mother presses HR once — but the screen a stranger meets, and the
-    # screen he meets on a fresh browser, is one language throughout.
-    # Mixed was the real complaint: Croatian labels above an English
-    # button reads as broken rather than as bilingual.
-    st.session_state.setdefault("login_lang", "en")
-    ll = st.session_state["login_lang"]
-    labels = _ht("LOGIN_LABELS", ll)
+    def _people() -> dict:
+        """Who may enter. One implementation, defined above."""
+        return _named_people()
 
-    # ONE BOX, and nothing else.
-    #
-    # The old screen led with five language pills, a welcome, an
-    # explanation of the name and a home-screen guide, and only then the
-    # password. Baba: "there is so much text, people get confused. What
-    # do I need to read? Do I need to enter password?" For someone who
-    # struggles to read a screen, a wall of text before the one field
-    # that matters is not generosity, it is an obstacle.
-    #
-    # So: password, Remember me, and a single fold-out underneath. Whoever
-    # can see it may open the whole thing; whoever cannot sees one box and
-    # already knows what to do. Nothing is removed — only folded.
-    # A NAME ABOVE THE PASSWORD. Optional on purpose: leave it empty and
-    # the old password-only login still works, so nobody who already has
-    # a password has to learn anything on the day this ships.
-    _rem = st.session_state.get("_remembered") or {}
-    if _rem.get("user") and not st.session_state.get("_user_input"):
-        # Fill the name in, so the first thing they see is WHO they are
-        # about to be. Set before the widget is created, never after —
-        # §63's lesson about widget keys.
-        st.session_state["_user_input"] = _rem["user"]
+    def _pressed():
+        """RECORD THE ATTEMPT, DO NOT PERFORM IT.
 
-    # A FORM, and it has to be one.
-    #
-    # With plain widgets, TYPING AND THEN CLICKING Log in did nothing:
-    # the click blurs the field, but Streamlit has not committed the new
-    # value by the time the button's callback runs, so the callback read
-    # an empty box. Enter worked, because Enter commits. Found by typing
-    # and clicking in a real browser — every AppTest check passed either
-    # way, since AppTest has no blur and no focus.
-    #
-    # A form commits every widget inside it and THEN runs the submit
-    # callback. That ordering is the entire reason forms exist, and it is
-    # the one mechanism that makes a button and a keypress do the same
-    # thing here.
-    #
-    # The language pills stay OUTSIDE it: they must act the moment they
-    # are pressed, and a form would hold them until submit.
-    with st.form("login_form", clear_on_submit=False, border=False):
-        st.text_input(labels.get("username", "Username"), key="_user_input")
-        st.text_input(labels["password"], type="password", key="_pw_input",
-                      placeholder="••••••••" if _rem.get("user") else "")
-        # A VISIBLE WAY IN. Baba: "give me an action button immediately,
-        # Log in, just that button... no hiding please." Enter still
-        # works — a form submits on Enter in any of its fields — but
-        # Enter is invisible, and an invisible control is one somebody
-        # has to be TOLD about. This screen is the first thing his
-        # mother meets.
-        st.form_submit_button(labels.get("login", "Log in"),
-                              type="primary", use_container_width=True,
-                              on_click=_entered)
+        A callback cannot repaint - st.rerun() inside one is a no-op and
+        Streamlit says so on the screen. The name is parked here and
+        spent once, in the body, on the rerun the press causes.
+        """
+        st.session_state["_login_try"] = str(
+            st.session_state.get("_user_input", "") or "").strip()
 
-    # "Continue as {name}" lived here and is gone (v116). Baba: "Login is
-    # enough." Two gold buttons a centimetre apart, doing almost the same
-    # thing, is a choice nobody asked to make — and the name is already
-    # filled in above, so Log in says everything the second button said.
-    #
-    # A remembered person still gets in without typing: submitting with
-    # an EMPTY password completes their login, in _entered below.
-    st.checkbox(labels["remember"], key="_remember_me", value=True)
-    if st.session_state.get("_authed") is False:
-        wait = st.session_state.get("_gate_wait", 0)
-        if wait and wait > 0:
-            pretty = gate.humanise(wait, t("gate_min"), t("gate_sec"))
-            st.error(f"{labels['wrong']} {t('gate_wait').format(s=pretty)}")
-        else:
-            st.error(labels["wrong"])
+    typed = st.session_state.pop("_login_try", None)
+    if typed:
+        if typed.lower() in _people():
+            st.session_state["_authed"] = True
+            st.session_state["_user"] = typed
+            return True
+        # A WRONG NAME SAYS NOTHING, because Baba asked for zero text on
+        # this screen. The box simply stays. If that turns out to be too
+        # quiet, the place to change it is here and nowhere else.
+        st.session_state["_authed"] = False
 
-    # st.expander gives a real disclosure widget: a proper button with the
-    # right ARIA state, keyboard reachable, and the content stays in the
-    # page for a screen reader rather than being hidden from it.
-    # A KEYED CONTAINER so the stylesheet can strip the frame off THIS
-    # expander only. Baba: "just remove this frame around it, let it be
-    # a >." On the login screen the box drew a heavy panel around a
-    # single closed line, which read as a section with something in it
-    # rather than as one quiet way in. Elsewhere expanders keep their
-    # frame — there they hold real content.
-    with st.container(key="loginmore"):
-        with st.expander(_more_label(ll),
-                         expanded=st.session_state.get("_login_open", False)):
-            lcols = st.columns(len(LANGS5))
-            for col, code in zip(lcols, LANGS5):
-                col.button(
-                    code.upper(), key="login_pill_" + code,
-                    type="primary" if st.session_state["login_lang"] == code else "secondary",
-                    on_click=_set_login_lang, args=(code,),
-                )
-            st.markdown(_ht("WELCOME", ll))
-            # INSIDE THE FOLD-OUT, where the comment above always said it
-            # was. It has been sitting open below it — three paragraphs
-            # about installing an icon on a phone, on the screen a person
-            # meets before they have typed anything. That is the wall of
-            # text this expander exists to fold away.
-            st.markdown("---")
-            st.markdown(_ht("LOGIN_GUIDE", ll))
+    # NOTHING APPEARS AND NOTHING DISAPPEARS - the box and the key are
+    # both drawn on the first frame and stay drawn, whatever happens.
+    box, entry = st.columns([6, 1], vertical_alignment="bottom")
+    box.text_input("name", key="_user_input", label_visibility="collapsed")
+    entry.button("L", key="login_L", type="primary",
+                 use_container_width=True, on_click=_pressed)
     return False
 
 
@@ -6927,6 +6763,36 @@ if active == "transcribe":
     hold_key = "_take_" + rec_key
     if audio is not None:
         st.session_state[hold_key] = audio
+        # ACKNOWLEDGE THE DECK BEFORE THE WORK, NOT AFTER IT.
+        #
+        # This is the fix for the bug of 24.8.2026: audio reached Drive
+        # and no words ever came back, with nothing red on the screen.
+        #
+        # The deck holds its blob until Python echoes the stamp, and
+        # re-posts it after 2, 4, 8, 15, 25 seconds. `ack=` is a PROP,
+        # read from session_state at the moment the component renders —
+        # and the component renders at the TOP of this module, before the
+        # transcription. So on the run that receives a take the deck is
+        # always told `ack=None`, and it cannot learn otherwise until the
+        # run ENDS, which is after Whisper has answered.
+        #
+        # Measured: a three-second transcription had the deck re-posting
+        # at t+2.6s and acknowledged at t+4.0s. Every re-post is a
+        # setComponentValue, which is a rerun, which kills the run that
+        # is transcribing — and RerunException is a BaseException, so it
+        # goes straight through the `except Exception` below without
+        # printing anything at all.
+        #
+        # Returning here ends the run in milliseconds. The take is safe
+        # in session_state, the next render hands the deck its stamp, it
+        # stops its retry timer, and the transcription then runs with
+        # nothing waiting on it. One extra rerun per take, which costs
+        # nothing, in exchange for the recording not being lost.
+        #
+        # It is also the shape transcribe_note_take() already uses, and
+        # its docstring says why: transcription takes seconds and the
+        # component must not be held open across it.
+        st.rerun()
     else:
         audio = st.session_state.get(hold_key)
 
@@ -6946,11 +6812,34 @@ if active == "transcribe":
 
     if audio is not None:
         digest = hashlib.md5(audio.getvalue()).hexdigest()
-        if st.session_state.get("_digest") != digest:
+        # THE DIGEST RECORDS THAT A TAKE WAS STARTED, NOT THAT IT
+        # FINISHED, AND THOSE ARE NOT THE SAME FACT.
+        #
+        # It is committed below BEFORE any work, which is right — it is
+        # what stops the same take being transcribed again on every
+        # rerun. What it must not also mean is "this take is done".
+        #
+        # A run can end between the two. Streamlit's RerunException and
+        # StopException are BaseException, so they pass through the
+        # `except Exception` guarding this block and print nothing. When
+        # that happened the digest already said the take was handled, the
+        # audio was still held, and every render afterwards skipped this
+        # block — silently, permanently, with the recording sitting in
+        # Drive and the box empty. That was the bug of 24.8.2026.
+        #
+        # So the guard asks both questions: is this a new take, OR did
+        # the last one never finish. A run that is killed leaves _done
+        # False and the take is picked up again on the next render.
+        # Note _done is set at the END of the try and inside the except,
+        # never in a `finally` — a finally would run on the interruption
+        # too and put the hole straight back.
+        _done = st.session_state.get("_digest_done", True)
+        if st.session_state.get("_digest") != digest or not _done:
             old_flac = st.session_state.get("flac_path")
             if old_flac and os.path.exists(old_flac):
                 os.remove(old_flac)
             st.session_state["_digest"] = digest
+            st.session_state["_digest_done"] = False
             try:
                 raw = audio.getvalue()
                 # WHAT IS THIS FILE? Decided by content first, name second.
@@ -7139,7 +7028,17 @@ if active == "transcribe":
                               UNIT_SECONDS, t_engine)
                 else:
                     st.error(t("file_unknown").format(why=plan["reason"]))
+                # THE TAKE IS FINISHED. Every branch above has had its
+                # turn — words delivered, picture refused, file not
+                # understood. Only an interruption skips this line, and
+                # an interruption is exactly the case that must be
+                # allowed to try again.
+                st.session_state["_digest_done"] = True
             except Exception as e:
+                # A REAL error is loud and is NOT retried: the person can
+                # see what went wrong and press new. Retrying here would
+                # spend a key on every redraw of the page.
+                st.session_state["_digest_done"] = True
                 st.session_state["_last_run"] = {"error": str(e)[:300]}
                 errlog.add(st.session_state, "transcribe",
                            f"{type(e).__name__}: {e}",

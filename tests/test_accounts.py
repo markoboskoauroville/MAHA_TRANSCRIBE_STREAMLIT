@@ -67,24 +67,27 @@ def sign_in(at, user, pw):
 
 
 def submit(at, pw=None, user=None):
-    """Fill the login form and press its button.
+    """Get through the door.
 
-    v115 made the login a FORM, because typing and then clicking did
-    nothing without one: the click blurs the field and Streamlit has not
-    committed the value when the callback runs. A form commits every
-    widget inside it and THEN runs the submit callback — so
-    set_value().run() no longer submits anything, which is the form
-    working rather than a regression.
+    v185 REPLACED THE DOOR. There is no form, no password box and no
+    submit button any more — Baba: "only one entry box... and one button
+    which says only one letter L", with the names living in Secrets.
+
+    So `pw` is accepted and ignored: it is what the old door asked for,
+    several callers still pass it, and removing the argument would mean
+    editing every one of them for no gain. The name is typed into the box
+    and the L key is pressed, which is exactly what a person does now.
+
+    The old form-based version, and the reason it had to be a form, are
+    in git history at v184.
     """
     if user is not None:
         at.session_state["_user_input"] = user
-    if pw is not None:
-        at.session_state["_pw_input"] = pw
     for b in at.get("button"):
-        if str(b.key or "").startswith("FormSubmitter:login_form"):
+        if str(b.key or "") == "login_L":
             b.click().run()
             return at
-    raise AssertionError("no submit button on the login form")
+    raise AssertionError("no L key on the door")
 
 
 print("THE ACCOUNTS SCRIPT\n")
