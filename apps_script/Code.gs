@@ -126,7 +126,7 @@ var KNOWN_USERS = ['user1', 'user2', 'user3'];
 // One k_ tab is made for each. Add a name here to add a tab.
 // THE KEYS THEMSELVES ARE NEVER IN THIS FILE — they go in the tabs, in
 // the spreadsheet, and the app reads them through doGet.
-var KEY_PROVIDERS = ['assemblyai', 'anthropic', 'speechify', 'groq'];
+var KEY_PROVIDERS = ['assemblyai', 'anthropic', 'speechify', 'groq', 'hume'];
 
 
 // ─── 6 ─── RARELY CHANGED ────────────────────────────────────────────
@@ -526,7 +526,12 @@ function setupConfig() {
     var name = 'k_' + p;
     if (!ss.getSheetByName(name)) {
       var k = ss.insertSheet(name);
-      k.appendRow(['key', 'label (optional)']);
+      // HUME IS A PAIR. Its accounts are an API key AND a secret that
+      // belong together, so its tab carries a third column. Every other
+      // provider is one token and keeps two columns.
+      k.appendRow(name === 'k_hume'
+                  ? ['key', 'secret', 'label']
+                  : ['key', 'label (optional)']);
       k.getRange(1, 1, 1, 2).setFontWeight('bold');
       k.setFrozenRows(1);
       k.setColumnWidth(1, 480);
