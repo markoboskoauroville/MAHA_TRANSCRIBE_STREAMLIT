@@ -270,6 +270,23 @@ ck("58 an unreachable sheet costs keys, never an error in somebody's "
 ck("59 an import is pushed back to the sheet, so a redeploy does not "
    "ask for 21 accounts again", "hume_keys_to_sheet()" in SRC)
 
+# --- ALIGNED WITH MANTRA_MANIFEST/apis/hume.md -----------------------
+ck("60 403 IS DEAD UNLESS IT IS CLOUDFLARE 1010 — v182 made it always "
+   "soft, which protected the ring but then never condemned a truly "
+   "forbidden key, leaving a dead account in rotation forever",
+   'return "soft" if "1010" in (body or "") else "dead"' in SRC)
+ck("61 so the BODY is read, not just the status",
+   "def hume_error_kind(status: int, body: str" in SRC)
+ck("62 A KEY IS TESTED AS A PAIR. The manifest: testing only the API "
+   "key cannot confirm the secret — and the secret is half of what the "
+   "ring stores. Verified live: key of account A with the secret of "
+   "account B returns 401, where a key-only test called it good",
+   "oauth2-cc/token" in SRC and "grant_type=client_credentials" in SRC)
+ck("63 200 without a token is not a working pair, whatever else it is",
+   'if secret and "access_token" not in body:' in SRC)
+ck("64 and a pair with no secret still tests, so an older ring does "
+   "not error", 'def hume_test_one(key: str, secret: str = ""):' in SRC)
+
 print("\n%d ok, %d failed" % (passed, failed))
 
 

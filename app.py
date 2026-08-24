@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v183 (Hume pairs, sheet-backed keys, 21-account fallback)"
+APP_VERSION = "v184 (Hume key handling aligned with the manifest)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3516,19 +3516,27 @@ def hume_keys_to_sheet() -> bool:
         return False
 
 
-def hume_error_kind(status: int) -> str:
+def hume_error_kind(status: int, body: str = "") -> str:
+    """MANTRA_MANIFEST/apis/hume.md, "Status mapping": 200 good, 401
+    dead, 403 dead UNLESS the body says `error code: 1010`, 429 valid
+    but throttled.
+
+    v182 made 403 ALWAYS soft, which was over-correction: it protected
+    the ring from Cloudflare but then never condemned a genuinely
+    forbidden key, leaving a dead account in rotation forever. The body
+    is what tells them apart, so the body is now read.
+    """
     if status in (401, 402):
-        # 401 rejected, 402 out of credit — rotating to another key is
-        # the right move for both.
         return "dead"
     if status == 429:
         return "cool"
     if status == 403:
-        # NOT "dead". Cloudflare returns 403 for a browser-signature ban
-        # (error 1010) that has nothing to do with the key, and burning
-        # every key in the ring over it would take VR down for good
-        # while every key was perfectly fine.
-        return "soft"
+        # 1010 is Cloudflare refusing the CLIENT, not Hume refusing the
+        # key. The manifest measured this across 21 pairs: all 21 gave
+        # 403/1010 with no User-Agent and all 21 gave 200 with one. It
+        # looks exactly like "every key is dead" and is nothing of the
+        # sort, so it must never mark a key dead.
+        return "soft" if "1010" in (body or "") else "dead"
     return "soft"
 
 
@@ -3577,7 +3585,7 @@ def hume_call(key: str, payload: dict, timeout: int = 120):
         except Exception:
             raw = ""
         raw = _re.sub(r"[A-Za-z0-9_\-]{32,}", "[redacted]", raw)[:200]
-        return None, hume_error_message(e.code, raw), hume_error_kind(e.code)
+        return None, hume_error_message(e.code, raw), hume_error_kind(e.code, raw)
     except Exception as e:
         return None, "Could not reach Hume: %s" % e, "soft"
 
@@ -3644,20 +3652,50 @@ def hume_speak(ring: dict, text: str, voice_name: str, direction: str):
     return None, last or t("vr_all_busy")
 
 
-def hume_test_one(key: str):
-    """Cheapest possible proof a key works: list one voice, generate
-    nothing. A test that synthesises would spend a rate-limit slot the
-    person is about to want."""
-    req = _ureq.Request(
-        "https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=1",
-        headers={"X-Hume-Api-Key": key, "Accept": "application/json",
-                 "User-Agent": HUME_UA})
+def hume_test_one(key: str, secret: str = ""):
+    """Prove the whole ACCOUNT, not half of it.
+
+    MANIFEST, apis/hume.md: "To TEST that a whole account is good, use
+    strategy 2. A 200 with an access_token proves the API key and Secret
+    key are valid AND belong together. Testing only the API key can't
+    confirm the secret."
+
+    v182 tested the API key alone against the voices endpoint, which
+    would have called an account good while its secret was wrong or
+    mismatched — and the secret is half of what is stored. Falls back to
+    the key-only probe when a pair has no secret, so an older ring still
+    tests rather than erroring.
+
+    Costs no TTS slot either way, which was the point of the old probe.
+    """
+    if secret:
+        basic = _b64.b64encode(
+            ("%s:%s" % (key, secret)).encode("utf-8")).decode("ascii")
+        req = _ureq.Request(
+            "https://api.hume.ai/oauth2-cc/token",
+            data=b"grant_type=client_credentials",
+            headers={"Authorization": "Basic " + basic,
+                     "Content-Type": "application/x-www-form-urlencoded",
+                     "Accept": "application/json", "User-Agent": HUME_UA},
+            method="POST")
+    else:
+        req = _ureq.Request(
+            "https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=1",
+            headers={"X-Hume-Api-Key": key, "Accept": "application/json",
+                     "User-Agent": HUME_UA})
     try:
         with _ureq.urlopen(req, timeout=30) as r:
-            r.read()
+            body = r.read().decode("utf-8", "replace")
+        if secret and "access_token" not in body:
+            # 200 without a token is not a working pair, whatever it is.
+            return "Hume answered without a token.", "dead"
         return None, None
     except _uerr.HTTPError as e:
-        return hume_error_message(e.code, ""), hume_error_kind(e.code)
+        try:
+            raw = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            raw = ""
+        return hume_error_message(e.code, raw), hume_error_kind(e.code, raw)
     except Exception as e:
         return "Could not reach Hume: %s" % e, "soft"
 
@@ -8372,8 +8410,19 @@ elif active == "settings":
                           on_click=_import)
 
                 if ring["keys"]:
-                    render_key_list(ring, rings, prov.id,
-                                    (lambda pr: (lambda key: pr.test_key(key)))(prov))
+                    # HUME TESTS THE PAIR. Its test_key takes the
+                    # secret too, because the API key alone cannot prove
+                    # the secret is right — and the secret is half of
+                    # what the ring stores.
+                    if prov.id == "hume":
+                        def _test_hume(key, _r=ring):
+                            sec = next((k.get("secret", "") for k in _r["keys"]
+                                        if k.get("key") == key), "")
+                            return hume_test_one(key, sec)
+                        render_key_list(ring, rings, prov.id, _test_hume)
+                    else:
+                        render_key_list(ring, rings, prov.id,
+                                        (lambda pr: (lambda key: pr.test_key(key)))(prov))
 
         if st.session_state.get("_key_msg"):
             st.caption(st.session_state.pop("_key_msg"))

@@ -18,6 +18,12 @@ from .base import Provider, Voice, http_json
 
 API = "https://api.hume.ai/v0"
 
+# NOT OPTIONAL. api.hume.ai is behind Cloudflare and answers a request
+# with no User-Agent with 403 "error code: 1010" — measured across 21
+# pairs: all 21 refused without one, all 21 accepted with one. A
+# descriptive name, never an impersonated browser (MANIFEST apis/hume.md).
+UA = "TTT-LLL/1.0 (+https://ttt-lll.streamlit.app)"
+
 # Hume keys carry no distinguishing prefix — they are a plain 48-char
 # token. So the importer matches on SHAPE rather than on a prefix, which
 # is why this tuple is empty and not a guess: a wrong prefix here would
@@ -25,11 +31,14 @@ API = "https://api.hume.ai/v0"
 KEY_PREFIXES = ()
 
 
-def classify(status: int) -> str:
-    if status in (401, 402, 403):
+def classify(status: int, body: str = "") -> str:
+    """403 is dead UNLESS Cloudflare's 1010 — see MANIFEST apis/hume.md."""
+    if status in (401, 402):
         return "dead"
     if status == 429:
         return "cool"
+    if status == 403:
+        return "soft" if "1010" in (body or "") else "dead"
     return "soft"
 
 
@@ -40,7 +49,7 @@ class Hume(Provider):
     needs_key = True
     key_prefixes = KEY_PREFIXES
 
-    def test_key(self, key: str):
+    def test_key(self, key: str, secret: str = ""):
         """Listing one voice, never generating one.
 
         A test that synthesised would spend a rate-limit slot the person
@@ -48,9 +57,22 @@ class Hume(Provider):
         difference between a working Test button and one that breaks the
         next thing you press.
         """
+        import base64
+        if secret:
+            basic = base64.b64encode(
+                ("%s:%s" % (key, secret)).encode()).decode()
+            _, err, kind = http_json(
+                "https://api.hume.ai/oauth2-cc/token",
+                {"Authorization": "Basic " + basic,
+                 "Content-Type": "application/x-www-form-urlencoded",
+                 "User-Agent": UA},
+                payload="grant_type=client_credentials", method="POST",
+                timeout=30, classify=classify)
+            return err, kind
         _, err, kind = http_json(
             API + "/tts/voices?provider=HUME_AI&page_size=1",
-            {"X-Hume-Api-Key": key, "Accept": "application/json"},
+            {"X-Hume-Api-Key": key, "Accept": "application/json",
+             "User-Agent": UA},
             timeout=30, classify=classify)
         return err, kind
 
