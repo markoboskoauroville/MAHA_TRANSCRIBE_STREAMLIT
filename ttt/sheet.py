@@ -217,3 +217,42 @@ def keys_for(config: dict, provider: str) -> list:
         if v and v not in out:
             out.append(v)
     return out
+
+
+# ---------------------------------------------------------------------
+# Transcription timings, for the ETA. Both calls are conveniences and
+# NEITHER is ever a dependency: a failed write costs one sample, a failed
+# read costs one estimate, and a transcription notices neither.
+# ---------------------------------------------------------------------
+
+def put_timing(url: str, token: str, user: str, engine: str,
+               audio_s: float, wall_s: float, parts: int = 1,
+               ok: bool = True) -> bool:
+    """Record one finished transcription. True only when the deployed
+    script named `eta_put` back.
+
+    THE OLD-DEPLOYMENT TRAP, the same one put_setting documents: a script
+    without this branch falls through to the usage-logging appendRow and
+    answers ok for a request it did not understand. So ok alone is not
+    believed — the reply has to say which branch answered.
+    """
+    if not url or not token:
+        return False
+    out = _post(url, token, {"what": "eta_put", "user": user,
+                             "engine": engine, "audio_s": float(audio_s),
+                             "wall_s": float(wall_s), "parts": int(parts),
+                             "ok": bool(ok)})
+    return bool(out) and out.get("what") == "eta_put"
+
+
+def get_timings(url: str, token: str, engine: str = "", limit: int = 40):
+    """Recent samples, newest last. Always a list — [] on any failure,
+    so the caller never has to tell 'no history' from 'no sheet'."""
+    if not url or not token:
+        return []
+    out = _post(url, token, {"what": "eta_get", "engine": engine,
+                             "limit": int(limit)})
+    if not out or out.get("what") != "eta_get":
+        return []
+    got = out.get("samples")
+    return got if isinstance(got, list) else []

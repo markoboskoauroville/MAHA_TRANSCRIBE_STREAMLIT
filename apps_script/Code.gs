@@ -203,6 +203,8 @@ function doPost(e) {
     if (body.what === 'login')      return json(login_(body));
     if (body.what === 'users')      return json({ ok: true, users: listUsers_() });
     if (body.what === 'user_engine') return json(setUserEngine_(body));
+    if (body.what === 'eta_put')    return json(etaPut_(body));
+    if (body.what === 'eta_get')    return json(etaGet_(body));
     if (body.what === 'audio_list') {
       return json({ ok: true, recordings: listRecs_(body.user) });
     }
@@ -1064,4 +1066,73 @@ function getAudio_(p) {
   var blob = it.next().getBlob();
   return { ok: true, part: Number(part), name: name,
            data: Utilities.base64Encode(blob.getBytes()) };
+}
+
+
+// ---------------------------------------------------------------------
+// TRANSCRIPTION TIMINGS — the numbers the ETA is computed from.
+//
+// One row per finished transcription. The app writes a row when a job
+// ends and reads the recent rows back to estimate the next one. Nothing
+// here is required for transcription to work: a failed write costs an
+// estimate, never a transcript.
+//
+// WHY A SHEET AND NOT A FILE. Streamlit Cloud wipes its disk on every
+// redeploy, so a text file loses every measurement at the next deploy —
+// which is exactly when a fresh estimate matters. The sheet also spans
+// devices: a phone and a laptop feed one history.
+// ---------------------------------------------------------------------
+
+function etaSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = ss.getSheetByName('eta');
+  if (!s) {
+    s = ss.insertSheet('eta');
+    s.appendRow(['when', 'user', 'engine', 'audio_s', 'wall_s',
+                 'ratio', 'parts', 'ok']);
+    s.getRange(1, 1, 1, 8).setFontWeight('bold');
+    s.setFrozenRows(1);
+  }
+  return s;
+}
+
+function etaPut_(b) {
+  var audio = Number(b.audio_s || 0);
+  var wall  = Number(b.wall_s  || 0);
+  // A ROW THAT CANNOT TEACH ANYTHING IS NOT WRITTEN. Zero or negative
+  // audio gives a ratio of infinity, and one such row would poison every
+  // later estimate — the median is only robust against outliers, not
+  // against nonsense.
+  if (!(audio > 0) || !(wall > 0)) {
+    return { ok: false, error: 'bad timing' };
+  }
+  var s = etaSheet_();
+  s.appendRow([new Date(), String(b.user || 'unknown').toLowerCase(),
+               String(b.engine || ''), audio, wall, wall / audio,
+               Number(b.parts || 1), b.ok === false ? 'FALSE' : 'TRUE']);
+  // KEEP THE SHEET SMALL. Old rows describe an engine and a network that
+  // may no longer exist, and an unbounded sheet eventually slows every
+  // request that touches it.
+  var max = 500;
+  var n = s.getLastRow() - 1;
+  if (n > max) { s.deleteRows(2, n - max); }
+  return { ok: true, what: 'eta_put', rows: s.getLastRow() - 1 };
+}
+
+function etaGet_(b) {
+  var s = etaSheet_();
+  var n = s.getLastRow() - 1;
+  if (n < 1) return { ok: true, what: 'eta_get', samples: [] };
+  var want = Math.min(n, Number(b.limit || 40));
+  var rows = s.getRange(1 + n - want + 1, 3, want, 4).getValues();
+  var engine = String(b.engine || '');
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (engine && String(rows[i][0]) !== engine) continue;
+    out.push({ engine: String(rows[i][0]),
+               audio_s: Number(rows[i][1]),
+               wall_s:  Number(rows[i][2]),
+               ratio:   Number(rows[i][3]) });
+  }
+  return { ok: true, what: 'eta_get', samples: out };
 }

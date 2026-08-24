@@ -176,6 +176,78 @@ text areas and reading surfaces, not the page root.
 
 ---
 
+## COPY AND CLEAR, NAILED TO THE WALL — locked
+
+**The rule.** Every text box in this app has **two action links beneath
+it: copy and clear.** Always. Under any circumstances, through any change
+of anything, in every module. They never vanish.
+
+**When there is nothing to do, they are GREYED OUT — not removed.**
+Unavailable is a state the links are in, never a reason for them to be
+absent. Baba, 24.8.2026: *"it's fixed, it's locked, it's like nailed in
+the wall."*
+
+**Why absence is worse than a dead link.** A greyed link says *this is
+here and there is nothing to copy yet.* An empty space says nothing at
+all, and the person reads it as the app having lost a feature, or as
+themselves having done something wrong. A control that comes and goes
+also moves everything under it, so the tab changes height as text is
+typed and cleared, and a thumb that has learned where to reach finds
+something else there. Fixed furniture is the point.
+
+**What this forbids.** No call site may hide the row. No `if not body:
+return`. No module may decide its own box is an exception. A module's own
+extra action (T's *add to notes*) may join the row; it may not replace
+copy or clear, and it may not be the reason the row exists.
+
+**Where this is not yet true.** `box_links()` currently returns early on
+an empty box, so the links appear only once there is text — that is the
+opposite of this rule and it predates it. Five call sites. Bringing the
+code to the rule is its own step: render always, disable when the box is
+empty, and check the greyed state in a browser at 390px rather than
+assuming Streamlit's disabled styling reads as greyed on this theme.
+
+---
+
+## TWO LANGUAGES, LOCKED — and one that is not
+
+**The rule.** There are only **two languages in this app for
+transcription and reading: Croatian and English.** Locked. Not a default,
+not a starting set, not "for now" — locked.
+
+**Translation is the exception, and the only one.** The TR tab may be
+expanded or contracted to any language on this planet. Adding one there
+costs a pill and a name; removing one costs the same.
+
+**The line between them, so nobody has to guess where it falls:**
+
+    TRANSCRIPTION   hr, en. Locked
+    READING ALOUD   hr, en. Locked — voices, pickers, engines, all of it
+    INTERFACE       hr, en. Locked — the app is written in two languages
+    TRANSLATION     anything. The model writes it; nothing speaks it
+
+**Why the rule exists.** Baba, 24.8.2026, after a Spanish translate pill
+turned into Spanish voices inside one session: *"I am not talking about
+talking in Spanish, only translate. Do not use Spanish anywhere else in
+this app."* A new translation target looks like a small thing and it is —
+until it reaches for a voice, a Whisper language hint, a voice picker
+row, an interface string. Then it is four systems, each needing its own
+testing, for a language nobody asked to be spoken.
+
+**What this forbids, concretely.** A translation language must never
+acquire: an Edge or Speechify voice, an entry in `TRANSLATE_VKEY`, a row
+in `VOICES_BY_LANG` or `SP_VOICES_BY_LANG`, a place in `LANGS5` (which
+also draws the LOGIN pills), or a `speech_lang` value. `LANGS_TR` is the
+translation list and it is the ONLY list a new language joins.
+
+**The consequence, stated rather than discovered.** Nothing in this app
+can speak a translation into a third language. There is no read-aloud on
+the TR tab today, so nothing breaks. If one is ever added it must skip or
+refuse any language outside hr/en — never hand Spanish text to a Croatian
+voice because the code happened to have one.
+
+---
+
 ## The one rule that is never bent
 
 Never `New deployment`.

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v176 (speechify voices per language — the Slavic four for Croatian)"
+APP_VERSION = "v177 (SPA pill, braille status line, and an ETA that learns)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -73,6 +73,7 @@ from ttt import providers as PROVIDERS
 from ttt.store import Store
 from ttt.usage import UsageLog, UNIT_SECONDS, UNIT_CHARS
 from ttt import transform as TR_
+from ttt import eta as ETA
 from ttt import vision
 from ttt import notes as NOTES
 from ttt.providers.groq import FAST_STT as GROQ_FAST_STT
@@ -239,7 +240,24 @@ VOICE_LANG = {"Gabrijela": "hr", "Srecko": "hr", "Sonia": "en", "Ryan": "en"}
 # Translate tab + the login screen's language pills. European only, on
 # purpose, in the order Baba asked for: Croatian first, English second.
 LANGS5 = ["hr", "en", "it", "de", "fr"]
-LANG_FULL = {"hr": "Croatian", "en": "English", "it": "Italian", "de": "German", "fr": "French"}
+# THE TR GRID GETS A SIXTH — Baba, 24.8.2026: "add Spanish, one more
+# pill, three letters." The pill says SPA; the code underneath stays
+# "es", which is what the model expects.
+#
+# TRANSLATION ONLY, AND NOWHERE ELSE. Baba, explicitly: "I am not talking
+# about talking in Spanish, only translate — do not use Spanish anywhere
+# else in this app." So Spanish is a TARGET the model writes into, and
+# that is all. It has no voice, it is not in TRANSLATE_VKEY, and it is
+# not in LANGS5, which also draws the LOGIN pills — those switch the
+# interface, which exists in English and Croatian only.
+#
+# The consequence, written down rather than discovered later: nothing in
+# this app can SPEAK a Spanish translation. There is no read-aloud on the
+# TR tab today, so nothing breaks; if one is ever added, it must skip or
+# refuse Spanish rather than hand it to a Croatian voice.
+LANGS_TR = ["hr", "en", "it", "de", "fr", "es"]
+LANG_FULL = {"hr": "Croatian", "en": "English", "it": "Italian", "de": "German",
+             "fr": "French", "es": "Spanish"}
 # One voice per language for the Translate tab's Read button — automatic,
 # no picker, so this tab stays simple. Talk tab's own voice picker is
 # untouched and does not gain these three languages, on purpose.
@@ -315,6 +333,9 @@ STRINGS = {
     "wrong_password":     {"en": "Wrong password.",  "hr": "Pogrešna lozinka."},
     "remember_me":        {"en": "Remember me",      "hr": "Zapamti me"},
     "preparing_audio":    {"en": "Preparing audio…", "hr": "Priprema zvuka…"},
+    "eta_working":        {"en": "transcribing",     "hr": "prepisujem"},
+    "eta_learning":       {"en": "learning how long this takes",
+                           "hr": "učim koliko ovo traje"},
     "transcribing":       {"en": "Transcribing…",    "hr": "Transkribiranje…"},
     "settings_title":     {"en": "Settings",         "hr": "Postavke"},
     "settings_speech":    {"en": "Default speech language", "hr": "Zadani jezik govora"},
@@ -2381,6 +2402,101 @@ class LLMBridge:
         return self.provider.complete(prompt, system=system, model=model, **kw)
 
 
+# THE BRAILLE SPINNER. Baba, 24.8.2026: "put Braille spinner there and in
+# parentheses note which engine is working at the moment."
+#
+# Ten frames of U+280x. They are one character wide in every monospace
+# face and they animate by cycling, so the line never changes width —
+# which matters more than it sounds: a status line that grows and shrinks
+# drags everything under it up and down while a person is watching it.
+BRAILLE = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def braille_line(engine: str, tick: int, eta_text: str = "") -> str:
+    """One status line: spinner, what is happening, which engine, how
+    long. The engine is named because two of them can do this job and
+    "transcribing…" alone never said which one was asked."""
+    frame = BRAILLE[tick % len(BRAILLE)]
+    line = "%s %s (%s)" % (frame, t("eta_working"), engine or "?")
+    if eta_text:
+        line += " · %s" % eta_text
+    return line
+
+
+# ---------------------------------------------------------------------
+# THE ETA. Samples live in the sheet's `eta` tab because Streamlit
+# Cloud's disk is wiped on every redeploy — a text file would lose the
+# history at exactly the moment a fresh estimate matters, and the sheet
+# also lets a phone and a laptop feed one history. Both calls are
+# convenience only: a sheet that is slow, unreachable or running an old
+# script costs an estimate and never a transcript.
+# ---------------------------------------------------------------------
+
+def _sheet_pair():
+    return (str(st.secrets.get("SHEETS_URL", "") or ""),
+            str(st.secrets.get("SHEETS_TOKEN", "") or ""))
+
+
+def eta_seconds(engine: str, audio_s: float):
+    """How long this take will probably need, or None while the app is
+    still learning. Cached per engine for the session so a rerun does
+    not fetch the whole history again."""
+    try:
+        url, token = _sheet_pair()
+        if not url or not token:
+            return None
+        ck = "_eta_samples_" + (engine or "any")
+        if ck not in st.session_state:
+            st.session_state[ck] = SHEET.get_timings(url, token, engine=engine)
+        return ETA.estimate(st.session_state[ck], audio_s, engine)
+    except Exception:
+        return None
+
+
+def remember_timing(engine: str, audio_s: float, wall_s: float,
+                    parts: int = 1, ok: bool = True) -> None:
+    """Write one measurement and fold it into this session's cache, so
+    the very next take is already estimated from it rather than after a
+    reload. Silent on every failure, on purpose."""
+    try:
+        if not (audio_s > 0 and wall_s > 0):
+            return
+        sample = {"engine": engine, "audio_s": float(audio_s),
+                  "wall_s": float(wall_s)}
+        if not ETA.usable(sample):
+            return          # a stall is not a measurement of speed
+        ck = "_eta_samples_" + (engine or "any")
+        st.session_state.setdefault(ck, []).append(sample)
+        url, token = _sheet_pair()
+        SHEET.put_timing(url, token, USER, engine, audio_s, wall_s, parts, ok)
+    except Exception:
+        pass
+
+
+def talking_engine() -> str:
+    """WHO TALKS — one answer, from one place.
+
+    THE BUG THIS CLOSES, reported by Baba 24.8.2026: flipping Quick
+    Settings to Speechify left the voice pills showing Gabrijela and
+    Srecko. Two keys were answering the same question and they were not
+    the same key. Quick Settings wrote `voice_engine`; the R tab's picker
+    read `current_routes()["tts"]`, which is set by the ROUTING, and the
+    flip never touched it. Nothing was broken in either half — they
+    simply were not connected, which is the shape of failure that
+    HOW_WE_WORK names: the code is reachable, correct, and nothing leads
+    to it.
+
+    The route stays the source of truth, because the engine sheet and the
+    tier both set it and neither knows about Quick Settings. What changed
+    is that the flip now writes the route as well, so there is one answer
+    and this function reads it.
+    """
+    tts = current_routes().get("tts")
+    if tts is not None:
+        return tts.id
+    return str(st.session_state.get("voice_engine") or "edge")
+
+
 def llm_bridge():
     """The AI engine to use right now, or None if none is usable."""
     prov = current_routes().get("llm")
@@ -3862,7 +3978,7 @@ def read_this():
     the language just transcribed, and start reading — no popup, no extra tap."""
     st.session_state["talk_text"] = t1_text()
     lang = st.session_state.get("last_lang", "hr")
-    if str(st.session_state.get("voice_engine") or "edge") == "speechify":
+    if talking_engine() == "speechify":
         # The same courtesy Speechify's picker gets as Edge's: Croatian
         # text arrives with a Slavic voice ready, English with a British
         # one. A pick already in the right language row is kept.
@@ -5019,6 +5135,8 @@ def speechify_panel():
             # looks like the reader being broken.
             if st.session_state.get("voice_engine") == "speechify":
                 st.session_state["voice_engine"] = "edge"
+            if st.session_state.get("route_tts") == "speechify":
+                st.session_state["route_tts"] = "edge"
             persist_settings()
         c2.button(t("sp_del_sure"), key="sp_del2", on_click=_del,
                   use_container_width=True)
@@ -5077,8 +5195,12 @@ def quick_settings():
             if not sp_ready:
                 st.session_state["_quick_msg"] = t("quick_need_key")
                 return
-            st.session_state["voice_engine"] = (
-                "edge" if talking == "speechify" else "speechify")
+            nxt = "edge" if talking == "speechify" else "speechify"
+            st.session_state["voice_engine"] = nxt
+            # AND THE ROUTE, which is what the R tab's voice pills read.
+            # Writing only the setting is exactly the bug: the button
+            # changed its own label and nothing else in the app moved.
+            st.session_state["route_tts"] = nxt
             persist_settings()
 
         q2.button(t("quick_tts") % (t("quick_sp") if talking == "speechify"
@@ -6035,8 +6157,7 @@ def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
     # Log what was actually SPOKEN, not what was pasted — a page that was
     # never reached should not count against anyone's usage.
     if spoken_chars:
-        USAGE.log("read", spoken_chars, UNIT_CHARS,
-                  st.session_state.get("voice_engine", "edge"))
+        USAGE.log("read", spoken_chars, UNIT_CHARS, talking_engine())
 
     # A key can be discovered dead or rate-limited DURING a read, so the
     # ring must be written back afterwards. Missing this was a real bug:
@@ -6078,11 +6199,18 @@ def do_translate():
         st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
 
 
+# What each pill says. Three letters where two would be cryptic beside
+# the rest; the dict rather than code.upper() so the label and the code
+# can differ without a second list to keep in step.
+LANG_PILL = {"hr": "HR", "en": "ENG", "it": "IT", "de": "DE",
+             "fr": "FR", "es": "SPA"}
+
+
 def lang_pills(prefix: str, which: str, current: str):
-    cols = st.columns(len(LANGS5))
-    for col, code in zip(cols, LANGS5):
+    cols = st.columns(len(LANGS_TR))
+    for col, code in zip(cols, LANGS_TR):
         col.button(
-            code.upper(), key=f"{prefix}_{code}",
+            LANG_PILL.get(code, code.upper()), key=f"{prefix}_{code}",
             type="primary" if code == current else "secondary",
             on_click=_set_translate_lang, args=(which, code),
         )
@@ -6318,12 +6446,27 @@ if active == "transcribe":
                     # time and stitch the results back into one
                     # transcript, with a marker where a piece failed
                     # rather than a silent hole.
-                    prog = st.progress(0.0, text=t("transcribing"))
+                    # THE STATUS WINDOW BELOW THE RECORDER. A Braille
+                    # spinner, the engine in parentheses, and — once
+                    # there is enough history — how long this is likely
+                    # to take. The spinner advances on each part that
+                    # finishes rather than on a timer: Streamlit has no
+                    # loop to animate from here, and a frame that moves
+                    # when something real happened is worth more than one
+                    # that spins while nothing does.
+                    _eng = stt.id
+                    _audio_s = audio_seconds(flac_path)
+                    _eta = eta_seconds(_eng, _audio_s)
+                    _eta_txt = (ETA.human(_eta) if _eta is not None
+                                else t("eta_learning"))
+                    prog = st.progress(0.0, text=braille_line(_eng, 0, _eta_txt))
 
                     def _cb(done, total):
                         try:
-                            prog.progress(min(1.0, done / max(total, 1)),
-                                          text=f"{t('transcribing')} {done}/{total}")
+                            prog.progress(
+                                min(1.0, done / max(total, 1)),
+                                text=braille_line(_eng, done, _eta_txt)
+                                + (f" · {done}/{total}" if total > 1 else ""))
                         except Exception:
                             pass
 
@@ -6332,6 +6475,13 @@ if active == "transcribe":
                         lang_now(), progress_cb=_cb)
                     prog.empty()
                     stage["transcribe_s"] = time.time() - _t1
+                    # ONE SAMPLE, WRITTEN AFTER THE FACT. Never before
+                    # deliver_text and never on the critical path: a
+                    # sheet that is slow or gone must cost an estimate,
+                    # never a transcript.
+                    remember_timing(_eng, _audio_s, stage["transcribe_s"],
+                                    parts=int(stage.get("parts") or 1),
+                                    ok=bool((text or "").strip()))
                     stage["chars"] = len((text or "").strip())
                     stage["method"] = method
                     st.session_state["_last_run"] = stage
@@ -6822,8 +6972,7 @@ elif active == "talk":
     # Two states, never both: WRITING (paste + box + go) and PLAYING
     # (player + subtitle + new text).
     sp_ring_talk = get_ring("speechify")
-    _tts = current_routes()["tts"]
-    engine = _tts.id if _tts else "edge"
+    engine = talking_engine()
 
     job = st.session_state.get("_talk_job")
 
