@@ -63,12 +63,11 @@ ck("3 THE LOGIN/INTERFACE PILLS GAIN NOTHING — the app itself is "
    "translation of the app that does not exist",
    set(LANGS5) <= SPOKEN | {"it", "de", "fr"}, LANGS5)
 
-ck("4 EVERY VOICE IN THE EDGE TABLE IS hr OR en OR A TRANSLATE-TAB "
-   "LANGUAGE — never a language added only for translation",
-   set(re.findall(r'"\w+": \("[a-z]{2}-[A-Z]{2}-\w+",\s*"[^"]*",\s*"(\w+)"',
-                  TALK)) <= set(LANGS5), sorted(set(re.findall(
-                      r'"\w+": \("[a-z]{2}-[A-Z]{2}-\w+",\s*"[^"]*",\s*"(\w+)"',
-                      TALK))))
+EDGE_LANGS = set(re.findall(
+    r'"\w+": \("[a-z]{2}-[A-Z]{2}-\w+",\s*"[^"]*",\s*"(\w+)"', TALK))
+ck("4 EVERY EDGE VOICE BELONGS TO A TR LANGUAGE — the deck reads the "
+   "TR grid, so a voice for anything else is a voice nothing can reach",
+   EDGE_LANGS <= set(LANGS_TR), sorted(EDGE_LANGS))
 
 # --- the exception ----------------------------------------------------
 ck("5 TRANSLATION MAY BE ANY LANGUAGE — the grid is free to grow",
@@ -83,18 +82,55 @@ extra = [c for c in LANGS_TR if c not in LANGS5]
 ck("8 there is at least one translate-only language to test the rule "
    "against", bool(extra), extra)
 for code in extra:
-    ck("9 %r HAS NO VOICE — a translate-only language must never "
-       "acquire one" % code, code not in TRANSLATE_VKEY,
-       TRANSLATE_VKEY)
-    ck("10 %r is not in VOICES_BY_LANG" % code, code not in VOICES_BY_LANG)
-    ck("11 %r is not in the login/interface pills" % code,
+    # THE AMENDMENT, 24.8.2026. Baba: "that language rule only applies to
+    # other tabs. Translation tab is free. It's a free soul. He can speak
+    # any. He is multilingual polyglot." So a translate-only language MAY
+    # have Edge voices — that is what the TR deck reads with — but it
+    # still may not appear in T's or R's pickers, or as an interface
+    # language, or as something the app will transcribe.
+    ck("9 %r IS NOT IN R's VOICE PICKER — the lock still holds for T "
+       "and R" % code, code not in VOICES_BY_LANG)
+    ck("10 %r is not in the login/interface pills" % code,
        code not in LANGS5)
-    ck("12 %r HAS NO EDGE VOICE — no '%s-' locale in the voice table"
-       % (code, code), ('"%s-' % code) not in TALK)
+    ck("11 %r HAS BOTH AN EDGE VOICE, FEMALE AND MALE — the TR deck "
+       "offers exactly two buttons and a language that answers only "
+       "one of them is a control that does nothing half the time"
+       % code,
+       ('"%sF"' % code) in TALK and ('"%sM"' % code) in TALK)
+
+# EVERY TR LANGUAGE, not just the extra ones — the deck can be pointed
+# at any of them.
+for code in LANGS_TR:
+    ck("12 %r can be read by the deck, female and male" % code,
+       ('"%sF"' % code) in TALK or code in ("hr", "en"),
+       "missing a pair")
+
+ck("13 ENGLISH IS BRITISH, EVERYWHERE. Baba: 'we don't work in this app "
+   "with American English, we just forget it.'",
+   "en-US" not in TALK and "en-GB" in TALK)
+ck("14 THE DECK PICKS BY LANGUAGE AND GENDER, never by name — one "
+   "binary choice, because the people using this are not going to "
+   "learn ten voice names",
+   "def vkey_for" in TALK and "def tr_voice_key" in SRC)
+# The pairing is checked INSIDE tr_read, not anywhere in the file:
+# "translate_src" appears all over the tab, so a global search passes
+# even when the lower box has been wired to the upper row. That exact
+# mutation slipped through the first version of this check.
+_body = SRC[SRC.index("def tr_read("):]
+_body = _body[:_body.index("\ndef ", 1)]
+_src_branch = _body[:_body.index("else:")]
+_out_branch = _body[_body.index("else:"):]
+ck("15 THE UPPER BOX SPEAKS THE UPPER ROW",
+   '"translate_src"' in _src_branch and '"translate_tgt"' not in _src_branch,
+   _src_branch.strip()[-120:])
+ck("15b AND THE LOWER BOX SPEAKS THE LOWER ROW — reading a translation "
+   "in the language it came FROM is the mistake this prevents",
+   '"translate_tgt"' in _out_branch and '"translate_src"' not in _out_branch,
+   _out_branch.strip()[:160])
 
 # --- the consequence, stated in the code ------------------------------
-ck("13 the rule is written down where the next session will meet it",
-   "TWO LANGUAGES, LOCKED" in open(
+ck("16 the rule is written down where the next session will meet it",
+   "multilingual polyglot" in open(
        os.path.join(ROOT, "docs", "HOW_WE_WORK.md"), encoding="utf-8").read())
 
 print("\n%d ok, %d failed" % (passed, failed))

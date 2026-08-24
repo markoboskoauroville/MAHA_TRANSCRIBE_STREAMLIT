@@ -33,7 +33,39 @@ VOICES = {
     "deM": ("de-DE-ConradNeural",    "Conrad",    "de", "M"),
     "frF": ("fr-FR-DeniseNeural",    "Denise",    "fr", "F"),
     "frM": ("fr-FR-HenriNeural",     "Henri",     "fr", "M"),
+    # Spanish, 24.8.2026. Baba: "translation tab is free, it's a free
+    # soul, he is multilingual polyglot" — so TR may speak what TR can
+    # translate, and Spanish needed a pair like every other language.
+    # Both names confirmed present in Edge's live catalogue that day
+    # (322 voices, 3 of them es-ES) rather than remembered: a wrong
+    # ShortName fails at synthesis, on a phone, with nothing to read.
+    # Castilian, not Latin American — the same reasoning as en-GB.
+    "esF": ("es-ES-ElviraNeural",    "Elvira",    "es", "F"),
+    "esM": ("es-ES-AlvaroNeural",    "Alvaro",    "es", "M"),
 }
+
+# THE TR DECK PICKS BY LANGUAGE AND GENDER, NEVER BY NAME. Baba: "user
+# does not choose a voice by name, only female or male — we don't want to
+# overburden them, they are old people." So the deck asks this table, and
+# the ten names above stay an implementation detail of the TR tab.
+#
+# EVERY LANGUAGE HAS BOTH. A language that can only answer one of two
+# buttons is a control that does nothing half the time; HOW_WE_WORK now
+# requires the pair before a language may join the TR grid.
+BY_LANG_GENDER = {}
+for _k, (_short, _name, _lang, _g) in VOICES.items():
+    BY_LANG_GENDER[(_lang, _g)] = _k
+
+
+def vkey_for(lang: str, gender: str = "F") -> str:
+    """The voice key for a language and a gender, or English if the
+    language is unknown — never a KeyError in front of somebody who just
+    pressed play."""
+    g = "M" if str(gender).upper().startswith("M") else "F"
+    return (BY_LANG_GENDER.get((lang, g))
+            or BY_LANG_GENDER.get((lang, "F"))
+            or BY_LANG_GENDER.get(("en", g))
+            or "ukF")
 UNIT_CAP = 320
 
 # ---------- text -> sentences (verbatim from the source app) ----------

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v180 (disabled controls are readable again)"
+APP_VERSION = "v181 (the TR cassette deck, polyglot)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -341,6 +341,11 @@ STRINGS = {
     "note_read":          {"en": "read",            "hr": "čitaj"},
     "note_one_only":      {"en": "one note at a time", "hr": "jedna bilješka odjednom"},
     "note_sel_help":      {"en": "Tick to select",  "hr": "Označi za odabir"},
+    "tr_read_src":        {"en": "read",            "hr": "čitaj"},
+    "tr_voice_f":         {"en": "female",          "hr": "ženski"},
+    "tr_voice_m":         {"en": "male",            "hr": "muški"},
+    "tr_deck_idle":       {"en": "nothing loaded",  "hr": "ništa nije učitano"},
+    "tr_reading":         {"en": "making the voice…", "hr": "pripremam glas…"},
     "eta_learning":       {"en": "learning how long this takes",
                            "hr": "učim koliko ovo traje"},
     "transcribing":       {"en": "Transcribing…",    "hr": "Transkribiranje…"},
@@ -6358,6 +6363,119 @@ LANG_PILL = {"hr": "HR", "en": "ENG", "it": "IT", "de": "DE",
              "fr": "FR", "es": "SPA"}
 
 
+# ---------------------------------------------------------------------
+# THE TR CASSETTE DECK. Baba: "we are missing the cassette deck on the
+# TR page — same look as on the read tab. But this one is special: it
+# reads TWO text boxes. The upper box takes its language from the upper
+# row of the matrix, the lower box from the lower row."
+#
+# TWO SETTINGS ONLY: female or male. Baba: "user does not choose a voice
+# by name, only female or male — we don't want to overburden them, they
+# are old people." So the ten Edge voices stay an implementation detail
+# and the tab offers one binary choice.
+#
+# WHOLE TEXT IN ONE PIECE, unlike R. R splits into parts because it
+# reads pasted articles; a translation box holds a paragraph. One piece
+# means no part-handoff, no prefetch, and no chance of the seam bugs
+# that machinery exists to prevent.
+# ---------------------------------------------------------------------
+TR_DECK_CAP = 4000          # characters. Beyond this the wait is unkind.
+
+
+def tr_voice_key(lang: str) -> str:
+    """Which Edge voice reads `lang`, given the one setting there is."""
+    return tk.vkey_for(lang, st.session_state.get("tr_gender", "F"))
+
+
+def tr_make_audio(text: str, lang: str):
+    """(mp3 bytes, seconds) for a whole box, or (None, reason).
+
+    Synthesised block by block and joined, because edge-tts answers per
+    utterance. Joining MP3 frames end to end is what the format allows
+    and what R already relies on inside a part.
+    """
+    body = (text or "").strip()
+    if not body:
+        return None, t("nothing_to_read")
+    if len(body) > TR_DECK_CAP:
+        body = body[:TR_DECK_CAP]
+    vkey = tr_voice_key(lang)
+    chunks = []
+    total = 0.0
+    for block in SPEECH.plan_blocks(tk.sentences_of(body)):
+        piece = block if isinstance(block, str) else " ".join(block)
+        if not piece.strip():
+            continue
+        audio, secs = tk.synth_sentence(piece, vkey)
+        if audio:
+            chunks.append(audio)
+            total += float(secs or 0)
+    if not chunks:
+        return None, t("translate_fail")
+    return b"".join(chunks), total
+
+
+def tr_deck():
+    """The deck at the top of TR, and the female/male setting under it.
+
+    ALWAYS DRAWN, loaded or not — the same furniture rule the action
+    links follow. A transport that appears only once something is
+    playing is a control nobody can find before they need it.
+    """
+    loaded = st.session_state.get("_tr_audio")
+    scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
+    if _wave_component is not None:
+        _wave_component(
+            src=("data:audio/mpeg;base64," + _b64.b64encode(loaded).decode()
+                 if loaded else ""),
+            cues=[], words=[], wtimes=[],
+            labels={"play": t("wave_play"), "pause": t("wave_pause"),
+                    "back": t("wave_back"), "next": t("wave_next"),
+                    "save": t("wave_save")},
+            part=1 if loaded else 0, parts=1 if loaded else 0,
+            startable=bool(loaded), scale=scale,
+            autoplay=bool(st.session_state.pop("_tr_autoplay", False)),
+            key="tr_player", default=None)
+
+    # THE ONE SETTING. Two pills, because this is a choice being offered
+    # rather than an action being taken — the distinction the file
+    # manager's links are the other half of.
+    g = str(st.session_state.get("tr_gender", "F")).upper()
+    with st.container(key="trgender"):
+        gc1, gc2 = st.columns(2)
+        gc1.button(t("tr_voice_f"), key="tr_gf",
+                   type="primary" if g == "F" else "secondary",
+                   on_click=lambda: st.session_state.update({"tr_gender": "F"}),
+                   use_container_width=True)
+        gc2.button(t("tr_voice_m"), key="tr_gm",
+                   type="primary" if g == "M" else "secondary",
+                   on_click=lambda: st.session_state.update({"tr_gender": "M"}),
+                   use_container_width=True)
+
+
+def tr_read(which: str):
+    """Load one box into the deck and start it.
+
+    `which` is "src" or "out" — and THAT is what decides the language:
+    the upper box speaks the upper row's pick, the lower box the lower
+    row's. Reading a translation in the language it was translated FROM
+    is the mistake this function exists to make impossible.
+    """
+    if which == "src":
+        text = st.session_state.get("translate_src_text", "")
+        lang = st.session_state.get("translate_src", "hr")
+    else:
+        text = st.session_state.get("translate_out", "")
+        lang = st.session_state.get("translate_tgt", "en")
+    audio, why = tr_make_audio(text, lang)
+    if audio is None:
+        st.session_state["_tr_error"] = why
+        return
+    st.session_state["_tr_audio"] = audio
+    st.session_state["_tr_autoplay"] = True
+    USAGE.log("read", len((text or "").strip()), UNIT_CHARS, "edge")
+
+
 def lang_pills(prefix: str, which: str, current: str):
     cols = st.columns(len(LANGS_TR))
     for col, code in zip(cols, LANGS_TR):
@@ -7435,6 +7553,15 @@ elif active == "translate":
     st.session_state.setdefault("translate_tgt", "en")
     st.session_state.setdefault("translate_out", "")
 
+    # THE CASSETTE DECK, AT THE TOP, AS ON EVERY OTHER TAB. Baba: "we are
+    # missing the cassette deck on the TR page — same logic and same
+    # interface on every tab." It was the one tab without a transport,
+    # and a hand that has learned where play lives found nothing there.
+    tr_deck()
+    _tr_err = st.session_state.pop("_tr_error", None)
+    if _tr_err:
+        st.error(_tr_err)
+
     def _clear_src():
         st.session_state["translate_src_text"] = ""
         st.session_state["translate_out"] = ""
@@ -7448,6 +7575,15 @@ elif active == "translate":
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
     box_links("trsrc", st.session_state.get("translate_src_text", ""),
               on_clear=_clear_src)
+    # READ, UNDER THE BOX IT READS. The upper box speaks the UPPER row's
+    # language — that pairing is the whole point of two rows and two
+    # boxes, and getting it backwards would read a translation in the
+    # language it came from.
+    with st.container(key="nact_trsrc"):
+        st.button(t("tr_read_src"), key="nact_read_trsrc",
+                  disabled=not (st.session_state.get("translate_src_text")
+                                or "").strip(),
+                  on_click=tr_read, args=("src",))
 
     # TRANSLATE BELONGS TO THE MATRIX, not to the command row.
     #
@@ -7476,6 +7612,11 @@ elif active == "translate":
                  label_visibility="collapsed", placeholder=t("translate_out_ph"))
     box_links("trout", st.session_state.get("translate_out", ""),
               on_clear=_clear_out)
+    with st.container(key="nact_trout"):
+        st.button(t("tr_read_src"), key="nact_read_trout",
+                  disabled=not (st.session_state.get("translate_out")
+                                or "").strip(),
+                  on_click=tr_read, args=("out",))
 
     tab_signature(t("sig_translate"))
 

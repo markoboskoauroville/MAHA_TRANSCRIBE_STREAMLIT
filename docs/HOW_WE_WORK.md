@@ -216,15 +216,26 @@ transcription and reading: Croatian and English.** Locked. Not a default,
 not a starting set, not "for now" — locked.
 
 **Translation is the exception, and the only one.** The TR tab may be
-expanded or contracted to any language on this planet. Adding one there
-costs a pill and a name; removing one costs the same.
+expanded or contracted to any language on this planet.
+
+**AND THE TR TAB MAY SPEAK THEM.** Baba, 24.8.2026: *"that language rule
+only applies to other tabs. Translation tab is free. It's a free soul.
+He can speak any. He is multilingual polyglot."* So the lock is a lock on
+T and R, not on TR. The TR deck reads whatever TR can translate into.
+
+**What a new translation language must bring with it.** Because TR can
+now speak, a language joining `LANGS_TR` must arrive with BOTH an Edge
+voice, female and male — never one. The TR deck offers exactly two
+settings, female or male, and a language that can only answer one of
+them is a control that does nothing half the time.
 
 **The line between them, so nobody has to guess where it falls:**
 
-    TRANSCRIPTION   hr, en. Locked
-    READING ALOUD   hr, en. Locked — voices, pickers, engines, all of it
-    INTERFACE       hr, en. Locked — the app is written in two languages
-    TRANSLATION     anything. The model writes it; nothing speaks it
+    TRANSCRIPTION      hr, en. Locked
+    READING IN T AND R hr, en. Locked — voices, pickers, engines
+    INTERFACE          hr, en. Locked — the app is written in two
+    TRANSLATION        anything. TR translates it AND reads it aloud,
+                       female or male, in that language
 
 **Why the rule exists.** Baba, 24.8.2026, after a Spanish translate pill
 turned into Spanish voices inside one session: *"I am not talking about
@@ -234,17 +245,15 @@ until it reaches for a voice, a Whisper language hint, a voice picker
 row, an interface string. Then it is four systems, each needing its own
 testing, for a language nobody asked to be spoken.
 
-**What this forbids, concretely.** A translation language must never
-acquire: an Edge or Speechify voice, an entry in `TRANSLATE_VKEY`, a row
-in `VOICES_BY_LANG` or `SP_VOICES_BY_LANG`, a place in `LANGS5` (which
-also draws the LOGIN pills), or a `speech_lang` value. `LANGS_TR` is the
-translation list and it is the ONLY list a new language joins.
+**What this still forbids, concretely.** A translation language must
+never acquire: a row in `VOICES_BY_LANG` or `SP_VOICES_BY_LANG` (the T
+and R voice pickers), a place in `LANGS5` (which also draws the LOGIN
+pills), or a `speech_lang` value. It MAY have Edge voices, because that
+is what the TR deck reads with, and it must have two.
 
-**The consequence, stated rather than discovered.** Nothing in this app
-can speak a translation into a third language. There is no read-aloud on
-the TR tab today, so nothing breaks. If one is ever added it must skip or
-refuse any language outside hr/en — never hand Spanish text to a Croatian
-voice because the code happened to have one.
+**The line, in one sentence.** A third language may be typed, translated
+and spoken in TR; it may never be transcribed, offered in T or R's voice
+pickers, or used as an interface language.
 
 ---
 
