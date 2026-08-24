@@ -998,6 +998,36 @@ def css(scheme: str = "amber", font: str = "mono",
       white-space: nowrap;
     }}
 
+    /* PROPORTION. Baba: "look at the sizes of text, buttons and
+       everything — proportions are not good, make them less different,
+       more equal size."
+       He is right and the cause is history: every row was tuned on the
+       day it was built, so the deck's transport, the pills, the links
+       and the settings labels each carry their own idea of small. These
+       pull the extremes toward each other — nothing changes by much,
+       and the spread narrows. */
+    [class*="st-key-quickrow"] button {{
+      font-size: 0.78rem !important;
+      padding: 0.35rem 0.5rem !important;
+      min-height: 0 !important;
+    }}
+    .setlabel {{ font-size: 0.68rem !important; letter-spacing: 0.04em; }}
+    .readhint {{ font-size: 0.72rem !important; line-height: 1.5; }}
+    /* The pills and the links were 0.72 and 0.78; both move to 0.75, so
+       a row of pills and the links under a box read as one family. */
+    .stButtonGroup button p {{ font-size: 0.75rem !important; }}
+
+    /* THE PIPE BETWEEN LANGUAGE AND MODE. Quiet, centred on the pills
+       beside it: it is punctuation, not a control, and anything that
+       looks pressable there would be pressed. */
+    .pilldiv {{
+      color: var(--line);
+      text-align: center;
+      font-size: 1.1rem;
+      line-height: 2.2rem;
+      user-select: none;
+    }}
+
     /* THE FILE MANAGER IS A SYSTEM TOOL, so its controls are LINKS.
        Baba: "for this kind of interface, when we are doing file
        management, it's like a system tool. Don't make pills, make

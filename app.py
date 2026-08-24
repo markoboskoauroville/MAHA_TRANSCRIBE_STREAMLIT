@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v174 (a) (through the gate)"
+APP_VERSION = "v175 (a) (quick settings, two keyrings, and the pills read after)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -563,6 +563,36 @@ STRINGS = {
     "aai_credit_label":   {"en": "credit in dollars",
                            "hr": "kredit u dolarima"},
     "aai_credit_save":    {"en": "save credit",      "hr": "spremi kredit"},
+    "sp_title":           {"en": "your Speechify key",
+                           "hr": "tvoj Speechify ključ"},
+    "sp_paste_ph":        {"en": "paste your key here",
+                           "hr": "zalijepi svoj ključ ovdje"},
+    "sp_save":            {"en": "save key",         "hr": "spremi ključ"},
+    "sp_none":            {"en": "No key yet. Without one, reading uses the "
+                                 "free voices.",
+                           "hr": "Nema ključa. Bez njega čitanje koristi "
+                                 "besplatne glasove."},
+    "sp_have":            {"en": "key: %s",          "hr": "ključ: %s"},
+    "sp_test":            {"en": "test key",         "hr": "provjeri ključ"},
+    "sp_ok":              {"en": "the key works",    "hr": "ključ radi"},
+    "sp_del":             {"en": "delete key",       "hr": "obriši ključ"},
+    "sp_del_sure":        {"en": "delete — sure?",   "hr": "obriši — sigurno?"},
+    "sp_pay":             {"en": "Speechify pricing and top-up →",
+                           "hr": "Speechify cijene i nadoplata →"},
+    "quick_title":        {"en": "quick settings",   "hr": "brze postavke"},
+    "quick_stt":          {"en": "transcribe: %s",   "hr": "prepisuje: %s"},
+    "quick_tts":          {"en": "talk: %s",         "hr": "govori: %s"},
+    "quick_trim":         {"en": "silences: %s",     "hr": "tišine: %s"},
+    "quick_free":         {"en": "free",             "hr": "besplatno"},
+    "quick_aai":          {"en": "AssemblyAI",       "hr": "AssemblyAI"},
+    "quick_edge":         {"en": "Edge",             "hr": "Edge"},
+    "quick_sp":           {"en": "Speechify",        "hr": "Speechify"},
+    "quick_on":           {"en": "cut",              "hr": "režem"},
+    "quick_off":          {"en": "kept",             "hr": "čuvam"},
+    "quick_need_key":     {"en": "No key for that engine yet — add one "
+                                 "below.",
+                           "hr": "Još nema ključa za taj pogon — dodaj ga "
+                                 "ispod."},
     "trim_label":         {"en": "remove silences",  "hr": "ukloni tišine"},
     "trim_why_on":        {"en": "Silent gaps are cut before uploading, so "
                                  "you pay for the words and not the pauses.",
@@ -1968,7 +1998,7 @@ SETTINGS_KEYS = ("ui_lang", "engine", "rec_source",
                  # other preference: `_save_server_settings` writes to a
                  # disk Streamlit Cloud wipes on every redeploy, so that
                  # alone would lose the key on the next deploy.
-                 "aai_key", "aai_on", "aai_rate", "aai_credit",
+                 "aai_key", "aai_on", "aai_rate", "aai_credit", "sp_key",
                  "aai_spent_s")
 SETTINGS_LS_KEY = f"maha_settings_{USER}"
 
@@ -4698,7 +4728,18 @@ def assemblyai_panel():
         # NO KEY YET: a box to paste into, and nothing else. Offering a
         # toggle for a provider nobody can reach is offering a switch
         # that does nothing.
-        st.text_input(t("aai_paste"), key="_aai_new", type="password",
+        # A SPACE, NOT A LABEL. Baba: "your assembled key and key
+        # overlapping." The heading above says what this is; the input's
+        # own label rendered on top of it, because
+        # label_visibility="collapsed" hides a label from SIGHT and
+        # Streamlit lays it out anyway.
+        #
+        # THIS IS THE FOURTH TIME — the recordings heading in v156, the
+        # keep-audio radio in v171, the trim toggle, and now this. The
+        # rule, written where the next reader will meet it: when a
+        # keyed heading sits above a widget, the widget's label is " ",
+        # never the same words again.
+        st.text_input(" ", key="_aai_new", type="password",
                       placeholder=t("aai_paste_ph"),
                       label_visibility="collapsed")
 
@@ -4828,6 +4869,156 @@ def assemblyai_panel():
 # frontends and docs — not merely within this file. Git remembers them;
 # commenting them out would be "dead code that has learned to survive
 # the checks".
+
+
+def speechify_panel():
+    """The person's own Speechify key. The same shape as AssemblyAI's.
+
+    Baba: "the same way we give user control over its own key for
+    AssemblyAI, we're going to do it for Speechify. Same controls, same
+    link, same text, everything is the same, so just different provider."
+
+    WHAT IS DELIBERATELY NOT THE SAME: there is no hours-left figure.
+    AssemblyAI bills per hour of audio and Baba gave me the two rates, so
+    a countdown there is arithmetic. Speechify bills per CHARACTER and I
+    do not have that rate from him — inventing one would put a wrong
+    number under a heading that looks authoritative, which is worse than
+    an honest gap. The link goes to their pricing page, which does know.
+    """
+    st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        t("sp_title")), unsafe_allow_html=True)
+
+    key = str(st.session_state.get("sp_key") or "")
+
+    if not key:
+        st.text_input(" ", key="_sp_new", type="password",
+                      placeholder=t("sp_paste_ph"),
+                      label_visibility="collapsed")
+
+        def _save():
+            fresh = str(st.session_state.get("_sp_new") or "").strip()
+            if not fresh:
+                return
+            st.session_state["sp_key"] = fresh
+            st.session_state["_sp_new"] = ""
+            persist_settings()
+
+        st.button(t("sp_save"), key="sp_save", on_click=_save,
+                  use_container_width=True)
+        st.markdown('<div class="readhint">%s</div>' % html.escape(
+            t("sp_none")), unsafe_allow_html=True)
+        return
+
+    st.markdown('<div class="readhint">%s</div>' % html.escape(
+        t("sp_have") % kr.mask(key)), unsafe_allow_html=True)
+    st.markdown(
+        '<a class="paylink" href="https://speechify.com/api/#pricing" '
+        'target="_blank" rel="noopener">%s</a>' % html.escape(t("sp_pay")),
+        unsafe_allow_html=True)
+
+    c1, c2 = st.columns([1, 1])
+
+    def _test():
+        try:
+            err, _kind = PROVIDERS.get("speechify").test_key(
+                str(st.session_state.get("sp_key") or ""))
+        except Exception as e:
+            err = "%s: %s" % (type(e).__name__, e)
+        st.session_state["_sp_msg"] = (
+            ("good", t("sp_ok")) if not err else ("bad", str(err)[:160]))
+
+    c1.button(t("sp_test"), key="sp_test", on_click=_test,
+              use_container_width=True)
+
+    if st.session_state.get("_sp_del_armed"):
+        def _del():
+            for k in ("sp_key", "_sp_del_armed"):
+                st.session_state.pop(k, None)
+            # AND STOP TALKING WITH IT. A voice engine set to Speechify
+            # with no Speechify key is a reader that says nothing, which
+            # looks like the reader being broken.
+            if st.session_state.get("voice_engine") == "speechify":
+                st.session_state["voice_engine"] = "edge"
+            persist_settings()
+        c2.button(t("sp_del_sure"), key="sp_del2", on_click=_del,
+                  use_container_width=True)
+    else:
+        c2.button(t("sp_del"), key="sp_del",
+                  on_click=lambda: st.session_state.update(
+                      {"_sp_del_armed": True}), use_container_width=True)
+
+    m = st.session_state.pop("_sp_msg", None)
+    if m:
+        (st.success if m[0] == "good" else st.error)(m[1])
+
+
+def quick_settings():
+    """The three switches worth reaching in one press.
+
+    Baba: "at the top of the settings you need to give toggle buttons...
+    name this row Quick Settings", after Android's own quick settings —
+    the things you change often, above the things you set once.
+
+    THREE, AND THEY ARE THE THREE HE NAMED: which engine transcribes,
+    which engine talks, and whether silence is cut. Everything else in
+    this tab is a decision made once; these three are decisions made in
+    the middle of working.
+    """
+    st.markdown('<div class="setlabel">%s</div>' % html.escape(
+        t("quick_title")), unsafe_allow_html=True)
+
+    with st.container(key="quickrow"):
+        q1, q2, q3 = st.columns([1, 1, 1])
+
+        # 1 · WHO TRANSCRIBES. One button, not two: it shows what is
+        # running and pressing it changes to the other. A pair of
+        # buttons for two mutually exclusive states is one button's
+        # worth of information taking twice the room.
+        aai_ready = bool(str(st.session_state.get("aai_key") or "").strip())
+        on = bool(st.session_state.get("aai_on")) and aai_ready
+
+        def _flip_stt():
+            if not aai_ready:
+                # NOTHING TO FLIP TO. Said rather than silently ignored:
+                # a button that does nothing teaches that buttons might.
+                st.session_state["_quick_msg"] = t("quick_need_key")
+                return
+            st.session_state["aai_on"] = not on
+            persist_settings()
+
+        q1.button(t("quick_stt") % (t("quick_aai") if on else t("quick_free")),
+                  key="q_stt", on_click=_flip_stt, use_container_width=True)
+
+        # 2 · WHO TALKS. Edge is free and Speechify is the paid voice.
+        sp_ready = bool(str(st.session_state.get("sp_key") or "").strip())
+        talking = str(st.session_state.get("voice_engine") or "edge")
+
+        def _flip_tts():
+            if not sp_ready:
+                st.session_state["_quick_msg"] = t("quick_need_key")
+                return
+            st.session_state["voice_engine"] = (
+                "edge" if talking == "speechify" else "speechify")
+            persist_settings()
+
+        q2.button(t("quick_tts") % (t("quick_sp") if talking == "speechify"
+                                    else t("quick_edge")),
+                  key="q_tts", on_click=_flip_tts, use_container_width=True)
+
+        # 3 · SILENCE. The same setting as below, reachable here.
+        def _flip_trim():
+            st.session_state["trim_silence"] = not bool(
+                st.session_state.get("trim_silence"))
+            persist_settings()
+
+        q3.button(t("quick_trim") % (t("quick_on") if st.session_state.get(
+                      "trim_silence") else t("quick_off")),
+                  key="q_trim", on_click=_flip_trim, use_container_width=True)
+
+    qm = st.session_state.pop("_quick_msg", None)
+    if qm:
+        st.markdown('<div class="readhint">%s</div>' % html.escape(qm),
+                    unsafe_allow_html=True)
 
 
 def note_number(i):
@@ -5437,21 +5628,28 @@ def _lang_mode_row():
         #
         # The shares follow the word lengths — AUTO and single are the
         # long ones.
-        lcol1, lcol2, lcol3, mcol1, mcol2 = st.columns(
-            [1.15, 0.8, 0.9, 1.25, 1.05])
+        lcol1, lcol2, lcol3, divcol, mcol1, mcol2 = st.columns(
+            [0.8, 0.9, 1.15, 0.25, 1.25, 1.05])
         speech_now = st.session_state.get("speech_lang", "hr")
-        # AUTO FIRST. Baba's order, and it reads right: the two named
-        # languages sit together as a pair, with the "work it out"
-        # option ahead of them rather than wedged behind.
-        lcol1.button(t("lang_auto"), key="tr_auto",
-                     type="primary" if speech_now == "auto" else "secondary",
-                     on_click=set_speech_lang, args=("auto",))
-        lcol2.button(t("lang_hr"), key="tr_hr",
+        # HR · ENG · AUTO, and a divider before single/multi. Baba's
+        # order, and the reason is AssemblyAI: it is very good at a
+        # named language and its AUTO is not, so the two certainties
+        # come first and the guess goes last. This reverses v118, where
+        # AUTO led — that was the right order for Whisper alone.
+        lcol1.button(t("lang_hr"), key="tr_hr",
                      type="primary" if speech_now == "hr" else "secondary",
                      on_click=set_speech_lang, args=("hr",))
-        lcol3.button(t("lang_en"), key="tr_en",
+        lcol2.button(t("lang_en"), key="tr_en",
                      type="primary" if speech_now == "en" else "secondary",
                      on_click=set_speech_lang, args=("en",))
+        lcol3.button(t("lang_auto"), key="tr_auto",
+                     type="primary" if speech_now == "auto" else "secondary",
+                     on_click=set_speech_lang, args=("auto",))
+        # A PIPE BETWEEN THE TWO IDEAS. Language and mode answer
+        # different questions — "what am I speaking" and "what happens
+        # to what is already in the box" — and five pills in a row read
+        # as one list of five choices.
+        divcol.markdown('<div class="pilldiv">|</div>', unsafe_allow_html=True)
         # Single or multi, in the same row as the language, because both
         # answer "what happens when I press stop".
         appending = bool(st.session_state.get("append_mode"))
@@ -5872,7 +6070,38 @@ if active == "transcribe":
         st.error(t("routing_none"))
         st.stop()
     t_engine = stt.id
-    lang_code = st.session_state.get("speech_lang", "hr")
+
+    def lang_now():
+        """The language AT THE MOMENT OF USE, never a captured copy.
+
+        Baba, three times over in one message: "After recording, not
+        before recording. I cannot emphasize this more."
+        
+        He is right about the requirement and this is the line that
+        guarantees it. `lang_code` used to be read HERE, at the top of
+        the module, and used a hundred and thirty lines further down when
+        the take arrived. In the ordinary case those are the same render
+        and the same value — which is why it looked correct — but the
+        value was fixed before the deck was even drawn, so any reasoning
+        about "which language was chosen when" had to trace a variable
+        across the whole module.
+        
+        A function instead of a variable makes it unarguable: every
+        caller reads the pill as it stands the instant it needs it. If he
+        changes HR to ENG while speaking, the take that arrives after
+        stop is transcribed as English.
+        """
+        return st.session_state.get("speech_lang", "hr")
+
+    def append_now():
+        """And single/multi at the moment of use, for the same reason.
+        
+        His words: "If I change to multi during recording, I have my note
+        appended. If I say single during recording, it was multi before,
+        my note gets deleted and replaced with new one." The mode that
+        matters is the one showing when the words arrive.
+        """
+        return bool(st.session_state.get("append_mode"))
 
     # A new take needs its own command. Without one, the only way to
     # record again was to work out that the recorder had to be cleared
@@ -5999,7 +6228,7 @@ if active == "transcribe":
                     # here, and Whisper gets it on the next line. Neither
                     # waits for the other.
                     _keeper = start_keeping(flac_path,
-                                            audio_seconds(flac_path), lang_code)
+                                            audio_seconds(flac_path), lang_now())
                     _t1 = time.time()
                     # ALWAYS through transcribe_any_size. This path used
                     # to call the provider directly, so a long take or a
@@ -6019,8 +6248,8 @@ if active == "transcribe":
                             pass
 
                     text, method, reusable = transcribe_any_size(
-                        flac_path, chosen_model(stt.provider) or model_for(lang_code),
-                        lang_code, progress_cb=_cb)
+                        flac_path, chosen_model(stt.provider) or model_for(lang_now()),
+                        lang_now(), progress_cb=_cb)
                     prog.empty()
                     stage["transcribe_s"] = time.time() - _t1
                     stage["chars"] = len((text or "").strip())
@@ -6114,7 +6343,7 @@ if active == "transcribe":
                     # spare once the words are out.
                     st.session_state.pop(hold_key, None)
                     st.session_state["flac_path"] = reusable
-                    st.session_state["last_lang"] = lang_code
+                    st.session_state["last_lang"] = lang_now()
                     st.session_state["_transcribe_method"] = method
                     st.session_state["_transcribe_provider"] = t_engine
                     USAGE.log("transcribe", audio_seconds(reusable),
@@ -6194,7 +6423,7 @@ if active == "transcribe":
                             frac, key = stage_map.get(stage, (0.5, "aai_stage_process"))
                             progress_bar.progress(frac, text=t(key))
 
-                        text = stt.transcribe(tmp.name, lang_code, progress_cb=_cb)
+                        text = stt.transcribe(tmp.name, lang_now(), progress_cb=_cb)
                         method, reusable = "direct", tmp.name
                     else:
                         def _cb(i, n):
@@ -6206,15 +6435,16 @@ if active == "transcribe":
                                 0.5, text=t("chunk_waiting").format(s=secs, i=idx + 1))
 
                         text, method, reusable = transcribe_any_size(
-                            tmp.name, chosen_model(stt.provider) or model_for(lang_code),
-                            lang_code, progress_cb=_cb, on_wait=_on_wait)
+                            tmp.name,
+                            chosen_model(stt.provider) or model_for(lang_now()),
+                            lang_now(), progress_cb=_cb, on_wait=_on_wait)
                     progress_bar.empty()
                     # THROUGH deliver_text, like every other route. This
                     # path set the box directly, so an uploaded big file
                     # was never archived and ignored single/multi — the
                     # exact drift the one-helper rule exists to prevent.
                     deliver_text(text)
-                    st.session_state["last_lang"] = lang_code
+                    st.session_state["last_lang"] = lang_now()
                     st.session_state["flac_path"] = reusable
                     st.session_state["_transcribe_method"] = method
                     st.session_state["_transcribe_provider"] = t_engine
@@ -6870,6 +7100,10 @@ elif active == "translate":
 
 
 elif active == "looks":
+    # QUICK SETTINGS FIRST. Baba: "at the top of the settings." The
+    # things changed in the middle of working, above the things set once.
+    quick_settings()
+
     # HOW THE APP LOOKS — everyone gets this. Size, typeface, colour.
     # Deliberately separate from engines and keys: what a person sees is
     # theirs to set, what the app talks to is the owner's.
@@ -7036,6 +7270,9 @@ elif active == "looks":
     # ---- YOUR OWN ASSEMBLYAI KEY --------------------------------------
     assemblyai_panel()
 
+    # ---- YOUR OWN SPEECHIFY KEY ---------------------------------------
+    speechify_panel()
+
     # ---- SILENCE ------------------------------------------------------
     #
     # Baba asked for this as something to "choose and experiment with",
@@ -7050,7 +7287,7 @@ elif active == "looks":
             st.session_state.get("_trim_pick"))
         persist_settings()
 
-    st.toggle(t("trim_label"), key="_trim_pick",
+    st.toggle(" ", key="_trim_pick",
               value=bool(st.session_state.get("trim_silence")),
               label_visibility="collapsed", on_change=_set_trim)
     st.markdown('<div class="readhint">%s</div>' % html.escape(
