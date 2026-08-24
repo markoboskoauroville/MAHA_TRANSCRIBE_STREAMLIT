@@ -320,10 +320,21 @@ check("12 THE PASSWORD IS SHOWN, once",
 # the "Add a person" heading — v110 replaced that heading with a plain
 # rule, and a check anchored to a label is a check that breaks when the
 # wording changes. The list is the thing it must come before.
+# v186 BROKE THIS CHECK'S ANCHOR AND THE ANCHOR WAS THE PROBLEM.
+#
+# It looked for the bare word "admin" to stand for the list. The tier
+# radio at the top of the app now prints "free / studio / admin" before
+# anything else on the page, so the word was found above the password
+# instead of below it and a correct layout read as a fault.
+#
+# The comment above already says why anchoring on a label is fragile —
+# it was written when v110 moved a heading. The same lesson, one word
+# further in: anchor on the ROW, which is what the list is made of, and
+# which the radio cannot contain.
+_page = page(at)
 check("13 and it is shown ABOVE the list, not under it — under it, it is "
       "below the fold on a phone",
-      page(at).index("djedova-lozinka") < page(at).index("admin"),
-      page(at)[:300])
+      _page.index("djedova-lozinka") < _page.index("baba"), _page[:300])
 # "Write this down NOW" is gone (v129). It told him to do the thing he
 # had just done — he chooses the password himself now, so it is already
 # written down. It was true when the app generated passwords and nobody

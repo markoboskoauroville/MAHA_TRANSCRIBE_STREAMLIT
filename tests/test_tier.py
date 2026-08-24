@@ -11,6 +11,21 @@ def app(tier):
                          default_timeout=90)
     at.session_state["_authed"]=True; at.session_state["_user"]="stub"
     at.session_state["active_tab"]="transcribe"
+    # v186: THE TIER IS THE PERSON, NOT THE ROUTES.
+    #
+    # It used to be read off the engine, so this file set the routes and
+    # that made it studio. Baba's tiers replaced that: "any studio user
+    # is also free user, but it's not admin user", and the radio at the
+    # top moves the person's tier, which moves the tools with it.
+    #
+    # So the person has to BE studio. `stub` is named in Secrets at the
+    # tier under test, and the routes below are left in place because
+    # they still say which providers that tier uses.
+    at.secrets["GROQ_API_KEYS"]=["gsk_test"]
+    if tier=="studio":
+        at.secrets["STUDIO_USER1"]="stub"
+    else:
+        at.secrets["FREE_USER1"]="stub"
     # THE ROUTES, NOT THE STORED NAME. EN.current() derives the engine
     # from the routes every render — deliberately, so a hand-patched
     # crosspoint reads "mixed" instead of claiming an engine that is no

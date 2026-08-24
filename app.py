@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v185 (the deck is acknowledged before the words are fetched)"
+APP_VERSION = "v186 (three tiers, one radio, and Google out of the door)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -92,7 +92,12 @@ from ttt import help_page as HELP_PAGE
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
 from ttt import theme
-from ttt import gate
+# `from ttt import gate` was here. The brute-force throttle belonged to
+# the password door, and v185 replaced that door with a name from
+# Secrets — there is nothing left to throttle, so the import went with
+# it (G3 found it unused). `ttt/gate.py` and `tests/gastest` are NOT
+# deleted: the module works, and it is one import from being useful
+# again the day a door has something to guess at.
 from ttt import copybtn
 
 # ----------------------------------------------------------------------
@@ -404,8 +409,13 @@ STRINGS = {
                            "hr": "Nije moguće doći do skripte za račune. "
                                  "Ništa nije promijenjeno."},
     "forgotten":          {"en": "Forgotten.",       "hr": "Zaboravljeno."},
-    "no_password_secret": {"en": "No password set in Secrets. Add APP_PASSWORDS (a list) in Streamlit Cloud → Settings → Secrets.",
-                            "hr": "Lozinka nije postavljena u Secrets. Dodaj APP_PASSWORDS (listu) u Streamlit Cloud → Settings → Secrets."},
+    # THE THREE TIERS, for the radio at the top. One word each: they sit
+    # in a row on a phone and a phrase would wrap.
+    "tier_free": {"en": "free", "hr": "free"},
+    "tier_studio": {"en": "studio", "hr": "studio"},
+    "tier_admin": {"en": "admin", "hr": "admin"},
+    "no_password_secret": {"en": "Nobody is named in Secrets. Add ADMIN_USER1, STUDIO_USER1 or FREE_USER1 in Streamlit Cloud → Settings → Secrets.",
+                            "hr": "Nitko nije naveden u Secrets. Dodaj ADMIN_USER1, STUDIO_USER1 ili FREE_USER1 u Streamlit Cloud → Settings → Secrets."},
     "no_groq_secret":     {"en": "No Groq key in Secrets. Add GROQ_API_KEYS (a list) in Streamlit Cloud → Settings → Secrets.",
                             "hr": "Nema Groq ključa u Secrets. Dodaj GROQ_API_KEYS (listu) u Streamlit Cloud → Settings → Secrets."},
     "tab_translate":      {"en": "TR",               "hr": "TR"},
@@ -998,7 +1008,27 @@ def admin_user() -> str:
 
 
 def is_admin() -> bool:
-    return bool(USER) and USER.strip().lower() == admin_user()
+    """Is the app behaving as the owner RIGHT NOW.
+
+    This follows the VIEW, not the account, and that is the whole point
+    of the radio. Baba: "I can switch quickly between 3 views and see
+    what's available in each of them." If switching to free left the gold
+    tabs on screen, the switch would show him something that is not what
+    his mother sees, which is the one thing it exists to do.
+
+    The radio itself is drawn from the ACCOUNT, never from the view, so
+    dropping to free is always reversible.
+    """
+    return view_tier() == "admin"
+
+
+def is_studio() -> bool:
+    """Does the current VIEW get the paid models and Google storage.
+
+    Admin is a studio user too — tiers nest — so this is a floor test,
+    not an equality test.
+    """
+    return RANK.get(view_tier(), 0) >= RANK["studio"]
 
 
 def owner_edge():
@@ -1035,30 +1065,112 @@ def groq_keys() -> list:
     return [k for k in keys if k]
 
 
+# ---------------------------------------------------------------------
+# WHO MAY ENTER, AND WHAT THEY GET — v186
+# ---------------------------------------------------------------------
+# Three kinds of person, and they NEST. Baba, 24.8.2026: "Any studio user
+# is also free user, but it's not admin user... Admin user is Marko, but
+# he's also studio user 1 — even if he's admin, he's automatically studio
+# user 1."
+#
+#     free     the app on the app's own keys: Edge and Whisper
+#     studio   everything free has, plus the paid models, plus Google
+#              storage for audio and notes
+#     admin    everything studio has, plus the owner's panel
+#
+# So a tier is a FLOOR, not a slot. Holding one means holding every tier
+# below it, which is why RANK is an ordering and not a set of labels.
+TIERS = ("free", "studio", "admin")
+RANK = {name: i for i, name in enumerate(TIERS)}
+
+
+def _tier_keys():
+    """Every secrets entry that names a person, with the tier it grants.
+
+    The names live in Secrets and nowhere else:
+
+        ADMIN_USER1  = "..."      ADMIN_USER, ADMIN_USER2 ... all work
+        STUDIO_USER1 = "..."
+        FREE_USER1   = "..."      FREE_USER2, FREE_USER3 ...
+
+    Any number of each, and the trailing digit is optional — the pattern
+    is scanned rather than a fixed list being read, so adding
+    FREE_USER7 needs no code change. ADMIN_USER without a digit is still
+    honoured, because that is what every deployment before v186 used and
+    a rename must not lock the owner out of his own app.
+    """
+    import re as _re
+    pat = _re.compile(r"^(ADMIN|STUDIO|FREE)_USER\d*$")
+    found = []
+    try:
+        keys = list(st.secrets.keys())
+    except Exception:
+        keys = []
+    for key in keys:
+        m = pat.match(str(key))
+        if m:
+            found.append((str(key), m.group(1).lower()))
+    return found
+
+
 def _named_people() -> dict:
-    """Who may enter: name (lowercased) -> is this the owner.
+    """name (lowercased) -> the tier that name holds. Secrets only.
 
-    ONE implementation, read from Secrets and nowhere else, used by the
-    start-up check and by the door. Two copies of "who is allowed in" is
-    the shape of fault that lets somebody through one and not the other.
-
-    ADMIN_USER is the owner. NORMAL_USER1..3 are the family. Adding a
-    person is a line in Streamlit Cloud - Settings - Secrets, no code
-    change, which is the same rule the engine keys already follow.
+    THE SAME NAME MAY APPEAR MORE THAN ONCE AND THE HIGHEST WINS.
+    Baba: "If I repeat the names, you ignore it." He listed himself as
+    admin, as studio and as free in one breath, which is not a mistake to
+    reject — it is three true statements about one person, and the answer
+    is simply the largest of them.
 
     Read fresh on every call rather than captured at import, so a name
     added in Settings is live on the next login instead of on the next
     redeploy.
     """
     out = {}
-    for key in ("NORMAL_USER1", "NORMAL_USER2", "NORMAL_USER3"):
-        name = str(st.secrets.get(key, "") or "").strip()
-        if name:
-            out[name.lower()] = False
-    owner = str(st.secrets.get("ADMIN_USER", "") or "").strip()
-    if owner:
-        out[owner.lower()] = True          # last, so the owner always wins
+    for key, tier in _tier_keys():
+        raw = st.secrets.get(key, "")
+        # A LIST IS ALLOWED TOO. FREE_USER1 = ["a", "b"] is a reasonable
+        # thing to type and it should not silently name nobody.
+        values = raw if isinstance(raw, (list, tuple)) else [raw]
+        for value in values:
+            name = str(value or "").strip().lower()
+            if not name:
+                continue
+            if RANK[tier] > RANK.get(out.get(name, "free"), -1) or name not in out:
+                out[name] = tier
     return out
+
+
+def account_tier() -> str:
+    """The highest tier the signed-in person holds. Never a view."""
+    who = str(st.session_state.get("_user", "") or "").strip().lower()
+    return _named_people().get(who, "free")
+
+
+def tiers_open_to(tier: str) -> list:
+    """Every tier at or below theirs, lowest first.
+
+    A floor, not a slot: studio can look at free, admin can look at both.
+    """
+    return [name for name in TIERS if RANK[name] <= RANK.get(tier, 0)]
+
+
+def view_tier() -> str:
+    """The tier the app is BEHAVING AS right now.
+
+    For nearly everybody this is simply their own tier. The owner can
+    move it with the radio at the top, to see the app as his mother sees
+    it without logging out and back in.
+
+    ALWAYS CLAMPED to what the account actually holds, and re-clamped on
+    every read rather than only when the radio is pressed. A stale value
+    in session_state must never be able to grant something.
+    """
+    held = account_tier()
+    chosen = str(st.session_state.get("_view_tier", "") or "")
+    if chosen in tiers_open_to(held):
+        return chosen
+    return held
 
 
 PASSWORDS = app_passwords()
@@ -1388,6 +1500,9 @@ def enter_remembered():
         return False
     st.session_state["_authed"] = True
     st.session_state["_user"] = r["user"]
+    # NOTHING SETS "accounts" ANY MORE (v186). Google authentication is
+    # gone: the door is a name in Secrets. Google is still used, for
+    # studio storage of audio and notes, and for nothing else.
     if r.get("kind") == "accounts":
         st.session_state["_via_accounts"] = True
         st.session_state["_remember_token"] = r.get("token", "")
@@ -1504,9 +1619,14 @@ def check_password() -> bool:
 
     typed = st.session_state.pop("_login_try", None)
     if typed:
-        if typed.lower() in _people():
+        people = _named_people()
+        if typed.lower() in people:
             st.session_state["_authed"] = True
             st.session_state["_user"] = typed
+            # THE VIEW OPENS AT WHAT THEY HOLD, not at the bottom. A
+            # studio user should not have to press anything to get the
+            # app they were given; the radio is for looking DOWN.
+            st.session_state["_view_tier"] = people[typed.lower()]
             return True
         # A WRONG NAME SAYS NOTHING, because Baba asked for zero text on
         # this screen. The box simply stays. If that turns out to be too
@@ -4247,12 +4367,24 @@ def drive_store():
     """The Drive store, or a disabled one. NEVER None, so callers do not
     need an `if` around every use.
 
-    Off unless ALL of these are true: the sheet says store_audio, the
-    secrets carry DRIVE_SECRET, and the sheet URL and token exist. Any one
-    missing and it is simply disabled — a half-configured store that
-    half-works is worse than one that plainly does not.
+    Off unless ALL of these are true: **the current view is studio or
+    admin**, the sheet says store_audio, the secrets carry DRIVE_SECRET,
+    and the sheet URL and token exist. Any one missing and it is simply
+    disabled — a half-configured store that half-works is worse than one
+    that plainly does not.
+
+    STORAGE IS WHAT STUDIO BUYS. Baba, 24.8.2026: "Google is only used
+    for Studio users to store their audio files and to store their notes
+    and other things we already developed, but just not for
+    authentication." A free user's take is transcribed and handed back
+    and nothing of theirs is kept in Baba's Drive.
+
+    It follows the VIEW, so the owner dropping to free sees the free
+    behaviour — no upload — which is the point of being able to drop.
     """
     try:
+        if not is_studio():
+            return _drive_store("", "", "", USER or "shared", False)
         secret = str(st.secrets.get("DRIVE_SECRET", "") or "")
         url = str(st.secrets.get("SHEETS_URL", "") or "")
         token = str(st.secrets.get("SHEETS_TOKEN", "") or "")
@@ -6633,6 +6765,41 @@ except Exception:
 # selection does not follow (verified in a browser), and Read this has to
 # be able to move the user to the Talk tab by itself.
 # ----------------------------------------------------------------------
+# THE TIER RADIO — v186, above everything else.
+#
+# Baba: "there will be radio button at the top of the interface with 3
+# users: Free, Studio, and Admin, depends what's available. And myself as
+# admin, I can switch quickly between 3 views and see what's available in
+# each of them."
+#
+# DRAWN FROM THE ACCOUNT, NEVER FROM THE VIEW. If it were drawn from the
+# view, dropping to free would remove the control that gets you back and
+# the only way out would be to log in again.
+#
+# "DEPENDS WHAT'S AVAILABLE": a free user holds one tier, so there is
+# nothing to choose and no radio is drawn. That is not a control
+# appearing and disappearing between renders — it is one person's app
+# having a control another person's app does not, which is the same as
+# the gold tabs.
+#
+# A radio and not pills, because exactly one tier is in force at a time
+# and choosing another must visibly take the mark off the last one.
+_held = account_tier()
+_open_tiers = tiers_open_to(_held)
+if len(_open_tiers) > 1:
+    # CLAMP THE STORED VALUE BEFORE THE WIDGET READS IT, not only in
+    # view_tier(). st.radio takes its value from session_state through
+    # the key, so a stale or forged entry that is not one of the options
+    # raises ValueError and takes the whole page down — which is how a
+    # value that was already correctly ignored could still break the app.
+    if st.session_state.get("_view_tier") not in _open_tiers:
+        st.session_state["_view_tier"] = _held
+    st.radio(
+        "view", _open_tiers,
+        format_func=lambda k: t("tier_" + k),
+        key="_view_tier", horizontal=True, label_visibility="collapsed",
+    )
+
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
     "nav", nav_tabs(),
@@ -7223,8 +7390,15 @@ if active == "transcribe":
     #
     # NOT HIDDEN FROM THE OWNER — he is on whatever tier he chose, like
     # everybody else, so he sees exactly what that tier gives.
-    _eng = EN.current(st.session_state)
-    _studio = bool(_eng and _eng.tier == "studio")
+    # THE PERSON'S TIER DECIDES, NOT A SEPARATE ENGINE SETTING (v186).
+    #
+    # This used to read the engine off the routes, which meant "what
+    # tools do I get" and "who am I" were two facts that could disagree.
+    # They are one fact now: a studio person gets the studio tools, a
+    # free person does not, and the radio at the top moves both together.
+    #
+    # LAST_RUN item 3, "tiers replace engines", is this line.
+    _studio = is_studio()
 
     # COPY AND CLEAR LEFT THIS ROW (v132). They live under the box now,
     # with every other box's copy and clear, so the row holds only what
@@ -8171,6 +8345,12 @@ elif active == "looks":
     # The password half only for people who HAVE one here. Somebody who
     # came through APP_PASSWORDS has no row to change, and the script
     # would answer a flat no that reads like a bug.
+    # THE PASSWORD CHANGER IS GONE (v186). Baba: "authentication through
+    # Google in Google Sheets is gone forever." There is no password to
+    # change — the door is a name from Secrets — so this form has nothing
+    # to act on. `_via_accounts` is never set any more, which is what
+    # switches it off; the block is left standing so the shape of what
+    # was here is readable if accounts ever come back.
     if st.session_state.get("_via_accounts") and auth_url():
         st.text_input(t("pw_current"), type="password", key="_pw_cur")
         st.text_input(t("pw_new"), type="password", key="_pw_new")

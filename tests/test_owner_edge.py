@@ -27,6 +27,15 @@ def app(user):
     at = AppTest.from_file(
         os.path.join(os.path.dirname(__file__), "..", "app.py"),
         default_timeout=90)
+    # v186: WHO THE OWNER IS COMES FROM SECRETS, BY NAME.
+    #
+    # This file used to rely on admin_user() falling back to
+    # APP_PASSWORDS[0], which happened to be "stub". That fallback is
+    # what the tiers replaced — the owner is ADMIN_USER1 now — so the
+    # test has to say who it means instead of inheriting it.
+    at.secrets["ADMIN_USER1"] = "stub"
+    at.secrets["FREE_USER1"] = "emina"
+    at.secrets["GROQ_API_KEYS"] = ["gsk_test"]
     at.session_state["_authed"] = True
     at.session_state["_user"] = user
     at.session_state["active_tab"] = "transcribe"

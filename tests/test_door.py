@@ -3,8 +3,9 @@
 Baba, 24.8.2026: "First screen of an app doesn't have anything, only one
 entry box. There is no title, no text, zero."
 
-Checked against the exact secrets SHAPE: ADMIN_USER, NORMAL_USER1,
-NORMAL_USER2.
+Checked against the exact secrets SHAPE: ADMIN_USER1, FREE_USER1,
+FREE_USER2. What each tier GETS is tests/test_tiers.py; this file is only
+about the door itself.
 
 The names below are invented. With this door the username IS the whole
 credential — there is no password behind it — so the real ones live in
@@ -48,9 +49,9 @@ def door():
     at = AppTest.from_file(
         os.path.join(os.path.dirname(__file__), "..", "app.py"),
         default_timeout=120)
-    at.secrets["ADMIN_USER"] = OWNER
-    at.secrets["NORMAL_USER1"] = FAMILY1
-    at.secrets["NORMAL_USER2"] = FAMILY2
+    at.secrets["ADMIN_USER1"] = OWNER
+    at.secrets["FREE_USER1"] = FAMILY1
+    at.secrets["FREE_USER2"] = FAMILY2
     at.secrets["GROQ_API_KEYS"] = ["gsk_stub_not_real"]
     return at
 
