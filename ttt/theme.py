@@ -68,6 +68,18 @@ TOKENS = {
     "amber_lo": "#b45309",
     "prose": "#f2ddb4",
     "dim": "#b1a389",       # lifted from #8a7a5c for 7:1
+    # A DISABLED CONTROL MUST STILL BE READABLE. Baba, 24.8.2026: "greyed
+    # out things are too much greyed out, I cannot even read them —
+    # compare the background colour with the greyed colour."
+    #
+    # He was right and it was not close. Disabled links used --line
+    # (#23303d), a BORDER colour, which measures 1.45:1 against the page.
+    # That is invisible, not quiet. This measures 5.41:1 on --bg, 4.87:1
+    # on the lightest panel — above the 4.5:1 readability line on every
+    # surface in the app, while still sitting well below live text at
+    # 7.85:1. The "not now" is carried by dropping the UNDERLINE, which
+    # says it without needing the text to be unreadable to say it.
+    "off": "#77899b",
     "red": "#f48383",       # lifted from #ef4444 for 7:1
     "green": "#22c55e",
 }
@@ -110,6 +122,7 @@ def css(scheme: str = "amber", font: str = "mono",
       --amber-hi: {t['amber_hi']};
       --prose: {t['prose']};
       --dim: {t['dim']};
+      --off: {t['off']};
       --red: {t['red']};
       --mono: {mono};
 
@@ -625,7 +638,14 @@ def css(scheme: str = "amber", font: str = "mono",
       padding: 0 !important;
       width: 100% !important;
     }}
-    [class*="st-key-sizerow_"] .stButton button:disabled {{ opacity: 0.3 !important; }}
+    /* THE SAME FAULT IN ANOTHER FORM. opacity 0.3 on --dim measures
+       1.72:1 against the page — as unreadable as the border colour was.
+       --off is the measured answer (5.41:1) and it is used here rather
+       than another opacity, because an opacity is a guess whose result
+       depends on whatever is behind it. */
+    [class*="st-key-sizerow_"] .stButton button:disabled {{
+      color: var(--off) !important;
+    }}
 
     /* The txttools row that used to live here is gone: every command
        row in the app is now the grid defined above. A second, older
@@ -1068,7 +1088,7 @@ def css(scheme: str = "amber", font: str = "mono",
        word. */
     [class*="st-key-rec_"] button:disabled,
     [class*="st-key-nact_"] button:disabled {{
-      color: var(--line) !important;
+      color: var(--off) !important;
       text-decoration: none !important;
       cursor: default !important;
     }}
