@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v202 (VR speaks)"
+APP_VERSION = "v203 (every Hume voice at the same volume)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8678,6 +8678,12 @@ elif active == "vr":
             audio = open(joined, "rb").read()
             tmp.append(joined)
         ttt_audio.cleanup(*tmp)
+        # LEVELLED BEFORE IT IS EVER HEARD. Hume renders its voices at
+        # wildly different volumes, so a take can arrive loud enough to
+        # startle or quiet enough to be missed — and with tags, two
+        # segments at different levels make the join audible exactly
+        # where the acting is meant to turn. See ttt/audio.py.
+        audio = ttt_audio.normalise_speech(audio)
         secs = total
         st.session_state["_vr_audio"] = audio
         st.session_state["_vr_autoplay"] = True
@@ -8775,7 +8781,11 @@ elif active == "vr":
                 st.session_state["_vr_error"] = err
                 return
             audio, _secs = got
-            st.session_state["_vr_audio"] = audio
+            # THE SAME LEVELLING, and this is the place it matters most:
+            # the cast panel exists to COMPARE voices, and comparing them
+            # at different volumes compares Hume's rendering rather than
+            # the voices.
+            st.session_state["_vr_audio"] = ttt_audio.normalise_speech(audio)
             st.session_state["_vr_autoplay"] = True
 
         # THE SETTING LIVES WHERE THE THING IS. Baba asked for preview to

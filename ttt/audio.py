@@ -209,6 +209,56 @@ def split_into_chunks(flac_path: str, chunk_seconds: int = CHUNK_SECONDS):
     return sorted(glob.glob(os.path.join(out_dir, "chunk_*.flac"))), out_dir
 
 
+def normalise_speech(raw: bytes, suffix: str = ".wav") -> bytes:
+    """One voice at one volume. WAV bytes in, WAV bytes out.
+
+    Baba, 25.8.2026: "There is an issue with Hume. Not all their voices
+    are on the same volume. Some are very loud, some are very quiet. We
+    need to — before playing any Hume audio, ffmpeg must normalise it.
+    That's the rule."
+
+    WHY IT MATTERS MORE HERE THAN ANYWHERE ELSE. VR exists to compare
+    voices. If one arrives at -30 LUFS and the next at -14, the loud one
+    sounds confident and the quiet one sounds timid, and that is a
+    property of Hume's rendering rather than of the performance. Every
+    judgement made in that tab would be about the wrong thing.
+
+    It matters within one take too: tags mean several requests joined
+    into one file, and two segments at different levels make the join
+    audible exactly where the acting is supposed to turn.
+
+    THE SAME LOUDNORM THE RECORDER ALREADY USES — EBU R128, -16 LUFS,
+    -1.5 dBTP. Not a second set of numbers to drift from the first. The
+    24-bit trap recorded above does not apply: that was about the FLAC
+    encoder Whisper is fed, and this is WAV for a player.
+
+    A CONVENIENCE MUST NEVER BE A DEPENDENCY. Without ffmpeg, or if the
+    filter fails on some odd input, the ORIGINAL bytes are returned
+    unchanged. Uneven audio is a complaint; no audio is a broken feature,
+    and the person pressing play would have no way to tell which had
+    happened.
+    """
+    if not raw:
+        return raw
+    src = dst = None
+    try:
+        fh = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        fh.write(raw)
+        fh.close()
+        src = fh.name
+        dst = tempfile.mktemp(suffix=".wav")
+        _run(["ffmpeg", "-v", "error", "-y", "-i", src,
+              "-af", LOUDNORM, "-ar", "48000", "-ac", "1",
+              "-sample_fmt", SAMPLE_FMT, dst], timeout=180)
+        with open(dst, "rb") as f:
+            out = f.read()
+        return out or raw
+    except Exception:                                        # noqa: BLE001
+        return raw
+    finally:
+        cleanup(*[x for x in (src, dst) if x])
+
+
 def cleanup(*paths) -> None:
     """Remove files and directories, never raising. Safe to call twice."""
     for p in paths:
