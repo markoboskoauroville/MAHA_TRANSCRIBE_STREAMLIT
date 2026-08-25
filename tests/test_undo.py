@@ -98,21 +98,39 @@ print("\n2 SHE OVERWRITES THE TEXT SHE NEEDS")
 at = app()
 at.session_state["_t1_text"] = FIRST
 at.run()
-check("2a nothing was lost yet, so still no undo",
-      link(at, "bl_undo_tx") is None)
+# THE CONTRACT CHANGED IN v221, AND IT CHANGED BECAUSE OF THIS TEST'S
+# BLIND SPOT. Fault 6 of Baba's brief: "they appear only once something
+# has been LOST... he looked and it was not there, so it fails the only
+# test that matters." This file asserted exactly the behaviour he
+# complained about, and passed the whole time.
+#
+# A person looks for undo BEFORE they need it, to know it is there.
+# So: present whenever the box has text, DISABLED when there is nothing
+# behind it. Present and dead beats absent — §1, nothing appears and
+# nothing disappears.
+_u = link(at, "bl_undo_tx")
+check("2a with text in the box, undo IS there before anything is lost",
+      _u is not None, _u)
+check("2a2 and it is disabled, because there is nothing behind it yet",
+      _u is not None and getattr(_u, "disabled", False) is True,
+      getattr(_u, "disabled", "no attr"))
 
 # The overwrite, through the app's own function.
 overwrite(at, SECOND, [FIRST])
 check("2b now there IS an undo link", link(at, "bl_undo_tx") is not None)
-check("2c and still no redo — nothing has been undone",
-      link(at, "bl_redo_tx") is None)
+_r = link(at, "bl_redo_tx")
+check("2c redo is there too, and dead — nothing has been undone",
+      _r is not None and getattr(_r, "disabled", False) is True,
+      getattr(_r, "disabled", "no attr"))
 check("2d the box holds the second take", box(at) == SECOND, box(at))
 
 link(at, "bl_undo_tx").click().run()
 check("2e UNDO PUTS THE FIRST TRANSCRIPT BACK", box(at) == FIRST, box(at))
 check("2f and now redo is offered", link(at, "bl_redo_tx") is not None)
-check("2g and undo is gone, there is nothing further back",
-      link(at, "bl_undo_tx") is None)
+_u2 = link(at, "bl_undo_tx")
+check("2g and undo is DEAD, not gone — the place does not move",
+      _u2 is not None and getattr(_u2, "disabled", False) is True,
+      getattr(_u2, "disabled", "no attr"))
 
 link(at, "bl_redo_tx").click().run()
 check("2h redo returns the second take", box(at) == SECOND, box(at))
@@ -141,14 +159,22 @@ overwrite(at, THIRD, [FIRST, SECOND])
 link(at, "bl_undo_tx").click().run()
 link(at, "bl_undo_tx").click().run()
 check("4a two undos walk back two steps", box(at) == FIRST, box(at))
-check("4b and then there is no further back", link(at, "bl_undo_tx") is None)
+_u4 = link(at, "bl_undo_tx")
+check("4b and then there is no further back — DEAD, still present, so "
+      "the place does not move",
+      _u4 is not None and getattr(_u4, "disabled", False) is True,
+      getattr(_u4, "disabled", "no attr"))
 
 # A NEW EDIT MUST END THE OLD FUTURE. Redo after typing something
 # different would put back text that never followed from what is on
 # screen now.
 at.session_state["_t1_redo"] = []
 overwrite(at, "something else entirely", ["a", "b"])
-check("4c a new edit clears the redo pile", link(at, "bl_redo_tx") is None)
+_r4 = link(at, "bl_redo_tx")
+check("4c a new edit clears the redo pile — the link stays, the future "
+      "does not",
+      _r4 is not None and getattr(_r4, "disabled", False) is True,
+      getattr(_r4, "disabled", "no attr"))
 
 # THE HISTORY IS BOUNDED. It lives in a session that can run for hours
 # and every step is a whole transcript.

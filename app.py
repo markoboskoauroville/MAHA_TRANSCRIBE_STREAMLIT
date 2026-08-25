@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v220 (every action in the same corner, all the same size)"
+APP_VERSION = "v221 (undo is there before you need it)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3557,8 +3557,18 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
                     st.button(t("clear_word"), key="bl_clear_%s" % where,
                               on_click=cb, use_container_width=True)
                 else:
+                    # AN EXTRA MAY SAY IT IS UNAVAILABLE. Three elements
+                    # rather than two: (key, fn, disabled). Older callers
+                    # pass two and are unchanged.
+                    #
+                    # This exists so a control can be PRESENT and dead
+                    # rather than absent — design-language.md §1, nothing
+                    # appears and nothing disappears. A link that is only
+                    # there sometimes is a link nobody learns the place
+                    # of.
                     label, key, fn = kind, cb[0], cb[1]
                     st.button(label, key=key, on_click=fn,
+                              disabled=bool(cb[2]) if len(cb) > 2 else False,
                               use_container_width=True)
 
 
@@ -8530,11 +8540,31 @@ if active == "transcribe":
     def _sync_typed():
         st.session_state[T1_TEXT] = st.session_state.get(_area_key, "")
 
+    # UNDO IS THERE WHENEVER THERE IS TEXT — fault 6 of Baba's brief,
+    # 03:20 on 25.8.2026:
+    #
+    #   "v187 added undo/redo under the transcript box, but they appear
+    #    only once something has been LOST. Record into an empty box and
+    #    there is no link. He looked and it was not there, so it fails
+    #    the only test that matters."
+    #
+    # It failed that test because it was built round the STACK: no stack,
+    # no link. But a person looks for undo BEFORE they need it — to know
+    # it is there, so they can risk pressing something. A safety net you
+    # cannot see is not a safety net.
+    #
+    # So the link exists whenever the box has text, and is DISABLED when
+    # there is nothing behind it. Present and dead beats absent:
+    # design-language.md §1, nothing appears and nothing disappears, and
+    # the place of a control is learned once rather than hunted for.
+    _has_text = bool((t1_text() or "").strip())
     _steps = []
-    if t1_can_undo():
-        _steps.append((t("undo_word"), ("bl_undo_tx", t1_undo)))
-    if t1_can_redo():
-        _steps.append((t("redo_word"), ("bl_redo_tx", t1_redo)))
+    if _has_text or t1_can_undo():
+        _steps.append((t("undo_word"),
+                       ("bl_undo_tx", t1_undo, not t1_can_undo())))
+    if _has_text or t1_can_redo():
+        _steps.append((t("redo_word"),
+                       ("bl_redo_tx", t1_redo, not t1_can_redo())))
 
     box_links("tx", t1_text(), on_clear=_clear_all,
               extra=_steps + _extra + [(t("tx_tonote"),

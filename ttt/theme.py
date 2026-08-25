@@ -1339,6 +1339,25 @@ def css(scheme: str = "amber", font: str = "mono",
     [class*="st-key-boxlinks_"] .stButton button:hover {{
       color: var(--amber) !important;
     }}
+    /* A DEAD LINK MUST LOOK DEAD. undo and redo are now PRESENT
+       whenever the box has text and disabled when there is nothing
+       behind them (§1, nothing appears and nothing disappears) — but a
+       disabled control that looks identical to a live one is worse than
+       a missing one: the person presses it, nothing happens, and they
+       learn the app is unreliable rather than that the action was
+       unavailable.
+       Faded and no underline, so it reads as "not yet" rather than as a
+       link that failed. It keeps its SPACE either way, which is the
+       whole point — the eye learns where undo lives once. */
+    [class*="st-key-boxlinks_"] .stButton button:disabled,
+    [class*="st-key-boxlinks_"] .stButton button[disabled] {{
+      opacity: 0.35 !important;
+      text-decoration: none !important;
+      cursor: default !important;
+    }}
+    [class*="st-key-boxlinks_"] .stButton button:disabled:hover {{
+      color: var(--dim) !important;
+    }}
     [class*="st-key-boxlinks_"] [data-testid="stIFrame"] {{
       margin: 0 !important;
     }}
