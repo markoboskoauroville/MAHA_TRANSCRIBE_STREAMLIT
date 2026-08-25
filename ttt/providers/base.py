@@ -1,3 +1,4 @@
+import re
 """What every provider must look like.
 
 Three capabilities, three shapes. Calling code asks the registry for a
@@ -256,3 +257,62 @@ def classify_standard(status: int, body: str = "") -> str:
         # rested, because credit does not come back in sixty seconds.
         return "dead"
     return "soft"
+
+
+# HOW LONG TO REST A THROTTLED KEY — ASK, DO NOT GUESS
+#
+# MEASURED 25.8.2026 by deliberately exceeding Groq's per-minute limit:
+#
+#     HTTP 429, header  retry-after: 2
+#     "...on requests per minute (RPM): Limit 30, Used 30... try again in 2s"
+#
+# The rings rested a cool key for SIXTY seconds. Groq asks for two. With
+# one key that is a stall nobody notices; with twenty-one it is most of
+# the ring asleep for no reason at all.
+#
+# AND THE OTHER DIRECTION IS WORSE. Groq signals per-minute and per-DAY
+# with the SAME status and the SAME code — only the message and the reset
+# window differ, and the daily bucket resets in tens of minutes:
+#
+#     x-ratelimit-reset-requests: 44m38.4s
+#
+# A fixed sixty-second rest retries a key that is out for the day, every
+# minute, all day. So the provider's own number is used when it gives
+# one, in this order: Retry-After, then the reset header, then a default.
+
+_RESET_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?(?:(\d+)ms)?$")
+
+
+def _reset_seconds(value: str):
+    """'44m38.4s' or '547ms' or '2' -> seconds, or None."""
+    v = (value or "").strip().lower()
+    if not v:
+        return None
+    try:
+        return float(v)                      # a bare number of seconds
+    except ValueError:
+        pass
+    m = _RESET_RE.match(v)
+    if not m or not any(m.groups()):
+        return None
+    h, mi, sec, ms = m.groups()
+    return ((float(h or 0) * 3600) + (float(mi or 0) * 60)
+            + float(sec or 0) + (float(ms or 0) / 1000.0))
+
+
+def cool_seconds(headers=None, default: float = 60.0,
+                 floor: float = 1.0, ceiling: float = 3600.0) -> float:
+    """How long this key should rest, from what the provider said.
+
+    FLOORED, because a provider answering 0 would make the ring spin. And
+    CAPPED, because a daily bucket can report hours and a key parked for
+    an hour is indistinguishable from a dead one to somebody waiting —
+    better to try it again and be told no a second time.
+    """
+    h = {str(k).lower(): str(v) for k, v in dict(headers or {}).items()}
+    for name in ("retry-after", "x-ratelimit-reset-requests",
+                 "x-ratelimit-reset-tokens"):
+        got = _reset_seconds(h.get(name, ""))
+        if got is not None and got > 0:
+            return max(floor, min(got, ceiling))
+    return max(floor, min(float(default), ceiling))

@@ -197,10 +197,24 @@ def mark_dead(ring: dict, idx: int, err: str) -> None:
     k["last_error"] = err
 
 
-def mark_cool(ring: dict, idx: int, err: str) -> None:
+def mark_cool(ring: dict, idx: int, err: str, seconds: float = None) -> None:
+    """Rest a throttled key for as long as the PROVIDER asked.
+
+    `seconds` comes from providers/base.cool_seconds, which reads
+    Retry-After and the reset headers. COOL_SECONDS is only the fallback
+    for a provider that says nothing.
+
+    MEASURED 25.8.2026: Groq answers a per-minute 429 with
+    `retry-after: 2`, and this parked the key for sixty. With one key
+    that is a stall; with twenty-one it is most of the ring asleep for
+    no reason. The other direction is worse — Groq signals per-DAY with
+    the same 429 and a reset of tens of minutes, so a fixed minute
+    retries a spent key every minute all day.
+    """
     k = ring["keys"][idx]
     k["state"] = "cool"
-    k["cool_until"] = time.time() + COOL_SECONDS
+    wait = COOL_SECONDS if seconds is None else max(1.0, float(seconds))
+    k["cool_until"] = time.time() + wait
     k["last_error"] = err
 
 
@@ -260,7 +274,17 @@ def rotate(ring: dict, attempt):
             key = keys[i]["key"] if i is not None else None
         if i is None:
             break
-        result, err, kind = attempt(key)        # network, deliberately unlocked
+        got = attempt(key)              # network, deliberately unlocked
+        # THREE OR FOUR. A provider that knows how long to wait returns
+        # it as a fourth value; one that does not is unchanged and gets
+        # the default. Adding a required argument instead would have
+        # meant touching every caller for a benefit only two of them can
+        # supply.
+        if len(got) == 4:
+            result, err, kind, wait = got
+        else:
+            result, err, kind = got
+            wait = None
         if not err:
             billed = 0
             if isinstance(result, dict):
@@ -274,7 +298,12 @@ def rotate(ring: dict, attempt):
                 if kind == "dead":
                     mark_dead(ring, i, err)
                 else:
-                    mark_cool(ring, i, err)
+                    # THE PROVIDER'S OWN NUMBER, when the attempt hands
+                    # one back. `attempt` may return a fourth value —
+                    # how long to rest — and older ones return three, so
+                    # this stays a tuple-length check rather than a
+                    # signature change every caller would have to make.
+                    mark_cool(ring, i, err, wait)
         else:
             return None, err        # not the key's fault; keep it, stop here
         idx = (i + 1) % n

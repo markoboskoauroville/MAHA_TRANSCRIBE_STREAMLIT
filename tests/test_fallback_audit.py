@@ -158,5 +158,63 @@ for exc, want, why in (
     check("3j %-34s -> %-4s (%s)" % (str(exc)[:34], got, why), got == want,
           "expected %s" % want)
 
+print("\n4 RESTING FOR AS LONG AS THE PROVIDER ASKED")
+# MEASURED 25.8.2026 by exceeding Groq's per-minute limit on purpose:
+#   429 + retry-after: 2, and on every 200 the buckets are published,
+#   including x-ratelimit-reset-requests: 44m38.4s for the daily one.
+# The rings parked every cool key for sixty seconds regardless.
+for h, want, why in (
+        ({"retry-after": "2"}, 2.0, "Groq per-minute, measured"),
+        ({"x-ratelimit-reset-requests": "44m38.4s"}, 2678.4, "daily bucket"),
+        ({"x-ratelimit-reset-tokens": "547ms"}, 1.0, "sub-second, floored"),
+        ({}, 60.0, "provider said nothing, default"),
+        ({"retry-after": "0"}, 60.0, "zero is not an answer"),
+        ({"retry-after": "99999"}, 3600.0, "capped — an hour reads as dead"),
+        ({"Retry-After": "5"}, 5.0, "header case ignored")):
+    got = base.cool_seconds(h)
+    check("4a %-32s -> %7.1fs (%s)" % (str(h)[:32], got, why),
+          abs(got - want) < 0.01, "expected %s" % want)
+
+print("\n4b AND THE RING USES IT")
+ring = {"keys": [{"key": "k0", "state": "new", "cool_until": 0,
+                  "calls": 0, "chars": 0},
+                 {"key": "k1", "state": "new", "cool_until": 0,
+                  "calls": 0, "chars": 0}], "active": 0}
+import time as _t
+
+
+def attempt4(key):
+    if key == "k0":
+        return None, "429", "cool", 2.0     # four values: the wait
+    return {"ok": True}, None, "ok"
+
+
+kr.rotate(ring, attempt4)
+rested = ring["keys"][0]["cool_until"] - _t.time()
+print("       a key that asked for 2s was parked for %.1fs" % rested)
+check("4b1 a four-value attempt parks the key for the time it asked",
+      1.0 < rested < 4.0, rested)
+
+ring2 = {"keys": [{"key": "k0", "state": "new", "cool_until": 0,
+                   "calls": 0, "chars": 0},
+                  {"key": "k1", "state": "new", "cool_until": 0,
+                   "calls": 0, "chars": 0}], "active": 0}
+
+
+def attempt3(key):
+    if key == "k0":
+        return None, "429", "cool"          # three values: the old shape
+    return {"ok": True}, None, "ok"
+
+
+kr.rotate(ring2, attempt3)
+rested2 = ring2["keys"][0]["cool_until"] - _t.time()
+print("       a key that said nothing was parked for %.0fs" % rested2)
+check("4b2 a THREE-value attempt still works, unchanged",
+      rested2 > 30, rested2)
+check("4b3 and both still rotated to the working key",
+      ring["keys"][1]["state"] != "dead"
+      and ring2["keys"][1]["state"] != "dead")
+
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)
