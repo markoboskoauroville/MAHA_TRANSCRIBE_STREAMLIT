@@ -27,6 +27,10 @@ import itertools
 import time
 
 KEY = "_t1_notes"
+# THE LAST DELETED NOTE, held for one undo. NOT part of the notebook, so
+# it is never written to the browser or to Drive: a deleted note must not
+# quietly persist as a copy the person cannot see or reach.
+UNDO_KEY = "_t1_note_undone"
 LIMIT = 200          # notes kept; far more than the archive's 60
 
 # A COUNTER, NOT A CLOCK — the same lesson archive.py learned. Two notes
@@ -295,13 +299,98 @@ def append(state, note_id, text, at=None):
     return True
 
 
-def remove(state, note_id):
+def remove(state, note_id, _group=False):
+    """Delete a note, and REMEMBER IT so it can be put back.
+
+    Baba, 24.8.2026, on where undo belongs next: notes. They are the one
+    thing in this app a person builds over days, and for a free user they
+    live only in the browser — there is no Drive copy to recover from. A
+    tap deleting that outright was the last unrecoverable act left.
+
+    THE POSITION IS KEPT, not just the note. Restoring to the end of the
+    list is not restoring: somebody who deletes the third of eight notes
+    and undoes expects it back between the second and the fourth, where
+    their eye already is.
+
+    `_group=True` ADDS to the held batch instead of replacing it, which
+    is how remove_many() makes one undo out of five deletions. On its
+    own, a delete replaces whatever was held — this is an undo for the
+    tap that should not have happened, not a wastebasket. A stack of
+    deleted notes would be a second store of things the person believes
+    they have thrown away.
+    """
     notes = _all(state)
     for i, n in enumerate(notes):
         if n.get("id") == note_id:
+            held = state.get(UNDO_KEY) if _group else None
+            batch = list(held.get("notes", [])) if isinstance(held, dict) else []
+            batch.append({"note": dict(n), "at": i})
+            state[UNDO_KEY] = {"notes": batch}
             del notes[i]
             return True
     return False
+
+
+def remove_many(state, note_ids):
+    """Delete several notes as ONE undoable act.
+
+    Deleting five and getting one back would be worse than getting none
+    back, because the person would believe the other four were beyond
+    saving and stop looking.
+
+    LOWEST INDEX LAST. Each delete shifts everything after it down, so
+    the positions recorded are only true if they are taken — and put
+    back — in a consistent order. Removing from the end backwards means
+    every recorded index still points where it did when it was read.
+    """
+    ids = list(note_ids or [])
+    order = [n.get("id") for n in _all(state)]
+    ids.sort(key=lambda i: order.index(i) if i in order else -1, reverse=True)
+    state[UNDO_KEY] = None
+    done = 0
+    for note_id in ids:
+        if remove(state, note_id, _group=True):
+            done += 1
+    return done
+
+
+def undo_remove(state):
+    """Put the last deleted note or batch back where it was.
+
+    Returns how many went back.
+    """
+    held = state.get(UNDO_KEY)
+    if not isinstance(held, dict):
+        return 0
+    batch = held.get("notes") or []
+    notes = _all(state)
+    back = 0
+    # ASCENDING, the mirror of the order they were taken in, so each
+    # insertion makes room for the next rather than displacing it.
+    for entry in sorted(batch, key=lambda e: e.get("at", 0)):
+        note = entry.get("note")
+        if not note:
+            continue
+        # IT MAY HAVE COME BACK BY ANOTHER ROAD — a Drive restore, an
+        # undo pressed twice. A second copy would be worse than nothing.
+        if any(n.get("id") == note.get("id") for n in notes):
+            continue
+        try:
+            where = int(entry.get("at", len(notes)))
+        except Exception:
+            where = len(notes)
+        notes.insert(max(0, min(where, len(notes))), dict(note))
+        back += 1
+    state[UNDO_KEY] = None
+    return back
+
+
+def undo_count(state):
+    """How many notes are waiting to be put back. 0 means no link."""
+    held = state.get(UNDO_KEY)
+    if not isinstance(held, dict):
+        return 0
+    return len([e for e in (held.get("notes") or []) if e.get("note")])
 
 
 def clear(state):

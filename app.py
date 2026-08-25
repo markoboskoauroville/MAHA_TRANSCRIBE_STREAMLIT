@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v186 (three tiers, one radio, and Google out of the door)"
+APP_VERSION = "v187 (undo — for the overwritten transcript and the deleted note)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -411,6 +411,13 @@ STRINGS = {
     "forgotten":          {"en": "Forgotten.",       "hr": "Zaboravljeno."},
     # THE THREE TIERS, for the radio at the top. One word each: they sit
     # in a row on a phone and a phrase would wrap.
+    # UNDO AND REDO. One word each, lowercase like copy and clear —
+    # they share a row and a link that shouted would outrank them.
+    # UNDO ON THE NOTES ROW. It carries the COUNT, because "undo" after
+    # deleting twelve should say that twelve are coming back.
+    "note_undo_del": {"en": "undo (%d)", "hr": "vrati (%d)"},
+    "undo_word": {"en": "undo", "hr": "vrati"},
+    "redo_word": {"en": "redo", "hr": "ponovi"},
     "tier_free": {"en": "free", "hr": "free"},
     "tier_studio": {"en": "studio", "hr": "studio"},
     "tier_admin": {"en": "admin", "hr": "admin"},
@@ -5918,11 +5925,36 @@ def _note_actions(picked, all_ids, where):
                   use_container_width=True)
 
         one = (n == 1)
-        c1.button(t("note_read"), key="nact_read_%s" % where,
-                  disabled=not one,
-                  help=None if one else t("note_one_only"),
-                  on_click=lambda: read_note(picked[0]) if picked else None,
-                  use_container_width=True)
+        # UNDO TAKES THE MIDDLE SLOT WHEN THERE IS SOMETHING TO UNDO.
+        #
+        # Baba, 24.8.2026: "Let's put undo in notes." A deleted note is
+        # the last unrecoverable act in the app — for a free user the
+        # notebook lives only in their browser, so there is no Drive copy
+        # to fall back on.
+        #
+        # It takes `read`'s place rather than adding a fourth column,
+        # because four links on a phone are four targets a thumb has to
+        # choose between, and this row is already three. Read is the one
+        # that gives way: nobody reaches for it in the second after a
+        # delete, and it comes straight back once undo is spent.
+        #
+        # It says HOW MANY, because "undo" after clearing a selection of
+        # twelve should tell you twelve are coming back.
+        waiting = NOTES.undo_count(st.session_state)
+        if waiting:
+            def _undo_del():
+                NOTES.undo_remove(st.session_state)
+                st.session_state.pop("_note_del_armed_many", None)
+
+            c1.button(t("note_undo_del") % waiting,
+                      key="nact_undo_%s" % where, on_click=_undo_del,
+                      use_container_width=True)
+        else:
+            c1.button(t("note_read"), key="nact_read_%s" % where,
+                      disabled=not one,
+                      help=None if one else t("note_one_only"),
+                      on_click=lambda: read_note(picked[0]) if picked else None,
+                      use_container_width=True)
 
         if st.session_state.get("_note_del_armed_many") and n:
             c2.button(t("note_del_n_sure") % n, key="nact_deln2_%s" % where,
@@ -5950,8 +5982,13 @@ def _note_delete_pending():
     doomed = st.session_state.pop("_note_del_many", None)
     if not doomed:
         return
+    # ONE UNDOABLE ACT, not five. remove_many() holds the whole batch,
+    # with each note's position, so `undo` puts all of them back where
+    # they were. Deleting five and getting one back would be worse than
+    # getting none back — the person would believe the other four were
+    # beyond saving and stop looking.
+    NOTES.remove_many(st.session_state, doomed)
     for nid in doomed:
-        NOTES.remove(st.session_state, nid)
         st.session_state.pop("_np_%s" % nid, None)
     # A note that was open and has just been deleted must not stay open.
     if st.session_state.get(OPEN_KEY) in doomed:
@@ -6318,15 +6355,85 @@ def t1_text() -> str:
     return st.session_state.get(T1_TEXT, "") or ""
 
 
-def t1_set_text(value: str) -> None:
+T1_UNDO = "_t1_undo"
+T1_REDO = "_t1_redo"
+T1_UNDO_DEPTH = 20
+
+
+def t1_set_text(value: str, remember: bool = True) -> None:
     """Replace the transcript AND remount the box so it is shown.
 
     Bumping the generation is not decoration. A text_area that already
     exists keeps the value the browser last sent it; only a widget with
     a key it has never seen takes a fresh `value=`.
+
+    IT ALSO REMEMBERS WHAT WAS THERE. Baba, 24.8.2026: "If, for example,
+    Emina overwrites the text she needs in single mode, she can easily
+    undo." Single mode overwrites by design, and the moment it does, work
+    that took a person real effort is gone with no way back.
+
+    THIS IS THE ONLY PLACE THE TRANSCRIPT CHANGES, which is why the
+    history belongs here and not at the five call sites. A stack that
+    lived beside the writers instead of inside them would miss the sixth
+    writer somebody adds next year.
+
+    `remember=False` is for undo and redo themselves — they move through
+    the history rather than adding to it, and a step that recorded itself
+    would make undo impossible to escape.
     """
-    st.session_state[T1_TEXT] = value or ""
+    old = st.session_state.get(T1_TEXT, "") or ""
+    new = value or ""
+    if remember and new != old:
+        # NOTHING IS REMEMBERED THAT NOBODY LOST. Delivering into an
+        # empty box takes nothing away, and an undo that empties the box
+        # again would only ever be pressed by mistake.
+        if old:
+            stack = list(st.session_state.get(T1_UNDO, []))
+            stack.append(old)
+            # A BOUND, because this lives in a session that can run for
+            # hours and every step is a whole transcript. Twenty steps is
+            # far past what anyone reaches for and still small.
+            st.session_state[T1_UNDO] = stack[-T1_UNDO_DEPTH:]
+        # A NEW EDIT ENDS THE OLD FUTURE. Redo after typing something
+        # different would put back text that never followed from what is
+        # now on screen.
+        st.session_state[T1_REDO] = []
+    st.session_state[T1_TEXT] = new
     st.session_state[T1_GEN] = int(st.session_state.get(T1_GEN, 0)) + 1
+
+
+def t1_can_undo() -> bool:
+    return bool(st.session_state.get(T1_UNDO))
+
+
+def t1_can_redo() -> bool:
+    return bool(st.session_state.get(T1_REDO))
+
+
+def t1_undo() -> None:
+    """Step back one replacement, putting the present on the redo pile."""
+    stack = list(st.session_state.get(T1_UNDO, []))
+    if not stack:
+        return
+    previous = stack.pop()
+    ahead = list(st.session_state.get(T1_REDO, []))
+    ahead.append(st.session_state.get(T1_TEXT, "") or "")
+    st.session_state[T1_UNDO] = stack
+    st.session_state[T1_REDO] = ahead[-T1_UNDO_DEPTH:]
+    t1_set_text(previous, remember=False)
+
+
+def t1_redo() -> None:
+    """Step forward again, for the undo that was pressed once too often."""
+    ahead = list(st.session_state.get(T1_REDO, []))
+    if not ahead:
+        return
+    nxt = ahead.pop()
+    stack = list(st.session_state.get(T1_UNDO, []))
+    stack.append(st.session_state.get(T1_TEXT, "") or "")
+    st.session_state[T1_REDO] = ahead
+    st.session_state[T1_UNDO] = stack[-T1_UNDO_DEPTH:]
+    t1_set_text(nxt, remember=False)
 
 
 def t1_area_key() -> str:
@@ -7495,9 +7602,28 @@ if active == "transcribe":
         st.markdown('<div class="readhint">%s</div>' % html.escape(_tn),
                     unsafe_allow_html=True)
 
+    # UNDO AND REDO, before the destructive ones.
+    #
+    # Baba: "If, for example, Emina overwrites the text she needs in
+    # single mode, she can easily undo." Single mode overwrites, and
+    # until now the overwritten transcript was simply gone.
+    #
+    # THEY APPEAR ONLY WHEN THEY HAVE SOMEWHERE TO GO. A greyed-out undo
+    # is a dead link, and the rule for this row is that a dead link is a
+    # question with no good answer. Nothing on this row is ever greyed;
+    # it is there or it is not.
+    #
+    # Undo sits to the LEFT of clear, because it is the way back from
+    # clear and reading order is the order things are reached.
+    _steps = []
+    if t1_can_undo():
+        _steps.append((t("undo_word"), ("bl_undo_tx", t1_undo)))
+    if t1_can_redo():
+        _steps.append((t("redo_word"), ("bl_redo_tx", t1_redo)))
+
     box_links("tx", t1_text(), on_clear=_clear_all,
-              extra=_extra + [(t("tx_tonote"),
-                               ("tx_tonote", keep_as_note))])
+              extra=_steps + _extra + [(t("tx_tonote"),
+                                        ("tx_tonote", keep_as_note))])
     if st.session_state.pop("_note_kept", None):
         st.caption(t("tx_tonote_done"))
 
