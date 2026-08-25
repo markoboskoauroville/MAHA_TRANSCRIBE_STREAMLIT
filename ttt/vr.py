@@ -24,9 +24,29 @@ seconds, serially, concurrency 1 — and never guesses, it asks
 # repeating it: 3s fails, 12s holds.
 PACE_SECONDS = 12
 
-# Hume's own text cap per utterance is generous; this is a kindness cap.
-# At roughly 15 characters a second of speech, 2000 characters is over
-# two minutes of audio from one press.
+# THE CAP, AND WHAT IS ACTUALLY KNOWN ABOUT IT.
+#
+# This comment used to say Hume's own cap "is generous" and leave it at
+# that, and I then told Baba that 2000 WAS Hume's documented limit. It is
+# not. It is this constant, chosen here, and I repeated it back to him as
+# a measured fact. Measuring it took four minutes:
+#
+#     MEASURED 25.8.2026, one real key, ascending:
+#       1000 chars -> 200,  54s of audio
+#       2000 chars -> 200, 111s
+#       3000 chars -> 200, 170s
+#       5000 chars -> 400, and the account was out of credit by then,
+#                     so the ceiling ABOVE 3000 is still unknown
+#
+# So 2000 remains a KINDNESS cap and is now honest about being one: at
+# roughly 15 characters a second it is over two minutes of speech from
+# one press, and one press should not cost two minutes of somebody's
+# credit by accident.
+#
+# NOTHING IS EVER TRUNCATED TO FIT IT. A block longer than this is SPLIT
+# and read as the next block — see split_long. The old code sliced the
+# text and dropped the tail in silence, which is a reading that sounds
+# finished and is not.
 TEXT_CAP = 2000
 
 # ---------------------------------------------------------------------
@@ -525,6 +545,30 @@ def voice_meta(name: str) -> str:
 # ---------------------------------------------------------------------
 
 
+def split_long(sentence: str, cap: int = TEXT_CAP) -> list:
+    """One over-long sentence as several pieces, none past `cap`.
+
+    A person can paste a paragraph with no full stop in it, and the
+    voice still has to say all of it. Split at a SPACE so no word is cut
+    in half; if there is no space to split at — one enormous unbroken
+    token — fall back to a hard cut, because saying most of it beats
+    saying none of it and there is nothing better to break on.
+    """
+    body = (sentence or "").strip()
+    if len(body) <= cap:
+        return [body] if body else []
+    out = []
+    while len(body) > cap:
+        cut = body.rfind(" ", 0, cap)
+        if cut <= 0:
+            cut = cap
+        out.append(body[:cut].strip())
+        body = body[cut:].strip()
+    if body:
+        out.append(body)
+    return [x for x in out if x]
+
+
 def plan_directed(text: str, first: int = 1, per_block: int = 4,
                   max_chars: int = 1500, sentences_of=None):
     """The reading as [(direction_words, [sentences])], in order.
@@ -548,7 +592,12 @@ def plan_directed(text: str, first: int = 1, per_block: int = 4,
     plan = []
     n_done = 0
     for words, spoken in split_directed(text):
-        sents = [x for x in split(spoken) if x.strip()]
+        # EVERY SENTENCE IS BROUGHT UNDER THE CAP FIRST, so no block can
+        # ever be built that the provider would refuse — and nothing is
+        # trimmed to fit later.
+        sents = [piece
+                 for x in split(spoken) if x.strip()
+                 for piece in split_long(x, TEXT_CAP)]
         i = 0
         while i < len(sents):
             size = first if (n_done == 0 and first > 0) else per_block
@@ -561,6 +610,8 @@ def plan_directed(text: str, first: int = 1, per_block: int = 4,
                 take.append(nxt)
                 chars += len(nxt) + 1
             if not take:                  # one sentence past the budget
+                # It is already under TEXT_CAP thanks to split_long, so
+                # taking it alone cannot produce an over-cap block.
                 take = [sents[i]]
             plan.append((list(words), take))
             i += len(take)

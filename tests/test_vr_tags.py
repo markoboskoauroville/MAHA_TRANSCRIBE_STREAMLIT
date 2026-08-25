@@ -268,9 +268,19 @@ check("6i text with no tags still plans",
       shape("One. Two. Three. Four. Five."))
 check("6j a tag with nothing after it produces no empty block",
       P("A. <calm>") == [([], ["A."])], P("A. <calm>"))
+# CHANGED CONTRACT, and the change is the point: a sentence past the CAP
+# used to be handed over whole and then sliced by hume_speak, dropping
+# its tail in silence. It is SPLIT now. This check asserted the old
+# behaviour, so it went red on the fix — correctly.
 huge = "x" * 4000 + "."
-check("6k a sentence past the budget is taken alone",
-      P(huge + " B. C.")[0][1] == [huge], len(P(huge + " B. C.")[0][1]))
+_hp = P(huge + " B. C.")
+check("6k a sentence past the cap is SPLIT, never handed over whole",
+      len(_hp) > 1 and all(len(" ".join(b)) <= V.TEXT_CAP for _, b in _hp),
+      [len(" ".join(b)) for _, b in _hp])
+check("6k2 and a sentence merely past the per-block budget, but under "
+      "the cap, is still taken alone",
+      P("y" * 1600 + ". B. C.")[0][1] == ["y" * 1600 + "."],
+      len(P("y" * 1600 + ". B. C.")[0][1]))
 check("6l block_text joins a block for the voice",
       V.block_text(([], ["A.", "B."])) == "A. B.")
 check("6m first=0 means no fast start",

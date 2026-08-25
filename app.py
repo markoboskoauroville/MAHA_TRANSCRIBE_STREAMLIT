@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v209 (twelve times smaller, and a cache with a ceiling)"
+APP_VERSION = "v210 (nothing truncated, and an empty account falls back)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -363,6 +363,10 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_too_long":        {"en": "that block is longer than %d characters "
+                                 "— this is a bug, please tell Marko",
+                           "hr": "taj dio je duži od %d znakova — ovo je "
+                                 "greška, javi Marku"},
     "vr_stitch":          {"en": "make one file of the whole reading",
                            "hr": "napravi jednu datoteku cijelog čitanja"},
     "vr_stitch_wait":     {"en": "make one file — %d parts still to render",
@@ -3935,6 +3939,24 @@ def hume_error_kind(status: int, body: str = "") -> str:
         return "dead"
     if status == 429:
         return "cool"
+    # AN EXHAUSTED ACCOUNT IS A DEAD ACCOUNT, and it does not announce
+    # itself as one. MEASURED 25.8.2026 against a real key: when the
+    # credit runs out Hume answers 400 with
+    #
+    #     {"code":"E0300","slug":"zero_credits",
+    #      "message":"Exhausted credit balance..."}
+    #
+    # 400 fell through to "soft", and soft RETURNS IMMEDIATELY rather
+    # than rotating — so one empty account stopped the whole reading
+    # while twenty others still had credit. That is the fallback Baba
+    # asked about and it was not there.
+    #
+    # Condemned rather than rested, because credit does not come back in
+    # sixty seconds. The owner tops it up or the account stays out.
+    low = (body or "").lower()
+    if status == 400 and ("zero_credits" in low or "e0300" in low
+                          or "credit balance" in low):
+        return "dead"
     if status == 403:
         # 1010 is Cloudflare refusing the CLIENT, not Hume refusing the
         # key. The manifest measured this across 21 pairs: all 21 gave
@@ -4002,7 +4024,19 @@ def hume_speak(ring: dict, text: str, voice_name: str, direction: str):
     n = len(keys)
     if not n:
         return None, t("vr_no_key")
-    payload = {"utterances": [{"text": text[:VR.TEXT_CAP],
+    # NEVER TRUNCATED. This said text[:VR.TEXT_CAP] and silently dropped
+    # everything past the cap — a reading that sounded complete and was
+    # missing its end, with nothing on screen to say so. The PLANNER
+    # guarantees a block fits (VR.plan_directed splits an over-long
+    # sentence at the cap), so arriving here over the cap is a fault
+    # worth reporting rather than hiding.
+    if len(text or "") > VR.TEXT_CAP:
+        # TWO VALUES, because this is hume_speak and not hume_call. My
+        # first version returned three here and would have raised on the
+        # unpack — caught by reading which function the line landed in,
+        # not by running it, which is luck I do not want to rely on.
+        return None, t("vr_too_long") % VR.TEXT_CAP
+    payload = {"utterances": [{"text": text,
                                "description": direction,
                                "voice": {"name": voice_name,
                                          "provider": "HUME_AI"}}],
