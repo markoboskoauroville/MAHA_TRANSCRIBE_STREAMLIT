@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v225 (save works from a standing start)"
+APP_VERSION = "v226 (the tab you left is the tab you come back to)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3705,9 +3705,38 @@ def _kept_save() -> None:
                        if n in st.session_state
                        and isinstance(st.session_state[n],
                                       (str, bool, int, float))}
-    if all(not v for k, v in blob.items()
-           if k not in ("_tab", "choices")) and not blob["choices"]:
-        return                       # nothing worth keeping yet
+    # THE TAB IS WORTH KEEPING ON ITS OWN.
+    #
+    # Baba, 25.8.2026: "make persistent inside browser storage the last
+    # tab when the user left the app."
+    #
+    # It was already being saved — but only as a passenger. This refused
+    # to write anything unless a BOX had text or a CHOICE had been made,
+    # so somebody who opened the app, went to VR, typed nothing and left
+    # came back to T. It survived at all only by accident, because
+    # rendering a tab usually setdefaults a choice somewhere.
+    #
+    # Which tab he was on IS the state — often the only state, and always
+    # the first thing he sees. A default tab is only right for somebody
+    # who has never been here.
+    #
+    # The guard now refuses only when there is NOTHING AT ALL, which is
+    # the first render of a fresh browser and nothing else.
+    # NOTHING WORTH KEEPING IS: the DEFAULT tab, no text, no choices.
+    #
+    # My first version asked only whether `_tab` was set — and it always
+    # is, because active_tab is setdefaulted to "transcribe". So every
+    # visitor wrote storage on their first render, to record that they
+    # were on the tab they would have landed on anyway.
+    #
+    # Being on T with an empty app is not a memory, it is the absence of
+    # one. Being on VR with an empty app IS a memory, and that is the
+    # whole of what he asked for.
+    if (blob.get("_tab", "transcribe") == "transcribe"
+            and not blob["choices"]
+            and all(not v for k, v in blob.items()
+                    if k not in ("_tab", "choices"))):
+        return                       # a browser that has never been used
     packed = json.dumps(blob)
     if packed == st.session_state.get("_kept_last"):
         return

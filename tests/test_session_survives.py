@@ -39,8 +39,10 @@ def save(st):
     blob["_tab"] = st.get("active_tab", "transcribe")
     blob["choices"] = {n: st[n] for n in CHOICES
                        if n in st and isinstance(st[n], (str, bool, int, float))}
-    if all(not v for k, v in blob.items()
-           if k not in ("_tab", "choices")) and not blob["choices"]:
+    if (blob.get("_tab", "transcribe") == "transcribe"
+            and not blob["choices"]
+            and all(not v for k, v in blob.items()
+                    if k not in ("_tab", "choices"))):
         return None
     packed = json.dumps(blob)
     if packed == st.get("_kept_last"):
@@ -160,6 +162,40 @@ check("1v choices alone are worth saving, even with every box empty",
       save({"vr_voice": "Sonia"}) is not None)
 check("1w nothing at all is still not worth saving", save({}) is None)
 
+print("\n1g THE TAB SURVIVES ON ITS OWN")
+# Baba: "make persistent inside browser storage the last tab when the
+# user left the app."
+#
+# It was already saved — but only as a PASSENGER. The guard refused to
+# write anything unless a box had text or a choice had been made, so
+# somebody who opened the app, went to VR, typed nothing and left came
+# back to T. It survived at all only by accident, because rendering a
+# tab usually setdefaults a choice somewhere.
+bare = save({"active_tab": "vr"})
+check("1x a tab with NOTHING else is still written out", bare is not None,
+      bare)
+back2 = {}
+restore(back2, bare)
+check("1y and he comes back to it", back2.get("active_tab") == "vr",
+      back2.get("active_tab"))
+check("1z a browser that has never been used writes nothing at all",
+      save({}) is None, save({}))
+# AND THE MODEL ABOVE IS ONLY A MODEL. It can drift from the app without
+# a single check going red — mutating the app's guard left 1x green,
+# because 1x drives this copy. So the app's OWN guard is read here.
+# find(), with the region checked — the sweep blocked on this as new
+# debt the moment I wrote it, which is the tool doing its job on its
+# author.
+_gs, _ge = app.find("def _kept_save"), app.find("def kept_area")
+check("1z0 the save function is findable", 0 < _gs < _ge, (_gs, _ge))
+_g = app[_gs:_ge] if 0 < _gs < _ge else ""
+check("1z1 the APP refuses only when the tab is the DEFAULT and nothing "
+      "else is set — not merely when a box is empty",
+      'blob.get("_tab", "transcribe") == "transcribe"' in _g, _g[-300:])
+check("1z2 which tab he was on IS state — often the only state, and "
+      "always the first thing he sees",
+      "vr" in (bare or ""))
+
 print("\n2 THE APP IS WIRED THIS WAY")
 check("2a there is a store key", "KEPT_LS_KEY" in code)
 check("2b every box is in the list",
@@ -179,7 +215,12 @@ check("2c2 the restore is actually CALLED at top level, not merely "
       "defined", _call > 0, _call)
 check("2c it restores BEFORE the tab bar, or the old tab shows for a "
       "frame and then jumps",
-      _call > 0 and _call < code.index('key="active_tab"'), _call)
+      _call > 0 and _call < code.find('key="active_tab"'), _call)
+# AND BEFORE THE DEFAULT, or setdefault would be a no-op after the
+# restore had already put the real tab there — harmless in that order,
+# fatal in the other.
+check("2c3 and before the default that would otherwise win",
+      0 < _call < code.find('setdefault("active_tab"'), _call)
 check("2d and AFTER the login — there is nothing to restore for somebody "
       "who is not in",
       code.index('if not st.session_state.get("_authed")')
