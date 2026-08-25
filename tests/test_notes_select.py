@@ -87,7 +87,10 @@ ck("15 delete works on many, which is the one act that means the same "
 
 # --- READ CARRIES THE WORDS ------------------------------------------
 ck("16 read_note puts the note's TEXT into R's box",
-   'st.session_state["talk_text"] = body' in SRC)
+   # THE BOXES LEFT WIDGET KEYS IN v218 — a rerun before the widget
+   # renders garbage-collects the key, so the text lives in a store and
+   # kept_set writes it. Same claim, current mechanism.
+   'kept_set("talk_text", body)' in SRC)
 ck("17 AN EMPTY NOTE IS NOT READ — a player that starts and says "
    "nothing reads as the app being broken",
    re.search(r'if not body:\s*\n\s*return', SRC) is not None)

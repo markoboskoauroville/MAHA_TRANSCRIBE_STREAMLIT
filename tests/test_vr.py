@@ -132,7 +132,10 @@ ck("29 ready() agrees with wait_left",
 # --- HOW THE TAB USES IT ---------------------------------------------
 ck("30 the button is DISABLED while the wait runs, rather than firing "
    "and blaming the person",
-   'disabled=bool(_left) or not _has' in SRC)
+   # THE SPELLING MOVED IN v224, when rehearse joined the action row: the
+   # disabled state is an extra's third element now, not a keyword on a
+   # button of its own. Same claim, current code.
+   '("nact_vr_go", _vr_go, bool(_left) or not _has)' in SRC)
 ck("31 and it SAYS the wait in seconds — Baba: 'just write, please "
    "wait, Hume AI is drinking coffee'",
    'vr_coffee' in SRC and '%d seconds' in SRC)

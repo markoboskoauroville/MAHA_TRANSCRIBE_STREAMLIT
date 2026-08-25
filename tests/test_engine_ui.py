@@ -96,13 +96,23 @@ check("6 the second names Speechify, AssemblyAI and Claude",
 # --- choosing an engine writes the ROUTES -----------------------------
 at2 = app()
 at2.run()
-[b for b in at2.get("button") if b.key == "eng_studio"][0].click().run()
+# Same as test_engine_sheet: `eng_studio` was removed from app.py and
+# this reached for it, so the file crashed instead of reporting.
+_es = [b for b in at2.get("button") if b.key == "eng_studio"]
+check("the studio engine control still exists", bool(_es),
+      "no button keyed eng_studio")
+if _es:
+    _es[0].click().run()
 check("7 choosing studio patches every route",
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm"))
       == ("assemblyai", "speechify", "anthropic"),
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm")))
 
-[b for b in at2.get("button") if b.key == "eng_normal"][0].click().run()
+_en = [b for b in at2.get("button") if b.key == "eng_normal"]
+check("the normal engine control still exists", bool(_en),
+      "no button keyed eng_normal")
+if _en:
+    _en[0].click().run()
 check("8 choosing free patches them back",
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm"))
       == ("groq", "edge", "groq"),
@@ -159,7 +169,11 @@ at5.run()
 at5.session_state["_engine_check"] = {
     "engine": "free", "state": EN.OK, "rows": [], "at": "12:00"}
 at5.run()
-[b for b in at5.get("button") if b.key == "eng_studio"][0].click().run()
+# A CONTROL THAT NO LONGER EXISTS IS A FINDING, NOT AN EXCEPTION.
+_ctl1 = [b for b in at5.get("button") if b.key == "eng_studio"]
+check("control eng_studio exists", bool(_ctl1), "missing: eng_studio")
+if _ctl1:
+    _ctl1[0].click().run()
 check("15 switching engine FORGETS the old verdict",
       sget(at5, "_engine_check") is None, sget(at5, "_engine_check"))
 

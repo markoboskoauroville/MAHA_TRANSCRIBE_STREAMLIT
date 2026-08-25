@@ -140,7 +140,11 @@ check("3c and it happens before the block is cached, so a block is never "
 # on an empty string — it stayed green when a join was injected into
 # the reading path. Bounded by the end of _vr_go instead.
 _go = vr.index("def _vr_go")
-_play = vr[_go:vr.index("with st.container(key=\"nact_vr\")", _go)]
+# `nact_vr` was rehearse's own container, removed in v224 when rehearse
+# joined the action row. find(), and a check that the region exists.
+_pe = vr.find('box_links("vrbox"', _go)
+check("3c0 the rehearse path is findable", _go > 0 and _pe > _go, (_go, _pe))
+_play = vr[_go:_pe] if _pe > _go else ""
 check("3d the READING path has no join left to level after",
       "join_audio" not in _play, _play[-200:])
 check("3d2 and the stitcher's join is levelled per block before it, so "

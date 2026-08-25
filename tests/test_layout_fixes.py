@@ -42,7 +42,11 @@ check("1e and the BADGE is dodged by the page, not by this line",
 
 print("\n2 PRESS PLAY TO READ IS UNDER THE PLAYER")
 print("       searched app.py for 'talk_player_idle', 'rd_hint' and the R text box")
-i_player = app.index('key="talk_player_idle"')
+# THE IDLE DECK LOST ITS SEPARATE KEY IN v222 — that split WAS the double
+# play, and merging it was the fix. index() then raised here and killed
+# the file, so this suite has printed nothing since.
+i_player = app.rfind('key="talk_player"')
+check("0a the idle deck is still rendered at all", i_player > 0, i_player)
 i_hint = app.index('t("rd_hint")', i_player)
 # THE BOX IS A kept_area NOW, so it no longer carries key="talk_text".
 # The claim is about ORDER — hint above the box — not about how the box

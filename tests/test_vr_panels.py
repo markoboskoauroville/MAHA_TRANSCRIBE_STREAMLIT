@@ -122,18 +122,37 @@ print("       searched the vr tab, %d chars" % len(vr_tab))
 
 
 def before_of(needle):
-    return vr_tab.index(needle)
+    """Where `needle` sits in the tab, or -1.
+
+    index() RAISED here, so one moved marker killed the whole file and it
+    printed nothing. Two markers moved: the VR box became a kept_area in
+    v218, and rehearse joined the action row in v224.
+    """
+    return vr_tab.find(needle)
 
 
+_go_at = before_of('"nact_vr_go"')
+_box_at = before_of('kept_area("vr_text"')
+check("4a0 both the rehearse action and the box are present",
+      _go_at > 0 and _box_at > 0, (_go_at, _box_at))
 check("4a rehearse is rendered ABOVE the text box, i.e. under the player",
-      before_of('key="nact_vr_go"') < before_of('st.text_area("vr"'),
-      (before_of('key="nact_vr_go"'), before_of('st.text_area("vr"')))
-check("4b the player is above rehearse",
-      before_of('key="vr_player"') < before_of('key="nact_vr_go"'))
+      0 < _go_at < _box_at, (_go_at, _box_at))
+# THE SPELLING CHANGED WHEN REHEARSE JOINED THE ROW: it is an extra's
+# key now, ("nact_vr_go", ...), not key="nact_vr_go". Same claim, current
+# spelling, and both bounds checked before comparing.
+_pl_at = before_of('key="vr_player"')
+check("4b the player is above rehearse", 0 < _pl_at < _go_at,
+      (_pl_at, _go_at))
 check("4c the panel switch is BELOW the box links",
       before_of('box_links("vrbox"') < before_of('key="_vr_panel"'))
-check("4d the emotions read the store, not the widgets",
-      "VR.picked_of(st.session_state)" in vr_tab)
+# THE CHECKBOXES WENT IN v201 and the store with them — directions are
+# TAGS IN THE TEXT now, so there is no widget state to read and nothing
+# to keep a store in step with. This asserted the old contract and would
+# have gone red the moment the file could run again; it was hidden
+# because the file was crashing four checks earlier.
+check("4d the directions live in the TEXT, not in widget state",
+      "VR.picked_of" not in vr_tab and "VR.tag_for(" in vr_tab,
+      [x for x in ("VR.picked_of",) if x in vr_tab])
 check("4e nothing reads a vre_ key to decide what was chosen",
       'for e in VR.EMOTION_IDS\n' not in vr_tab
       and 'st.session_state.get("vre_%s" % e)' not in vr_tab,

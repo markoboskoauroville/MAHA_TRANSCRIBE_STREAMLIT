@@ -48,7 +48,18 @@ def fresh(**secrets):
 
 
 def box(at, key):
-    return [x for x in at.text_input if x.key == key][0]
+    """The text box with that key, or None.
+
+    Returned None rather than raising since the accounts system was
+    removed in v185/v186 and this suite kept reaching for its controls.
+    [0] on an empty list killed the file, so nothing after line 51 has
+    run — and the sweep showed a blank where a number belongs.
+
+    Callers must handle None. A check that says "the box is gone" is a
+    finding; an exception is a suite that has stopped speaking.
+    """
+    found = [x for x in at.text_input if x.key == key]
+    return found[0] if found else None
 
 
 def sget(at, key, default=None):
@@ -349,7 +360,13 @@ check("33 there is a visible Log out", len(btn) == 1)
 # what arrives AFTER the click counts, and it must carry THIS token.
 was = len(SEEN)
 mine = sget(at, "_remember_token")
-btn[0].click().run()
+# `log_out_btn` IS GONE — the accounts system it belonged to was removed
+# in v185/v186 and this suite was never told. btn is empty, so [0] raised
+# and the file printed nothing, hiding every check after it.
+check("33b the log out control still exists", bool(btn),
+      "no button keyed log_out_btn; the accounts system was removed")
+if btn:
+    btn[0].click().run()
 check("34 logging out ends the session", sget(at, "_authed") is not True)
 check("35 and TELLS THE SCRIPT to revoke THIS token",
       any(b.get("what") == "remember_forget" and b.get("remember") == mine
@@ -372,7 +389,11 @@ def fields(a, cur, new, rep):
     box(a, "_pw_cur").set_value(cur)
     box(a, "_pw_new").set_value(new)
     box(a, "_pw_rep").set_value(rep)
-    [b for b in a.button if b.key == "pw_change_btn"][0].click().run()
+    # A CONTROL THAT NO LONGER EXISTS IS A FINDING, NOT AN EXCEPTION.
+    _ctl1 = [b for b in a.button if b.key == "pw_change_btn"]
+    check("control pw_change_btn exists", bool(_ctl1), "missing: pw_change_btn")
+    if _ctl1:
+        _ctl1[0].click().run()
     return sget(a, "_pw_msg") or ("", "")
 
 

@@ -125,7 +125,15 @@ check("16 and the other way round",
 at3 = app({"ok": True, "settings": [["global", "engine", "free"]]},
           tab="settings")
 at3.run()
-[b for b in at3.get("button") if b.key == "eng_studio"][0].click().run()
+# `eng_studio` DOES NOT EXIST IN app.py — 0 occurrences. The control was
+# removed and this suite was never told, so [..][0] on an empty list
+# raised and the file printed nothing. A missing control is a FINDING.
+_es = [b for b in at3.get("button") if b.key == "eng_studio"]
+check("the studio engine control still exists", bool(_es),
+      "no button keyed eng_studio; it was removed and this test was not "
+      "updated")
+if _es:
+    _es[0].click().run()
 at3.run()
 at3.run()
 check("17 A PRESS OUTRANKS THE SHEET for the rest of the session — "

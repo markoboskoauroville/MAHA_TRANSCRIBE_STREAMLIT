@@ -77,8 +77,16 @@ check("2b the hear channel is read back",
       "REMOTE.get(REMOTE_STORE, _rem_code, REMOTE.HEAR)" in src)
 check("2c arrival is decided by the sequence, not by comparing text",
       "REMOTE.arrived(_hear" in src)
+# THE WRITE MOVED TO kept_set IN v218, when the boxes stopped living in
+# widget keys. index() then raised and killed this file; my first repair
+# left an unbalanced paren and killed it a second way. Both bounds are
+# find() now and both are checked before being compared.
+_seq_at = src.find('_rem_heard_seq"] = int')
+_use_at = src.find('kept_set("talk_text", _hear')
+check("2d0 both halves of the handover are present",
+      _seq_at > 0 and _use_at > 0, (_seq_at, _use_at))
 check("2d what arrives is marked taken BEFORE it is acted on",
-      src.index('_rem_heard_seq"] = int') < src.index('"talk_text"] = _hear'))
+      0 < _seq_at < _use_at, (_seq_at, _use_at))
 check("2e and it starts reading by itself", '"_auto_read"] = True' in src)
 check("2f the remote page pushes with force, so push always sends",
       "REMOTE.HEAR, force=True" in src)
