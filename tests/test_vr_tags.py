@@ -136,14 +136,19 @@ print("       searched the vr tab, %d chars" % len(tab))
 # that the DIRECTIONS are no longer tick-boxes, not that the tab contains
 # no checkbox anywhere.
 _dir = tab[tab.index("THE DIRECTION, AS TAGS IN THE TEXT"):]
-check("5a the direction words are no longer tick-boxes",
-      "st.checkbox" not in _dir and "vre_" not in _dir,
-      [x for x in ("st.checkbox", "vre_") if x in _dir])
+# THE CLAIM IS ABOUT THE WORDS, NOT ABOUT THE PANEL. There IS a checkbox
+# here now — the write/copy switch — and asserting none existed was
+# describing the old shape rather than the rule. What must be gone is a
+# tick-box PER DIRECTION, which is what `vre_` keyed.
+check("5a no direction is a tick-box any more",
+      "vre_" not in _dir, [x for x in ("vre_",) if x in _dir])
+check("5a2 the only checkbox in the panel is the write/copy switch",
+      _dir.count("st.checkbox") == 1, _dir.count("st.checkbox"))
 check("5b and so are the ? help marks as separate controls",
       "vr_too_many" not in tab or "help=_phr" in tab)
 check("5c pressing a word INSERTS a tag", "VR.insert_tag(" in tab)
-check("5d the phrase survives as the button's own tooltip",
-      "help=_phr" in tab)
+check("5d the phrase survives as the pill's own tooltip",
+      "_phr)" in tab and "help=help_text" in tab, "_phr" in tab)
 check("5e his own directions have an add", 't("vr_add")' in tab)
 check("5f which saves them for the session", "VR.add_own(" in tab)
 check("5g and inserts the tag in the same press",
@@ -153,7 +158,28 @@ check("5h the field is emptied in the CALLBACK, not after the widget "
       '"vr_own_new"] = ""' in tab
       and tab.index('"vr_own_new"] = ""') < tab.index('_oc1.text_input'))
 check("5i saved directions are rendered as pills of their own",
-      "vro_%s" in tab)
+      "_tag_pill(_col, _w, [_w]" in tab)
+
+print("\n5c WRITE IT, OR COPY IT")
+# The caret cannot be known — Streamlit has no way to ask. Baba's answer:
+# a checkbox that turns every direction pill into a copy, so HE places it.
+check("5p there is a switch between writing and copying",
+      'key="vr_tag_clip"' in tab)
+check("5q it is off by default, so the existing behaviour is unchanged "
+      "for anyone who does not touch it",
+      'setdefault("vr_tag_clip", False)' in tab)
+check("5r in clipboard mode a pill is a real copy component — nothing "
+      "else can reach the clipboard",
+      "copybtn.cp_html(VR.tag_for(words)" in tab)
+check("5s and it carries the TAG, not the bare word",
+      "cp_html(VR.tag_for(" in tab and "cp_html(_w" not in tab)
+check("5t writing mode still inserts", "on_click=_vr_insert" in tab)
+check("5u both rows go through ONE helper, so the built-ins and his own "
+      "cannot behave differently",
+      tab.count("def _tag_pill") == 1 and tab.count("_tag_pill(") >= 3,
+      tab.count("_tag_pill("))
+check("5v the hint line says WHICH mode is in force",
+      't("vr_clip_hint")' in tab and 't("vr_tag_hint")' in tab)
 
 print("\n5b REHEARSE SPEAKS THE TAGS, IT DOES NOT READ THEM OUT")
 # The trap this nearly shipped with: _vr_go read the checkbox store,

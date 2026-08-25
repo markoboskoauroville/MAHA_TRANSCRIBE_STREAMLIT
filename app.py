@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v203 (every Hume voice at the same volume)"
+APP_VERSION = "v204 (copy the direction, or write it)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -356,6 +356,12 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_to_clip":         {"en": "copy the direction instead of writing it",
+                           "hr": "kopiraj uputu umjesto da je upišeš"},
+    "vr_clip_hint":       {"en": "press a direction to copy it, then paste "
+                                 "it where you want it",
+                           "hr": "pritisni uputu da je kopiraš, pa je "
+                                 "zalijepi gdje želiš"},
     "vr_preview":         {"en": "hear a voice when I choose it",
                            "hr": "čuj glas kad ga odaberem"},
     "vr_own_help":        {"en": "your own direction — press to insert it",
@@ -8831,8 +8837,10 @@ elif active == "vr":
         # THEY WRAP, because they are a paragraph of words and not a
         # grid. st.columns cannot wrap; a container of buttons can, and
         # the pill row CSS already does it for the tab bar.
-        _vr_caret = st.session_state.get("_vr_caret")
-
+        # `_vr_caret` is read inside _vr_insert rather than hoisted here,
+        # because nothing else in this panel needs it now that the hint
+        # line asks the CHECKBOX which mode is in force. A variable kept
+        # only to be tested once is a variable that goes stale.
         def _vr_insert(words):
             body, caret = VR.insert_tag(
                 st.session_state.get("vr_text", ""),
@@ -8840,14 +8848,52 @@ elif active == "vr":
             st.session_state["vr_text"] = body
             st.session_state["_vr_caret"] = caret
 
+        # WRITE IT, OR COPY IT. Baba, 25.8.2026: "put there a checkbox,
+        # copy direction to clipboard. When the user clicks, it will not
+        # write in the box, it will copy to clipboard. When unchecked it
+        # writes to the box, because now it cannot detect where my cursor
+        # is. I don't know how to go around this. So we use clipboard in
+        # that sense. Then the user can paste wherever he wants."
+        #
+        # HE IS RIGHT AND THE LIMIT IS REAL. Streamlit cannot know where
+        # a caret is — HOW_WE_WORK: "Python cannot know where a cursor
+        # is. Only the component can, and only if it sends it." So a
+        # pressed tag lands at the END, which is fine while writing a
+        # script top-down and useless for marking up text already there.
+        #
+        # The clipboard goes round it. Not a workaround for a bug: an
+        # honest answer to a real constraint, and one that puts the
+        # placing back in his hands instead of guessing at it.
+        #
+        # WHY THE PILLS BECOME COMPONENTS. Nothing but a real button in a
+        # real document can reach the clipboard — the same reason `copy`
+        # under every text box is one. So in clipboard mode each pill IS
+        # a copy component carrying its own tag, and one press copies it.
+        # Same words, same place, same order; only the thing the press
+        # does changes, which is what the checkbox above them announces.
+        st.session_state.setdefault("vr_tag_clip", False)
+        st.checkbox(t("vr_to_clip"), key="vr_tag_clip")
+        _to_clip = bool(st.session_state.get("vr_tag_clip"))
+
+        def _tag_pill(col, label, words, help_text):
+            if _to_clip:
+                with col:
+                    components.html(
+                        copybtn.cp_html(VR.tag_for(words), label=label,
+                                        done_label=t("copy_done_word"),
+                                        failed_label="—", size=0, link=True),
+                        height=34)
+            else:
+                col.button(label, key="vrt_%s" % abs(hash(label)),
+                           help=help_text, use_container_width=True,
+                           on_click=_vr_insert, args=(words,))
+
         with st.container(key="vrtags"):
             for _start in range(0, len(VR.EMOTIONS), 3):
                 _cols = st.columns(3)
                 for _col, (_eid, _lbl, _phr) in zip(
                         _cols, VR.EMOTIONS[_start:_start + 3]):
-                    _col.button(_lbl, key="vrt_%s" % _eid, help=_phr,
-                                use_container_width=True,
-                                on_click=_vr_insert, args=([_eid],))
+                    _tag_pill(_col, _lbl, [_eid], _phr)
 
         # ---- HIS OWN DIRECTIONS ---------------------------------
         # Baba: "when user types direction, there should be one button
@@ -8867,11 +8913,10 @@ elif active == "vr":
                 for _s2 in range(0, len(_own), 3):
                     _oc = st.columns(3)
                     for _col, _w in zip(_oc, _own[_s2:_s2 + 3]):
-                        _col.button(
-                            _w, key="vro_%s" % abs(hash(_w)),
-                            help=t("vr_own_help"),
-                            use_container_width=True,
-                            on_click=_vr_insert, args=([_w],))
+                        # HIS OWN DIRECTIONS FOLLOW THE SAME SWITCH. Two
+                        # rows of the same-looking pills behaving
+                        # differently would be the worst of both.
+                        _tag_pill(_col, _w, [_w], t("vr_own_help"))
 
         def _vr_add_own():
             word = (st.session_state.get("vr_own_new") or "").strip()
@@ -8894,10 +8939,13 @@ elif active == "vr":
                     disabled=not (st.session_state.get("vr_own_new")
                                   or "").strip())
 
-        if _vr_caret is not None:
-            st.markdown('<div class="readhint">%s</div>'
-                        % html.escape(t("vr_tag_hint")),
-                        unsafe_allow_html=True)
+        # THE LINE SAYS WHICH MODE IS IN FORCE, because the pills look
+        # the same either way and a person who has forgotten will press
+        # one and wonder where it went.
+        st.markdown('<div class="readhint">%s</div>'
+                    % html.escape(t("vr_clip_hint") if _to_clip
+                                  else t("vr_tag_hint")),
+                    unsafe_allow_html=True)
 
     tab_signature(t("sig_vr"))
 
