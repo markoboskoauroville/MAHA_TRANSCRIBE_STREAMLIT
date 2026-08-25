@@ -1,6 +1,62 @@
-# LAST RUN — TTT-LLL — 25.8.2026, small hours
+# LAST RUN — TTT-LLL — 25.8.2026, later
 
-Deployed and current: **v187**. Apps Script MAIN deployed 24.8, same URL,
+Deployed and current: **v188**. Apps Script MAIN deployed 24.8, same URL.
+
+## THIS RUN
+
+**Two tests were run first, before any fix, as asked.**
+
+`tests/live_check.py` — **NOT RUN. It cannot run in a sandbox.** It needs
+`.streamlit/secrets.toml` (gitignored, so not in a clone) and
+`/home/claude/real_take.webm`. Neither exists off Baba's Mac. **The live
+health of v187/v188 against real keys is UNPROVEN.** Run it on the Mac.
+
+`tests/test_recorder_stress.py` — **RAN, and the reason it never
+completes is now known.** ~9.5 min wall clock.
+
+- SABOTAGE 1, every key dead: **both checks RED.** No error rendered;
+  **whisper called 6 times over 8 redraws.** The v185 record's claim
+  that a real error is loud and not retried is **confirmed wrong.**
+  This is open item 7, now measured rather than argued.
+- SABOTAGE 2, line 125: `at.run()` **times out after 300s** and raises
+  `RuntimeError: AppTest script run timed out`. The process ends there.
+  **SOAK, ENORMOUS, EMPTY and MALFORMED have never executed once.**
+  Cause: `_Tx.create` raises `RerunException`; a rerun from inside the
+  script body ends the run with no widget deltas, so AppTest waits the
+  full `default_timeout=300`. The check also cannot tell "handled the
+  interruption" from "rendered nothing" — **it needs rewriting before
+  its result can be believed.**
+
+**FIXED — fault 1, the TR crash.** `plan_blocks` returns tuples;
+`tr_make_audio` read each block as "a str or a list of str". R's reader
+at app.py:8027 was the caller that was RIGHT (`ss, char_off = parts[i]`
+— it needs the offset for word timings). TR does not need the offset.
+`ttt/speech.py:block_texts()` now unpacks once and returns `list[str]`;
+TR asks for that.
+
+**New check: `tests/test_tr_blocks.py`, 16 checks, no Streamlit.**
+Mutations, both moving BEHAVIOUR: isinstance guess restored -> 14/16 and
+the TypeError reproduced live; `block_texts` returning raw tuples ->
+9/16. The first draft of check 2b THREW on the mutation instead of going
+red, which stopped the file and hid checks 3 and 4 — hardened.
+
+**Regression sweep:** test1_wordtimes 65/0, test_langs 22/0, test_undo
+19/0, test_notes 53/0, test_reader ok. `test_box.py` is red — **and it
+was already fully red on unchanged v187**, checked by stashing and
+re-running, so it is pre-existing, not this change. pyflakes 0.
+
+**NOT TESTED:** anything in a browser. That the TR play button reaches
+`tr_make_audio`, and that the joined MP3 sounds like speech. Check 4 of
+the new file is a grep of the function body and says so.
+
+**NEXT:** fault 2, VR. Blocked on one decision — one Hume key, or the
+~twenty pairs from the older file. The deep ring needs that file
+uploaded.
+
+---
+
+## THE BRIEF THAT STARTED THIS (v187 state)
+
 `k_hume` and `eta` tabs exist.
 
 Read this, then `docs/HOW_WE_WORK.md`. History: DELIVERY_RECORD_v185.md
