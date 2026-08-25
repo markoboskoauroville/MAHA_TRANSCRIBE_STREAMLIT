@@ -44,7 +44,10 @@ print("\n2 PRESS PLAY TO READ IS UNDER THE PLAYER")
 print("       searched app.py for 'talk_player_idle', 'rd_hint' and the R text box")
 i_player = app.index('key="talk_player_idle"')
 i_hint = app.index('t("rd_hint")', i_player)
-i_box = app.index('key="talk_text"', i_player)
+# THE BOX IS A kept_area NOW, so it no longer carries key="talk_text".
+# The claim is about ORDER — hint above the box — not about how the box
+# is spelled.
+i_box = app.index('kept_area("talk_text"', i_player)
 check("2a the hint comes AFTER the player", i_hint > i_player, (i_player, i_hint))
 check("2b and BEFORE the text box — not at the bottom", i_hint < i_box, (i_hint, i_box))
 check("2c there is exactly one of it in R",

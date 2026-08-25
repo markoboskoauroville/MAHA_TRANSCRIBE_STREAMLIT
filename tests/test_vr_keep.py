@@ -107,20 +107,18 @@ check("3f the spoken block is lit and the rest is quiet, not hidden",
 
 print("\n4 ONE FILE OF THE WHOLE READING")
 check("4a there is a stitcher", "def _vr_stitch" in vr)
-check("4b it builds EVERY block, not only the cached ones",
-      "for i in range(len(job.get(\"parts\"" in vr)
-check("4c it joins through join_audio, which re-encodes so the seams "
-      "seek properly", "SPEECH.join_audio(paths)" in vr)
-check("4d the button says how many parts are still to render, rather "
-      "than appearing to hang", "vr_stitch_wait" in vr)
+# 4b, 4c, 4g and 4h moved to section 6. They described the stitcher when
+# it lived INSIDE the vr tab; it is shared with R now, so checking for it
+# in the tab is checking the wrong place. The behaviour is still checked,
+# just where the code is.
 check("4e the bytes are in hand before the download button is drawn",
       vr.index('st.session_state["_vr_whole"]') < vr.index("st.download_button"))
 check("4f the file is named for what it actually is",
       'file_name="rehearsal.mp3"' in vr and 'mime="audio/mpeg"' in vr)
-check("4g temporary files are cleaned up on every path",
-      "finally:" in vr[vr.index("def _vr_stitch"):vr.index("_left = len(")])
-check("4h a failure is written to the log, not swallowed",
-      "errlog.add" in vr[vr.index("def _vr_stitch"):vr.index("_left = len(")])
+check("4g VR hands its own block builder to the shared stitcher",
+      "stitch_reading(len(job.get" in vr and "_vr_block" in vr)
+check("4h and reports a refusing block on screen rather than silently",
+      '"_vr_error"' in vr[vr.index("def _vr_stitch"):vr.index("_left = len(")])
 
 print("\n4b THE JOIN REALLY MAKES ONE FILE")
 if __import__("shutil").which("ffmpeg"):
@@ -151,6 +149,38 @@ if __import__("shutil").which("ffmpeg"):
             pass
 else:
     print("  skip  ffmpeg is not here")
+
+print("\n5 EVERY BOX KEEPS ITS TEXT, NOT JUST VR'S")
+# Baba: "make anything pasted in any text box persistent until a user
+# clears it." R and TR do not rerun mid-render today, so they do not lose
+# text — but the trap is one feature away and VR showed what it costs.
+for slot, tabname in (("talk_text", "R"), ("translate_src_text", "TR src"),
+                      ("translate_out", "TR out")):
+    check("5a %s is a kept box" % tabname,
+          'kept_area("%s"' % slot in app, slot)
+    check("5b %s never writes the widget key" % tabname,
+          'st.session_state["%s"]' % slot not in app, slot)
+    check("5c %s never reads the widget key" % tabname,
+          'st.session_state.get("%s"' % slot not in app, slot)
+
+print("\n6 ONE STITCHER, NOT ONE PER TAB")
+check("6a there is a shared stitcher", "def stitch_reading(" in app)
+check("6b VR uses it", "stitch_reading(len(job.get" in app)
+check("6c R uses it too", "stitch_reading(len(parts), _make)" in app)
+check("6d neither tab grew its own join",
+      app.count("SPEECH.join_audio(") == 1, app.count("SPEECH.join_audio("))
+check("6e it builds every block, so a half-played reading still saves whole",
+      "for i in range(int(count or 0)):" in app)
+check("6f a failing block stops it rather than saving a hole",
+      'got.get("err")' in app[app.index("def stitch_reading"):])
+check("6g temporary files go on every path",
+      "finally:" in app[app.index("def stitch_reading"):
+                        app.index("def tab_signature")])
+check("6h R offers the whole reading as its own file",
+      'file_name="reading.mp3"' in app)
+check("6i and VR its own", 'file_name="rehearsal.mp3"' in app)
+check("6j both say how many parts are left rather than hanging",
+      app.count("vr_stitch_wait") >= 2, app.count("vr_stitch_wait"))
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

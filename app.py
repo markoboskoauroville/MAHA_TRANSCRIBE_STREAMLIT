@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v207 (the stitcher, the script, and a box that keeps its text)"
+APP_VERSION = "v208 (every box keeps its text, one stitcher for both decks)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3478,6 +3478,71 @@ def kept_area(slot: str, **kw):
                         on_change=_typed, **kw)
 
 
+# ---------------------------------------------------------------------
+# ONE FILE OUT OF A READING
+#
+# Baba asked whether it would be simpler to REGENERATE the whole text in
+# one request instead of stitching. It would be simpler, and it is the
+# wrong call for three reasons, the third decisive:
+#
+#   IT PAYS TWICE. Every block already rendered is billed again. Hume
+#     charges per character and the keys are his.
+#   IT DOES NOT FIT. Hume caps a request at 2000 characters
+#     (VR.TEXT_CAP), so a long script cannot be one call anyway — the
+#     "one request" would quietly become several, which is stitching
+#     with the seams in worse places.
+#   IT WOULD LOSE THE DIRECTIONS. One request carries ONE description.
+#     A script with <calm> and <angry> in it CANNOT be regenerated as a
+#     single call without dropping every tag, and dropping them silently
+#     is the worst possible outcome — the file would sound fine and be
+#     wrong.
+#
+# So: stitch. The blocks are already in hand, only the unplayed
+# remainder is rendered, and ffmpeg joins them.
+# ---------------------------------------------------------------------
+
+
+def stitch_reading(count: int, get_block, on_error=None):
+    """Every block of a reading as ONE mp3. Bytes, or None.
+
+    `get_block(i)` returns {"audio": bytes} or {"err": message}, and is
+    expected to BUILD block i if it does not exist — the point of this
+    function is to finish a reading that was only partly played.
+
+    join_audio re-encodes rather than stream-copying, which is what makes
+    the seams seek properly in a browser; concatenating frames directly
+    leaves gaps and confuses seeking.
+    """
+    paths, tmp = [], []
+    try:
+        for i in range(int(count or 0)):
+            got = get_block(i)
+            if not got or got.get("err"):
+                if on_error:
+                    on_error((got or {}).get("err"))
+                return None
+            fh = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            fh.write(got["audio"])
+            fh.close()
+            paths.append(fh.name)
+            tmp.append(fh.name)
+        if not paths:
+            return None
+        out = SPEECH.join_audio(paths)
+        tmp.append(out)
+        with open(out, "rb") as f:
+            return f.read()
+    except Exception as e:                                   # noqa: BLE001
+        errlog.add(st.session_state, "stitch",
+                   "the reading could not be stitched",
+                   "{}: {}".format(type(e).__name__, e))
+        if on_error:
+            on_error(None)
+        return None
+    finally:
+        ttt_audio.cleanup(*tmp)
+
+
 def tab_signature(name: str):
     """A quiet word at the bottom right saying which tab you are on.
 
@@ -4630,7 +4695,7 @@ def _match_voice_to(lang: str):
 def read_this():
     """Move to the Talk tab, carry the text over, pick the voice that matches
     the language just transcribed, and start reading — no popup, no extra tap."""
-    st.session_state["talk_text"] = t1_text()
+    kept_set("talk_text", t1_text())
     # ONE IMPLEMENTATION, used from here and from read_note().
     _match_voice_to(st.session_state.get("last_lang", "hr"))
     st.session_state["active_tab"] = "talk"
@@ -5148,7 +5213,7 @@ def read_note(note_id: str):
     body = (note.get("text") or "").strip()
     if not body:
         return          # nothing to read, and a silent player is a fault report
-    st.session_state["talk_text"] = body
+    kept_set("talk_text", body)
     _match_voice_to(note.get("language")
                     or st.session_state.get("speech_lang", "hr"))
     close_note()        # the note gave up the screen; R is taking over
@@ -7091,7 +7156,7 @@ def _set_translate_lang(which: str, code: str):
 
 
 def do_translate():
-    text = (st.session_state.get("translate_src_text") or "").strip()
+    text = kept_text("translate_src_text").strip()
     if not text:
         return
     src = st.session_state.get("translate_src", "hr")
@@ -7100,8 +7165,8 @@ def do_translate():
         llm = llm_bridge()
         if llm is None:
             raise RuntimeError(t("routing_none"))
-        st.session_state["translate_out"] = translate_text(
-            llm, text, LANG_FULL[src], LANG_FULL[tgt])
+        kept_set("translate_out", translate_text(
+            llm, text, LANG_FULL[src], LANG_FULL[tgt]))
         USAGE.log("translate", len(text), UNIT_CHARS, llm.id)
     except Exception as e:
         st.session_state["_translate_error"] = f"{t('translate_fail')}: {e}"
@@ -7217,10 +7282,10 @@ def tr_read(which: str):
     is the mistake this function exists to make impossible.
     """
     if which == "src":
-        text = st.session_state.get("translate_src_text", "")
+        text = kept_text("translate_src_text")
         lang = st.session_state.get("translate_src", "hr")
     else:
-        text = st.session_state.get("translate_out", "")
+        text = kept_text("translate_out")
         lang = st.session_state.get("translate_tgt", "en")
     audio, why = tr_make_audio(text, lang)
     if audio is None:
@@ -7339,7 +7404,7 @@ if REMOTE.arrived(_hear, st.session_state.get("_rem_heard_seq", 0)):
     # the same fault the note path has for the opposite reason, and the
     # cheaper direction to be wrong in for something that SPEAKS.
     st.session_state["_rem_heard_seq"] = int(_hear.get("seq", 0))
-    st.session_state["talk_text"] = _hear.get("text") or ""
+    kept_set("talk_text", _hear.get("text") or "")
     st.session_state["active_tab"] = "talk"
     # AND IT STARTS BY ITSELF. Baba: "the device is forced to receive the
     # text and starts automatically to read it."
@@ -8343,6 +8408,33 @@ elif active == "talk":
         # exactly when it could not be changed.
         _voice_row(engine, sp_ring_talk)
 
+        # ---- ONE FILE OF THE WHOLE READING ----------------------
+        # The player's own save key downloads the BLOCK on screen, which
+        # is right for "give me that part" and wrong for "give me the
+        # reading". Same fault VR had, same fix, same helper.
+        #
+        # It finishes the reading first, because on part three of nine
+        # the last six do not exist. The button says how many are left
+        # rather than appearing to hang.
+        def _rd_stitch():
+            return stitch_reading(len(parts), _make)
+
+        _rd_left = len([i for i in range(len(parts))
+                        if i not in job["cache"]])
+        if st.button(t("vr_stitch") if not _rd_left
+                     else t("vr_stitch_wait") % _rd_left,
+                     key="rd_stitch_go", use_container_width=True):
+            _rd_whole = _rd_stitch()
+            if _rd_whole:
+                st.session_state["_rd_whole"] = _rd_whole
+            else:
+                st.error(t("read_failed"))
+        if st.session_state.get("_rd_whole"):
+            st.download_button(t("vr_save_all"),
+                               data=st.session_state["_rd_whole"],
+                               file_name="reading.mp3", mime="audio/mpeg",
+                               key="rd_dl_all", use_container_width=True)
+
         # "New text" is gone. Baba: "we do not need new text — there is
         # text box." He is right: the box is always there and typing in
         # it is how a new text begins. A button that only cleared the
@@ -8395,7 +8487,7 @@ elif active == "talk":
         # before pressing play, so the screen reads in that order.
         synth_fn = _voice_row(engine, sp_ring_talk)
 
-        _has_text = bool((st.session_state.get("talk_text") or "").strip())
+        _has_text = bool(kept_text("talk_text").strip())
         _start = False
         if _wave_component is not None:
             _ev0 = _wave_component(
@@ -8429,7 +8521,7 @@ elif active == "talk":
 
 
         def _clear_talk():
-            st.session_state["talk_text"] = ""
+            kept_set("talk_text", "")
             flash("rd_clear")
 
         # _keep_text lived here and is gone with the `archive` button it
@@ -8450,9 +8542,12 @@ elif active == "talk":
         #
         # The same shape as T's "add to notes": one quiet link, under
         # the box, where you look after reading what is in it.
-        st.text_area(t("tab_talk"), key="talk_text", height=150,
-                     label_visibility="collapsed", placeholder=t("talk_placeholder"))
-        box_links("rd", st.session_state.get("talk_text", ""),
+        # KEPT. R does not rerun mid-render today, so it does not lose
+        # text — but the same trap is one feature away, and VR proved
+        # what it costs when it arrives. See kept_area.
+        kept_area("talk_text", height=150, label_visibility="collapsed",
+                  placeholder=t("talk_placeholder"))
+        box_links("rd", kept_text("talk_text"),
                   on_clear=_clear_talk)
 
         # THE PLAYER IS ALWAYS HERE, greyed until there is something to
@@ -8475,7 +8570,7 @@ elif active == "talk":
             st.session_state["_archive"] = RT.load_archive(archive_store)
 
         def _keep_text():
-            txt = (st.session_state.get("talk_text") or "").strip()
+            txt = kept_text("talk_text").strip()
             if txt:
                 st.session_state["_archive"] = RT.add_piece(
                     st.session_state.get("_archive", []), txt)
@@ -8497,7 +8592,7 @@ elif active == "talk":
                     def _open(d=piece["digest"]):
                         for pc in st.session_state.get("_archive", []):
                             if pc["digest"] == d:
-                                st.session_state["talk_text"] = pc["text"]
+                                kept_set("talk_text", pc["text"])
                                 break
 
                     def _delete(d=piece["digest"]):
@@ -8511,7 +8606,7 @@ elif active == "talk":
                                  help=t("read_delete"), on_click=_delete)
                 st.caption(t("read_storage_note"))
         if go or st.session_state.pop("_auto_read", False):
-            raw = (st.session_state.get("talk_text") or "").strip()
+            raw = kept_text("talk_text").strip()
             if raw:
                 sentences = tk.sentences_of(raw)
                 st.session_state["_talk_job"] = {
@@ -8573,16 +8668,16 @@ elif active == "translate":
         st.error(_tr_err)
 
     def _clear_src():
-        st.session_state["translate_src_text"] = ""
-        st.session_state["translate_out"] = ""
+        kept_set("translate_src_text", "")
+        kept_set("translate_out", "")
         flash("tr_src")
 
     def _do_translate():
         do_translate()
         flash("tr_go")
 
-    st.text_area("src", key="translate_src_text", height=120,
-                 label_visibility="collapsed", placeholder=t("translate_src_ph"))
+    kept_area("translate_src_text", height=120,
+              label_visibility="collapsed", placeholder=t("translate_src_ph"))
     # READ JOINS THE ROW. Baba, 25.8.2026: "read should be together with
     # copy and clear. Read, copy, clear, same position in the screen."
     #
@@ -8601,8 +8696,8 @@ elif active == "translate":
     # THE EXTRA IS PASSED ONLY WHEN THERE IS TEXT, because box_links
     # renders the row whenever a module offers an extra — and a `read`
     # standing alone over an empty box is a link with nothing to read.
-    _trsrc_body = (st.session_state.get("translate_src_text") or "").strip()
-    box_links("trsrc", st.session_state.get("translate_src_text", ""),
+    _trsrc_body = kept_text("translate_src_text").strip()
+    box_links("trsrc", kept_text("translate_src_text"),
               on_clear=_clear_src,
               extra=([(t("tr_read_src"),
                        ("nact_read_trsrc", lambda: tr_read("src")))]
@@ -8628,17 +8723,17 @@ elif active == "translate":
         st.error(st.session_state.pop("_translate_error"))
 
     def _clear_out():
-        st.session_state["translate_out"] = ""
+        kept_set("translate_out", "")
         flash("tr_out")
 
-    st.text_area("out", key="translate_out", height=150,
-                 label_visibility="collapsed", placeholder=t("translate_out_ph"))
+    kept_area("translate_out", height=150,
+              label_visibility="collapsed", placeholder=t("translate_out_ph"))
     # THE SAME ROW UNDER THE LOWER BOX. The upper box speaks the UPPER
     # row's language and the lower box the lower one — that pairing is
     # the whole point of two rows and two boxes, and getting it backwards
     # would read a translation in the language it came from.
-    _trout_body = (st.session_state.get("translate_out") or "").strip()
-    box_links("trout", st.session_state.get("translate_out", ""),
+    _trout_body = kept_text("translate_out").strip()
+    box_links("trout", kept_text("translate_out"),
               on_clear=_clear_out,
               extra=([(t("tr_read_src"),
                        ("nact_read_trout", lambda: tr_read("out")))]
@@ -8767,32 +8862,14 @@ elif active == "vr":
     if _vr_job and _vr_job.get("parts"):
         def _vr_stitch():
             job = st.session_state.get("_vr_job") or {}
-            paths, tmp = [], []
-            try:
-                for i in range(len(job.get("parts", ()))):
-                    got = _vr_block(i)
-                    if not got or got.get("err"):
-                        st.session_state["_vr_error"] = (
-                            got or {}).get("err") or t("vr_nothing")
-                        return None
-                    fh = tempfile.NamedTemporaryFile(suffix=".wav",
-                                                     delete=False)
-                    fh.write(got["audio"])
-                    fh.close()
-                    paths.append(fh.name)
-                    tmp.append(fh.name)
-                save_rings()
-                out = SPEECH.join_audio(paths)
-                tmp.append(out)
-                with open(out, "rb") as f:
-                    return f.read()
-            except Exception as e:                           # noqa: BLE001
-                errlog.add(st.session_state, "vr",
-                           "the reading could not be stitched",
-                           "{}: {}".format(type(e).__name__, e))
-                return None
-            finally:
-                ttt_audio.cleanup(*tmp)
+
+            def _err(msg):
+                st.session_state["_vr_error"] = msg or t("vr_nothing")
+
+            out = stitch_reading(len(job.get("parts", ())), _vr_block,
+                                 on_error=_err)
+            save_rings()
+            return out
 
         _left = len([i for i in range(len(_vr_job["parts"]))
                      if i not in _vr_job["cache"]])
@@ -9557,7 +9634,7 @@ elif active == "help":
         # step with.
         st.session_state["voice"] = names[
             0 if st.session_state.get("help_gender", "F") == "F" else 1]
-        st.session_state["talk_text"] = HELP_PAGE.plain(lang)
+        kept_set("talk_text", HELP_PAGE.plain(lang))
         st.session_state["active_tab"] = "talk"
         st.session_state["_auto_read"] = True
 

@@ -83,7 +83,7 @@ print("\n2b IT USES R'S DECK — it does not grow a second one")
 # the first is ONE sentence, three built in parallel while it plays.
 # A second copy here is the fault README rule 1 names by name.
 check("2f read hands the text to the reader's own job",
-      '"talk_text"] = HELP_PAGE.plain' in tab)
+      'kept_set("talk_text", HELP_PAGE.plain' in tab)
 check("2g and starts it the way the reader starts",
       '"_auto_read"] = True' in tab)
 check("2h it does NOT synthesise the whole document up front",
