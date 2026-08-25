@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v217 (anchored to the top, status under the player)"
+APP_VERSION = "v218 (the work comes back, and the stitch shows itself)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -34,6 +34,22 @@ APP_VERSION = "v217 (anchored to the top, status under the player)"
 # means a slow request is heard as silence; two absorbs a bad minute at
 # the provider. It was 3, which suited DOUBLING blocks — with even blocks
 # the third is work done long before it is needed.
+# THE BRAILLE SPINNER. Ten frames, one dot travelling round — it reads as
+# motion at any size and costs one character, which matters in a band
+# that is one line tall on a phone.
+VR_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _human_bytes(n: int) -> str:
+    """Bytes as something a person can feel the size of."""
+    n = int(n or 0)
+    if n < 1024:
+        return "%d B" % n
+    if n < 1024 * 1024:
+        return "%.0f KB" % (n / 1024.0)
+    return "%.1f MB" % (n / (1024.0 * 1024.0))
+
+
 PREFETCH_AHEAD = 2
 
 # HOW MUCH RENDERED SPEECH ONE PERSON MAY HOLD. Streamlit Community Cloud
@@ -363,6 +379,10 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_making":          {"en": "%s making part %d of %d · %d/%d done · %s",
+                           "hr": "%s radim dio %d od %d · %d/%d gotovo · %s"},
+    "vr_joining":         {"en": "%s joining %d parts into one file · %s",
+                           "hr": "%s spajam %d dijelova u jednu datoteku · %s"},
     "not_me":             {"en": "not me", "hr": "nisam ja"},
     "take_failed":        {"en": "That recording could not be turned into "
                                  "text. The audio is still here — press new "
@@ -3558,6 +3578,119 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
 # ---------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------
+# THE WORK SURVIVES LEAVING THE APP
+#
+# Baba, 25.8.2026: "now I'm not logged out when I come back, but my
+# session becomes blank. So we didn't solve anything, we just removed one
+# step. When I come back the session doesn't remember what was loaded in
+# the text box... If I switch to another app and come back, I want to
+# have the same view as when I left."
+#
+# HE IS RIGHT AND v215 ONLY DID HALF THE JOB. Staying signed in is
+# worthless if the work is gone: Android suspends the tab, the websocket
+# drops, Streamlit ends the SESSION, and session_state goes with it —
+# including everything kept_area holds. The login came back and the
+# writing did not.
+#
+# SO THE BOXES GO TO THE BROWSER, through the same localStorage bridge
+# the remembered login uses. localStorage survives the tab being
+# suspended, the browser being killed, and the phone being restarted.
+#
+# WHAT IS NOT SAVED, AND WHY. Not the audio. localStorage is about 5 MB
+# for the whole origin and base64 adds a third on top; one minute of
+# rehearsal at 64 kbit is ~470 KB, so a few minutes would fill it — and
+# filling it does not fail quietly, it raises QuotaExceededError and
+# takes his NOTES down with it. Text is small, precious and
+# irreplaceable; audio is large and can be made again from the text.
+#
+# WRITTEN ONLY WHEN IT CHANGES. A write on every render would put a
+# storage call in the path of every keystroke.
+KEPT_LS_KEY = "ttt_boxes_v1"
+KEPT_SLOTS = ("_t1_text", "talk_text", "translate_src_text",
+              "translate_out", "vr_text")
+KEPT_MAX = 200000        # per box; a novel, not a video
+
+# AND THE CHOICES, because losing those is the same loss in miniature.
+#
+# Baba, 25.8.2026: "I'm losing the selection of the last voice in VR. If I
+# select some actor and I come next time, I want that same voice to stay
+# selected, not resetting."
+#
+# He is right that it belongs here and not in a second mechanism: a voice
+# he picked is work, the same as a line he typed. Choosing Gabrijela out
+# of twenty-four is a decision, and making it again every time the phone
+# rings is the same small theft as losing the text.
+#
+# ONLY WHAT A PERSON CHOSE. Not what the app worked out — no job, no
+# cache, no index, no audio. Those are derived and they can be made
+# again; a preference cannot, because it only ever existed in his head.
+KEPT_CHOICES = (
+    "vr_voice",          # which of the 24 actors
+    "vr_preview",        # hear a voice when I choose it
+    "vr_tag_clip",       # write the direction, or copy it
+    "voice",             # R's reader voice
+    "help_lang",         # which language the help is in
+    "help_gender",       # and which voice reads it
+    "tr_gender",         # TR's female / male
+    "tr_src", "tr_tgt",  # and its two language rows
+)
+
+
+def _kept_restore() -> None:
+    """Put the browser's copy back, once, at the start of a session."""
+    if st.session_state.get("_kept_restored"):
+        return
+    st.session_state["_kept_restored"] = True
+    raw = LS_DATA.get(KEPT_LS_KEY)
+    if not raw:
+        return
+    try:
+        blob = json.loads(raw)
+    except Exception:                                        # noqa: BLE001
+        return                       # unreadable is simply not restored
+    for name in KEPT_CHOICES:
+        val = (blob.get("choices") or {}).get(name)
+        # SET, NOT setdefault-ed, and BEFORE the widget renders — this is
+        # the initial value Streamlit will use. Anything already chosen
+        # this run is newer and wins, same rule as the boxes.
+        if val is not None and name not in st.session_state:
+            st.session_state[name] = val
+    for slot in KEPT_SLOTS:
+        val = blob.get(slot)
+        # ONLY INTO AN EMPTY BOX. If anything already put text there this
+        # run — "read this" from T, a push from the remote window — that
+        # is newer than the browser's copy and must not be overwritten.
+        if isinstance(val, str) and val and not st.session_state.get(
+                "_keep_" + slot):
+            st.session_state["_keep_" + slot] = val[:KEPT_MAX]
+            st.session_state["_keepgen_" + slot] = int(
+                st.session_state.get("_keepgen_" + slot, 0)) + 1
+    tab = blob.get("_tab")
+    if tab and not st.session_state.get("_tab_restored"):
+        st.session_state["_tab_restored"] = True
+        st.session_state["active_tab"] = tab
+
+
+def _kept_save() -> None:
+    """Write the boxes out, but only when something actually moved."""
+    blob = {s: (st.session_state.get("_keep_" + s) or "")[:KEPT_MAX]
+            for s in KEPT_SLOTS}
+    blob["_tab"] = st.session_state.get("active_tab", "transcribe")
+    blob["choices"] = {n: st.session_state[n] for n in KEPT_CHOICES
+                       if n in st.session_state
+                       and isinstance(st.session_state[n],
+                                      (str, bool, int, float))}
+    if all(not v for k, v in blob.items()
+           if k not in ("_tab", "choices")) and not blob["choices"]:
+        return                       # nothing worth keeping yet
+    packed = json.dumps(blob)
+    if packed == st.session_state.get("_kept_last"):
+        return
+    st.session_state["_kept_last"] = packed
+    queue_ls(writes={KEPT_LS_KEY: packed})
+
+
 def kept_text(slot: str) -> str:
     """What is in that box, from the store rather than from the widget."""
     return st.session_state.get("_keep_" + slot, "") or ""
@@ -3576,6 +3709,7 @@ def kept_set(slot: str, value: str) -> None:
     st.session_state["_keep_" + slot] = value or ""
     st.session_state["_keepgen_" + slot] = int(
         st.session_state.get("_keepgen_" + slot, 0)) + 1
+    _kept_save()
 
 
 def kept_area(slot: str, **kw):
@@ -3590,6 +3724,7 @@ def kept_area(slot: str, **kw):
 
     def _typed():
         st.session_state["_keep_" + slot] = st.session_state.get(key, "")
+        _kept_save()
 
     return st.text_area(slot, key=key, value=kept_text(slot),
                         on_change=_typed, **kw)
@@ -7638,6 +7773,14 @@ with st.expander(t("rem_link"), expanded=False):
                         failed_label="—", size=0, link=True),
         height=24)
 
+# THE WORK COMES BACK BEFORE THE TABS ARE DRAWN.
+#
+# Here and not earlier: the boxes must be restored AFTER the login (there
+# is nothing to restore for somebody who is not in) and BEFORE the tab
+# bar, because one of the things restored is which tab he was on. Putting
+# it after would draw the old tab for one frame and then jump.
+_kept_restore()
+
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
     "nav", nav_tabs(),
@@ -9155,13 +9298,39 @@ elif active == "vr":
     # It was spread across a spinner, a caption and a button label, none
     # of them where he was looking. One string, decided here, shown
     # there.
+    # THE STATUS, VERBOSE, IN THE PLAYER'S OWN BAND.
+    #
+    # Baba, 25.8.2026: "I want to see braille spinner, which file is
+    # currently created, and some kind of data counter. I want to see
+    # exactly where we are and what's going on."
+    #
+    # "20 parts still to render" is a number that does not move, and a
+    # number that does not move is indistinguishable from a hang. This
+    # says which part, how far along, and how much sound exists so far —
+    # three things that all change, so the screen is visibly alive.
+    #
+    # THE SPINNER TURNS BECAUSE THE STITCH RERUNS PER PART. A blocking
+    # loop cannot animate anything: the page does not redraw until it
+    # returns. So the stitch builds ONE part per run and reruns, which is
+    # the teaspoon again — and the frame advances by itself.
     _vr_status = ""
     if _vr_job and _vr_job.get("parts"):
         _n = len(_vr_job["parts"])
-        _missing = len([i for i in range(_n) if i not in _vr_job["cache"]])
+        _have = sorted(_vr_job["cache"])
+        _missing = [i for i in range(_n) if i not in _vr_job["cache"]]
+        _bytes = sum(len(v.get("audio") or b"")
+                     for v in _vr_job["cache"].values())
+        _tick = int(st.session_state.get("_vr_tick", 0))
+        _spin = VR_SPINNER[_tick % len(VR_SPINNER)]
         if st.session_state.get("_vr_stitching"):
-            _vr_status = (t("vr_stitch_wait") % _missing) if _missing \
-                else t("vr_stitch")
+            st.session_state["_vr_tick"] = _tick + 1
+            if _missing:
+                _vr_status = t("vr_making") % (
+                    _spin, _missing[0] + 1, _n, len(_have), _n,
+                    _human_bytes(_bytes))
+            else:
+                _vr_status = t("vr_joining") % (_spin, _n,
+                                                _human_bytes(_bytes))
         elif _vr_job["index"] < _n:
             _vr_status = t("gen_part").format(i=_vr_job["index"] + 1, n=_n)
 
@@ -9211,13 +9380,31 @@ elif active == "vr":
             # on the run after — so the message is on screen BEFORE the
             # wait rather than after it.
             st.session_state["_vr_stitching"] = True
+            st.session_state["_vr_tick"] = 0
             st.rerun()
 
-        if st.session_state.pop("_vr_stitching", False) and _vr_job:
-            _whole = _vr_stitch()
-            if _whole:
-                st.session_state["_vr_whole"] = _whole
-                st.session_state["_vr_whole_at"] = int(_vr_ev.get("at") or 0)
+        # ONE PART PER RUN, THEN REDRAW. Doing all twenty in a loop is
+        # faster by a second or two and shows a frozen number for a
+        # minute; this shows the spinner turning, the part number
+        # climbing and the megabytes growing. When somebody is waiting,
+        # visible progress is worth more than the seconds it costs.
+        if st.session_state.get("_vr_stitching") and _vr_job:
+            _todo = [i for i in range(len(_vr_job["parts"]))
+                     if i not in _vr_job["cache"]]
+            if _todo:
+                _got = _vr_block(_todo[0])
+                save_rings()
+                if _got and _got.get("err"):
+                    st.session_state["_vr_error"] = _got["err"]
+                    st.session_state.pop("_vr_stitching", None)
+                st.rerun()
+            else:
+                st.session_state.pop("_vr_stitching", None)
+                _whole = _vr_stitch()
+                if _whole:
+                    st.session_state["_vr_whole"] = _whole
+                    st.session_state["_vr_whole_at"] = int(
+                        _vr_ev.get("at") or 0)
                 st.rerun()
 
         # THE BLOCK FINISHED: move on. Guarded by a stamp, because the
@@ -10200,3 +10387,25 @@ try:
         REMOTE.put(REMOTE_STORE, remote_code(), t1_text(), REMOTE.SAY)
 except Exception:                                            # noqa: BLE001
     pass
+
+
+# ---------------------------------------------------------------------
+# KEEP WHAT HE CHOSE, ONCE, AT THE END.
+#
+# Not in each callback. There are a dozen places a choice is made — the
+# cast, the two help toggles, TR's gender and its two language rows, the
+# reader's voice — and wiring a save into each is a list to forget one
+# from. Baba lost the VR voice exactly because it had no such wiring.
+#
+# HERE EVERYTHING HAS ALREADY HAPPENED, so session_state holds whatever
+# this render settled on. _kept_save writes only when the packed blob
+# actually differs, so running it on every render costs one json.dumps
+# and a string compare.
+#
+# Guarded, because the last line of the script must not be the thing that
+# takes down a page that has already drawn correctly.
+try:
+    _kept_save()
+except Exception:                                            # noqa: BLE001
+    pass
+

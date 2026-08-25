@@ -175,14 +175,63 @@ check("5e VR builds ONE status string rather than scattering three",
 check("5f and hands it to the deck", "status=_vr_status" in app)
 check("5g it says which part is being made",
       't("gen_part").format(i=_vr_job["index"] + 1' in app)
-check("5h and how many are still to render when saving",
-      't("vr_stitch_wait") % _missing' in app)
+# REPLACED BY SECTION 6. "20 parts still to render" was a number that
+# did not move; it is now a spinner, a part number, a done count and a
+# byte counter, all of which change.
+check("5h and, while saving, verbose progress rather than a frozen count",
+      "vr_making" in app and "vr_stitch_wait" not in
+      app[app.index("_vr_status = \"\""):app.index("_vr_audio = st.session")])
 check("5i the stitch says so BEFORE the wait, not after — the flag is "
       "set, the page redraws, then the work happens",
       '"_vr_stitching"] = True' in app
       and app.index('"_vr_stitching"] = True') < app.index('pop("_vr_stitching"'))
 check("5j and the spinner that sat in the wrong place is gone",
       'with st.spinner(t("vr_stitch"))' not in app)
+
+print("\n6 VERBOSE PROGRESS — where we are and what is going on")
+# Baba: "I want to see braille spinner, which file is currently created,
+# and some kind of data counter." "20 parts still to render" is a number
+# that does not move, and a number that does not move is
+# indistinguishable from a hang.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import importlib.util as _iu
+_spec = _iu.spec_from_loader("x", loader=None)
+check("6a there is a braille spinner", 'VR_SPINNER = "' in app)
+_frames = re.search(r'VR_SPINNER = "([^"]+)"', app).group(1)
+print("       frames: %s (%d)" % (_frames, len(_frames)))
+check("6b with enough frames to read as motion", len(_frames) >= 8,
+      len(_frames))
+check("6c every frame is a single character, so a one-line band does "
+      "not reflow", all(len(f) == 1 for f in _frames))
+check("6d the frame advances on its own", '"_vr_tick"] = _tick + 1' in app)
+check("6e it says WHICH part is being made", "vr_making" in app)
+check("6f how many are done", "len(_have), _n" in app)
+check("6g and how much sound exists so far", "_human_bytes(_bytes)" in app)
+check("6h joining is its own message, not silence at the end",
+      "vr_joining" in app)
+
+print("\n6b THE SPINNER CAN ONLY TURN IF THE PAGE REDRAWS")
+# A blocking loop cannot animate anything: the page does not redraw until
+# it returns. So the stitch builds ONE part per run and reruns.
+_st = app[app.index('if st.session_state.get("_vr_stitching") and _vr_job:'):]
+_st = _st[:_st.index("_vr_audio = st.session_state")] if "_vr_audio = st.session_state" in _st else _st[:1200]
+check("6i the stitch builds ONE part per run",
+      "_vr_block(_todo[0])" in _st, _st[:120])
+check("6j and reruns, so the band is redrawn with the next frame",
+      _st.count("st.rerun()") >= 2, _st.count("st.rerun()"))
+check("6k it stops when nothing is left, rather than rerunning for ever",
+      'pop("_vr_stitching", None)' in _st)
+check("6l a refusing part ends the stitch instead of looping on it",
+      '_got.get("err")' in _st)
+
+print("\n6c THE BYTE COUNTER READS LIKE A SIZE")
+_hb = app[app.index("def _human_bytes"):app.index("PREFETCH_AHEAD")]
+for n, want in ((0, "0 B"), (900, "900 B"), (2048, "2 KB"),
+                (1536 * 1024, "1.5 MB")):
+    ns = {}
+    exec(_hb.split("PREFETCH")[0], {"__builtins__": __builtins__}, ns)
+    got = ns["_human_bytes"](n)
+    check("6m %8d -> %s" % (n, got), got == want, "expected %s" % want)
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)
