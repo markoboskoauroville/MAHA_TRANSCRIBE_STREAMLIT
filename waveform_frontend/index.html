@@ -258,7 +258,7 @@ function setPlaying(on){
 var LBL={play:'play',pause:'pause',back:'back',next:'next'};
 // Which block this is, so a saved file says which one it came from. The
 // page label already shows it; this keeps the filename honest too.
-var PART=1;
+var PART=1, DELIVERED=0;
 
 bPlay.onclick=function(){
   if(!audio.src){
@@ -280,12 +280,32 @@ bPlay.onclick=function(){
    desktop. */
 bSave.onclick=function(){
   if(!audio.src) return;
-  var a=document.createElement('a');
-  a.href=audio.src;
-  /* A name that says what it is and does not collide between parts. */
-  a.download='ttt-lll-'+(PART||1)+'.mp3';
-  document.body.appendChild(a); a.click(); a.remove();
+  /* SAVE MEANS THE WHOLE READING, NOT THE BLOCK ON SCREEN.
+     Baba, 25.8.2026: "it just saves current segment... we need to create
+     a meal out of sausages, not to save one sausage."
+
+     This used to do a.href = audio.src, which is exactly one block —
+     correct while a reading was one file, and wrong from the moment the
+     audio was split into a tape deck. Python holds every block in the
+     job's cache and knows which are still missing; the component holds
+     one. So the press is REPORTED and Python does the work.
+
+     PAUSE FIRST. He asked for it and he is right: the download is the
+     priority, and a player still talking while a file is being built
+     makes the wait feel like a fault. */
+  audio.pause();
+  setPlaying(false);
+  setValue({at: Date.now(), save: true});
 };
+
+/* AND THE FINISHED MEAL COMES BACK DOWN. Python hands the stitched file
+   in as `dl`, the browser saves it without a second press, and the deck
+   carries on from where it was — the two-way handover he described. */
+function deliver(url, name){
+  var a=document.createElement('a');
+  a.href=url; a.download=name||'reading.mp3';
+  document.body.appendChild(a); a.click(); a.remove();
+}
 audio.onplay=function(){ setPlaying(true); if(!raf) tick(); };
 audio.onpause=function(){ setPlaying(false); };
 audio.onended=function(){
@@ -353,6 +373,13 @@ window.addEventListener("message", function(ev){
     lPlay.textContent=audio.paused?LBL.play:LBL.pause; }
   cues=a.cues||[]; words=a.words||[]; wtimes=a.wtimes||[];
   if(a.part) PART=a.part;
+  /* THE STITCHED FILE, delivered once and only once. The stamp is what
+     stops a rerun re-saving it — the same guard the finish event uses,
+     and for the same reason. */
+  if(a.dl && a.dl_at && a.dl_at!==DELIVERED){
+    DELIVERED=a.dl_at;
+    deliver(a.dl, a.dl_name);
+  }
   if(a.labels && a.labels.save) document.getElementById('lSave').textContent=a.labels.save;
   document.body.classList.toggle('idle', !a.src);
   // STARTABLE = there is text waiting and no audio yet, so play means

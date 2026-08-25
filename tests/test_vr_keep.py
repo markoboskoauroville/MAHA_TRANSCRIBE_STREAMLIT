@@ -111,14 +111,24 @@ check("4a there is a stitcher", "def _vr_stitch" in vr)
 # it lived INSIDE the vr tab; it is shared with R now, so checking for it
 # in the tab is checking the wrong place. The behaviour is still checked,
 # just where the code is.
-check("4e the bytes are in hand before the download button is drawn",
-      vr.index('st.session_state["_vr_whole"]') < vr.index("st.download_button"))
+# THE SECOND CONTROL IS GONE. v216 made the deck's own `save` key BE the
+# stitcher, because two download controls meant Baba pressed the obvious
+# one and got a single block. There is no st.download_button to be drawn
+# after any more — the finished file is handed back DOWN to the player.
+check("4e the finished file is handed back to the deck, not to a second "
+      "button", 'dl=(' in vr and "_vr_whole" in vr)
+check("4e2 and there is no second download control to press by mistake",
+      "st.download_button" not in vr, "st.download_button" in vr)
+# THE NAME MOVED WITH THE CONTROL. It was st.download_button's
+# file_name; now the deck saves the file, so the name goes DOWN as a prop
+# and the mime is in the data URI.
 check("4f the file is named for what it actually is",
-      'file_name="rehearsal.mp3"' in vr and 'mime="audio/mpeg"' in vr)
+      'dl_name="rehearsal.mp3"' in vr and "data:audio/mpeg;base64" in vr)
 check("4g VR hands its own block builder to the shared stitcher",
       "stitch_reading(len(job.get" in vr and "_vr_block" in vr)
 check("4h and reports a refusing block on screen rather than silently",
-      '"_vr_error"' in vr[vr.index("def _vr_stitch"):vr.index("_left = len(")])
+      '"_vr_error"' in vr[vr.index("def _vr_stitch"):
+                          vr.index("_vr_audio = st.session_state")])
 
 print("\n4b THE JOIN REALLY MAKES ONE FILE")
 if __import__("shutil").which("ffmpeg"):
@@ -178,7 +188,7 @@ check("6g temporary files go on every path",
                         app.index("def tab_signature")])
 check("6h R offers the whole reading as its own file",
       'file_name="reading.mp3"' in app)
-check("6i and VR its own", 'file_name="rehearsal.mp3"' in app)
+check("6i and VR its own", 'dl_name="rehearsal.mp3"' in app)
 check("6j both say how many parts are left rather than hanging",
       app.count("vr_stitch_wait") >= 2, app.count("vr_stitch_wait"))
 

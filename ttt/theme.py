@@ -789,6 +789,17 @@ def css(scheme: str = "amber", font: str = "mono",
       color: var(--amber) !important;
     }}
 
+    /* THE READER'S TELEPROMPTER. The same idea as .vrscript and the
+       same numbers, because it IS the same idea — design-language.md §2,
+       a repeated element is the SAME element. R keeps the word
+       highlight, which VR cannot have: Whisper returns word timings and
+       Hume returns none. */
+    .rdscript {{
+      max-height: 40vh; overflow-y: auto;
+      scroll-behavior: smooth;
+      padding: 2px 0;
+    }}
+
     /* THE VR SCRIPT. The block being spoken is lit; the rest is there
        so the person can see where they are in the whole piece, which is
        what the Read tab gives and VR did not. Not a word highlight —
@@ -797,6 +808,7 @@ def css(scheme: str = "amber", font: str = "mono",
     .vrscript {{
       margin: 0.4rem 0 0.2rem;
       max-height: 34vh; overflow-y: auto;
+      scroll-behavior: smooth;
       font-size: 0.92rem; line-height: 1.55;
     }}
     .vrscript > div {{ padding: 3px 0; }}

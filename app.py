@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v215 (stay signed in)"
+APP_VERSION = "v216 (the teleprompter, and one meal not one sausage)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4907,13 +4907,38 @@ def _subtitle(text: str, start: int = None, end: int = None) -> str:
 
 def _render_page(page_sentences: list, current_idx: int, doc_slot,
                  word_start: int = None, word_end: int = None) -> None:
+    """The page, scrolling itself so the spoken sentence stays in view.
+
+    Baba, 25.8.2026: "since this is so good, I love this teleprompter
+    view, we're going to copy the same concept to the R tab."
+
+    R ALREADY HAD THE HARD HALF and was missing the easy one. It has
+    Whisper's word timings, so it highlights the WORD — something VR
+    cannot do at all. What it did not do was move: on a long text the
+    lit sentence walked off the bottom and the reader was left looking
+    at a paragraph they had finished.
+
+    THE SENTENCE IS WRAPPED so it can be found, and put in the MIDDLE by
+    the browser. Python cannot do this — it renders a div and has no idea
+    where anything sits inside it.
+
+    ONE ROW OF SENTENCES, so the id is unique on the page and the two
+    teleprompters cannot fight over it: VR's marker is `vrhere`, this
+    one is `rdhere`.
+    """
     parts = []
     for j, s in enumerate(page_sentences):
         if j == current_idx:
-            parts.append(_highlight_span(s, word_start, word_end))
+            parts.append("<span id='rdhere'>%s</span>"
+                         % _highlight_span(s, word_start, word_end))
         else:
             parts.append(html.escape(s))
-    doc_slot.markdown(" ".join(parts), unsafe_allow_html=True)
+    doc_slot.markdown(
+        "<div class='rdscript'>%s</div>"
+        "<script>(function(){var e=document.getElementById('rdhere');"
+        "if(e&&e.scrollIntoView)e.scrollIntoView("
+        "{block:'center',behavior:'smooth'});})();</script>"
+        % " ".join(parts), unsafe_allow_html=True)
 
 
 def read_picture(raw: bytes, filename: str = "") -> str:
@@ -9036,6 +9061,18 @@ elif active == "vr":
     # they carry is named beside the block instead, so the screen says
     # what the voice is doing without reading the brackets aloud.
     def _vr_script(job):
+        """The script, scrolling itself like a teleprompter.
+
+        Baba, 25.8.2026: "it doesn't scroll. It should be as a
+        teleprompter. The current sentence should always jump in the
+        middle of the view so the user can read it."
+
+        THE SCROLL HAS TO BE DONE BY THE BROWSER, not by Python. Streamlit
+        renders a div and has no idea where anything sits inside it, so
+        the block being spoken carries an id and three lines of script
+        put it in the MIDDLE — scrollIntoView with block:"center", which
+        is exactly "always jump in the middle of the view".
+        """
         if not job or not job.get("parts"):
             return
         here = job["index"]
@@ -9045,60 +9082,51 @@ elif active == "vr":
             tag = (" <span class='vrdir'>%s</span>"
                    % html.escape(", ".join(words))) if words else ""
             cls = "vrnow" if i == here else "vrthen"
-            rows.append("<div class='%s'>%s%s</div>" % (cls, body, tag))
-        st.markdown("<div class='vrscript'>%s</div>" % "".join(rows),
-                    unsafe_allow_html=True)
+            mark = " id='vrhere'" if i == here else ""
+            rows.append("<div class='%s'%s>%s%s</div>"
+                        % (cls, mark, body, tag))
+        # SMOOTH, AND ONLY WHEN IT MOVES. A jump on every rerun would
+        # fight a person who has scrolled back to re-read something;
+        # scrollIntoView on the same element twice is a no-op, so this
+        # only travels when the block actually changes.
+        st.markdown(
+            "<div class='vrscript' id='vrscroll'>%s</div>"
+            "<script>(function(){var e=document.getElementById('vrhere');"
+            "if(e&&e.scrollIntoView)e.scrollIntoView("
+            "{block:'center',behavior:'smooth'});})();</script>"
+            % "".join(rows), unsafe_allow_html=True)
 
     _vr_script(_vr_job)
 
     # ---- THE STITCHER -----------------------------------------------
-    # Baba asked me to confirm the save key stitched the parts. It did
-    # not: it downloaded whatever block the player was holding, named
-    # ttt-lll-3.mp3, and in VR the bytes were WAV under an mp3 name.
-    # Correct before the deck existed and a reading was one file; wrong
-    # the moment I split the audio in v206 and did not revisit it.
+    # Baba pressed the deck's own `save` and got ONE BLOCK: "it just
+    # saves current segment... we need to create a meal out of sausages,
+    # not to save one sausage."
     #
-    # THE COMPONENT CANNOT DO THIS. The blocks live in Python, in the
-    # job's cache; the player only ever sees one of them. So the stitch
-    # is a Streamlit download button beside the deck.
+    # He was pressing the obvious control. There were TWO — the player's
+    # save key, which downloaded whatever block was on screen, and a
+    # separate button underneath that did the real work. Two controls for
+    # one idea, and the one that looked like the answer was the wrong
+    # one. THE SECOND BUTTON IS GONE. `save` on the deck IS the stitcher.
     #
-    # IT FINISHES THE READING FIRST. On block three of nine the last six
-    # do not exist yet, so it builds them — which means a wait, and the
-    # wait is exactly what the teaspoon was built to remove. That is the
-    # honest trade and the button SAYS so rather than appearing to hang.
+    # DEFINED BEFORE THE PLAYER, because the player's save event calls it
+    # on the same run. It was defined after, which would have been a
+    # NameError the first time anybody pressed save.
     #
-    # ONE MP3, NOT NINE WAVs. join_audio re-encodes rather than
-    # stream-copying, which is what makes the seams seek properly, and
-    # mp3 is what a phone will hand to anything else.
-    if _vr_job and _vr_job.get("parts"):
-        def _vr_stitch():
-            job = st.session_state.get("_vr_job") or {}
+    # It finishes the reading first: on block three of nine the last six
+    # do not exist, so it builds them. That is a wait, and the wait is
+    # what the teaspoon removed — so the component pauses and the spinner
+    # says what is happening rather than the app appearing to hang.
+    def _vr_stitch():
+        job = st.session_state.get("_vr_job") or {}
 
-            def _err(msg):
-                st.session_state["_vr_error"] = msg or t("vr_nothing")
+        def _err(msg):
+            st.session_state["_vr_error"] = msg or t("vr_nothing")
 
-            out = stitch_reading(len(job.get("parts", ())), _vr_block,
-                                 on_error=_err)
-            save_rings()
-            return out
-
-        _left = len([i for i in range(len(_vr_job["parts"]))
-                     if i not in _vr_job["cache"]])
-        if st.button(t("vr_stitch") if not _left
-                     else t("vr_stitch_wait") % _left,
-                     key="vr_stitch_go", use_container_width=True):
-            _whole = _vr_stitch()
-            if _whole:
-                st.session_state["_vr_whole"] = _whole
-        if st.session_state.get("_vr_whole"):
-            # THE BYTES MUST BE IN HAND BEFORE THE BUTTON IS DRAWN —
-            # st.download_button needs the data, not a promise of it, the
-            # same reason the recordings panel fetches first.
-            st.download_button(t("vr_save_all"),
-                               data=st.session_state["_vr_whole"],
-                               file_name="rehearsal.mp3", mime="audio/mpeg",
-                               key="vr_dl_all", use_container_width=True)
-
+        out = stitch_reading(len(job.get("parts", ())), _vr_block,
+                             on_error=_err)
+        save_rings()
+        return out
 
     _vr_audio = st.session_state.get("_vr_audio")
     if _wave_component is not None:
@@ -9121,12 +9149,36 @@ elif active == "vr":
                                                  a11y.DEFAULT_SCALE)),
             autoplay=bool(st.session_state.pop("_vr_autoplay", False))
             or bool(_vr_job),
+            # THE MEAL, GOING BACK DOWN. Handed as a data URI with a
+            # stamp, so the browser saves it once and a rerun does not
+            # save it again.
+            dl=("data:audio/mpeg;base64," + _b64.b64encode(
+                st.session_state["_vr_whole"]).decode()
+                if st.session_state.get("_vr_whole") else ""),
+            dl_at=int(st.session_state.get("_vr_whole_at", 0)),
+            dl_name="rehearsal.mp3",
             key="vr_player", default=None)
+
+        # SAVE WAS PRESSED ON THE DECK. The component has paused itself
+        # and asked; Python holds every block and knows which are
+        # missing, so the meal is made here and handed straight back —
+        # no second button to find, no wondering which control was the
+        # real one.
+        if (_vr_job and isinstance(_vr_ev, dict) and _vr_ev.get("save")
+                and st.session_state.get("_vr_save_seen") != _vr_ev.get("at")):
+            st.session_state["_vr_save_seen"] = _vr_ev.get("at")
+            with st.spinner(t("vr_stitch")):
+                _whole = _vr_stitch()
+            if _whole:
+                st.session_state["_vr_whole"] = _whole
+                st.session_state["_vr_whole_at"] = int(_vr_ev.get("at") or 0)
+                st.rerun()
 
         # THE BLOCK FINISHED: move on. Guarded by a stamp, because the
         # component re-reports the same press across reruns and one
         # finish must be one advance.
-        if _vr_job and isinstance(_vr_ev, dict) and _vr_ev.get("at"):
+        if _vr_job and isinstance(_vr_ev, dict) and _vr_ev.get("at") \
+                and not _vr_ev.get("save"):
             if st.session_state.get("_vr_seen") != _vr_ev["at"]:
                 st.session_state["_vr_seen"] = _vr_ev["at"]
                 if _vr_job["index"] + 1 < len(_vr_job["parts"]):

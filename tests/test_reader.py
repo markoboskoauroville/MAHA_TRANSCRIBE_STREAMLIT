@@ -130,17 +130,30 @@ cache3 = job3.get("cache") or {}
 #   the old closure is gone    — the app rebuilt it (app.py, "_talk_revoice")
 #   it was not spoken again    — so the re-render used the NEW voice
 #   nothing behind us was kept — block 0 belongs to the old voice
-check("8 changing voice DROPS the cache, so audio is re-rendered",
-      cache3.get(1, {}).get("audio") not in (None, OLD_AUDIO)
-      and job3.get("synth") is not old_synth
+# REVERSED IN v200, AND THESE TWO WERE NOT UPDATED WITH IT.
+#
+# _revoice used to KEEP the index so a new voice took over from the block
+# being listened to. Baba: "if I change to Gabi, the app should restart
+# reading and start from the top of the text with the new voice." That
+# reasoning is not wrong, it answers a different question — it is right
+# for RESUMING and wrong for CHOOSING, and nobody changes voice to carry
+# on. They change it to hear how the other one sounds, and the only fair
+# comparison is the same words from the same start.
+#
+# I made that reversal and left these checks asserting the old contract,
+# then dropped test_reader from my sweep list — so they sat red for five
+# versions with nobody looking. That is worse than the bug would have
+# been: a suite nobody runs is a suite that teaches nothing.
+check("8 changing voice DROPS the cache, so nothing plays in the old voice",
+      job3.get("synth") is not old_synth
       and not old_synth.calls
-      and 0 not in cache3,
-      {"audio_1": cache3.get(1, {}).get("audio", b"")[:12],
-       "synth_rebuilt": job3.get("synth") is not old_synth,
+      and OLD_AUDIO not in [v.get("audio") for v in cache3.values()],
+      {"synth_rebuilt": job3.get("synth") is not old_synth,
        "old_voice_spoke": old_synth.calls,
        "cache_keys": sorted(cache3)})
-check("9 and KEEPS the place — it does not restart the whole text",
-      job3.get("index") == 1, job3.get("index"))
+check("9 and STARTS AGAIN FROM THE TOP, so the two voices can be "
+      "compared on the same words",
+      job3.get("index") == 0, job3.get("index"))
 
 # --- a new text clears the reading ------------------------------------
 at4 = app()
