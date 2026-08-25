@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v224 (save reaches a finished reading; rehearse joins the row)"
+APP_VERSION = "v225 (save works from a standing start)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -9284,6 +9284,70 @@ elif active == "vr":
     # k_hume tab is not the same thing as having no keys.
     hume_keys_from_secrets()
 
+    # REHEARSE SITS UNDER THE PLAYER. Baba, 25.8.2026: "the rehearse
+    # action link goes under the player."
+    #
+    # It reads the box that is rendered BELOW it, which is fine and worth
+    # knowing why: a widget with a key has already put its value into
+    # session_state before the script runs, so `vr_text` here is what is
+    # in the box right now, not what was in it last time.
+    #
+    # HOW LONG, ASKED OF THE WHOLE RING. Measured in Baba's own brief: 3s
+    # between calls is refused, 12s holds. With one account that is the
+    # familiar wait; with 21 it is almost always 0 and the coffee message
+    # never appears. The link is disabled and SAYS how long, rather than
+    # firing into a 429 and blaming the person.
+    _vr_ring = get_ring("hume")
+    _vr_i, _left = VR.pick_rested(_vr_ring["keys"], time.time())
+    if _vr_i is None:
+        _left = 0               # no usable key: that is an error, not a wait
+    _has = bool(kept_text("vr_text").strip())
+
+    def _vr_go():
+        raw = kept_text("vr_text").strip()
+        if not raw:
+            st.session_state["_vr_error"] = t("vr_nothing")
+            return
+        ring = get_ring("hume")
+        _i, _w = VR.pick_rested(ring["keys"], time.time())
+        if _i is not None and _w:
+            return          # the link was disabled; belt and braces
+        # TEASPOON GENERATION. Baba, 25.8.2026: "Generate 1 sentence.
+        # While this is playing, generate 4. While those 4 are playing,
+        # generate the next 4. Fast response please. For any length of
+        # text we can read then."
+        #
+        # THIS USED TO SYNTHESISE EVERY SEGMENT BEFORE A SINGLE WORD
+        # PLAYED, and join them. On a long line that is the same "takes
+        # forever" fault R had, for the same reason.
+        #
+        # So rehearse now only PLANS. Blocks are built one at a time by
+        # the deck below, the first is ONE sentence, and the rest arrive
+        # while the previous is playing.
+        #
+        # AND THE JOIN IS GONE WITH IT. Each block is its own file played
+        # in turn, so the WAV-header problem that needed ffmpeg does not
+        # arise: there is nothing to concatenate.
+        plan = VR.plan_directed(raw, sentences_of=tk.sentences_of)
+        if not plan:
+            st.session_state["_vr_error"] = t("vr_nothing")
+            return
+        st.session_state["_vr_job"] = {
+            "parts": plan, "index": 0, "cache": {},
+            "voice": st.session_state.get("vr_voice", VR.DEFAULT_VOICE),
+        }
+        st.session_state.pop("_vr_audio", None)
+        st.session_state.pop("_vr_seen", None)
+        # AND THE STITCHED FILE GOES WITH THE OLD READING. Without this,
+        # pasting a new line, pressing rehearse and then download hands
+        # back the PREVIOUS reading — a file that plays perfectly and is
+        # the wrong words. Silently wrong is the worst kind.
+        st.session_state.pop("_vr_whole", None)
+        _words = [w for ws, _ in plan for w in ws]
+        st.session_state["_vr_said"] = VR.summarise(_words) if _words else ""
+        USAGE.log("read", len(raw), UNIT_CHARS, "hume")
+
+
     # ---- THE DECK, ONE BLOCK AT A TIME -----------------------------
     # The teaspoon. Build the block being listened to, play it, and while
     # it plays build the next two. Nothing waits for the whole text.
@@ -9534,6 +9598,37 @@ elif active == "vr":
         # missing, so the meal is made here and handed straight back —
         # no second button to find, no wondering which control was the
         # real one.
+        # SAVE WITH NOTHING PLAYED YET MAKES THE READING FIRST.
+        #
+        # Baba: "if there is something in the text box and the user
+        # presses download instead of play, the text should be generated
+        # and downloaded, not be dead."
+        #
+        # This required `_vr_job`, so a person who typed a line and
+        # pressed save got nothing at all — the SECOND dead end on the
+        # same press, the component being the first. Pressing save is a
+        # complete instruction on its own: it says make this and give it
+        # to me. Demanding a press of play first is an order of
+        # operations the app never explained and has no reason to want.
+        #
+        # `_vr_go` already turns the text into a job — the same planning
+        # rehearse does — so this calls it rather than growing a second
+        # way to plan.
+        if (isinstance(_vr_ev, dict) and _vr_ev.get("save")
+                and not _vr_job and kept_text("vr_text").strip()
+                and st.session_state.get("_vr_save_seen") != _vr_ev.get("at")):
+            _vr_go()
+            _vr_job = st.session_state.get("_vr_job")
+            if _vr_job:
+                # STRAIGHT INTO STITCHING, not into playing. He asked to
+                # SAVE, so the blocks are built and joined and handed
+                # back; nothing starts talking at him.
+                st.session_state["_vr_stitching"] = True
+                st.session_state["_vr_tick"] = 0
+                st.session_state["_vr_save_seen"] = _vr_ev.get("at")
+                st.session_state.pop("_vr_autoplay", None)
+                st.rerun()
+
         if (_vr_job and isinstance(_vr_ev, dict) and _vr_ev.get("save")
                 and st.session_state.get("_vr_save_seen") != _vr_ev.get("at")):
             st.session_state["_vr_save_seen"] = _vr_ev.get("at")
@@ -9620,70 +9715,6 @@ elif active == "vr":
                 break        # a failed prefetch only costs a short wait
         if _want:
             save_rings()
-
-    # REHEARSE SITS UNDER THE PLAYER. Baba, 25.8.2026: "the rehearse
-    # action link goes under the player."
-    #
-    # It reads the box that is rendered BELOW it, which is fine and worth
-    # knowing why: a widget with a key has already put its value into
-    # session_state before the script runs, so `vr_text` here is what is
-    # in the box right now, not what was in it last time.
-    #
-    # HOW LONG, ASKED OF THE WHOLE RING. Measured in Baba's own brief: 3s
-    # between calls is refused, 12s holds. With one account that is the
-    # familiar wait; with 21 it is almost always 0 and the coffee message
-    # never appears. The link is disabled and SAYS how long, rather than
-    # firing into a 429 and blaming the person.
-    _vr_ring = get_ring("hume")
-    _vr_i, _left = VR.pick_rested(_vr_ring["keys"], time.time())
-    if _vr_i is None:
-        _left = 0               # no usable key: that is an error, not a wait
-    _has = bool(kept_text("vr_text").strip())
-
-    def _vr_go():
-        raw = kept_text("vr_text").strip()
-        if not raw:
-            st.session_state["_vr_error"] = t("vr_nothing")
-            return
-        ring = get_ring("hume")
-        _i, _w = VR.pick_rested(ring["keys"], time.time())
-        if _i is not None and _w:
-            return          # the link was disabled; belt and braces
-        # TEASPOON GENERATION. Baba, 25.8.2026: "Generate 1 sentence.
-        # While this is playing, generate 4. While those 4 are playing,
-        # generate the next 4. Fast response please. For any length of
-        # text we can read then."
-        #
-        # THIS USED TO SYNTHESISE EVERY SEGMENT BEFORE A SINGLE WORD
-        # PLAYED, and join them. On a long line that is the same "takes
-        # forever" fault R had, for the same reason.
-        #
-        # So rehearse now only PLANS. Blocks are built one at a time by
-        # the deck below, the first is ONE sentence, and the rest arrive
-        # while the previous is playing.
-        #
-        # AND THE JOIN IS GONE WITH IT. Each block is its own file played
-        # in turn, so the WAV-header problem that needed ffmpeg does not
-        # arise: there is nothing to concatenate.
-        plan = VR.plan_directed(raw, sentences_of=tk.sentences_of)
-        if not plan:
-            st.session_state["_vr_error"] = t("vr_nothing")
-            return
-        st.session_state["_vr_job"] = {
-            "parts": plan, "index": 0, "cache": {},
-            "voice": st.session_state.get("vr_voice", VR.DEFAULT_VOICE),
-        }
-        st.session_state.pop("_vr_audio", None)
-        st.session_state.pop("_vr_seen", None)
-        # AND THE STITCHED FILE GOES WITH THE OLD READING. Without this,
-        # pasting a new line, pressing rehearse and then download hands
-        # back the PREVIOUS reading — a file that plays perfectly and is
-        # the wrong words. Silently wrong is the worst kind.
-        st.session_state.pop("_vr_whole", None)
-        _words = [w for ws, _ in plan for w in ws]
-        st.session_state["_vr_said"] = VR.summarise(_words) if _words else ""
-        USAGE.log("read", len(raw), UNIT_CHARS, "hume")
-
 
     _vr_err = st.session_state.pop("_vr_error", None)
     if _vr_err:

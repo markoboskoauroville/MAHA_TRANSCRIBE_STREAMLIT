@@ -212,5 +212,52 @@ check("7e and does not autoplay itself on every rerun, now that the job "
       "outlives it",
       '_vr_job and not _vr_job.get("done")' in vr)
 
+print("\n8 SAVE FROM A STANDING START — text in the box, nothing played")
+# Baba, 25.8.2026: "if there is something in the text box and the user
+# presses download instead of play, the text should be generated and
+# downloaded, not be dead."
+#
+# TWO DEAD ENDS ON ONE PRESS. The component returned early on !audio.src,
+# and Python required a job. So a person who typed a line and pressed
+# save got nothing at either end — and a control that does nothing
+# teaches that the app is broken, not that an order of operations was
+# expected.
+front = open(os.path.join(os.path.dirname(__file__), "..",
+                          "waveform_frontend", "index.html"),
+             encoding="utf-8").read()
+check("8a the component no longer refuses just because nothing is loaded",
+      "if(!audio.src) return;" not in front,
+      [l for l in front.splitlines() if "if(!audio.src) return;" in l])
+check("8b it reports the press when there is TEXT to work from",
+      "!document.body.classList.contains('startable')" in front)
+check("8c and says so when there is genuinely nothing, rather than "
+      "sitting silent", "nothing to save yet" in front)
+
+check("8d Python answers a save press with NO job, if there is text",
+      'not _vr_job and kept_text("vr_text").strip()' in vr)
+check("8e by planning through _vr_go — the same planning rehearse does, "
+      "not a second way to plan", "_vr_go()" in vr)
+check("8f then going straight to stitching, because he asked to SAVE",
+      '_vr_stitching"] = True' in vr)
+check("8g and NOT starting to talk at him",
+      'pop("_vr_autoplay", None)' in vr)
+check("8h the press is stamped, so one press is one file",
+      vr.count('"_vr_save_seen"] = _vr_ev.get("at")') >= 2,
+      vr.count('"_vr_save_seen"] = _vr_ev.get("at")'))
+# find(), NOT index() — the sweep BLOCKED on this line as new lint debt
+# and it was right: I wrote the fault the linter exists to catch, in the
+# same commit, one hour after the sweep started enforcing it.
+_def_at = app.find("def _vr_go")
+_call_at = app.find("            _vr_go()")
+check("8i _vr_go is defined ABOVE the save handler that calls it — "
+      "pyflakes caught this as an undefined name",
+      0 < _def_at < _call_at, (_def_at, _call_at))
+check("8j and moving it did not move what the person SEES: player, then "
+      "rehearse, then the box",
+      0 < vr.find('key="vr_player"') < vr.find('"nact_vr_go"')
+      < vr.find('kept_area("vr_text"'),
+      (vr.find('key="vr_player"'), vr.find('"nact_vr_go"'),
+       vr.find('kept_area("vr_text"')))
+
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

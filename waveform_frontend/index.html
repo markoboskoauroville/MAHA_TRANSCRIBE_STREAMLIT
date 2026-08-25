@@ -291,7 +291,25 @@ bPlay.onclick=function(){
    download, which is what makes it work the same on a phone as on a
    desktop. */
 bSave.onclick=function(){
-  if(!audio.src) return;
+  /* SAVE WORKS WITH NOTHING LOADED, TOO.
+     Baba, 25.8.2026: "if there is something in the text box and the user
+     presses download instead of play, the text should be generated and
+     downloaded, not be dead."
+
+     This returned early on !audio.src, so with a line typed and nothing
+     played the button was a dead cell. Two dead ends actually — Python
+     also required a job — and a control that does nothing teaches that
+     the app is broken, not that an order of operations was expected.
+
+     There is no reason to demand a press of play first: Python can plan
+     and render from the text alone, which is all `rehearse` does. So the
+     press is REPORTED either way and Python decides whether there is
+     anything to make. `startable` says whether there is text; without
+     even that, there is genuinely nothing to save. */
+  if(!audio.src && !document.body.classList.contains('startable')){
+    if(!PYMSG) msg.textContent = 'nothing to save yet';
+    return;
+  }
   /* SAVE MEANS THE WHOLE READING, NOT THE BLOCK ON SCREEN.
      Baba, 25.8.2026: "it just saves current segment... we need to create
      a meal out of sausages, not to save one sausage."
