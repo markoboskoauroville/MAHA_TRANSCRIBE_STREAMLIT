@@ -30,7 +30,8 @@ code = "\n".join(l for l in app.splitlines() if not l.lstrip().startswith("#"))
 SLOTS = ("_t1_text", "talk_text", "translate_src_text",
          "translate_out", "vr_text")
 CHOICES = ("vr_voice", "vr_preview", "vr_tag_clip", "voice",
-           "help_lang", "help_gender", "tr_gender", "tr_src", "tr_tgt")
+           "help_lang", "help_gender", "help_level",
+           "tr_gender", "tr_src", "tr_tgt", "_vr_own")
 MAX = 200000
 
 
@@ -38,7 +39,8 @@ def save(st):
     blob = {s: (st.get("_keep_" + s) or "")[:MAX] for s in SLOTS}
     blob["_tab"] = st.get("active_tab", "transcribe")
     blob["choices"] = {n: st[n] for n in CHOICES
-                       if n in st and isinstance(st[n], (str, bool, int, float))}
+                       if n in st
+                       and isinstance(st[n], (str, bool, int, float, list))}
     if (blob.get("_tab", "transcribe") == "transcribe"
             and not blob["choices"]
             and all(not v for k, v in blob.items()
@@ -196,6 +198,24 @@ check("1z2 which tab he was on IS state — often the only state, and "
       "always the first thing he sees",
       "vr" in (bare or ""))
 
+print("\n1h HIS OWN DIRECTIONS SURVIVE TOO")
+# Said in v201 that they should live in the browser, built the store for
+# it in v218, and never moved them across — so a direction he wrote
+# himself lasted until the phone rang.
+own = {"_vr_own": ["like a priest", "half asleep"], "active_tab": "vr"}
+packed_own = save(own)
+back_own = {}
+restore(back_own, packed_own)
+check("1za a LIST survives, not just strings and flags",
+      back_own.get("_vr_own") == ["like a priest", "half asleep"],
+      back_own.get("_vr_own"))
+check("1zb and they are worth saving on their own",
+      packed_own is not None)
+check("1zc the app allows a list through its type filter",
+      "(str, bool, int, float, list)" in app)
+check("1zd and names the store by its own constant, not a copy of the "
+      "string", "VR.OWN_KEY" in app)
+
 print("\n2 THE APP IS WIRED THIS WAY")
 check("2a there is a store key", "KEPT_LS_KEY" in code)
 check("2b every box is in the list",
@@ -236,10 +256,17 @@ check("2h the save runs at the END, after every choice has settled",
 check("2i and it is guarded — the last line must not take down a page "
       "that already drew",
       "except Exception:" in code[_save_call:_save_call + 220])
-check("2j every choice he can make is in the list",
-      all(('"%s"' % n) in code[code.index("KEPT_CHOICES"):
-                               code.index("def _kept_restore")]
-          for n in CHOICES))
+# NOT EVERY NAME IS A LITERAL. `_vr_own` is in the table as VR.OWN_KEY,
+# a constant, which is BETTER than a copied string — a second copy of a
+# key is a second thing to keep in step. This check demanded the literal
+# and went red on the right code.
+_kc = code[code.find("KEPT_CHOICES"):code.find("def _kept_restore")]
+_missing = [n for n in CHOICES
+            if ('"%s"' % n) not in _kc and "OWN_KEY" not in _kc]
+check("2j every choice he can make is in the list, by literal or by "
+      "constant", not _missing, _missing)
+check("2j2 and the store is named by its constant rather than a copied "
+      "string", "VR.OWN_KEY" in _kc, _kc[-200:])
 check("2k but nothing DERIVED is — no job, no cache, no audio",
       not any(x in code[code.index("KEPT_CHOICES"):
                         code.index("def _kept_restore")]

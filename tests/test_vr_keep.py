@@ -259,5 +259,40 @@ check("8j and moving it did not move what the person SEES: player, then "
       (vr.find('key="vr_player"'), vr.find('"nact_vr_go"'),
        vr.find('kept_area("vr_text"')))
 
+print("\n9 THE DECK KNOWS THERE IS TEXT, EVEN WITH NO AUDIO")
+# Baba, after v225: "I need to press rehearsal and then I can save. I
+# cannot skip rehearsal."
+#
+# v225 was written for exactly that and DID NOT REACH HIM. VR passed
+# startable=bool(_vr_audio) — FALSE with a line typed and nothing played,
+# which is the only case that mattered. So the component's new guard
+# bailed on precisely the press it was written to allow. I built the road
+# and left the gate shut, and shipped it without pressing the button.
+check("9a startable means there is something to WORK FROM, not that "
+      "audio is already loaded",
+      'startable=bool(_vr_audio or kept_text("vr_text").strip())' in vr,
+      [l for l in vr.splitlines() if "startable=" in l])
+check("9b so it is true with text and no audio — the only case that "
+      "was ever broken", "kept_text(\"vr_text\").strip()" in vr)
+
+print("\n9b AND PLAY IS NOT DEAD EITHER")
+# The same dead end one button along: once startable is true the deck
+# REPORTS a play press on an empty deck, and nothing was listening. That
+# is how save shipped broken in v225 — the report existed, the handler
+# did not.
+check("9c VR handles a start press", '_vr_ev.get("start")' in vr)
+check("9d only when there is text to start FROM",
+      'and not _vr_job and kept_text("vr_text").strip()' in vr)
+check("9e stamped, so one press is one reading", '"_vr_start_seen"' in vr)
+check("9f it plans through _vr_go, like everything else",
+      vr.count("_vr_go()") >= 2, vr.count("_vr_go()"))
+check("9g play DOES autoplay — unlike save, he asked to hear it",
+      '_vr_autoplay"] = True' in vr)
+check("9h and _vr_go is defined above both handlers",
+      0 < vr.find("def _vr_go") < vr.find('_vr_ev.get("start")')
+      < vr.find('_vr_ev.get("save")'),
+      (vr.find("def _vr_go"), vr.find('_vr_ev.get("start")'),
+       vr.find('_vr_ev.get("save")')))
+
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v226 (the tab you left is the tab you come back to)"
+APP_VERSION = "v227 (save and play work without rehearse)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3656,6 +3656,7 @@ KEPT_CHOICES = (
     "help_lang",         # which language the help is in
     "help_gender",       # and which voice reads it
     "help_level",        # and at which depth
+    VR.OWN_KEY,          # and the directions he wrote himself
     "tr_gender",         # TR's female / male
     "tr_src", "tr_tgt",  # and its two language rows
 )
@@ -3701,10 +3702,17 @@ def _kept_save() -> None:
     blob = {s: (st.session_state.get("_keep_" + s) or "")[:KEPT_MAX]
             for s in KEPT_SLOTS}
     blob["_tab"] = st.session_state.get("active_tab", "transcribe")
+    # LISTS TOO, because his own directions are one. Said in v201 that
+    # they should live in the browser, built the store for it in v218,
+    # and never moved them across — so a direction he wrote lasted until
+    # the phone rang.
+    #
+    # Still only what a PERSON chose: a list of words he typed is a
+    # decision, and nothing derived is in this table.
     blob["choices"] = {n: st.session_state[n] for n in KEPT_CHOICES
                        if n in st.session_state
                        and isinstance(st.session_state[n],
-                                      (str, bool, int, float))}
+                                      (str, bool, int, float, list))}
     # THE TAB IS WORTH KEEPING ON ITS OWN.
     #
     # Baba, 25.8.2026: "make persistent inside browser storage the last
@@ -9603,7 +9611,23 @@ elif active == "vr":
                     "save": t("wave_save")},
             part=(_vr_job["index"] + 1) if _vr_job else (1 if _vr_audio else 0),
             parts=len(_vr_job["parts"]) if _vr_job else (1 if _vr_audio else 0),
-            startable=bool(_vr_audio),
+            # STARTABLE MEANS "THERE IS SOMETHING TO WORK FROM", NOT
+            # "AUDIO IS ALREADY LOADED".
+            #
+            # Baba, 25.8.2026: "I need to press rehearsal and then I can
+            # save. I cannot skip rehearsal." v225 was supposed to fix
+            # exactly that and DID NOT REACH HIM, because this said
+            # bool(_vr_audio) — false with a line typed and nothing
+            # played, which is the only case that mattered.
+            #
+            # So the component's new guard bailed on precisely the press
+            # it was written to allow. I built the road and left the gate
+            # shut, and shipped it without pressing the button.
+            #
+            # It is also what `play` reads to decide whether a press is a
+            # START, so this is the same fix for both: with text and no
+            # audio, both buttons now have something to do.
+            startable=bool(_vr_audio or kept_text("vr_text").strip()),
             scale=a11y.clamp(st.session_state.get("text_scale",
                                                  a11y.DEFAULT_SCALE)),
             # A FINISHED READING MUST NOT RESTART ITSELF. `bool(_vr_job)`
@@ -9627,6 +9651,25 @@ elif active == "vr":
         # missing, so the meal is made here and handed straight back —
         # no second button to find, no wondering which control was the
         # real one.
+        # AND PLAY ON AN EMPTY DECK STARTS THE READING.
+        #
+        # The same dead end as save, one button along. Now that
+        # `startable` is true whenever there is text, the component
+        # REPORTS a play press on an empty deck — and nothing here was
+        # listening, so it would have been dead in the same way, which is
+        # how `save` got shipped broken in v225.
+        #
+        # R has had this since v190. VR never grew it, because rehearse
+        # was the only way in.
+        if (isinstance(_vr_ev, dict) and _vr_ev.get("start")
+                and not _vr_job and kept_text("vr_text").strip()
+                and st.session_state.get("_vr_start_seen") != _vr_ev.get("at")):
+            st.session_state["_vr_start_seen"] = _vr_ev.get("at")
+            _vr_go()
+            if st.session_state.get("_vr_job"):
+                st.session_state["_vr_autoplay"] = True
+                st.rerun()
+
         # SAVE WITH NOTHING PLAYED YET MAKES THE READING FIRST.
         #
         # Baba: "if there is something in the text box and the user
