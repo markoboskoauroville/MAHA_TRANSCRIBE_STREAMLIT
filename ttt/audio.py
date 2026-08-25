@@ -209,8 +209,37 @@ def split_into_chunks(flac_path: str, chunk_seconds: int = CHUNK_SECONDS):
     return sorted(glob.glob(os.path.join(out_dir, "chunk_*.flac"))), out_dir
 
 
-def normalise_speech(raw: bytes, suffix: str = ".wav") -> bytes:
-    """One voice at one volume. WAV bytes in, WAV bytes out.
+# HUME'S WAV IS TOO BIG TO HOLD, AND THIS IS ARITHMETIC, NOT TASTE.
+#
+# MEASURED, one minute of speech:
+#
+#     WAV 48k mono 16-bit   5625 KB    as a data-URI  7500 KB
+#     MP3 64 kbit mono       469 KB    as a data-URI   626 KB   12x
+#     MP3 48 kbit mono       352 KB                            16x
+#     Opus 24 kbit mono      290 KB                            19x
+#
+# Streamlit Community Cloud gives ONE GIGABYTE OF RAM FOR THE WHOLE APP,
+# shared by every session at once, and session_state lives in it. A
+# ten-minute rehearsal in WAV is 56 MB of cache for one person, plus the
+# base64 copy in the DOM, plus the stitched file. Three of those and the
+# app reboots for everybody, including whoever was mid-sentence.
+#
+# MP3 64 kbit mono at 24 kHz, which is Baba's own number. Not Opus,
+# though his Hume notes measured Opus smaller still and he is right about
+# that: Opus in Ogg is not reliably playable in Safari, and Emina and
+# Marinko may be on iPhones. Twelve times smaller and it plays everywhere
+# beats nineteen times and a silent player for two of the three people
+# this app is for.
+#
+# ONE FFMPEG PASS. Levelling and packing in separate passes decodes and
+# re-encodes twice for no gain.
+SPEECH_KBPS = 64
+SPEECH_HZ = 24000
+
+
+def normalise_speech(raw: bytes, suffix: str = ".wav",
+                     kbps: int = SPEECH_KBPS) -> bytes:
+    """One voice at one volume, small enough to keep. MP3 bytes out.
 
     Baba, 25.8.2026: "There is an issue with Hume. Not all their voices
     are on the same volume. Some are very loud, some are very quiet. We
@@ -246,10 +275,11 @@ def normalise_speech(raw: bytes, suffix: str = ".wav") -> bytes:
         fh.write(raw)
         fh.close()
         src = fh.name
-        dst = tempfile.mktemp(suffix=".wav")
+        dst = tempfile.mktemp(suffix=".mp3")
         _run(["ffmpeg", "-v", "error", "-y", "-i", src,
-              "-af", LOUDNORM, "-ar", "48000", "-ac", "1",
-              "-sample_fmt", SAMPLE_FMT, dst], timeout=180)
+              "-af", LOUDNORM, "-ar", str(SPEECH_HZ), "-ac", "1",
+              "-c:a", "libmp3lame", "-b:a", "%dk" % int(kbps), dst],
+             timeout=180)
         with open(dst, "rb") as f:
             out = f.read()
         return out or raw

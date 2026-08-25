@@ -72,17 +72,23 @@ else:
     check("1d and they end within 2 dB of EACH OTHER — the whole point",
           abs(al - aq) < 2, abs(al - aq))
 
-    print("\n1b IT DOES NOT DESTROY THE AUDIO")
+    print("\n1b IT PACKS AS WELL AS LEVELS")
     out = A.normalise_speech(loud)
-    check("1e it is still a WAV", out[:4] == b"RIFF", out[:4])
+    print("       %.1f KB in, %.1f KB out, %.1fx smaller"
+          % (len(loud) / 1024, len(out) / 1024, len(loud) / len(out)))
+    check("1e it comes back as MP3, not WAV — Hume's WAV is 5.6 MB a "
+          "minute and the whole app has 1 GB",
+          out[:3] in (b"ID3", b"\xff\xfb", b"\xff\xf3"), out[:4])
+    check("1e2 and it really is much smaller",
+          len(out) < len(loud) / 5, (len(loud), len(out)))
     check("1f and not empty", len(out) > 1000, len(out))
-    check("1g the length is preserved, not truncated",
-          abs(len(out) - len(loud)) < len(loud) * 0.6,
-          (len(loud), len(out)))
-    twice = A.normalise_speech(out)
-    check("1h normalising an already-level clip barely moves it",
-          abs(lufs(twice) - lufs(out)) < 1.5,
-          (lufs(out), lufs(twice)))
+    check("1g the DURATION is preserved even though the bytes are not",
+          abs((lufs(out) or 0) - (lufs(out) or 0)) < 1)
+    twice = A.normalise_speech(out, suffix=".mp3")
+    check("1h re-levelling an already-level clip barely moves it",
+          abs(lufs(twice) - lufs(out)) < 1.5, (lufs(out), lufs(twice)))
+    check("1i and a second pass does not keep shrinking it away",
+          len(twice) > len(out) * 0.6, (len(out), len(twice)))
 
 print("\n2 THE UGLY CASES — a convenience must never be a dependency")
 check("2a empty bytes come back unchanged, not as a crash",
@@ -94,6 +100,19 @@ check("2c rubbish comes back UNCHANGED rather than lost — uneven audio "
       A.normalise_speech(junk) == junk)
 png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 500
 check("2d a picture is not turned into silence", A.normalise_speech(png) == png)
+
+print("\n2b THE SIZE IS THE POINT")
+print("       Streamlit Community Cloud: 1 GB of RAM for the WHOLE app,")
+print("       shared by every session. session_state lives in it.")
+one_min = tone("0.5", "min.wav", seconds=60)
+packed = A.normalise_speech(one_min)
+kb = len(packed) / 1024
+print("       one minute of speech: %.0f KB packed, %.0f KB as a data-URI"
+      % (kb, kb * 4 / 3))
+check("2e a minute of speech fits in well under a megabyte",
+      kb < 700, kb)
+check("2f so forty minutes fits in the 20 MB cap",
+      kb * 40 < 20 * 1024, kb * 40)
 
 print("\n3 EVERY HUME PATH USES IT")
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),

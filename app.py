@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v208 (every box keeps its text, one stitcher for both decks)"
+APP_VERSION = "v209 (twelve times smaller, and a cache with a ceiling)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -35,6 +35,13 @@ APP_VERSION = "v208 (every box keeps its text, one stitcher for both decks)"
 # the provider. It was 3, which suited DOUBLING blocks — with even blocks
 # the third is work done long before it is needed.
 PREFETCH_AHEAD = 2
+
+# HOW MUCH RENDERED SPEECH ONE PERSON MAY HOLD. Streamlit Community Cloud
+# gives 1 GB of RAM for the WHOLE app, shared by every session at once,
+# and session_state lives in it — so an unbounded audio cache is not a
+# slow leak, it is a reboot for whoever else is mid-sentence. At 64 kbit
+# mono, 20 MB is about forty minutes.
+VR_CACHE_BYTES = 20 * 1024 * 1024
 
 import streamlit as st
 from groq import Groq
@@ -3521,7 +3528,10 @@ def stitch_reading(count: int, get_block, on_error=None):
                 if on_error:
                     on_error((got or {}).get("err"))
                 return None
-            fh = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            # THE SUFFIX MUST MATCH THE BYTES. ffmpeg sniffs content, but
+            # a .wav holding mp3 is a trap for the next person reading
+            # this, and join_audio's own -i relies on nothing else.
+            fh = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
             fh.write(got["audio"])
             fh.close()
             paths.append(fh.name)
@@ -5096,6 +5106,10 @@ def _revoice():
     if job:
         job["cache"] = {}
         job["index"] = 0
+        # The saved file was made in the OLD voice. It is not what the
+        # person is listening to any more, so it must not be what the
+        # download button hands them.
+        st.session_state.pop("_rd_whole", None)
         st.session_state.pop("_talk_player_seen", None)
         st.session_state.pop("_talk_start_seen", None)
         st.session_state["_talk_revoice"] = True
@@ -8609,6 +8623,8 @@ elif active == "talk":
             raw = kept_text("talk_text").strip()
             if raw:
                 sentences = tk.sentences_of(raw)
+                # The stitched file belongs to the reading that made it.
+                st.session_state.pop("_rd_whole", None)
                 st.session_state["_talk_job"] = {
                     # FOUR BY FOUR. Baba, 25.8.2026: "generate audio up
                     # to 4 sentences and play that, and while this is
@@ -8789,6 +8805,25 @@ elif active == "vr":
         # rather than joined, an unlevelled one is heard as a jump in the
         # middle of the reading.
         job["cache"][i] = {"audio": ttt_audio.normalise_speech(data)}
+        # A CACHE THAT ONLY GROWS IS A CACHE THAT REBOOTS THE APP.
+        # Streamlit Community Cloud gives ONE GIGABYTE for the whole
+        # app, shared by every session, and session_state lives in it.
+        # 64 kbit mono is about 470 KB a minute, so this ceiling is
+        # roughly forty minutes of rendered speech per person — far more
+        # than a rehearsal, and far less than a problem for everybody
+        # else using the app at the same time.
+        #
+        # THE BLOCK BEING LISTENED TO AND THE ONES AHEAD ARE NEVER
+        # DROPPED. What goes is the oldest already-heard block, which is
+        # the one nobody is about to want; if it IS wanted again it costs
+        # one request, which is the right thing to spend rather than
+        # somebody else's session.
+        _cap = VR_CACHE_BYTES
+        while sum(len(v["audio"]) for v in job["cache"].values()) > _cap:
+            _old = [k for k in sorted(job["cache"]) if k < i]
+            if not _old:
+                break
+            job["cache"].pop(_old[0], None)
         return job["cache"][i]
 
     if _vr_job and _vr_job.get("parts"):
@@ -8892,7 +8927,12 @@ elif active == "vr":
     _vr_audio = st.session_state.get("_vr_audio")
     if _wave_component is not None:
         _vr_ev = _wave_component(
-            src=("data:audio/wav;base64," + _b64.b64encode(_vr_audio).decode()
+            # MP3 NOW, NOT WAV. Every Hume block is levelled and packed
+            # to 64 kbit mono on the way in — twelve times smaller, and
+            # the data-URI carries a third on top of whatever it holds.
+            # A wav mime on mp3 bytes is the same lie the old save key
+            # told with its filename.
+            src=("data:audio/mpeg;base64," + _b64.b64encode(_vr_audio).decode()
                  if _vr_audio else ""),
             cues=[], words=[], wtimes=[],
             labels={"play": t("wave_play"), "pause": t("wave_pause"),
@@ -8996,6 +9036,11 @@ elif active == "vr":
         }
         st.session_state.pop("_vr_audio", None)
         st.session_state.pop("_vr_seen", None)
+        # AND THE STITCHED FILE GOES WITH THE OLD READING. Without this,
+        # pasting a new line, pressing rehearse and then download hands
+        # back the PREVIOUS reading — a file that plays perfectly and is
+        # the wrong words. Silently wrong is the worst kind.
+        st.session_state.pop("_vr_whole", None)
         _words = [w for ws, _ in plan for w in ws]
         st.session_state["_vr_said"] = VR.summarise(_words) if _words else ""
         USAGE.log("read", len(raw), UNIT_CHARS, "hume")
