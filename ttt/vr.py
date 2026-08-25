@@ -485,3 +485,17 @@ def remove_own(state, text: str) -> list:
            if w.strip().lower() != (text or "").strip().lower()]
     state[OWN_KEY] = out
     return out
+
+
+def voice_meta(name: str) -> str:
+    """The accent and age of a voice, as a stage direction.
+
+    The cast table already carries them and the tooltip already shows
+    them; a preview that used a different description would sound like
+    something other than what the person just read.
+    """
+    for g in ("F", "M"):
+        for vn, acc, age in VOICES.get(g, ()):
+            if vn == name:
+                return "%s, %s" % (acc, age)
+    return ""

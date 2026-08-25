@@ -130,8 +130,15 @@ app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
            encoding="utf-8").read()
 tab = app[app.index('elif active == "vr":'):app.index('elif active == "looks":')]
 print("       searched the vr tab, %d chars" % len(tab))
-check("5a the checkboxes are gone", "st.checkbox" not in tab and "vre_" not in tab,
-      [x for x in ("st.checkbox", "vre_") if x in tab])
+# SCOPED TO THE DIRECTION PANEL. The first version searched the WHOLE vr
+# tab and went red when a checkbox arrived on the CAST panel for the
+# preview setting — a true statement about the wrong region. The claim is
+# that the DIRECTIONS are no longer tick-boxes, not that the tab contains
+# no checkbox anywhere.
+_dir = tab[tab.index("THE DIRECTION, AS TAGS IN THE TEXT"):]
+check("5a the direction words are no longer tick-boxes",
+      "st.checkbox" not in _dir and "vre_" not in _dir,
+      [x for x in ("st.checkbox", "vre_") if x in _dir])
 check("5b and so are the ? help marks as separate controls",
       "vr_too_many" not in tab or "help=_phr" in tab)
 check("5c pressing a word INSERTS a tag", "VR.insert_tag(" in tab)

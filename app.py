@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v201 (direction tags, and your own directions)"
+APP_VERSION = "v202 (VR speaks)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -356,6 +356,8 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_preview":         {"en": "hear a voice when I choose it",
+                           "hr": "čuj glas kad ga odaberem"},
     "vr_own_help":        {"en": "your own direction — press to insert it",
                            "hr": "tvoja uputa — pritisni da je umetneš"},
     "vr_tag_hint":        {"en": "a tag reads from where it sits until the "
@@ -3688,6 +3690,73 @@ def hume_keys_from_sheet() -> int:
         return added
     except Exception:
         return 0
+
+
+def hume_keys_from_secrets() -> int:
+    """Fill the Hume ring from Secrets. Returns how many were added.
+
+    THE FALLBACK THAT WAS MISSING FOR TEN VERSIONS. Baba's brief on
+    25.8.2026, fault 2: "Hume keys are read from the k_hume SHEET only,
+    never from Secrets, so the ring is empty and hume_speak returns
+    vr_no_key, which shows as nothing at all." VR has been dead the whole
+    time while twenty-one verified account pairs sat in his secrets file.
+
+    THE SHEET STILL WINS. This runs after `hume_keys_from_sheet` and
+    skips any key already on the ring, so a key managed in the sheet
+    keeps its state, its cool_until and its dead flag. Secrets is the
+    floor, not the authority — a convenience must never be a dependency,
+    and neither must a convenience become the boss.
+
+    TWO SHAPES, BECAUSE HE HAS BOTH:
+
+        HUME_ACCOUNTS = [{name, key, secret}, ...]   the pairs
+        HUME_API_KEYS = ["...", ...]                 the older list
+
+    A Hume credential is a PAIR — apis/hume.md: "unlike every other
+    provider here". The older list holds API keys with no secret, which
+    still work for TTS (the secret is only needed to prove an account is
+    good), so they are taken rather than refused. A key with no secret is
+    better than no key.
+
+    SILENT ON FAILURE and cheap to call: a malformed entry is skipped
+    rather than taking the tab down, because the tab is the only place
+    the person would find out something was wrong.
+    """
+    ring = get_ring("hume")
+    have = {k.get("key") for k in ring.setdefault("keys", [])}
+    added = 0
+
+    def _add(key, secret, label):
+        nonlocal added
+        key = str(key or "").strip()
+        if not key or key in have:
+            return
+        ring["keys"].append({
+            "key": key, "secret": str(secret or "").strip(),
+            "fp": kr.fingerprint(key), "state": "new",
+            "label": str(label or "hume account"),
+            "last_error": "", "calls": 0, "chars": 0,
+            "cool_until": 0, "added": int(time.time()), "last_used": 0.0,
+        })
+        have.add(key)
+        added += 1
+
+    try:
+        for row in (st.secrets.get("HUME_ACCOUNTS") or []):
+            try:
+                _add(row.get("key"), row.get("secret"), row.get("name"))
+            except AttributeError:
+                continue          # not a table: skip it, do not crash
+    except Exception:                                        # noqa: BLE001
+        pass
+    try:
+        for k in (st.secrets.get("HUME_API_KEYS") or []):
+            _add(k, "", "hume key")
+    except Exception:                                        # noqa: BLE001
+        pass
+    if added:
+        save_rings()
+    return added
 
 
 def hume_keys_to_sheet() -> bool:
@@ -8516,6 +8585,10 @@ elif active == "vr":
     # than at module top so a person who never opens VR never pays for
     # the fetch, and so a slow sheet cannot delay the login screen.
     hume_keys_from_sheet()
+    # AND THEN SECRETS, if the sheet gave nothing. Sheet first so a key
+    # managed there keeps its state; Secrets as the floor so an empty
+    # k_hume tab is not the same thing as having no keys.
+    hume_keys_from_secrets()
 
     _vr_audio = st.session_state.get("_vr_audio")
     if _wave_component is not None:
@@ -8662,6 +8735,56 @@ elif active == "vr":
         # THE CAST. One pill per voice, twelve women and twelve men, each
         # showing its accent so a name that means nothing still tells you
         # something. Baba asked for many and this is many on purpose.
+        # PRESSING A VOICE MAKES IT SPEAK ITS OWN NAME.
+        #
+        # Baba, 25.8.2026: "when a user selects a voice, his name will be
+        # pronounced loud in his own voice"; and today: "when I say
+        # preview voices, you go to the same path as I'm pasting the text
+        # and saying rehearsal, and the voice can speak to the player."
+        #
+        # THE SAME PATH, LITERALLY. It is hume_speak into `_vr_audio`
+        # into the same player — no second synthesiser, no second deck.
+        # A preview that went somewhere else would be a second thing to
+        # keep in step, and it would sound different from the take for
+        # reasons nobody could see.
+        #
+        # THE TEXT IS THE NAME because that is the shortest honest sample
+        # a voice can give of itself, and Hume is billed per character.
+        # The direction is the voice's own accent and age, which is what
+        # the tooltip already says — so what you hear matches what you
+        # read.
+        #
+        # IT DOES NOT TOUCH THE REHEARSAL. `vr_text` is left alone, so
+        # trying six voices does not cost the line he is working on.
+        def _vr_pick_voice(name):
+            st.session_state["vr_voice"] = name
+            if not st.session_state.get("vr_preview", True):
+                return
+            ring = get_ring("hume")
+            _i, _w = VR.pick_rested(ring["keys"], time.time())
+            if _i is None:
+                st.session_state["_vr_error"] = t("vr_no_key")
+                return
+            if _w:
+                return          # resting: choosing still works, silently
+            meta = VR.voice_meta(name)
+            got, err = hume_speak(ring, name, name,
+                                  meta or "natural, unforced delivery")
+            save_rings()
+            if err:
+                st.session_state["_vr_error"] = err
+                return
+            audio, _secs = got
+            st.session_state["_vr_audio"] = audio
+            st.session_state["_vr_autoplay"] = True
+
+        # THE SETTING LIVES WHERE THE THING IS. Baba asked for preview to
+        # be switchable and ON by default. design-language.md §11: a dial
+        # belongs against the thing it affects, not in a settings screen
+        # a round trip away.
+        st.session_state.setdefault("vr_preview", True)
+        st.checkbox(t("vr_preview"), key="vr_preview")
+
         _cur_voice = st.session_state.get("vr_voice", VR.DEFAULT_VOICE)
         for _g in ("F", "M"):
             _rows = VR.VOICES[_g]
@@ -8674,8 +8797,7 @@ elif active == "vr":
                         key="vrv_%s" % _vn.replace(" ", "_").replace("'", ""),
                         type="primary" if _vn == _cur_voice else "secondary",
                         help="%s · %s" % (_acc, _age),
-                        on_click=lambda v=_vn: st.session_state.update(
-                            {"vr_voice": v}),
+                        on_click=_vr_pick_voice, args=(_vn,),
                         use_container_width=True)
     else:
         # THE DIRECTION, AS TAGS IN THE TEXT — not settings on the take.
