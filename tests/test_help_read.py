@@ -74,8 +74,13 @@ check("2c read comes after the two genders it depends on",
 check("2d the voice follows help's OWN language value",
       'st.session_state.get("help_lang"' in tab
       and "VOICES_BY_LANG.get(lang)" in tab)
-check("2e it speaks plain(), not the HTML page",
-      "HELP_PAGE.plain(lang)" in tab)
+# plain() BECAME plain_level() IN v223, when the help gained four depths.
+# The claim is unchanged — it speaks PROSE, not the HTML page — and the
+# level it speaks must be the one on screen.
+check("2e it speaks prose, not the HTML page",
+      "HELP_PAGE.plain_level(" in tab)
+check("2e2 and the level it speaks is the level being SHOWN",
+      'st.session_state.get("help_level"' in tab)
 
 print("\n2b IT USES R'S DECK — it does not grow a second one")
 # Baba: "it takes forever... generate one paragraph at a time, keep the
@@ -118,7 +123,13 @@ check("2p a hidden toggle cannot blank the page — the wiring is guarded",
       "if (_h)" in hp and "if (_e)" in hp)
 
 print("\n2c AND PLAY STARTS IT, because R's idle deck already does")
-rtab = app[app.index('key="talk_player_idle"'):]
+# THE IDLE DECK LOST ITS SEPARATE KEY IN v222 — that split was the cause
+# of the double play, and merging it was the fix. index() RAISED here, so
+# this file DIED rather than reporting, and the sweep printed no number
+# for it. find() gives -1; an exception gives nothing.
+_idle = app.rfind('key="talk_player"')
+check("2j0 the idle deck is still there to be pressed", _idle > 0, _idle)
+rtab = app[_idle:] if _idle > 0 else ""
 rtab = rtab[:rtab.index("def _clear_talk")]
 check("2k a press of play on the idle deck is a start",
       '_ev0.get("start")' in rtab and "_start = True" in rtab)

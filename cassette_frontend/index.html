@@ -151,7 +151,16 @@
     <button class="key" id="bRec"   aria-label="record"><span class="dot"></span><span id="lRec">rec</span></button>
     <button class="key" id="bPause" aria-label="pause" disabled><span class="par"></span><span id="lPause">pause</span></button>
     <button class="key" id="bStop"  aria-label="stop"  disabled><span class="sq"></span><span id="lStop">stop</span></button>
-    <button class="key" id="bFile" aria-label="upload"><span class="fold"></span><span id="lFile">open</span></button>
+    <!-- WHAT THIS TAKES, SAID OUT LOUD. Baba asked for "a file picker in
+         the transcription tab so a user can transcribe its own audio
+         files or video files" — and it was already here, accepting
+         audio/* and video/* since it was built. He asked for it because
+         nothing told him: the cell says "open" and its only description
+         was "upload", which could mean anything.
+         MEASURED, so the tooltip is not a promise: a real h264+aac mp4
+         through this path comes out as 16 kHz mono FLAC with no video
+         stream, 86 KB -> 35 KB. -->
+    <button class="key" id="bFile" title="open an audio or video file to transcribe" aria-label="open an audio or video file to transcribe"><span class="fold"></span><span id="lFile">open</span></button>
   </div>
   <textarea id="sink" aria-hidden="true" tabindex="-1" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"></textarea>
   <input id="picker" type="file" style="display:none" accept="audio/*,video/*">

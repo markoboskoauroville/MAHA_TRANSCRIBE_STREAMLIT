@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v222 (one press starts a reading, and one ends it)"
+APP_VERSION = "v223 (help at four depths; the picker says what it takes)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -117,6 +117,7 @@ from ttt import intake
 from ttt import errlog
 from ttt import drive as DRIVE
 from ttt import help_page as HELP_PAGE
+from ttt import help_levels as HELP_LEVELS
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
 from ttt import theme
@@ -3654,6 +3655,7 @@ KEPT_CHOICES = (
     "voice",             # R's reader voice
     "help_lang",         # which language the help is in
     "help_gender",       # and which voice reads it
+    "help_level",        # and at which depth
     "tr_gender",         # TR's female / male
     "tr_src", "tr_tgt",  # and its two language rows
 )
@@ -10298,16 +10300,45 @@ elif active == "help":
         # step with.
         st.session_state["voice"] = names[
             0 if st.session_state.get("help_gender", "F") == "F" else 1]
-        kept_set("talk_text", HELP_PAGE.plain(lang))
+        # THE LEVEL ON SCREEN IS THE LEVEL READ ALOUD. Reading the full
+        # document while a different one is displayed is the same fault
+        # as the language toggle in v197: two controls for one idea,
+        # disagreeing silently.
+        kept_set("talk_text", HELP_PAGE.plain_level(
+            lang, st.session_state.get("help_level", "adult")))
         st.session_state["active_tab"] = "talk"
         st.session_state["_auto_read"] = True
 
     _hc3.button(t("help_read"), key="help_read_go",
                 on_click=_help_read, use_container_width=True)
 
+    # FOUR DEPTHS. Baba asked for this on the first day: "a child of
+    # five, mid-school, a non-technical adult, a first-year IT student."
+    #
+    # ONE DOCUMENT WRITTEN FOR THE MIDDLE of that range is too much for
+    # one end and too little for the other, and the end it fails is
+    # always the end that most needed help. The facts are the same at
+    # every level — a simpler telling may leave things out, but it must
+    # never say anything the technical one contradicts.
+    #
+    # `plain` is the default rather than the simplest, because it is the
+    # one most people actually want; the others are one press away.
+    st.session_state.setdefault("help_level", "adult")
+    _hl_cols = st.columns(len(HELP_LEVELS.LEVELS))
+    for _c, _lv in zip(_hl_cols, HELP_LEVELS.LEVELS):
+        _c.button(HELP_LEVELS.level_name(
+            st.session_state.get("help_lang", "hr"), _lv),
+            key="help_lv_%s" % _lv,
+            type=("primary" if st.session_state["help_level"] == _lv
+                  else "secondary"),
+            use_container_width=True,
+            on_click=lambda v=_lv: st.session_state.update(
+                {"help_level": v}))
+
     components.html(
         HELP_PAGE.page(st.session_state.get("help_lang", "hr"),
-                       show_toggle=False),
+                       show_toggle=False,
+                       level=st.session_state.get("help_level", "adult")),
         height=620, scrolling=True)
 
 

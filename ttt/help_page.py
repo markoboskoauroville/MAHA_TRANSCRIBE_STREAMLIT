@@ -293,7 +293,8 @@ service. There are several, so a tired one can rest.</dd>
 """
 
 
-def page(lang: str = "hr", show_toggle: bool = True) -> str:
+def page(lang: str = "hr", show_toggle: bool = True,
+         level: str = None) -> str:
     """One document holding both languages.
 
     `show_toggle=False` hides the buttons INSIDE the page, for when the
@@ -313,6 +314,13 @@ def page(lang: str = "hr", show_toggle: bool = True) -> str:
     what you hear.
     """
     start = "hr" if str(lang).lower().startswith("hr") else "en"
+    # FOUR DEPTHS, ONE PAGE. `level` picks which telling — see
+    # ttt/help_levels.py for why four and what each is for. None keeps
+    # the original single document, so nothing that called this before
+    # has to change.
+    if level:
+        from ttt import help_levels as _L
+        return _one_level(_L.body(start, level), start)
     _toggle = "" if not show_toggle else """
   <button class="lang" id="bHR" type="button">HR</button>
   <button class="lang" id="bEN" type="button">ENG</button>"""
@@ -506,6 +514,16 @@ def plain(lang: str = "hr") -> str:
     voice reads as one long clause, and the listener loses the shape.
     """
     body = HR if str(lang).lower().startswith("hr") else EN
+    return _to_prose(body)
+
+
+def _to_prose(body: str) -> str:
+    """The stripper, once. plain() and plain_level() both use it.
+
+    Pulled out rather than copied when levels arrived: two strippers
+    would drift, and the drift would be a voice reading markup aloud in
+    one place and not the other.
+    """
     # SOURCE LINE BREAKS ARE NOT SENTENCE BREAKS. The HTML is hand-wrapped
     # at about 76 columns, so a paragraph is several source lines — and
     # keeping them made the voice read "the app reads aloud while you."
@@ -542,3 +560,23 @@ def plain(lang: str = "hr") -> str:
             line += "."
         out.append(line)
     return "\n".join(out)
+
+
+def _one_level(html_body: str, start: str) -> str:
+    """A single level, wrapped in the same stylesheet as the full page.
+
+    NO LANGUAGE TOGGLE INSIDE. The tab owns both the language and the
+    level now, and a second control in here is exactly the trap v197
+    fixed: the screen followed localStorage while the voice followed
+    something else.
+    """
+    return ("<!doctype html><meta charset=\"utf-8\">"
+            "<style>%s</style><div id=\"top\"></div>"
+            "<div data-lang=\"%s\">%s</div>" % (CSS, start, html_body))
+
+
+def plain_level(lang: str = "hr", level: str = "adult") -> str:
+    """One level, as words for a voice. Same stripper as plain()."""
+    from ttt import help_levels as _L
+    start = "hr" if str(lang).lower().startswith("hr") else "en"
+    return _to_prose(_L.body(start, level))
