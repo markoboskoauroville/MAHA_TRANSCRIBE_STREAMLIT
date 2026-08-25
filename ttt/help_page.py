@@ -1,3 +1,4 @@
+import re
 """The help page.
 
 ONE DOCUMENT, BOTH LANGUAGES, NO RELOAD. Croatian and English are both in
@@ -445,3 +446,76 @@ try {{
 }} catch(e) {{}}
 show(cur);
 </script>"""
+
+
+# ---------------------------------------------------------------------
+# THE SAME HELP, AS SPEECH
+#
+# Baba, 25.8.2026: "add in the help file to read. So there will be at the
+# top female, male, and read... the user doesn't need to close the eyes
+# and listen."
+#
+# THIS IS THE POINT OF THE WHOLE APP APPLIED TO ITS OWN INSTRUCTIONS. The
+# people this is written for do not read easily — that is why R exists.
+# Help that can only be READ is help that is hardest for exactly the
+# person most likely to need it.
+#
+# HTML IS NOT SPEECH. The page is one document holding both languages,
+# and handing that to a voice would have it read tag names, both
+# languages end to end, and every table cell as a sentence. So the text
+# is pulled out: one language, headings kept because they are the shape
+# of the thing, everything else as prose.
+#
+# A PURE FUNCTION ON A STRING, so it can be run and checked without
+# Streamlit and without a voice — four-tests.md: if the logic cannot be
+# exercised without starting the app, that is itself the finding.
+# ---------------------------------------------------------------------
+
+_TAG = re.compile(r"<[^>]+>")
+_WS = re.compile(r"[ \t]+")
+
+
+def plain(lang: str = "hr") -> str:
+    """The help of ONE language as speakable prose.
+
+    Block elements become sentence breaks rather than disappearing: a
+    heading run together with the paragraph under it is a sentence the
+    voice reads as one long clause, and the listener loses the shape.
+    """
+    body = HR if str(lang).lower().startswith("hr") else EN
+    # SOURCE LINE BREAKS ARE NOT SENTENCE BREAKS. The HTML is hand-wrapped
+    # at about 76 columns, so a paragraph is several source lines — and
+    # keeping them made the voice read "the app reads aloud while you."
+    # as a finished sentence and "see the same sentence on screen." as
+    # another. Only a closing block tag ends a sentence, so every newline
+    # in the source becomes an ordinary space FIRST and the block rules
+    # below put the breaks back where they belong.
+    txt = re.sub(r"\s*\n\s*", " ", body)
+    # A cell boundary is a pause, not a join — otherwise a table reads as
+    # one enormous run-on word list.
+    txt = re.sub(r"</t[dh]>\s*<t[dh][^>]*>", " — ", txt, flags=re.I)
+    # Anything that ends a block ends a sentence.
+    txt = re.sub(r"</(p|h[1-6]|li|tr|div|table|ul|ol)>", ".\n", txt,
+                 flags=re.I)
+    txt = re.sub(r"<br\s*/?>", "\n", txt, flags=re.I)
+    txt = _TAG.sub("", txt)
+    txt = (txt.replace("&nbsp;", " ").replace("&amp;", "and")
+              .replace("&lt;", "<").replace("&gt;", ">")
+              .replace("&quot;", '"').replace("&#39;", "'"))
+    out = []
+    for line in txt.splitlines():
+        line = _WS.sub(" ", line).strip()
+        if not line:
+            continue
+        # DO NOT ADD A STOP TO SOMETHING ALREADY STOPPED. The block rule
+        # above appends "." to every closing tag, so a heading that ended
+        # in "?" came out as "Što je TTT-LLL?." — which a voice reads as
+        # a question and then a pause it did not earn. Strip any trailing
+        # stops that pile up, then add exactly one if it is still needed.
+        line = re.sub(r"[.\s]+$", "", line)
+        if not line:
+            continue
+        if not line.endswith(("!", "?", ":", "—")):
+            line += "."
+        out.append(line)
+    return "\n".join(out)
