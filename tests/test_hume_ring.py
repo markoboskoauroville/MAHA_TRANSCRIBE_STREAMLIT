@@ -134,8 +134,15 @@ check("3a choosing a voice calls hume_speak, the same call rehearse makes",
 # state — the other two mentions belonged to rehearse and to the player.
 # A count is not a check when the thing counted lives in three places.
 _pick = vr[vr.index("def _vr_pick_voice"):vr.index("_cur_voice = ")]
+# NOT PINNED TO THE RIGHT-HAND SIDE. This asserted `"_vr_audio"] = audio`
+# character for character and went red the moment the value became
+# normalise_speech(audio) — a test failing for a reason unconnected to
+# what it is checking, which is four-tests.md's "test the test". The
+# claim is that preview writes the SHARED player state; what it writes
+# into it is the normaliser's business.
 check("3b the audio lands in the SAME player state, not a private one",
-      '"_vr_audio"] = audio' in _pick, _pick[-300:])
+      '"_vr_audio"] =' in _pick and "_vr_preview_audio" not in _pick,
+      _pick[-300:])
 check("3c and it plays by itself", '"_vr_autoplay"] = True' in _pick)
 check("3d the sample is the voice's own name", "hume_speak(ring, name, name" in vr)
 check("3e read with the accent the tooltip already showed",
