@@ -270,7 +270,19 @@ bPlay.onclick=function(){
     }
     return;
   }
-  if(audio.paused){ audio.play().catch(function(){}); } else { audio.pause(); }
+  if(audio.paused){
+    /* A DIRECT PRESS THAT IS REFUSED IS THE MOST SURPRISING OF ALL —
+       the person definitely did make a gesture, so a silent failure
+       here reads as the app being broken rather than as a policy. It
+       cannot happen for the reason fault 4 did, but a locked-down
+       browser or a missing codec can still refuse, and swallowing it
+       was the same mistake in the same shape. */
+    audio.play().catch(function(err){
+      setPlaying(false);
+      if(!PYMSG) msg.textContent = 'this browser would not play it';
+      try { console.warn('play refused:', err && err.name); } catch(e){}
+    });
+  } else { audio.pause(); }
 };
 /* SAVE THE AUDIO. Baba asked for the empty fourth cell to become a
    download. The source is already a data: URL held by this frame, so
@@ -406,7 +418,20 @@ window.addEventListener("message", function(ev){
     load(a.src);
     // A new block: play it without waiting to be pressed, the same as the
     // old player, or every part after the first needs a tap.
-    if(a.autoplay) audio.play().catch(function(){});
+    /* AND A REFUSED PLAY IS NEVER SILENT AGAIN.
+       This was .catch(function(){}) — an empty catch, which is how fault
+       4 stayed invisible for so long. A browser refuses audio.play() in
+       a document that has had no user gesture, and swallowing that
+       rejection turns a diagnosable policy decision into "the app does
+       nothing when I press play".
+       Now it says so, in the band, and leaves the transport showing
+       PLAY so a second press is an obvious thing to do rather than a
+       guess. */
+    if(a.autoplay) audio.play().catch(function(err){
+      setPlaying(false);
+      if(!PYMSG) msg.textContent = 'press play to start';
+      try { console.warn('autoplay refused:', err && err.name); } catch(e){}
+    });
   }
   if(!a.src){ sub.textContent=''; clock.textContent='0:00'; draw(); }
   height();

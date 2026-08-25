@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v221 (undo is there before you need it)"
+APP_VERSION = "v222 (one press starts a reading, and one ends it)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -379,6 +379,7 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "rd_stop":            {"en": "stop reading", "hr": "prekini čitanje"},
     "vr_making":          {"en": "%s making part %d of %d · %d/%d done · %s",
                            "hr": "%s radim dio %d od %d · %d/%d gotovo · %s"},
     "vr_joining":         {"en": "%s joining %d parts into one file · %s",
@@ -8729,6 +8730,22 @@ elif active == "talk":
     sp_ring_talk = get_ring("speechify")
     engine = talking_engine()
 
+    def _talk_stop():
+        """End the reading, KEEP the words.
+
+        Somebody stopping a reading almost always wants to change a
+        voice, fix a line, or start again from the top — all of which
+        need the text. Throwing it away would make stop the most
+        expensive button on the page.
+
+        Defined before either branch, because the playing branch uses it
+        and Python reads top to bottom — pyflakes caught it below its own
+        call site.
+        """
+        for _k in ("_talk_job", "_talk_player_seen", "_talk_start_seen",
+                   "_talk_revoice", "_rd_whole"):
+            st.session_state.pop(_k, None)
+
     job = st.session_state.get("_talk_job")
 
     # A NEW READING ASKED FOR WHILE ONE IS PLAYING: THE NEW ONE WINS.
@@ -8851,6 +8868,24 @@ elif active == "talk":
                         "save": t("wave_save")},
                 part=idx + 1, parts=len(parts),
                 scale=scale, autoplay=True, key="talk_player", default=None)
+
+            # A WAY OUT OF A READING. Found by fixing a test that had
+            # been CRASHING rather than reporting: `talk_new` was removed
+            # and the crash hid everything after it — including that this
+            # branch offers no control at all.
+            #
+            # While a reading plays there was no box, no clear and no
+            # stop. The only ways out were to wait for the whole text or
+            # to leave the tab. On a long piece that is minutes of being
+            # stuck, and the browser's back button leaves the session.
+            #
+            # IT KEEPS THE WORDS. Somebody stopping a reading almost
+            # always wants to change a voice, fix a line, or start again
+            # from the top — all of which need the text. Throwing it away
+            # would make stop the most expensive button on the page.
+            with st.container(key="boxlinks_rdstop"):
+                st.button(t("rd_stop"), key="bl_stop_rd",
+                          on_click=_talk_stop, use_container_width=True)
             # The part finished: move to the next one and let the spinner
             # above make it. Guarded by a stamp so one finish is one move.
             if isinstance(ev, dict) and ev.get("at"):
@@ -8957,7 +8992,32 @@ elif active == "talk":
                 part=0, parts=0, startable=_has_text,
                 scale=a11y.clamp(st.session_state.get(
                     "text_scale", a11y.DEFAULT_SCALE)),
-                autoplay=False, key="talk_player_idle",
+                # THE SAME KEY AS THE PLAYING DECK, AND THAT IS THE FIX.
+                #
+                # Fault 4 of Baba's brief, 03:20 on 25.8.2026: "every
+                # reader deck needs two presses — the first does nothing.
+                # Never investigated."
+                #
+                # Investigated now. This was `talk_player_idle` and the
+                # playing deck is `talk_player` — TWO KEYS, so Streamlit
+                # mounts TWO IFRAMES. The press landed on this one;
+                # Python then built the first block and rendered the
+                # OTHER one with autoplay=True. A browser only allows
+                # audio.play() in a document that has had a user gesture,
+                # and that fresh iframe had never been touched. The play
+                # was refused, the refusal was swallowed by a bare
+                # .catch(), and the person saw nothing happen.
+                #
+                # The second press worked because by then they were
+                # pressing the playing deck itself — a gesture in the
+                # right document.
+                #
+                # ONE KEY IS ONE IFRAME. It persists across the rerun,
+                # keeps the gesture that started it, and autoplay is
+                # allowed. TR and VR never had this because they only
+                # ever had one key each — which is why it was "every
+                # reader deck" and not every deck.
+                autoplay=False, key="talk_player",
                 default=None)
             # One press is one start. The stamp guards against the
             # component re-reporting the same press across reruns, the

@@ -158,14 +158,38 @@ check("9 and STARTS AGAIN FROM THE TOP, so the two voices can be "
 # --- a new text clears the reading ------------------------------------
 at4 = app()
 at4.run()
+# THE BOX MUST HOLD THE TEXT THE JOB IS READING, or check 10c asks
+# whether something survives that was never there. This fixture built a
+# job by hand and left the box empty — a setup gap, not a fault, found by
+# the check going red for the wrong reason.
+at4.session_state["_keep_talk_text"] = "A."
 at4.session_state["_talk_job"] = {
     "parts": [(["A."], 0)], "full_text": "A.", "index": 0,
     "cache": {0: {"audio": b"\0", "marks": []}},
     "synth": lambda s: (b"", 0.0, None)}
 at4.run()
-[b for b in at4.get("button") if b.key == "talk_new"][0].click().run()
-check("10 new text ends the reading", sget(at4, "_talk_job") is None,
-      sget(at4, "_talk_job"))
+# THE `talk_new` BUTTON NO LONGER EXISTS, and this line CRASHED the file
+# rather than reporting — [..][0] on an empty list raises IndexError, so
+# everything after it never ran and the sweep printed no number for this
+# suite at all. Pre-existing, verified by stashing.
+#
+# AND THE CRASH WAS HIDING SOMETHING. Once it reported instead, it showed
+# that the PLAYING branch offered no control whatsoever: no box, no
+# clear, no stop. The only ways out of a reading were to wait for the
+# whole text or to leave the tab. v222 added `stop reading`, and this
+# checks the claim the old test was really making — that a reading can be
+# ended — against the control that now does it.
+_stop = [b for b in at4.get("button") if b.key == "bl_stop_rd"]
+check("10a a reading can be ended while it is playing", bool(_stop),
+      [b.key for b in at4.get("button")][:8])
+if _stop:
+    _stop[0].click().run()
+    check("10b and ending it really ends it",
+          sget(at4, "_talk_job") is None, sget(at4, "_talk_job"))
+    check("10c but the WORDS SURVIVE — stopping to change a voice must "
+          "not cost the text",
+          (sget(at4, "_keep_talk_text") or "") != "",
+          repr(sget(at4, "_keep_talk_text"))[:40])
 
 print("\n{} passed, {} failed".format(passed, failed))
 
