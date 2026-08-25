@@ -108,6 +108,25 @@ box = box[:box.index("st.button(t(\"rem_refresh\")")]
 check("2j the transcript box passes value and NO key",
       "value=slot.get" in box and 'key="rem_box' not in box, box[:200])
 
+# THE ACTION ROW UNDER THE PULLED TRANSCRIPT. Baba, 25.8.2026: "we miss
+# the action buttons. Refresh now, great. Then we need to have copy."
+print("       checking the action row under the pulled transcript")
+# SLICE PAST THE def LINE. "def _remote_transcript():" CONTAINS
+# "_remote_transcript()" as a substring, so slicing to that marker gave
+# an empty string and three checks read as failures on code that was
+# right there. Caught twice in this file; anchoring on the call site
+# after the body is what actually works.
+_i = src.index("def _remote_transcript")
+row = src[_i:src.index("\n    _remote_transcript()", _i)]
+check("2k copy is there, and it is a real clipboard component",
+      "copybtn.cp_html(slot.get" in row, row[-400:])
+check("2l it copies what the box is SHOWING, not a stale capture",
+      'cp_html(slot.get("text")' in row)
+check("2m refresh is still there beside it",
+      't("rem_refresh")' in row)
+check("2n copy comes FIRST — box_links' rule, copy outranks the rest",
+      row.index("cp_html(slot.get") < row.index('t("rem_refresh")'))
+
 print("\n3 THE REMOTE PAGE — a code nobody opened")
 at3 = boot(query="zzzzzzz"); at3.run()
 check("3a a closed window is a sentence, not a crash", not at3.exception,

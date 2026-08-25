@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v192 (the push was one render stale; the link folds away)"
+APP_VERSION = "v193 (copy under the pulled transcript)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1269,8 +1269,27 @@ if _REMOTE_VIEW:
                     t("rem_age") % REMOTE.age_words(
                         time.time() - float(slot["at"]))),
                 unsafe_allow_html=True)
-        st.button(t("rem_refresh"), key="rem_refresh",
-                  use_container_width=True)
+        # COPY FIRST, THEN REFRESH. Baba's rule from box_links, and it
+        # holds here for the same reason: "copy is more important than
+        # clear". On this page the transcript arriving is the whole
+        # point, and the next thing anybody does with it is take it
+        # somewhere else.
+        #
+        # A COMPONENT, because nothing but a real button in a real
+        # document can reach the clipboard. It carries whatever the box
+        # is showing at this render, and the fragment re-renders every
+        # few seconds, so the text it copies cannot go stale.
+        _rc1, _rc2 = st.columns(2)
+        with _rc1:
+            components.html(
+                copybtn.cp_html(slot.get("text") or "",
+                                label=t("copy_word"),
+                                done_label=t("copy_done_word"),
+                                failed_label="—", size=0, link=True),
+                height=40)
+        with _rc2:
+            st.button(t("rem_refresh"), key="rem_refresh",
+                      use_container_width=True)
 
     _remote_transcript()
 
