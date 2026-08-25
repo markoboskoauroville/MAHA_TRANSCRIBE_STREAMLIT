@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v195 (the H tab is visible again; help reads on the deck)"
+APP_VERSION = "v196 (nothing goes off the screen)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8612,12 +8612,18 @@ elif active == "looks":
     # an app built for people who cannot see well would be exactly
     # backwards.
     with st.container(key="looksgroup_size"):
-        # SIX COLUMNS, NOT FIVE. Baba, 25.8.2026: "interface size is
-        # missing default." Text size had one and interface size did
-        # not — the worst kind of asymmetry, two controls on one line
-        # that look like a pair and behave differently. Open item 8.
-        _sl, _sb, _sd, _il, _ib, _id = st.columns(
-            [1.05, 0.8, 0.75, 1.15, 0.8, 0.75])
+        # STACKED, NOT SQUEEZED. v190 put six columns on one line and
+        # the sixth went off the right edge of a 390px phone — a control
+        # nobody could press, with no error to explain it. Baba: "we
+        # don't want to go out of the screen. That's the rule."
+        #
+        # Making the six columns narrower would not have removed the
+        # clipping, only moved it to a different word, and the row that
+        # fits in English clips in Croatian. So each size gets its own
+        # line: label, then value and default underneath.
+        #
+        # See MANTRA_MANIFEST/modules/design-language.md §10.
+        _sl, _sb, _sd = st.columns([1.5, 1, 1])
         _sl.markdown('<div class="setlabel">%s</div>' % html.escape(
             t("looks_size")), unsafe_allow_html=True)
         _now_pct = int(round(a11y.clamp(st.session_state.get(
@@ -8663,13 +8669,19 @@ elif active == "looks":
                 pass
             persist_settings()
 
-        _il.markdown('<div class="setlabel">%s</div>' % html.escape(
-            t("looks_iface")), unsafe_allow_html=True)
         def _iface_default():
             st.session_state["ui_scale"] = 1.0
             st.session_state["_iface_pct"] = 100
             persist_settings()
 
+        # THE SAME THREE COLUMNS, so the two rows line up down the
+        # screen and the two `default`s are the SAME CONTROL in the same
+        # place. One of them used to render as an underlined link and
+        # the other as a filled pill — same job, two appearances, which
+        # reads as two different features.
+        _il, _ib, _id = st.columns([1.5, 1, 1])
+        _il.markdown('<div class="setlabel">%s</div>' % html.escape(
+            t("looks_iface")), unsafe_allow_html=True)
         _ib.number_input(
             t("looks_iface"), key="_iface_pct", value=_iface,
             min_value=50, max_value=200, step=5,

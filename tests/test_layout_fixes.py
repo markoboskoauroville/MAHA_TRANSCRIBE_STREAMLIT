@@ -50,16 +50,39 @@ check("2b and BEFORE the text box — not at the bottom", i_hint < i_box, (i_hin
 check("2c there is exactly one of it in R",
       app.count('t("rd_hint")') == 1, app.count('t("rd_hint")'))
 
-print("\n3 INTERFACE SIZE HAS ITS DEFAULT")
-print("       searched app.py for 'iface_default' and 'size_default'")
-check("3a interface size has a default control", 'key="iface_default"' in app)
-check("3b text size still has its own", 'key="size_default"' in app)
+print("\n3 THE TWO SIZE ROWS — stacked, matching, nothing off the edge")
+print("       searched app.py between 'looksgroup_size' and 'looksgroup_font'")
+blk = app[app.index("looksgroup_size"):app.index("looksgroup_font")]
+check("3a interface size has a default at all", 'key="iface_default"' in blk)
+check("3b text size still has its own", 'key="size_default"' in blk)
 check("3c they call different handlers, not the same one twice",
-      "_iface_default" in app and "_size_default" in app)
+      "_iface_default" in blk and "_size_default" in blk)
 check("3d the default it restores is 100%",
-      re.search(r'def _iface_default\(\):.*?ui_scale"\] = 1\.0', app, re.S) is not None)
-check("3e the row was widened to hold it, not squeezed",
-      re.search(r"_sl, _sb, _sd, _il, _ib, _id = st\.columns", app) is not None)
+      re.search(r"def _iface_default\(\):.*?ui_scale\"\] = 1\.0", blk, re.S)
+      is not None)
+
+# NOTHING GOES OFF THE SCREEN — design-language.md §10, written after
+# v190 put six columns on one line and the sixth landed half off a 390px
+# phone. The fix is stacking, and a check that only counts controls would
+# have stayed green through the whole fault.
+rows = re.findall(r"st\.columns\(\[([^\]]*)\]\)", blk)
+print("       column rows found: %s" % rows)
+check("3e each size is its OWN row, not both crammed into one",
+      len(rows) == 2, rows)
+check("3f no row asks for more than three columns",
+      all(len(r.split(",")) <= 3 for r in rows), rows)
+check("3g the two rows have the SAME shape, so they line up down the page",
+      len(set(r.replace(" ", "") for r in rows)) == 1, rows)
+
+# SAME JOB, SAME WIDGET. One default rendered as an underlined link and
+# the other as a filled pill, in the same row, which reads as two
+# different features.
+defaults = re.findall(r'_[si]d\.(\w+)\(t\("looks_default"\)', blk)
+print("       widgets used for the two defaults: %s" % defaults)
+check("3h both defaults are the same kind of control",
+      len(defaults) == 2 and len(set(defaults)) == 1, defaults)
+check("3i and both are buttons, because a default DOES something",
+      defaults == ["button", "button"], defaults)
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)
