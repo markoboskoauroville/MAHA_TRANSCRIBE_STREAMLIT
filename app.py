@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v199 (1,4,4 — and read joins copy and clear)"
+APP_VERSION = "v200 (a new voice starts from the top)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4847,20 +4847,40 @@ def engine_now():
 
 
 def _revoice():
-    """A voice was chosen. If a reading is in flight, rebuild it.
+    """A voice was chosen. If a reading is in flight, START IT AGAIN.
 
-    Baba: "while the audio is playing, user can change the voice, and
-    then you're going to re-render audio."
+    Baba, 25.8.2026: "If I'm reading in Sonia and I change to Gabi, the
+    app should restart reading and start from the top of the text with
+    the new voice. It is not replacing the current sentences until the
+    end. What it does is completely restart, taking the original pasted
+    text and reading from the top."
 
-    The cache is dropped and the INDEX IS KEPT, so the new voice takes
-    over from the block being listened to rather than starting the whole
-    text again — changing voice in the middle of a long piece must not
-    cost the listener their place.
+    A REVERSAL, RECORDED RATHER THAN ERASED — MAINTENANCE.md. This kept
+    the INDEX on purpose, so a new voice took over from the block being
+    listened to and changing voice mid-piece did not cost the listener
+    their place. That reasoning is not wrong, it answers a different
+    question: it is right for RESUMING and wrong for CHOOSING.
+
+    Nobody changes voice to carry on. They change it to hear how the
+    other one sounds, and the only fair comparison is the same words from
+    the same start — which is exactly what he is describing. Landing in
+    the middle of block four in a new voice tells you nothing about the
+    voice and loses the sentence you were on.
+
+    So: cache dropped, INDEX BACK TO ZERO, and the stamps cleared with
+    it. The stamps are the guards that stop the component re-reporting a
+    press across reruns; one left over from the old reading would make
+    the restarted one skip its first hand-off.
+
+    The text itself is untouched — `parts` still holds the original
+    sentences, so "the original pasted text" is what plays.
     """
     job = st.session_state.get("_talk_job")
     if job:
         job["cache"] = {}
+        job["index"] = 0
         st.session_state.pop("_talk_player_seen", None)
+        st.session_state.pop("_talk_start_seen", None)
         st.session_state["_talk_revoice"] = True
 
 
@@ -8073,8 +8093,9 @@ elif active == "talk":
         # A VOICE WAS CHANGED WHILE PLAYING. The cache was dropped by
         # _revoice; the synth closure still points at the OLD voice, so it
         # has to be rebuilt here — on the main thread, before any worker
-        # touches it. The index is untouched, so the new voice takes over
-        # from the block being listened to.
+        # touches it. _revoice also put the index back to ZERO, so what
+        # follows rebuilds block 0 and the reading starts again from the
+        # top in the new voice. See _revoice for why that reversed.
         if st.session_state.pop("_talk_revoice", False):
             job["synth"] = _voice_row_synth_only(engine, sp_ring_talk)
 
