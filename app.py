@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v194 (help you can listen to)"
+APP_VERSION = "v195 (the H tab is visible again; help reads on the deck)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8858,35 +8858,27 @@ elif active == "help":
     # read. So there will be at the top female, male, and read... the
     # user doesn't need to close the eyes and listen."
     #
-    # THIS IS THE APP'S OWN POINT, APPLIED TO ITS OWN INSTRUCTIONS. The
-    # people this is written for do not read easily — that is the whole
-    # reason R exists. Help that can only be READ is hardest for exactly
-    # the person most likely to need it.
+    # v194 SYNTHESISED THE WHOLE DOCUMENT BEFORE A SINGLE WORD PLAYED,
+    # and Baba's verdict was "it takes forever". He is right, and he also
+    # described the fix exactly: "generate one paragraph and read one at
+    # a time... generate two and play one after the other, and while one
+    # is playing generate the third. Keep the logic of a tape deck."
     #
-    # THE PLAYER IS ALWAYS DRAWN, greyed until there is something in it —
-    # design-language.md §1, nothing appears and nothing disappears. And
-    # it sits ABOVE the toggle and the link, the same order as every
-    # other deck in this app: transport first, then what feeds it.
-    _hlp_audio = st.session_state.get("_help_audio")
-    if _wave_component is not None:
-        _wave_component(
-            src=("data:audio/mpeg;base64," + _b64.b64encode(
-                _hlp_audio).decode() if _hlp_audio else ""),
-            cues=[], words=[], wtimes=[],
-            labels={"play": t("wave_play"), "pause": t("wave_pause"),
-                    "back": t("wave_back"), "next": t("wave_next"),
-                    "save": t("wave_save")},
-            part=1 if _hlp_audio else 0, parts=1 if _hlp_audio else 0,
-            startable=bool(_hlp_audio),
-            scale=a11y.clamp(st.session_state.get("text_scale",
-                                                  a11y.DEFAULT_SCALE)),
-            autoplay=bool(st.session_state.pop("_help_autoplay", False)),
-            key="help_player", default=None)
-
-    # FEMALE · MALE · READ. The two are a toggle and the third is an
-    # action, so they are not three of the same thing: the genders are
-    # buttons that show which is in force, and read is an action link —
-    # design-language.md §6 and §12.
+    # THAT DECK ALREADY EXISTS. R's `_talk_job` is precisely it — blocks
+    # that DOUBLE so the first is ONE sentence and sound starts in about
+    # three seconds, three more built in parallel while that one plays,
+    # and a hand-off at the end of each. Building a second one here would
+    # be the fault README rule 1 names by name: two copies with a rule
+    # about keeping them in step are still two copies, and the rule is
+    # eventually not followed.
+    #
+    # So `read` puts the help prose into the reader and starts it. One
+    # deck, one implementation, and the person lands on a screen that
+    # also has the voices, the part counter and the waveform.
+    #
+    # AND PLAY WORKS TOO, for free, because R's idle deck already treats
+    # a press of play as "start reading". Baba: "if I press play on my
+    # deck it will start to read. Play is for playback, the rule."
     _hg = str(st.session_state.get("help_gender", "F")).upper()
     _hc1, _hc2, _hc3 = st.columns([1, 1, 1.4])
     _hc1.button(t("tr_voice_f"), key="help_g_f",
@@ -8899,49 +8891,24 @@ elif active == "help":
                 on_click=lambda: st.session_state.update({"help_gender": "M"}))
 
     def _help_read():
-        # THE LANGUAGE THE PAGE IS SHOWING, and the voice that speaks it.
-        # Reading Croatian help with an English voice is not a small
-        # wrongness — it is unlistenable, which is worse than silent.
+        # THE LANGUAGE THE PAGE IS SHOWING. Croatian help read by an
+        # English voice is not a small wrongness, it is unlistenable —
+        # which is worse than silent.
         lang = "hr" if str(st.session_state.get(
             "ui_lang", "hr")).lower().startswith("hr") else "en"
-        body = HELP_PAGE.plain(lang)
-        vkey = tk.vkey_for(lang,
-                           st.session_state.get("help_gender", "F"))
-        chunks, total = [], 0.0
-        try:
-            for piece in SPEECH.block_texts(tk.sentences_of(body)):
-                if not piece.strip():
-                    continue
-                audio, secs = tk.synth_sentence(piece, vkey)
-                if audio:
-                    chunks.append(audio)
-                    total += float(secs or 0)
-        except Exception as e:                               # noqa: BLE001
-            errlog.add(st.session_state, "help",
-                       "the voice could not read the help",
-                       "{}: {}".format(type(e).__name__, e))
-            chunks = []
-        if not chunks:
-            st.session_state["_help_error"] = t("help_read_fail")
-            return
-        st.session_state["_help_audio"] = b"".join(chunks)
-        st.session_state["_help_autoplay"] = True
-        USAGE.log("read", len(body), UNIT_CHARS, "edge")
+        names = VOICES_BY_LANG.get(lang) or VOICES_BY_LANG["en"]
+        # [female, male] in that order, in both languages — see
+        # VOICES_BY_LANG. Index rather than a second mapping to keep in
+        # step with.
+        st.session_state["voice"] = names[
+            0 if st.session_state.get("help_gender", "F") == "F" else 1]
+        st.session_state["talk_text"] = HELP_PAGE.plain(lang)
+        st.session_state["active_tab"] = "talk"
+        st.session_state["_auto_read"] = True
 
-    with _hc3:
-        with st.spinner(t("help_reading")):
-            st.button(t("help_read"), key="help_read_go",
-                      on_click=_help_read, use_container_width=True)
+    _hc3.button(t("help_read"), key="help_read_go",
+                on_click=_help_read, use_container_width=True)
 
-    _hlp_err = st.session_state.pop("_help_error", None)
-    if _hlp_err:
-        st.error(_hlp_err)
-
-    # The whole page is ONE component holding both languages, so the HR/ENG
-    # toggle inside it is instant and does not move you in the text. Doing
-    # it with Streamlit buttons would rerun the script, rebuild the page
-    # and throw you back to the top — which is the one thing Baba asked it
-    # not to do.
     components.html(HELP_PAGE.page(st.session_state.get("ui_lang", "hr")),
                     height=620, scrolling=True)
 

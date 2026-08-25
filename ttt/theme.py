@@ -382,8 +382,23 @@ def css(scheme: str = "amber", font: str = "mono",
 
        The nav bar is the segmented control keyed `active_tab`, so the
        class Streamlit writes for it is what limits this. */
+    /* :not([aria-checked="true"]) — AND THIS IS A FIX FOR A REGRESSION I
+       CAUSED IN v191. Scoping this rule to the nav bar added an ancestor
+       selector, which made it MORE SPECIFIC than the checked rule below.
+       Before the scoping the two were equal and the later one won; after
+       it, this one won — so the H tab, which is the last child, went
+       amber-on-amber the moment it was selected and its letter vanished.
+       Baba, 25.8.2026: "the button next to the cog is only one flat
+       surface, I don't see H there any more."
+
+       The same fault as the VR pill, caused by the fix for the VR pill.
+       Fighting it with more specificity would be the third round of the
+       same argument, so the rules no longer overlap AT ALL: this one
+       applies only while the tab is NOT selected, and the selected state
+       is the other rule's alone. Two rules that cannot both match cannot
+       disagree. */
     [class*="st-key-active_tab"] [data-testid="stButtonGroup"]
-      button[role="radio"]:last-child p {{
+      button[role="radio"]:not([aria-checked="true"]):last-child p {{
       color: var(--amber) !important;
     }}
     /* AND THE SELECTED PILL ALWAYS WINS. !important here so no

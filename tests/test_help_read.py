@@ -64,27 +64,39 @@ print("\n2 THE ROW AT THE TOP OF HELP")
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
            encoding="utf-8").read()
 tab = app[app.index('elif active == "help":'):]
-tab = tab[:tab.index('elif active == "log":')]
-print("       searched the help tab, %d chars, for the player, the two "
-      "genders and the read action" % len(tab))
-check("2a there is a player", 'key="help_player"' in tab)
-check("2b female and male are both there",
+tab = tab[:tab.index("components.html(HELP_PAGE.page(")]
+print("       searched the help tab, %d chars" % len(tab))
+check("2a female and male are both there",
       't("tr_voice_f")' in tab and 't("tr_voice_m")' in tab)
-check("2c read is there", 't("help_read")' in tab)
-check("2d the player is drawn BEFORE the toggle — transport first, "
-      "like every other deck",
-      tab.index('key="help_player"') < tab.index('t("tr_voice_f")'))
-check("2e read comes after the two genders it depends on",
+check("2b read is there", 't("help_read")' in tab)
+check("2c read comes after the two genders it depends on",
       tab.index('t("help_read")') > tab.index('t("tr_voice_m")'))
-check("2f the voice follows the page's own language, not a fixed one",
-      'ui_lang' in tab and "tk.vkey_for(lang" in tab)
-check("2g it speaks plain(), not the HTML page",
+check("2d the voice follows the page's own language, not a fixed one",
+      "ui_lang" in tab and "VOICES_BY_LANG.get(lang)" in tab)
+check("2e it speaks plain(), not the HTML page",
       "HELP_PAGE.plain(lang)" in tab)
-check("2h a voice that refuses is a sentence, not a traceback",
-      't("help_read_fail")' in tab and "errlog.add" in tab)
-check("2i the player is drawn whether or not there is audio — nothing "
-      "appears, nothing disappears",
-      "startable=bool(_hlp_audio)" in tab)
+
+print("\n2b IT USES R'S DECK — it does not grow a second one")
+# Baba: "it takes forever... generate one paragraph at a time, keep the
+# logic of a tape deck." R's _talk_job IS that deck: doubling blocks so
+# the first is ONE sentence, three built in parallel while it plays.
+# A second copy here is the fault README rule 1 names by name.
+check("2f read hands the text to the reader's own job",
+      '"talk_text"] = HELP_PAGE.plain' in tab)
+check("2g and starts it the way the reader starts",
+      '"_auto_read"] = True' in tab)
+check("2h it does NOT synthesise the whole document up front",
+      "synth_sentence" not in tab and "block_texts" not in tab, tab[:200])
+check("2i it does NOT build a second player",
+      "_wave_component(" not in tab)
+check("2j the gender picks a real reader voice, not an invented name",
+      "VOICES_BY_LANG" in tab and '"voice"] = names[' in tab)
+
+print("\n2c AND PLAY STARTS IT, because R's idle deck already does")
+rtab = app[app.index('key="talk_player_idle"'):]
+rtab = rtab[:rtab.index("def _clear_talk")]
+check("2k a press of play on the idle deck is a start",
+      '_ev0.get("start")' in rtab and "_start = True" in rtab)
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

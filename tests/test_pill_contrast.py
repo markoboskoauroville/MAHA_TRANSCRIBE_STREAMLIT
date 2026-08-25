@@ -52,6 +52,35 @@ check("2b the checked LABEL colour is !important, so no position rule "
 check("2c and it is the page background colour, i.e. the opposite of amber",
       any("var(--bg)" in b for b in label), label)
 
+print("\n2b THE TWO RULES CANNOT BOTH MATCH")
+# The v191 scoping made the :last-child rule MORE specific than the
+# checked rule, so the LAST tab (H) went amber-on-amber when selected —
+# the same fault the scoping cured for VR, moved one tab along.
+# Specificity is not the fix; non-overlap is.
+#
+# A PLAIN SUBSTRING TEST, DELIBERATELY. The first version of this check
+# was a regex over selector/body pairs, and it reported GREEN on a
+# mutation that removed the guard — a check that passes for the wrong
+# reason, which four-tests.md calls the dangerous kind because it is
+# invisible. Every :last-child occurrence is now looked at directly.
+print("       searched each ':last-child' in the built stylesheet")
+for scheme in ("amber", "green", "cyan", "paper"):
+    c = theme.css(scheme, "mono", 1.0)
+    bad = []
+    for m in re.finditer(r":last-child", c):
+        # the selector is what sits between the previous '}' or '*/' and
+        # the '{' that opens this rule
+        opens = c.find("{", m.end())
+        closes = c.find("}", opens)
+        sel = c[max(c.rfind("}", 0, m.start()),
+                    c.rfind("*/", 0, m.start())):m.end()]
+        body = c[opens:closes]
+        if "--amber" in body and 'aria-checked="true"' not in sel:
+            bad.append(sel.strip()[-70:])
+    check("2%s in %s, every :last-child amber rule excludes the selected "
+          "state" % ("defg"[("amber", "green", "cyan", "paper").index(scheme)],
+                     scheme), not bad, bad)
+
 print("\n3 THE VR SWITCH IS NOT THE NAV BAR")
 print("       searched app.py for the two segmented_control keys")
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
