@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v198 (four by four)"
+APP_VERSION = "v199 (1,4,4 — and read joins copy and clear)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8348,7 +8348,19 @@ elif active == "talk":
                     # waiting any more long time, we are going 4 by 4."
                     # See ttt/speech.py, "FOUR BY FOUR", for the whole
                     # algorithm and for what it trades away.
-                    "parts": SPEECH.plan_even(sentences),
+                    # 1, 4, 4, 4 — Baba, 25.8.2026: "1,4,4 as the
+                    # algorithm for reading, it's great."
+                    #
+                    # The best of both shapes. The FIRST block is one
+                    # sentence, so sound starts in about three seconds
+                    # instead of after four; everything after it is even,
+                    # so no request is ever big enough that losing it
+                    # costs real work. Doubling gave the fast start and
+                    # then grew to 32-sentence requests; four-across gave
+                    # evenness and a slow first word. This gives both,
+                    # and it is one number rather than a second
+                    # algorithm — see ttt/speech.py, "FOUR BY FOUR".
+                    "parts": SPEECH.plan_even(sentences, first=1),
                     "full_text": " ".join(sentences),
                     "index": 0, "cache": {}, "synth": synth_fn,
                 }
@@ -8398,17 +8410,30 @@ elif active == "translate":
 
     st.text_area("src", key="translate_src_text", height=120,
                  label_visibility="collapsed", placeholder=t("translate_src_ph"))
+    # READ JOINS THE ROW. Baba, 25.8.2026: "read should be together with
+    # copy and clear. Read, copy, clear, same position in the screen."
+    #
+    # This is fault 3 from his very first brief and it took until now:
+    # `read` had its own container under the row, left-aligned, while
+    # copy and clear sat right-aligned above it. Two rows for three
+    # links, and the odd one out looked like a different kind of thing.
+    #
+    # box_links has carried `extra` for exactly this since T's "add to
+    # notes" — a module's own action joining the line rather than
+    # starting another. TR simply was not using it.
+    #
+    # ORDER IS copy · clear · read, which is what he asked for in the
+    # first brief: "Read should be Copy, Clear, Read."
+    #
+    # THE EXTRA IS PASSED ONLY WHEN THERE IS TEXT, because box_links
+    # renders the row whenever a module offers an extra — and a `read`
+    # standing alone over an empty box is a link with nothing to read.
+    _trsrc_body = (st.session_state.get("translate_src_text") or "").strip()
     box_links("trsrc", st.session_state.get("translate_src_text", ""),
-              on_clear=_clear_src)
-    # READ, UNDER THE BOX IT READS. The upper box speaks the UPPER row's
-    # language — that pairing is the whole point of two rows and two
-    # boxes, and getting it backwards would read a translation in the
-    # language it came from.
-    with st.container(key="nact_trsrc"):
-        st.button(t("tr_read_src"), key="nact_read_trsrc",
-                  disabled=not (st.session_state.get("translate_src_text")
-                                or "").strip(),
-                  on_click=tr_read, args=("src",))
+              on_clear=_clear_src,
+              extra=([(t("tr_read_src"),
+                       ("nact_read_trsrc", lambda: tr_read("src")))]
+                     if _trsrc_body else None))
 
     # TRANSLATE BELONGS TO THE MATRIX, not to the command row.
     #
@@ -8435,13 +8460,16 @@ elif active == "translate":
 
     st.text_area("out", key="translate_out", height=150,
                  label_visibility="collapsed", placeholder=t("translate_out_ph"))
+    # THE SAME ROW UNDER THE LOWER BOX. The upper box speaks the UPPER
+    # row's language and the lower box the lower one — that pairing is
+    # the whole point of two rows and two boxes, and getting it backwards
+    # would read a translation in the language it came from.
+    _trout_body = (st.session_state.get("translate_out") or "").strip()
     box_links("trout", st.session_state.get("translate_out", ""),
-              on_clear=_clear_out)
-    with st.container(key="nact_trout"):
-        st.button(t("tr_read_src"), key="nact_read_trout",
-                  disabled=not (st.session_state.get("translate_out")
-                                or "").strip(),
-                  on_click=tr_read, args=("out",))
+              on_clear=_clear_out,
+              extra=([(t("tr_read_src"),
+                       ("nact_read_trout", lambda: tr_read("out")))]
+                     if _trout_body else None))
 
     tab_signature(t("sig_translate"))
 

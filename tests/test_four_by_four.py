@@ -31,6 +31,15 @@ for n, want in ((1, [1]), (4, [4]), (5, [4, 1]), (8, [4, 4]),
     ss = ["S%d." % i for i in range(n)]
     check("1a %d sentences -> %s" % (n, want), sizes(S.plan_even(ss)) == want,
           sizes(S.plan_even(ss)))
+# WHAT THE READER ACTUALLY ASKS FOR, which is 1,4,4 since Baba chose it.
+_plan = S.plan_even(["S."] * 25, first=1)
+print("       the reader's own plan for 25 sentences: %s"
+      % [len(b) for b, _ in _plan])
+check("1a2 the reader's first block is ONE sentence", len(_plan[0][0]) == 1)
+check("1a3 and the rest are fours",
+      set(len(b) for b, _ in _plan[1:-1]) == {4},
+      [len(b) for b, _ in _plan])
+
 check("1b it never grows, however long — the doubling shape is gone",
       set(sizes(S.plan_even(["x."] * 200))[:-1]) == {4},
       set(sizes(S.plan_even(["x."] * 200))))
@@ -88,7 +97,13 @@ print("\n2 THE READER ACTUALLY USES IT")
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
            encoding="utf-8").read()
 print("       searched app.py for plan_even, plan_blocks and PREFETCH_AHEAD")
-check("2a the reader plans with plan_even", "SPEECH.plan_even(sentences)" in app)
+# NOT PINNED TO THE EXACT CALL. The first version asserted
+# "SPEECH.plan_even(sentences)" character for character and went red the
+# moment `first=1` was added — a test failing for a reason unconnected to
+# the feature, which four-tests.md names under "test the test". It asks
+# whether the reader plans with plan_even, not how it spells the call.
+check("2a the reader plans with plan_even",
+      re.search(r"SPEECH\.plan_even\(sentences[,)]", app) is not None)
 check("2b and no longer with the doubling planner",
       "SPEECH.plan_blocks(sentences)" not in app)
 m = re.search(r"^PREFETCH_AHEAD = (\d+)", app, re.M)
