@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v188 (the TR crash — Translate reads again)"
+APP_VERSION = "v189 (VR in two panels; the signature on the margin; the remote relay)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8144,66 +8144,19 @@ elif active == "vr":
             autoplay=bool(st.session_state.pop("_vr_autoplay", False)),
             key="vr_player", default=None)
 
-    _vr_err = st.session_state.pop("_vr_error", None)
-    if _vr_err:
-        st.error(_vr_err)
-    _vr_said = st.session_state.pop("_vr_said", None)
-    if _vr_said:
-        st.caption(t("vr_now") % _vr_said)
-
-    st.text_area("vr", key="vr_text", height=120,
-                 label_visibility="collapsed", placeholder=t("vr_text_ph"))
-
-    def _vr_clear():
-        st.session_state["vr_text"] = ""
-
-    box_links("vrbox", st.session_state.get("vr_text", ""), on_clear=_vr_clear)
-
-    # THE CAST. One pill per voice, twelve women and twelve men, each
-    # showing its accent so a name that means nothing still tells you
-    # something. Baba asked for many and this is many on purpose.
-    st.markdown('<div class="vtag">%s</div>' % html.escape(t("vr_voices")),
-                unsafe_allow_html=True)
-    _cur_voice = st.session_state.get("vr_voice", VR.DEFAULT_VOICE)
-    for _g in ("F", "M"):
-        _rows = VR.VOICES[_g]
-        for _start in range(0, len(_rows), 3):
-            _cols = st.columns(3)
-            for _col, (_vn, _acc, _age) in zip(_cols, _rows[_start:_start + 3]):
-                _col.button(
-                    _vn, key="vrv_%s" % _vn.replace(" ", "_").replace("'", ""),
-                    type="primary" if _vn == _cur_voice else "secondary",
-                    help="%s · %s" % (_acc, _age),
-                    on_click=lambda v=_vn: st.session_state.update(
-                        {"vr_voice": v}),
-                    use_container_width=True)
-
-    # THE DIRECTION. Checkboxes, not one choice: Baba asked for "one
-    # emotion or a combination", and that is also what acting is — grief
-    # that is angry reads differently from either alone.
-    st.markdown('<div class="vtag">%s</div>' % html.escape(t("vr_emotions")),
-                unsafe_allow_html=True)
-    for _start in range(0, len(VR.EMOTIONS), 3):
-        _cols = st.columns(3)
-        for _col, (_eid, _lbl, _phr) in zip(_cols,
-                                            VR.EMOTIONS[_start:_start + 3]):
-            _col.checkbox(_lbl, key="vre_%s" % _eid, help=_phr)
-
-    _picked = [e for e in VR.EMOTION_IDS if st.session_state.get("vre_%s" % e)]
-    if len(_picked) > VR.MAX_EMOTIONS:
-        st.caption(t("vr_too_many"))
-
-    st.text_input("vrnote", key="vr_note", placeholder=t("vr_note_ph"),
-                  label_visibility="collapsed")
-
-    # THE PACE, STATED IN SECONDS. Baba: "if I need to wait 30 seconds
-    # between two reads, no problem — just write, please wait, Hume AI is
-    # drinking coffee." Measured in his own brief: 3s is refused, 12s
-    # holds. So the button is disabled and says how long, rather than
+    # REHEARSE SITS UNDER THE PLAYER. Baba, 25.8.2026: "the rehearse
+    # action link goes under the player."
+    #
+    # It reads the box that is rendered BELOW it, which is fine and worth
+    # knowing why: a widget with a key has already put its value into
+    # session_state before the script runs, so `vr_text` here is what is
+    # in the box right now, not what was in it last time.
+    #
+    # HOW LONG, ASKED OF THE WHOLE RING. Measured in Baba's own brief: 3s
+    # between calls is refused, 12s holds. With one account that is the
+    # familiar wait; with 21 it is almost always 0 and the coffee message
+    # never appears. The link is disabled and SAYS how long, rather than
     # firing into a 429 and blaming the person.
-    # HOW LONG, ASKED OF THE WHOLE RING. With one account this is the
-    # familiar 12-second wait; with 21 it is almost always 0, and the
-    # coffee message simply never appears.
     _vr_ring = get_ring("hume")
     _vr_i, _left = VR.pick_rested(_vr_ring["keys"], time.time())
     if _vr_i is None:
@@ -8218,10 +8171,12 @@ elif active == "vr":
         ring = get_ring("hume")
         _i, _w = VR.pick_rested(ring["keys"], time.time())
         if _i is not None and _w:
-            return          # the button was disabled; belt and braces
-        picked = [e for e in VR.EMOTION_IDS
-                  if st.session_state.get("vre_%s" % e)]
-        direction = VR.build_direction(picked, st.session_state.get("vr_note", ""))
+            return          # the link was disabled; belt and braces
+        # FROM THE STORE, NOT FROM THE WIDGETS. The checkboxes may not
+        # have been rendered at all this run — the cast panel could be
+        # showing — and a widget that did not render has no state.
+        picked = VR.picked_of(st.session_state)
+        direction = VR.build_direction(picked, VR.note_of(st.session_state))
         got, err = hume_speak(ring, raw, st.session_state.get(
             "vr_voice", VR.DEFAULT_VOICE), direction)
         save_rings()
@@ -8238,6 +8193,99 @@ elif active == "vr":
         st.button(t("vr_coffee") % _left if _left else t("vr_speak"),
                   key="nact_vr_go", disabled=bool(_left) or not _has,
                   on_click=_vr_go)
+
+    _vr_err = st.session_state.pop("_vr_error", None)
+    if _vr_err:
+        st.error(_vr_err)
+    _vr_said = st.session_state.pop("_vr_said", None)
+    if _vr_said:
+        st.caption(t("vr_now") % _vr_said)
+
+    st.text_area("vr", key="vr_text", height=120,
+                 label_visibility="collapsed", placeholder=t("vr_text_ph"))
+
+    def _vr_clear():
+        st.session_state["vr_text"] = ""
+
+    box_links("vrbox", st.session_state.get("vr_text", ""), on_clear=_vr_clear)
+
+    # TWO PANELS, NOT ONE WALL. Baba, 25.8.2026: "there are too many
+    # buttons at once. We need to organize under the player in 2 tabs.
+    # One tab is voices, the other tab is emotions."
+    #
+    # He is right about the count: 24 voices and 18 emotions is 42
+    # controls in one column, and a phone shows about six at a time. The
+    # thing you came to change was always somewhere below the fold.
+    #
+    # THE SAME PILL ROW AS THE MAIN TAB BAR, deliberately — this IS a tab
+    # bar and design-language.md §2 says a repeated element is the same
+    # element, built once and placed. A second kind of tab invented for
+    # one screen is a second thing to learn.
+    #
+    # CLAMPED BEFORE THE WIDGET READS IT, for the reason the tier radio
+    # is: a stored value that is not one of the options raises ValueError
+    # inside Streamlit and takes the whole page down.
+    st.session_state["_vr_panel"] = VR.clamp_panel(
+        st.session_state.get("_vr_panel"))
+    st.segmented_control(
+        "vrpanel", list(VR.PANELS),
+        format_func=lambda k: t("vr_voices") if k == "cast"
+        else t("vr_emotions"),
+        key="_vr_panel", required=True, label_visibility="collapsed")
+
+    if st.session_state["_vr_panel"] == "cast":
+        # THE CAST. One pill per voice, twelve women and twelve men, each
+        # showing its accent so a name that means nothing still tells you
+        # something. Baba asked for many and this is many on purpose.
+        _cur_voice = st.session_state.get("vr_voice", VR.DEFAULT_VOICE)
+        for _g in ("F", "M"):
+            _rows = VR.VOICES[_g]
+            for _start in range(0, len(_rows), 3):
+                _cols = st.columns(3)
+                for _col, (_vn, _acc, _age) in zip(_cols,
+                                                   _rows[_start:_start + 3]):
+                    _col.button(
+                        _vn,
+                        key="vrv_%s" % _vn.replace(" ", "_").replace("'", ""),
+                        type="primary" if _vn == _cur_voice else "secondary",
+                        help="%s · %s" % (_acc, _age),
+                        on_click=lambda v=_vn: st.session_state.update(
+                            {"vr_voice": v}),
+                        use_container_width=True)
+    else:
+        # THE DIRECTION. Checkboxes, not one choice: Baba asked for "one
+        # emotion or a combination", and that is also what acting is —
+        # grief that is angry reads differently from either alone.
+        #
+        # EVERY BOX IS A VIEW OF `_vr_picked`, NOT THE TRUTH ITSELF.
+        # These widgets do not exist while the cast panel is showing, and
+        # a Streamlit key whose widget did not render is cleaned up. Read
+        # the store on the way in, write it on the way out, and a trip to
+        # the voices cannot cost you the direction. See ttt/vr.py.
+        _held = VR.picked_of(st.session_state)
+
+        def _vr_tick(eid):
+            VR.set_picked(st.session_state,
+                          eid, bool(st.session_state.get("vre_%s" % eid)))
+
+        for _start in range(0, len(VR.EMOTIONS), 3):
+            _cols = st.columns(3)
+            for _col, (_eid, _lbl, _phr) in zip(
+                    _cols, VR.EMOTIONS[_start:_start + 3]):
+                st.session_state["vre_%s" % _eid] = _eid in _held
+                _col.checkbox(_lbl, key="vre_%s" % _eid, help=_phr,
+                              on_change=_vr_tick, args=(_eid,))
+
+        if VR.too_many(st.session_state):
+            st.caption(t("vr_too_many"))
+
+        def _vr_note_keep():
+            VR.set_note(st.session_state,
+                        st.session_state.get("vr_note", ""))
+
+        st.session_state["vr_note"] = VR.note_of(st.session_state)
+        st.text_input("vrnote", key="vr_note", placeholder=t("vr_note_ph"),
+                      label_visibility="collapsed", on_change=_vr_note_keep)
 
     tab_signature(t("sig_vr"))
 

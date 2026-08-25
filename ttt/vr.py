@@ -242,3 +242,78 @@ def pick_rested(keys, now, pace: int = PACE_SECONDS):
 
 def usable_count(keys) -> int:
     return sum(1 for k in (keys or ()) if (k.get("state") or "") != "dead")
+
+
+# ---------------------------------------------------------------------
+# THE CHOICES, KEPT WHERE STREAMLIT CANNOT REACH THEM
+#
+# Splitting VR into two panels — the cast and the direction — means the
+# emotion checkboxes are NOT RENDERED while the cast is showing. A
+# Streamlit widget's state belongs to Streamlit: a key whose widget does
+# not appear in a run is cleaned up, so picking three emotions, looking
+# at the voices, and coming back would have found the direction blank.
+#
+# HOW_WE_WORK.md calls this "the single most useful thing in this
+# codebase", and it cost three sessions the first time: keep the value
+# somewhere Streamlit does not manage, and let the widget be only a VIEW
+# of it. §63.
+#
+# So the truth lives under `_vr_picked` and `_vr_note_keep`, which are
+# plain session entries no widget owns. The checkboxes read from them on
+# the way in and write to them on the way out.
+#
+# These are pure functions on a dict so the behaviour can be tested
+# without Streamlit at all — four-tests.md: if the logic cannot be run
+# without starting the app, that is itself the finding.
+# ---------------------------------------------------------------------
+
+PICKED_KEY = "_vr_picked"
+NOTE_KEY = "_vr_note_keep"
+
+
+def picked_of(state) -> list:
+    """The emotions currently chosen, in EMOTION_IDS order, always."""
+    held = state.get(PICKED_KEY) or []
+    return [e for e in EMOTION_IDS if e in held]
+
+
+def set_picked(state, eid: str, on: bool) -> list:
+    """Tick or untick one emotion. Returns the new list.
+
+    Order is imposed rather than remembered, so the direction sentence
+    reads the same however the boxes were pressed. Unticking something
+    that was never ticked is not an error — a checkbox can report false
+    on a render where it was simply absent.
+    """
+    held = set(picked_of(state))
+    if on:
+        held.add(eid)
+    else:
+        held.discard(eid)
+    out = [e for e in EMOTION_IDS if e in held]
+    state[PICKED_KEY] = out
+    return out
+
+
+def note_of(state) -> str:
+    return str(state.get(NOTE_KEY) or "")
+
+
+def set_note(state, text: str) -> str:
+    state[NOTE_KEY] = str(text or "")
+    return state[NOTE_KEY]
+
+
+def too_many(state) -> bool:
+    return len(picked_of(state)) > MAX_EMOTIONS
+
+
+PANELS = ("cast", "direction")
+DEFAULT_PANEL = "cast"
+
+
+def clamp_panel(value) -> str:
+    """A stored panel that is not one of the two would raise ValueError
+    inside the widget and take the whole page down — the same trap the
+    tier radio already met and clamps for. Same fix, same reason."""
+    return value if value in PANELS else DEFAULT_PANEL

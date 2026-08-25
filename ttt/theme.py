@@ -175,7 +175,12 @@ def css(scheme: str = "amber", font: str = "mono",
          empty band above the tabs — the first thing anybody sees and
          the least useful. The bottom keeps its room so the last control
          is not against the edge. */
-      padding: 0 12px 16px !important;
+      /* THE BOTTOM PADDING IS THE BADGE'S ROOM, measured rather than
+         guessed: Streamlit Cloud's "Manage app" pill is fixed to the
+         bottom right of the viewport and floats over whatever is under
+         it. Giving the page room means nothing has to dodge it — the
+         signature used to, and it ended up left of centre for it. */
+      padding: 0 12px 72px !important;
       max-width: 640px;
       margin-top: 0;
     }}
@@ -695,13 +700,22 @@ def css(scheme: str = "amber", font: str = "mono",
        the recorder's 00:00 counter, so it reads as a mark on the panel
        rather than as another control competing for attention. */
     .tabsig {{
-      /* AND IT KEEPS CLEAR OF THE BADGE TOO. This is the very last
-         thing on the page and it was right-aligned, which on Streamlit
-         Cloud puts it directly under "Manage app" — Baba's screenshot
-         shows it cut to "transcrib". The line stays on the right,
-         because that is where he asked for it and it reads well there,
-         but it now leaves room for the thing sitting on top of it. */
-      padding-right: 5.5rem;
+      /* FLUSH WITH THE FRAME, and the badge is dodged by the PAGE, not
+         by this line. Baba, 25.8.2026: "it is not right aligned. Should
+         be right touching the edge almost, few pixels away. See how many
+         pixels the frame under the player is away from the edge, and
+         align it to that line."
+         MEASURED: block-container is padding 0 12px, so the player and
+         the text box sit 12px from the screen edge. This now sits on the
+         same 12px, because it is inside the same container and adds
+         nothing of its own.
+         WHAT WAS WRONG BEFORE: padding-right 5.5rem, added to stop the
+         Streamlit Cloud "Manage app" badge covering it. That is moving
+         the victim, which HOW_WE_WORK names as the way a layout fault
+         comes back — the badge is position: fixed at the bottom of the
+         VIEWPORT, so the answer is bottom padding on the page, and that
+         is where it lives now. See block-container. */
+      padding-right: 0;
       text-align: right;
       /* Gold, on Baba's instruction: it should catch the eye enough to
          answer "where am I?" without being read on purpose. */
