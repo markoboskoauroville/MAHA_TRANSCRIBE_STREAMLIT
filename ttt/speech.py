@@ -273,6 +273,94 @@ def block_texts(sentences, max_chars: int = 1500, max_sentences: int = 32):
                                              max_sentences)]
 
 
+# ---------------------------------------------------------------------
+# FOUR BY FOUR — the reading algorithm, stated once
+#
+# Baba, 25.8.2026: "You generate audio up to 4 sentences and play that,
+# and while this is playing you generate the next block. We are not
+# waiting any more long time, we are going 4 by 4."
+#
+# THE WHOLE ALGORITHM, for any text of any length:
+#
+#   1  cut the text into SENTENCES. A block never splits one, because a
+#      voice stopping mid-clause is worse than any wait it saves
+#   2  take FOUR sentences per block, always four, however long the text
+#   3  build block 0. Play it the moment it exists — do not wait for
+#      block 1, and never for the whole text
+#   4  WHILE IT PLAYS, build the next blocks. Python carries on after the
+#      player is on the page, and the player is a client-side iframe, so
+#      building costs the listener nothing
+#   5  when a block ends, the player says so, the next one is already
+#      there, and it starts. No gap
+#   6  keep TWO ahead, not one. One ahead means a slow request is heard
+#      as silence; two means a bad minute at the provider is absorbed
+#
+# WHAT IT REPLACES, and this is a real trade Baba should know he made.
+# `plan_blocks` DOUBLED: 1, 2, 4, 8, 16, then a steady 32. Its first
+# block was ONE sentence, so sound started in about three seconds, and
+# by the time blocks were large there was plenty of recorded speech
+# playing to cover the longer wait.
+#
+# Four-by-four starts SLOWER — four sentences instead of one, so roughly
+# four times the wait before the first word — and is then perfectly even
+# for ever after. Doubling starts fastest and grows to 32-sentence
+# requests, which is where a failure costs the most and where a voice
+# that refuses loses the most work.
+#
+# EVEN BEATS FAST HERE, which is why he is right. A reading is judged on
+# whether it ever stumbles, not on its first three seconds; and thirty
+# even blocks recover from one bad request thirty times better than six
+# uneven ones. If the fast start is ever wanted back, `first` below takes
+# it — set it to 1 and the shape becomes 1, 4, 4, 4 rather than a return
+# to doubling.
+# ---------------------------------------------------------------------
+
+BLOCK_SENTENCES = 4
+
+
+def plan_even(sentences, per_block: int = BLOCK_SENTENCES,
+              max_chars: int = 1500, first: int = 0):
+    """Even blocks of `per_block` sentences. Returns [(sentences, offset)].
+
+    Same shape as `plan_blocks` so it drops straight into the reader: a
+    list of (sentences, char_offset) pairs, the offset counting
+    characters from the start of the joined text, which is what the word
+    highlighter needs to place its marks.
+
+    `first` overrides the size of block 0 only. 0 means "the same as the
+    rest". It exists so the fast start can be bought back in one number
+    rather than a second algorithm.
+
+    THE CHARACTER BUDGET STILL WINS. Four ordinary sentences are well
+    under any provider's limit, but four of Baba's dictated
+    paragraph-sentences are not, and a request that comes back 413 is a
+    block that never plays. So a block stops early when the next
+    sentence would push it past `max_chars` — and a SINGLE sentence
+    longer than the whole budget is still taken alone, because the only
+    alternative is splitting it, and a voice cut mid-clause is the thing
+    this module exists to avoid.
+    """
+    out, i, offset = [], 0, 0
+    n = len(sentences)
+    want_first = int(first or 0)
+    while i < n:
+        size = want_first if (not out and want_first > 0) else int(per_block)
+        size = max(1, size)
+        take, chars = [], 0
+        while len(take) < size and i + len(take) < n:
+            nxt = sentences[i + len(take)]
+            if take and chars + len(nxt) + 1 > max_chars:
+                break
+            take.append(nxt)
+            chars += len(nxt) + 1
+        if not take:                      # one sentence past the budget
+            take = [sentences[i]]
+        out.append((take, offset))
+        offset += sum(len(x) + 1 for x in take)
+        i += len(take)
+    return out
+
+
 def plan_parts(sentences, part_chars: int = 1500):
     """Group sentences into PARTS. Returns [(sentences, char_offset)].
 

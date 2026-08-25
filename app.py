@@ -24,12 +24,17 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v197 (a new reading replaces the one playing)"
+APP_VERSION = "v198 (four by four)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
 # be retried on another key.
-PREFETCH_AHEAD = 3
+# TWO AHEAD, not one. Baba: "generate two and play one after the other,
+# and while one is playing generate the third. Have one extra." One ahead
+# means a slow request is heard as silence; two absorbs a bad minute at
+# the provider. It was 3, which suited DOUBLING blocks — with even blocks
+# the third is work done long before it is needed.
+PREFETCH_AHEAD = 2
 
 import streamlit as st
 from groq import Groq
@@ -8337,7 +8342,13 @@ elif active == "talk":
             if raw:
                 sentences = tk.sentences_of(raw)
                 st.session_state["_talk_job"] = {
-                    "parts": SPEECH.plan_blocks(sentences),
+                    # FOUR BY FOUR. Baba, 25.8.2026: "generate audio up
+                    # to 4 sentences and play that, and while this is
+                    # playing generate the next block. We are not
+                    # waiting any more long time, we are going 4 by 4."
+                    # See ttt/speech.py, "FOUR BY FOUR", for the whole
+                    # algorithm and for what it trades away.
+                    "parts": SPEECH.plan_even(sentences),
                     "full_text": " ".join(sentences),
                     "index": 0, "cache": {}, "synth": synth_fn,
                 }
