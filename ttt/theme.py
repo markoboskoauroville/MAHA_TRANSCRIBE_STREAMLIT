@@ -360,12 +360,37 @@ def css(scheme: str = "amber", font: str = "mono",
     }}
     /* The OWNER's gear is amber even when unselected: it is the one that
        changes things for everybody, and it should look like it. The
-       user's own looks-gear stays quiet grey. Last tab = owner's. */
-    [data-testid="stButtonGroup"] button[role="radio"]:last-child p {{
+       user's own looks-gear stays quiet grey. Last tab = owner's.
+
+       SCOPED TO THE NAV BAR, and that scope is the whole fix for a bug
+       Baba photographed on 25.8.2026: the VR panel switch showed a solid
+       amber pill with NO LABEL ON IT AT ALL.
+
+       This rule used to match `[data-testid="stButtonGroup"]` anywhere,
+       which is EVERY segmented control in the app and not only the tabs.
+       VR's two-pill switch has "the direction" as its last child, so it
+       was painted amber with !important — and when that pill was also
+       the SELECTED one, the background went amber too. Amber text on an
+       amber background is not low contrast, it is invisible: the label
+       vanished and the pill became a blank orange lozenge.
+
+       Two lessons, both already in this file's neighbours. A selector
+       written for one row will find every row that shares its shape, so
+       scope it to the row it was written for. And `!important` on a
+       COLOUR is a promise that no state can override it — which is
+       exactly what a selected state needs to do.
+
+       The nav bar is the segmented control keyed `active_tab`, so the
+       class Streamlit writes for it is what limits this. */
+    [class*="st-key-active_tab"] [data-testid="stButtonGroup"]
+      button[role="radio"]:last-child p {{
       color: var(--amber) !important;
     }}
+    /* AND THE SELECTED PILL ALWAYS WINS. !important here so no
+       per-position rule anywhere can leave a label the same colour as
+       the thing behind it. A checked pill is readable or it is broken. */
     [data-testid="stButtonGroup"] button[role="radio"][aria-checked="true"] p {{
-      color: var(--bg);
+      color: var(--bg) !important;
       font-weight: 700;
     }}
 
@@ -694,6 +719,36 @@ def css(scheme: str = "amber", font: str = "mono",
       border-radius: 999px;
       min-width: 56px;
       padding: 0.45rem 0.6rem !important;
+    }}
+
+    /* THE REMOTE LINK, above the tabs. Orange, on Baba's word, and the
+       whole address on its own line underneath because the entire job of
+       this control is being read off one screen and typed into another.
+       A truncated link is tidier and useless.
+       IT IS NOT A BUTTON. A button that opens a page on a DIFFERENT
+       device would be a lie about what pressing it does; this is an
+       address you copy, so it looks like an address. */
+    .remlink {{
+      margin: 0.1rem 0 0;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      letter-spacing: 0.04em;
+    }}
+    .remlink a {{
+      color: var(--amber);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }}
+    .remhint {{ color: var(--dim); font-size: 0.72rem; }}
+    /* The address itself: quiet, selectable, and allowed to wrap rather
+       than being cut — a link with its tail missing cannot be typed. */
+    .remurl {{
+      margin: 0 0 0.45rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--dim);
+      word-break: break-all;
+      user-select: all;
     }}
 
     /* The tab signature: bottom right, in the same quiet monospace as

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v190 (the three things from the screenshots)"
+APP_VERSION = "v191 (the remote window, both ways; the pill that had no label)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -92,6 +92,7 @@ from ttt import help_page as HELP_PAGE
 from ttt import wordtimes as WORDTIMES
 from ttt import read_tab as RT
 from ttt import theme
+from ttt import remote as REMOTE
 # `from ttt import gate` was here. The brute-force throttle belonged to
 # the password door, and v185 replaced that door with a name from
 # Secrets — there is nothing left to throttle, so the import went with
@@ -555,6 +556,48 @@ STRINGS = {
     "gen_audio":          {"en": "Making the audio…",  "hr": "Pripremam zvuk…"},
     "rd_hint":            {"en": "press play to read",
                            "hr": "pritisni play za čitanje"},
+
+    # ---- THE REMOTE WINDOW ------------------------------------------
+    # Two devices, one line of text, going both ways. The words are kept
+    # plain because the page they sit on is the one screen in this app a
+    # person meets with no login, no tabs and no context.
+    "rem_title":          {"en": "remote window",
+                           "hr": "daljinski prozor"},
+    "rem_closed":         {"en": "That window is closed. Open Remote "
+                                 "transcription on your device for a new link.",
+                           "hr": "Taj prozor je zatvoren. Otvori Daljinski "
+                                 "prijepis na uređaju za novi link."},
+    "rem_said":           {"en": "the transcript",  "hr": "prijepis"},
+    "rem_age":            {"en": "updated %s",      "hr": "osvježeno %s"},
+    "rem_refresh":        {"en": "refresh now",     "hr": "osvježi sada"},
+    "rem_send":           {"en": "send text for the device to read",
+                           "hr": "pošalji tekst da ga uređaj pročita"},
+    "rem_send_ph":        {"en": "Paste here, press push, and the device "
+                                 "starts reading it",
+                           "hr": "Zalijepi ovdje, pritisni pošalji, i uređaj "
+                                 "počinje čitati"},
+    "rem_push":           {"en": "push to device", "hr": "pošalji na uređaj"},
+    "rem_sent":           {"en": "sent — the device picks it up in a moment",
+                           "hr": "poslano — uređaj će ga primiti za koji "
+                                 "trenutak"},
+    "rem_note":           {"en": "This page refreshes itself. Anyone with "
+                                 "this link can read the transcript and send "
+                                 "text to be read aloud, so treat it as a "
+                                 "key. It closes six hours after the last "
+                                 "use.",
+                           "hr": "Stranica se sama osvježava. Tko god ima "
+                                 "ovaj link može čitati prijepis i poslati "
+                                 "tekst na čitanje, pa ga čuvaj kao ključ. "
+                                 "Zatvara se šest sati nakon zadnje uporabe."},
+    "rem_link":           {"en": "remote transcription",
+                           "hr": "daljinski prijepis"},
+    "rem_open":           {"en": "open this address on your other device",
+                           "hr": "otvori ovu adresu na drugom uređaju"},
+    "rem_push_here":      {"en": "push now",  "hr": "pošalji sada"},
+    "rem_pushed":         {"en": "pushed to the window",
+                           "hr": "poslano u prozor"},
+    "rem_arrived":        {"en": "text arrived from the remote window",
+                           "hr": "stigao tekst iz daljinskog prozora"},
     "new_text":           {"en": "New text",           "hr": "Novi tekst"},
     "prev_sentence":      {"en": "Previous sentence",  "hr": "Prethodna rečenica"},
     "next_sentence":      {"en": "Next sentence",      "hr": "Sljedeća rečenica"},
@@ -1118,6 +1161,143 @@ def _tier_keys():
         if m:
             found.append((str(key), m.group(1).lower()))
     return found
+
+
+# ---------------------------------------------------------------------
+# THE REMOTE WINDOW — the whole app, or one box, depending on the URL
+#
+# Baba, 25.8.2026: "an HTTPS address to type in my other device, to see
+# transcripts only... and push-pull can be initiated for either side."
+#
+# THIS SITS ABOVE THE LOGIN ON PURPOSE. The other device has no session,
+# and nobody types a password on a tablet propped against a music stand.
+# The code in the URL IS the credential — said in plain words on the page
+# rather than left to be assumed, because the channel runs both ways and
+# anybody holding the link can make this device speak.
+#
+# ONE PROCESS, ONE DICT. st.cache_resource hands every session in this
+# server the same object: exactly the relay two devices need and nothing
+# more. Nothing on disk, nothing to Google, and a restart empties it —
+# the same promise the free tier already makes about a transcript.
+# ---------------------------------------------------------------------
+
+
+@st.cache_resource
+def _remote_store():
+    return {}
+
+
+REMOTE_STORE = _remote_store()
+
+
+def remote_code() -> str:
+    """This session's window code, made once and kept."""
+    if not st.session_state.get("_remote_code"):
+        st.session_state["_remote_code"] = REMOTE.new_code()
+    return st.session_state["_remote_code"]
+
+
+def remote_base() -> str:
+    """The app's own address, so the link is right on Cloud and locally.
+
+    Read from the request rather than hardcoded: the same code serves
+    ttt-lll.streamlit.app and localhost, and a link that is right in one
+    and wrong in the other is worse than no link.
+    """
+    try:
+        h = st.context.headers or {}
+        host = h.get("Host") or h.get("host") or ""
+        proto = h.get("X-Forwarded-Proto") or (
+            "https" if ".streamlit.app" in host else "http")
+        if host:
+            return "%s://%s" % (proto, host)
+    except Exception:                                        # noqa: BLE001
+        pass
+    return ""
+
+
+def _remote_wanted() -> str:
+    try:
+        return str(st.query_params.get("remote") or "").strip()
+    except Exception:                                        # noqa: BLE001
+        return ""
+
+
+_REMOTE_VIEW = _remote_wanted()
+
+if _REMOTE_VIEW:
+    REMOTE.sweep(REMOTE_STORE)
+    _w_say = REMOTE.get(REMOTE_STORE, _REMOTE_VIEW, REMOTE.SAY)
+    _w_hear = REMOTE.get(REMOTE_STORE, _REMOTE_VIEW, REMOTE.HEAR)
+
+    if _w_say is None and _w_hear is None:
+        # A CLOSED WINDOW IS NOT AN ERROR. The commonest reason to land
+        # here is that the phone's session ended. It does not say whether
+        # the code ever existed, because that would let somebody tell a
+        # real code from a typo.
+        st.info(t("rem_closed"))
+        st.stop()
+
+    # ---- WHAT THE DEVICE SAID -------------------------------------
+    # ALL THREE KINDS OF REFRESH. Baba: "there will be refresh so the
+    # user does not need to refresh. If he refreshes the browser, fine,
+    # but also a refresh button."
+    #
+    # It re-runs itself on a timer; the browser's own reload still works
+    # because nothing is held in session; and there is a key to press for
+    # somebody who does not want to wait.
+    @st.fragment(run_every=REMOTE.POLL_SECONDS)
+    def _remote_transcript():
+        slot = REMOTE.get(REMOTE_STORE, _REMOTE_VIEW, REMOTE.SAY) or {}
+        # THE KEY CARRIES THE SEQUENCE. A disabled text_area keeps the
+        # value Streamlit first gave it, so a fresh key is what makes new
+        # text actually appear. Without this the box would sit there
+        # showing the first transcript for ever while the relay moved on.
+        st.text_area(t("rem_said"), value=slot.get("text") or "",
+                     height=260, disabled=True,
+                     label_visibility="collapsed",
+                     key="rem_box_%s" % slot.get("seq", 0))
+        if slot.get("at"):
+            st.markdown(
+                '<div class="readhint">%s</div>' % html.escape(
+                    t("rem_age") % REMOTE.age_words(
+                        time.time() - float(slot["at"]))),
+                unsafe_allow_html=True)
+        st.button(t("rem_refresh"), key="rem_refresh",
+                  use_container_width=True)
+
+    _remote_transcript()
+
+    # ---- WHAT THE DEVICE SHOULD READ ------------------------------
+    # The other direction. Baba: "the device is forced to receive the
+    # text and starts automatically to read it."
+    st.markdown('<div class="readhint">%s</div>' % html.escape(t("rem_send")),
+                unsafe_allow_html=True)
+    st.text_area("remsend", key="rem_send_text", height=150,
+                 label_visibility="collapsed", placeholder=t("rem_send_ph"))
+
+    def _remote_push():
+        # FORCE, ALWAYS. Pressing push means "send it", and sending the
+        # same line twice is something a person doing a read-through does
+        # on purpose. A push that silently did nothing because the text
+        # had not changed would be the worst control on the page.
+        REMOTE.put(REMOTE_STORE, _REMOTE_VIEW,
+                   st.session_state.get("rem_send_text", ""),
+                   REMOTE.HEAR, force=True)
+        st.session_state["_rem_sent"] = True
+
+    st.button(t("rem_push"), key="rem_push", on_click=_remote_push,
+              use_container_width=True,
+              disabled=not (st.session_state.get("rem_send_text")
+                            or "").strip())
+    if st.session_state.pop("_rem_sent", False):
+        st.success(t("rem_sent"))
+
+    st.markdown('<div class="readhint">%s</div>' % html.escape(t("rem_note")),
+                unsafe_allow_html=True)
+    st.markdown('<div class="tabsig">%s</div>' % html.escape(t("rem_title")),
+                unsafe_allow_html=True)
+    st.stop()
 
 
 def _named_people() -> dict:
@@ -6910,6 +7090,57 @@ if len(_open_tiers) > 1:
         format_func=lambda k: t("tier_" + k),
         key="_view_tier", horizontal=True, label_visibility="collapsed",
     )
+
+# ---- THE REMOTE LINK, ABOVE THE TABS --------------------------------
+# Baba, 25.8.2026: "we make a link for remote transcription upper, upper
+# left, above the tabs, in orange font, clickable, and full line visible.
+# Remote transcription. Window to the paradise."
+#
+# ABOVE THE TABS AND NOT IN A TAB, because it is not a place in the app —
+# it is the address of a different screen on a different device, and a
+# person looking for it is looking before they have chosen a tab.
+#
+# THE WHOLE LINE, so it can be read off one screen and typed on another.
+# A shortened link would be tidier and unusable, which is the wrong trade
+# for the one control whose entire job is being copied by hand.
+#
+# THE PUSH AND THE PULL BOTH LIVE HERE TOO, because they belong to the
+# window rather than to T or R: pressing push sends whatever the
+# transcript box holds right now, and anything the far end sent is picked
+# up on the next render whichever tab is open.
+_rem_code = remote_code()
+_rem_url = REMOTE.link_for(remote_base(), _rem_code)
+REMOTE.sweep(REMOTE_STORE)
+
+# PUSH: keep the window fed with the current transcript. Cheap and
+# idempotent — REMOTE.put only moves the sequence when the text actually
+# changes, so this running on every render costs one dict compare.
+REMOTE.put(REMOTE_STORE, _rem_code, t1_text(), REMOTE.SAY)
+
+# PULL: has the far end sent something to read? One integer comparison.
+_hear = REMOTE.get(REMOTE_STORE, _rem_code, REMOTE.HEAR)
+if REMOTE.arrived(_hear, st.session_state.get("_rem_heard_seq", 0)):
+    # MARK IT TAKEN FIRST. If anything below throws, the text is skipped
+    # rather than replayed on every render for the rest of the session —
+    # the same fault the note path has for the opposite reason, and the
+    # cheaper direction to be wrong in for something that SPEAKS.
+    st.session_state["_rem_heard_seq"] = int(_hear.get("seq", 0))
+    st.session_state["talk_text"] = _hear.get("text") or ""
+    st.session_state["active_tab"] = "talk"
+    # AND IT STARTS BY ITSELF. Baba: "the device is forced to receive the
+    # text and starts automatically to read it."
+    st.session_state["_auto_read"] = True
+    flash("rem_arrived")
+    st.rerun()
+
+st.markdown(
+    '<div class="remlink"><a href="%s" target="_blank" rel="noopener">%s</a>'
+    '<span class="remhint"> · %s</span></div>'
+    % (html.escape(_rem_url, quote=True), html.escape(t("rem_link")),
+       html.escape(t("rem_open"))),
+    unsafe_allow_html=True)
+st.markdown('<div class="remurl">%s</div>' % html.escape(_rem_url),
+            unsafe_allow_html=True)
 
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
