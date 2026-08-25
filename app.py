@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v218 (the work comes back, and the stitch shows itself)"
+APP_VERSION = "v219 (an interrupted note take is skipped, not destroyed)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -5568,6 +5568,18 @@ def note_from_transcript(text):
                      rec_id=st.session_state.get("_last_rec_id", ""))
 
 
+def _note_take_finished() -> None:
+    """This take is dealt with: stop holding it and stop retrying it.
+
+    Called on every path that has REACHED A CONCLUSION — the words
+    arrived, or the audio was undecodable, or the note is gone. NOT
+    called when the work was merely interrupted, which is the whole
+    point: an interrupted take must survive to be tried again.
+    """
+    st.session_state["_note_done"] = True
+    st.session_state.pop("_note_take", None)
+
+
 def transcribe_note_take():
     """A take recorded inside a note. Transcribe it and add it there.
 
@@ -5580,19 +5592,50 @@ def transcribe_note_take():
     destination is different, and the destination is the whole point:
     the words join the note that is open.
     """
-    take = st.session_state.pop("_note_take", None)
+    # NOT POPPED. Fault 8 of Baba's brief, 25.8.2026: "transcribe_note_take
+    # POPS `_note_take` before doing the work, so an interrupted note take
+    # is GONE rather than skipped — the same fault v185 fixed for the
+    # deck, with a worse outcome."
+    #
+    # Worse because the deck's take is still sitting in the recorder. A
+    # note's take exists only here, so popping it and then being
+    # interrupted — a rerun, a phone call, Android suspending the tab —
+    # destroyed the only copy of something he had just said. Silently,
+    # with nothing on screen, because losing something nobody promised to
+    # keep raises no error.
+    #
+    # THE DECK'S ANSWER, COPIED RATHER THAN REINVENTED (see `_digest` /
+    # `_digest_done` around the take path): the take STAYS, and a digest
+    # says whether this one has already been done. Interrupted leaves
+    # `done` False, so the next render tries again. Finished sets it
+    # True, so it is not transcribed twice.
+    take = st.session_state.get("_note_take")
     if not take:
         return
     note_id = take.get("note_id")
     if not NOTES.get(st.session_state, note_id):
-        return                       # the note went away; drop it quietly
+        _note_take_finished()        # the note went away; drop it quietly
+        return
+
+    # THE DIGEST IS OF THE AUDIO AND THE NOTE, because the same words
+    # recorded into two different notes are two different jobs.
+    _nd = hashlib.md5(
+        ("%s|%s" % (note_id, take.get("b64", "")[:4096])).encode(),
+        usedforsecurity=False).hexdigest()
+    if st.session_state.get("_note_digest") == _nd \
+            and st.session_state.get("_note_done"):
+        return                       # already transcribed; not again
+    st.session_state["_note_digest"] = _nd
+    st.session_state["_note_done"] = False
 
     try:
         raw = base64.b64decode(take["b64"])
     except Exception:
         errlog.add(st.session_state, "note", "take could not be decoded", "")
+        _note_take_finished()        # undecodable is not retryable
         return
     if not raw:
+        _note_take_finished()
         return
 
     buf = io.BytesIO(raw)
@@ -5645,6 +5688,12 @@ def transcribe_note_take():
     except Exception as e:
         errlog.add(st.session_state, "note", "take failed", str(e))
         st.session_state["_note_error"] = str(e)
+        # A REAL FAILURE IS A CONCLUSION. The engine refused, or the
+        # audio was bad — trying the same bytes again on every render
+        # would spend a key each time and still fail. An INTERRUPTION
+        # never reaches here; it stops the script, leaving `done` False
+        # and the take intact.
+        _note_take_finished()
         # THE UPLOAD MAY ALREADY BE RUNNING. If the transcription failed
         # after it started, letting this return would leave audio in
         # Drive with no transcript beside it — the orphan half-pair §60
@@ -5695,9 +5744,17 @@ def transcribe_note_take():
     body = (text or "").strip()
     if not body:
         st.session_state["_note_error"] = t("nothing_heard")
+        # SILENCE IS AN ANSWER, not an interruption. The engine ran and
+        # heard nothing; running it again on the same bytes would hear
+        # nothing again.
+        _note_take_finished()
         return
 
+    # THE WORDS ARE IN THE NOTE. Only now is the take finished with —
+    # after the thing it existed for has actually happened, so an
+    # interruption anywhere above this line leaves it to be tried again.
     NOTES.append(st.session_state, note_id, body, at=take.get("caret"))
+    _note_take_finished()
     USAGE.log("transcribe", seconds, UNIT_SECONDS, stt.id)
 
 
