@@ -127,7 +127,15 @@ print("\n4b THE SAVED FILE BELONGS TO THE READING THAT MADE IT")
 # Paste a new line, press rehearse, press download: without this you get
 # the PREVIOUS reading. A file that plays perfectly and is the wrong
 # words is the worst kind of wrong.
-go = app[app.index("def _vr_go"):app.index('with st.container(key="nact_vr")')]
+# BOUNDED BY find(), NOT index(). The `nact_vr` container was the end
+# marker and v224 removed it when `rehearse` joined the action row — so
+# this RAISED and the file died before reporting anything. SIXTH index()
+# of the day; checking-the-checks.md face 1, and tools/lint_checks.py had
+# this very line on its list.
+_gs = app.find("def _vr_go")
+_ge = app.find('box_links("vrbox"', _gs)
+check("4e0 the rehearse path is findable", _gs > 0 and _ge > _gs, (_gs, _ge))
+go = app[_gs:_ge] if _ge > _gs else ""
 check("4e a new VR reading drops the old stitched file",
       'pop("_vr_whole", None)' in go, go[-200:])
 rj = app[app.index('st.session_state.pop("_rd_whole", None)'):]
