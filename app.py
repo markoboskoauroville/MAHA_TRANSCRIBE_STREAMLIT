@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v187 (undo — for the overwritten transcript and the deleted note)"
+APP_VERSION = "v188 (the TR crash — Translate reads again)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -6766,8 +6766,12 @@ def tr_make_audio(text: str, lang: str):
     vkey = tr_voice_key(lang)
     chunks = []
     total = 0.0
-    for block in SPEECH.plan_blocks(tk.sentences_of(body)):
-        piece = block if isinstance(block, str) else " ".join(block)
+    # NOT plan_blocks. That returns (sentences, char_offset) TUPLES, and
+    # reading a tuple as "a str or a list of str" is what put a red
+    # Python wall in front of the whole Translate tab. TR does not use
+    # the offset — only R does, for word timings — so it asks for the
+    # text and nothing else. See ttt/speech.py:block_texts.
+    for piece in SPEECH.block_texts(tk.sentences_of(body)):
         if not piece.strip():
             continue
         audio, secs = tk.synth_sentence(piece, vkey)

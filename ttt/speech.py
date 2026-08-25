@@ -245,6 +245,34 @@ def plan_blocks(sentences, max_chars: int = 1500, max_sentences: int = 32):
     return blocks
 
 
+def block_texts(sentences, max_chars: int = 1500, max_sentences: int = 32):
+    """The same doubling blocks as `plan_blocks`, but as TEXT. list[str].
+
+    THIS EXISTS BECAUSE A CALLER INVENTED A CONTRACT THIS MODULE DOES NOT
+    HAVE. `plan_blocks` returns `[(sentences, char_offset)]` — tuples —
+    and TR's `tr_make_audio` read each block as "a str, or a list of
+    str", guessed with `isinstance`, and joined it. `" ".join((list,
+    int))` raises TypeError, so the whole Translate tab came up as a red
+    wall of Python on Baba's phone at 03:20 on 25.8.2026.
+
+    The `isinstance` guess is what made it survive review: it LOOKS
+    defensive. It is the opposite. A guess about the shape of a value is
+    a place where the real shape is not known, and the branch that was
+    never taken is the one that ran.
+
+    So the unpacking happens ONCE, here, where it can be run without
+    Streamlit — four-tests.md: if the logic cannot be exercised without
+    starting the whole application, that is itself the finding.
+
+    A caller that wants only the words wants this. A caller that needs
+    the char offset — R's reader, to place word timings — still wants
+    `plan_blocks` and unpacks it itself, correctly, at app.py:8027.
+    """
+    return [" ".join(ss)
+            for ss, _char_off in plan_blocks(sentences, max_chars,
+                                             max_sentences)]
+
+
 def plan_parts(sentences, part_chars: int = 1500):
     """Group sentences into PARTS. Returns [(sentences, char_offset)].
 
