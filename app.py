@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v216 (the teleprompter, and one meal not one sausage)"
+APP_VERSION = "v217 (anchored to the top, status under the player)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4933,11 +4933,14 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
                          % _highlight_span(s, word_start, word_end))
         else:
             parts.append(html.escape(s))
+    # THE SAME ANCHOR AS VR — top of the box, and only the box. See
+    # _vr_script for why scrollIntoView was the wrong instrument.
     doc_slot.markdown(
-        "<div class='rdscript'>%s</div>"
+        "<div class='rdscript' id='rdscroll'>%s</div>"
         "<script>(function(){var e=document.getElementById('rdhere');"
-        "if(e&&e.scrollIntoView)e.scrollIntoView("
-        "{block:'center',behavior:'smooth'});})();</script>"
+        "var b=document.getElementById('rdscroll');"
+        "if(!e||!b)return;"
+        "b.scrollTop=Math.max(0,e.offsetTop-b.offsetTop);})();</script>"
         % " ".join(parts), unsafe_allow_html=True)
 
 
@@ -9089,11 +9092,27 @@ elif active == "vr":
         # fight a person who has scrolled back to re-read something;
         # scrollIntoView on the same element twice is a no-op, so this
         # only travels when the block actually changes.
+        # ANCHORED TO THE TOP OF THE BOX, AND ONLY THE BOX.
+        #
+        # Baba: "sentence should be scrolled automatically to the TOP of
+        # the view... anchor that paragraph which is currently in play to
+        # the top of the text view."
+        #
+        # TWO CHANGES, and the second matters more than the first.
+        # scrollIntoView scrolls EVERY ancestor, including the page — so
+        # on a phone it yanked the whole app about to satisfy a box that
+        # is only a third of the screen. Setting the box's own scrollTop
+        # moves the box and nothing else.
+        #
+        # offsetTop is measured against the offset PARENT, so the box's
+        # own offsetTop is subtracted; without that the first block is
+        # pushed off the top by however far the box sits down the page.
         st.markdown(
             "<div class='vrscript' id='vrscroll'>%s</div>"
             "<script>(function(){var e=document.getElementById('vrhere');"
-            "if(e&&e.scrollIntoView)e.scrollIntoView("
-            "{block:'center',behavior:'smooth'});})();</script>"
+            "var b=document.getElementById('vrscroll');"
+            "if(!e||!b)return;"
+            "b.scrollTop=Math.max(0,e.offsetTop-b.offsetTop);})();</script>"
             % "".join(rows), unsafe_allow_html=True)
 
     _vr_script(_vr_job)
@@ -9128,6 +9147,24 @@ elif active == "vr":
         save_rings()
         return out
 
+    # THE STATUS, IN ONE PLACE, GOING INTO THE PLAYER'S OWN BAND.
+    # Baba circled the empty space under the transport: "reposition all
+    # the statuses like this one — make one file of the whole reading, or
+    # building 1 of 5, whatever is in that area."
+    #
+    # It was spread across a spinner, a caption and a button label, none
+    # of them where he was looking. One string, decided here, shown
+    # there.
+    _vr_status = ""
+    if _vr_job and _vr_job.get("parts"):
+        _n = len(_vr_job["parts"])
+        _missing = len([i for i in range(_n) if i not in _vr_job["cache"]])
+        if st.session_state.get("_vr_stitching"):
+            _vr_status = (t("vr_stitch_wait") % _missing) if _missing \
+                else t("vr_stitch")
+        elif _vr_job["index"] < _n:
+            _vr_status = t("gen_part").format(i=_vr_job["index"] + 1, n=_n)
+
     _vr_audio = st.session_state.get("_vr_audio")
     if _wave_component is not None:
         _vr_ev = _wave_component(
@@ -9157,6 +9194,7 @@ elif active == "vr":
                 if st.session_state.get("_vr_whole") else ""),
             dl_at=int(st.session_state.get("_vr_whole_at", 0)),
             dl_name="rehearsal.mp3",
+            status=_vr_status,
             key="vr_player", default=None)
 
         # SAVE WAS PRESSED ON THE DECK. The component has paused itself
@@ -9167,8 +9205,16 @@ elif active == "vr":
         if (_vr_job and isinstance(_vr_ev, dict) and _vr_ev.get("save")
                 and st.session_state.get("_vr_save_seen") != _vr_ev.get("at")):
             st.session_state["_vr_save_seen"] = _vr_ev.get("at")
-            with st.spinner(t("vr_stitch")):
-                _whole = _vr_stitch()
+            # NO SPINNER. A spinner is a second status in a second place,
+            # and the band under the transport is where he looks. The
+            # flag is set, the rerun draws the band, and the work happens
+            # on the run after — so the message is on screen BEFORE the
+            # wait rather than after it.
+            st.session_state["_vr_stitching"] = True
+            st.rerun()
+
+        if st.session_state.pop("_vr_stitching", False) and _vr_job:
+            _whole = _vr_stitch()
             if _whole:
                 st.session_state["_vr_whole"] = _whole
                 st.session_state["_vr_whole_at"] = int(_vr_ev.get("at") or 0)

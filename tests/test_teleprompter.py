@@ -30,38 +30,14 @@ front = open(os.path.join(os.path.dirname(__file__), "..",
              encoding="utf-8").read()
 css = theme.css("amber", "mono", 1.0)
 
-print("1 THE VR TELEPROMPTER")
-vr = app[app.index("def _vr_script"):app.index("_vr_script(_vr_job)")]
-check("1a the spoken block carries a marker", "id='vrhere'" in vr)
-check("1b exactly ONE block gets it — the current one",
-      vr.count("id='vrhere'") == 1 and 'if i == here else ""' in vr)
-check("1c it is put in the MIDDLE, not merely scrolled to",
-      "block:'center'" in vr)
-check("1d smoothly, so it reads as a teleprompter and not a jump",
-      "behavior:'smooth'" in vr)
-check("1e and it is guarded — a missing element must not throw",
-      "if(e&&e.scrollIntoView)" in vr)
-
-print("\n2 THE R TELEPROMPTER — the same idea, its own marker")
-# BOUNDED BY THE NEXT def, not by a function 103,000 characters away.
-# My first slice ran from _render_page to read_sentences_live and
-# swallowed the entire VR tab, so "vrhere is not in R's code" was false
-# for a reason that had nothing to do with R.
-_i = app.index("def _render_page")
-rd = app[_i:app.index("\ndef ", _i + 10)]
-print("       R's renderer: %d chars" % len(rd))
-check("2a the spoken sentence carries a marker", "id='rdhere'" in rd)
-check("2b centred and smooth, exactly as VR",
-      "block:'center'" in rd and "behavior:'smooth'" in rd)
-check("2c guarded the same way", "if(e&&e.scrollIntoView)" in rd)
-check("2d R KEEPS ITS WORD HIGHLIGHT — Whisper gives word timings and "
-      "Hume does not, so R can do what VR cannot",
-      "_highlight_span(s, word_start, word_end)" in rd)
-# CODE, NOT PROSE. "vrhere" IS in R's renderer — in the docstring that
-# explains why the two markers differ. A check that cannot tell an
-# explanation from an implementation would force the explanation to be
-# deleted to stay green, which is the tail wagging the dog.
 def _live(block):
+    """The block's CODE, with docstrings and comments removed.
+
+    Three checks today matched the very comment that explained why
+    something was NOT used. An explanation is not an implementation, and
+    a check that cannot tell them apart forces the explanation to be
+    deleted to stay green.
+    """
     out, indoc = [], False
     for line in block.splitlines():
         if line.count('"""') == 1:
@@ -73,6 +49,41 @@ def _live(block):
     return "\n".join(out)
 
 
+print("1 THE VR TELEPROMPTER")
+vr = app[app.index("def _vr_script"):app.index("_vr_script(_vr_job)")]
+check("1a the spoken block carries a marker", "id='vrhere'" in vr)
+check("1b exactly ONE block gets it — the current one",
+      vr.count("id='vrhere'") == 1 and 'if i == here else ""' in vr)
+# CENTRE WAS THE FIRST ANSWER AND HE CHANGED IT. "Sentence should be
+# scrolled automatically to the TOP of the view." These three asserted
+# the centre contract and went red on a correct change — section 4 now
+# checks the top anchor properly.
+check("1c the block is moved to the top of its own box",
+      "b.scrollTop" in vr and "block:'center'" not in _live(vr))
+check("1d the box scrolls smoothly, set in the stylesheet rather than "
+      "in the call", "scroll-behavior: smooth" in css)
+check("1e and it is guarded — a missing element must not throw",
+      "if(!e||!b)return;" in vr)
+
+print("\n2 THE R TELEPROMPTER — the same idea, its own marker")
+# BOUNDED BY THE NEXT def, not by a function 103,000 characters away.
+# My first slice ran from _render_page to read_sentences_live and
+# swallowed the entire VR tab, so "vrhere is not in R's code" was false
+# for a reason that had nothing to do with R.
+_i = app.index("def _render_page")
+rd = app[_i:app.index("\ndef ", _i + 10)]
+print("       R's renderer: %d chars" % len(rd))
+check("2a the spoken sentence carries a marker", "id='rdhere'" in rd)
+check("2b anchored to the top of its box, exactly as VR",
+      "b.scrollTop" in rd and "block:'center'" not in _live(rd))
+check("2c guarded the same way", "if(!e||!b)return;" in rd)
+check("2d R KEEPS ITS WORD HIGHLIGHT — Whisper gives word timings and "
+      "Hume does not, so R can do what VR cannot",
+      "_highlight_span(s, word_start, word_end)" in rd)
+# CODE, NOT PROSE. "vrhere" IS in R's renderer — in the docstring that
+# explains why the two markers differ. A check that cannot tell an
+# explanation from an implementation would force the explanation to be
+# deleted to stay green, which is the tail wagging the dog.
 _rdc, _vrc = _live(rd), _live(vr)
 check("2e the two markers are DIFFERENT in the CODE, so the tabs cannot "
       "fight over the same id",
@@ -120,6 +131,58 @@ check("3l the stitcher is defined BEFORE the player that calls it — "
 check("3m R's whole-reading save is still its own button, because R's "
       "deck is a different component instance",
       "rd_stitch_go" in app)
+
+print("\n4 THE SCROLL ANCHORS TO THE TOP OF ITS OWN BOX")
+# Baba: "sentence should be scrolled automatically to the TOP of the
+# view... anchor that paragraph which is currently in play to the top of
+# the text view."
+for name, block in (("VR", vr), ("R", rd)):
+    # CODE, NOT THE COMMENT THAT NAMES IT. "scrollIntoView" is still in
+    # both blocks — in the comment explaining why it is NOT used. Third
+    # time today a check of mine matched its own explanation.
+    _c = _live(block)
+    check("4a %s scrolls the BOX, not the page — scrollIntoView moves "
+          "every ancestor and yanked the whole app about" % name,
+          "scrollIntoView" not in _c and "scrollTop" in _c,
+          [x for x in ("scrollIntoView",) if x in _c])
+    check("4b %s anchors to the TOP, not the middle" % name,
+          "block:'center'" not in _c, name)
+    check("4c %s subtracts the box's own offsetTop, or the first block "
+          "is pushed off the top" % name,
+          "e.offsetTop-b.offsetTop" in _c, name)
+    check("4d %s never goes negative" % name, "Math.max(0," in _c)
+    check("4e %s finds both the marker and the box before touching "
+          "either" % name, "if(!e||!b)return;" in _c)
+check("4f the boxes have ids to be found by",
+      "id='vrscroll'" in vr and "id='rdscroll'" in rd)
+check("4g and room under the last block, so the FINAL one can still "
+      "reach the top", ".vrscript::after" in css and "height: 30vh" in css)
+
+print("\n5 THE STATUS LIVES UNDER THE PLAYER")
+# He circled the empty band under the transport: "reposition all the
+# statuses like this one — make one file of the whole reading, or
+# building 1 of 5, whatever is in that area."
+check("5a the band already existed for the player's own messages",
+      'id="msg"' in front and "#msg{" in front)
+check("5b Python can now write into it", "typeof a.status === 'string'" in front)
+check("5c and the player's own messages defer while one is showing",
+      front.count("if(!PYMSG)") >= 3, front.count("if(!PYMSG)"))
+check("5d clearing it restores the player's own, rather than blanking "
+      "a message the player just set",
+      "msg.textContent === LASTPY" in front)
+check("5e VR builds ONE status string rather than scattering three",
+      "_vr_status" in app and app.count("_vr_status =") >= 2)
+check("5f and hands it to the deck", "status=_vr_status" in app)
+check("5g it says which part is being made",
+      't("gen_part").format(i=_vr_job["index"] + 1' in app)
+check("5h and how many are still to render when saving",
+      't("vr_stitch_wait") % _missing' in app)
+check("5i the stitch says so BEFORE the wait, not after — the flag is "
+      "set, the page redraws, then the work happens",
+      '"_vr_stitching"] = True' in app
+      and app.index('"_vr_stitching"] = True') < app.index('pop("_vr_stitching"'))
+check("5j and the spinner that sat in the wrong place is gone",
+      'with st.spinner(t("vr_stitch"))' not in app)
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

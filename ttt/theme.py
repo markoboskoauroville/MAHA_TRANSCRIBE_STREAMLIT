@@ -812,6 +812,13 @@ def css(scheme: str = "amber", font: str = "mono",
       font-size: 0.92rem; line-height: 1.55;
     }}
     .vrscript > div {{ padding: 3px 0; }}
+    /* ROOM UNDER THE LAST BLOCK, so the FINAL one can still reach the
+       top of the box. Without it a short tail cannot scroll up past the
+       bottom of its own content and the anchor quietly stops working
+       exactly when the reading is nearly done. */
+    .vrscript::after, .rdscript::after {{
+      content: ""; display: block; height: 30vh;
+    }}
     .vrthen {{ color: var(--dim); opacity: 0.75; }}
     .vrnow  {{ color: var(--prose); }}
     /* The direction sits with its block, in the accent, so the screen

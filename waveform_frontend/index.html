@@ -258,7 +258,7 @@ function setPlaying(on){
 var LBL={play:'play',pause:'pause',back:'back',next:'next'};
 // Which block this is, so a saved file says which one it came from. The
 // page label already shows it; this keeps the filename honest too.
-var PART=1, DELIVERED=0;
+var PART=1, DELIVERED=0, PYMSG='', LASTPY='';
 
 bPlay.onclick=function(){
   if(!audio.src){
@@ -347,19 +347,19 @@ wave.onclick=function(e){
 
 function load(src){
   loaded=src; audio.src=src; peaks=null; dur=0;
-  msg.textContent='reading the audio…';
+  if(!PYMSG) msg.textContent='reading the audio…';
   fetch(src).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
     var AC=window.AudioContext||window.webkitAudioContext;
     return new AC().decodeAudioData(ab);
   }).then(function(buf){
     dur=buf.duration; peaks=buildPeaks(buf,200);
-    msg.textContent=''; document.body.classList.remove('idle');
+    if(!PYMSG) msg.textContent=''; document.body.classList.remove('idle');
     draw(); paint(); height();
   }).catch(function(){
     // Decoding can fail on a format the browser will still PLAY. The
     // waveform is then flat and everything else still works, which is a
     // better outcome than refusing to play at all.
-    msg.textContent='no waveform for this audio';
+    if(!PYMSG) msg.textContent='no waveform for this audio';
     dur=audio.duration||0; draw();
   });
 }
@@ -373,6 +373,22 @@ window.addEventListener("message", function(ev){
     lPlay.textContent=audio.paused?LBL.play:LBL.pause; }
   cues=a.cues||[]; words=a.words||[]; wtimes=a.wtimes||[];
   if(a.part) PART=a.part;
+  /* THE STATUS LINE BELONGS IN THE PLAYER, in the band under the
+     transport. Baba circled that empty space: "reposition all the
+     statuses like this one — make one file of the whole reading, or
+     building 1 of 5, whatever is in that area I circled under the
+     player."
+     #msg already exists for the player's OWN messages ("reading the
+     audio…"), which is exactly the same kind of thing, so Python's
+     status goes here rather than into a second band nobody would think
+     to look at. A message from Python wins while it lasts; when it
+     clears the player's own is restored. */
+  if(typeof a.status === 'string'){
+    PYMSG = a.status;
+    if(PYMSG) msg.textContent = PYMSG;
+    else if(msg.textContent === LASTPY) msg.textContent = '';
+    LASTPY = PYMSG;
+  }
   /* THE STITCHED FILE, delivered once and only once. The stamp is what
      stops a rerun re-saving it — the same guard the finish event uses,
      and for the same reason. */
