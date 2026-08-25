@@ -249,6 +249,36 @@ check("1zu and it bumps the stamp, or the browser would ignore a repeat",
       '_ls_stamp"] = st.session_state.get("_ls_stamp", 0) + 1'
       in app[app.find("def flush_ls"):app.find("def flush_ls") + 1600])
 
+print("\n1j THE PREFIX IS A CONTRACT BETWEEN TWO FILES")
+# Baba, after THREE failed fixes: "still, reloading in the browser is not
+# surviving."
+#
+# ls_bridge_frontend/index.html writes whatever it is given and reads
+# back ONLY keys beginning "maha_". So "ttt_boxes_v1" was written
+# perfectly, every run, and never handed back — the data was in his
+# browser the whole time and the app could not see it.
+#
+# NOTHING HELD THAT CONTRACT. It lives in forty-two lines of JavaScript
+# in another directory, and every check in this file reasons about
+# Python. Two versions went on timing theories, both plausible, both
+# beside the point.
+import re as _re
+bridge = open(os.path.join(os.path.dirname(__file__), "..",
+                           "ls_bridge_frontend", "index.html"),
+              encoding="utf-8").read()
+_m = _re.search(r'indexOf\("([^"]+)"\)\s*===\s*0', bridge)
+check("1zt the bridge really does filter what it reads back", _m is not None,
+      bridge[:60])
+PREFIX = _m.group(1) if _m else "maha_"
+print("       the bridge hands back only keys starting %r" % PREFIX)
+_keys = _re.findall(r'LS_KEY = f?"([^"]+)"', app)
+print("       store keys in app.py: %s" % _keys)
+_bad = [k for k in _keys if not k.startswith(PREFIX)]
+check("1zs EVERY store key carries that prefix — one that does not is "
+      "written, kept, and invisible", not _bad, _bad)
+check("1zr including the one for the boxes", any(
+    k.startswith(PREFIX) and "box" in k for k in _keys), _keys)
+
 print("\n2 THE APP IS WIRED THIS WAY")
 check("2a there is a store key", "KEPT_LS_KEY" in code)
 check("2b every box is in the list",

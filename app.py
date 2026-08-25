@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v229 (the write is sent in the run that decided it)"
+APP_VERSION = "v230 (the prefix was the whole bug)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3659,7 +3659,27 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
 #
 # WRITTEN ONLY WHEN IT CHANGES. A write on every render would put a
 # storage call in the path of every keystroke.
-KEPT_LS_KEY = "ttt_boxes_v1"
+# THE PREFIX IS NOT DECORATION — IT IS THE READ FILTER.
+#
+# Baba, 25.8.2026, after three attempts: "still, reloading in the browser
+# is not surviving."
+#
+# ls_bridge_frontend/index.html WRITES whatever it is given, then reads
+# back ONLY keys beginning "maha_":
+#
+#     if (k && k.indexOf("maha_") === 0) out[k] = ...
+#
+# So "ttt_boxes_v1" was written to localStorage perfectly, on every run,
+# and never handed back. The data was THERE the whole time and the app
+# could not see it. Every other key in this file — maha_auth,
+# maha_settings_*, maha_keys_* — follows the convention, which is why
+# the LOGIN survives a reload and the boxes did not.
+#
+# I READ THAT FILE FOR THE FIRST TIME AFTER THE THIRD FAILED FIX. Two
+# versions were spent theorising about component timing, both plausible
+# and both beside the point, when forty-two lines of JavaScript had the
+# answer in them.
+KEPT_LS_KEY = "maha_boxes_v1"
 KEPT_SLOTS = ("_t1_text", "talk_text", "translate_src_text",
               "translate_out", "vr_text")
 KEPT_MAX = 200000        # per box; a novel, not a video
