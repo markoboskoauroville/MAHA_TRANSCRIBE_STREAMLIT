@@ -216,6 +216,39 @@ check("1zc the app allows a list through its type filter",
 check("1zd and names the store by its own constant, not a copy of the "
       "string", "VR.OWN_KEY" in app)
 
+print("\n1i THE WRITE IS SENT IN THE RUN THAT DECIDED IT")
+# Baba, 25.8.2026: "when I was switching between apps it stayed. But
+# after refreshing the page I'm back to the first tab."
+#
+# THAT DISTINCTION WAS THE WHOLE DIAGNOSIS. The queue is drained at the
+# TOP of a run and _kept_save fills it at the BOTTOM, nine thousand lines
+# later — so a write decided at the end of run N waited for run N+1.
+# Switching apps keeps the session alive, so a later run eventually sent
+# it. A RELOAD STARTS A NEW SESSION and the queued write dies with the
+# old one. The tab was never in localStorage at all; it only ever
+# survived in the server's memory, which is the one place it was
+# promised not to need.
+_drain = app.find('_pending = st.session_state.pop("_pending_ls"')
+_save = app.rfind("    _kept_save()")
+_flush = app.rfind("    flush_ls()")
+print("       drain at %d, save at %d, flush at %d" % (_drain, _save, _flush))
+check("1zz the queue really is drained near the TOP, long before the "
+      "save at the bottom — this is the ordering that broke it",
+      0 < _drain < _save, (_drain, _save))
+check("1zy so there is a flush AFTER the save", 0 < _save < _flush,
+      (_save, _flush))
+check("1zx and it is the last thing that touches storage",
+      app.find("flush_ls()", _flush + 5) == -1)
+check("1zw the flush uses a SECOND component key — two calls on one key "
+      "are one widget, and the second would replace the first",
+      '"ls_sync_tail"' in app and 'key=key' in app)
+check("1zv it takes what was queued, rather than recomputing",
+      'pop("_pending_ls", None)' in app[app.find("def flush_ls"):
+                                        app.find("def flush_ls") + 1400])
+check("1zu and it bumps the stamp, or the browser would ignore a repeat",
+      '_ls_stamp"] = st.session_state.get("_ls_stamp", 0) + 1'
+      in app[app.find("def flush_ls"):app.find("def flush_ls") + 1600])
+
 print("\n2 THE APP IS WIRED THIS WAY")
 check("2a there is a store key", "KEPT_LS_KEY" in code)
 check("2b every box is in the list",

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v228 (a prop that lags cannot guard a press)"
+APP_VERSION = "v229 (the write is sent in the run that decided it)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1669,7 +1669,7 @@ def paste_target(where: str, width: int = 96):
     return None
 
 
-def ls_sync(writes=None, removes=None, stamp=0):
+def ls_sync(writes=None, removes=None, stamp=0, key="ls_sync"):
     """Read/write browser localStorage. Returns None if unavailable.
 
     Persistence is a convenience, never a dependency: if anything here fails
@@ -1680,9 +1680,39 @@ def ls_sync(writes=None, removes=None, stamp=0):
         return None
     try:
         return _ls_component(writes=writes or {}, removes=removes or [],
-                             stamp=stamp, key="ls_sync", default=None)
+                             stamp=stamp, key=key, default=None)
     except Exception:
         return None
+
+
+def flush_ls() -> None:
+    """Send anything queued THIS run, before the run ends.
+
+    Baba, 25.8.2026: "when I was switching between apps it stayed. But
+    after refreshing the page I'm back to the first tab."
+
+    THAT DISTINCTION IS THE WHOLE DIAGNOSIS. The queue is drained at the
+    TOP of a run — line 1688 — and _kept_save fills it at the BOTTOM,
+    nine thousand lines later. So a write decided at the end of run N was
+    not sent until run N+1.
+
+    Switching apps keeps the session alive, so some later run eventually
+    sent it. A RELOAD STARTS A NEW SESSION: the old session_state, and
+    the queued write inside it, are gone. The tab was never in
+    localStorage at all — it only ever survived in the server's memory,
+    which is the one place he was told it would not.
+
+    So the tail flushes. A SECOND component instance with its own key,
+    because two calls on one key are one widget and the second would
+    simply replace the first. Its answer is ignored: this one is a
+    posting box, not a question.
+    """
+    pend = st.session_state.pop("_pending_ls", None)
+    if not pend:
+        return
+    st.session_state["_ls_stamp"] = st.session_state.get("_ls_stamp", 0) + 1
+    ls_sync(writes=pend.get("writes"), removes=pend.get("removes"),
+            stamp=st.session_state["_ls_stamp"], key="ls_sync_tail")
 
 
 _pending = st.session_state.pop("_pending_ls", None)
@@ -10757,6 +10787,8 @@ except Exception:                                            # noqa: BLE001
 # takes down a page that has already drawn correctly.
 try:
     _kept_save()
+    # AND SEND IT NOW, not on a run that a reload will never give us.
+    flush_ls()
 except Exception:                                            # noqa: BLE001
     pass
 
