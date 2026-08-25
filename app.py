@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v223 (help at four depths; the picker says what it takes)"
+APP_VERSION = "v224 (save reaches a finished reading; rehearse joins the row)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -9491,7 +9491,7 @@ elif active == "vr":
             else:
                 _vr_status = t("vr_joining") % (_spin, _n,
                                                 _human_bytes(_bytes))
-        elif _vr_job["index"] < _n:
+        elif not _vr_job.get("done") and _vr_job["index"] < _n:
             _vr_status = t("gen_part").format(i=_vr_job["index"] + 1, n=_n)
 
     _vr_audio = st.session_state.get("_vr_audio")
@@ -9513,8 +9513,11 @@ elif active == "vr":
             startable=bool(_vr_audio),
             scale=a11y.clamp(st.session_state.get("text_scale",
                                                  a11y.DEFAULT_SCALE)),
+            # A FINISHED READING MUST NOT RESTART ITSELF. `bool(_vr_job)`
+            # was true forever once the job stopped being popped, which
+            # would autoplay the last block on every rerun.
             autoplay=bool(st.session_state.pop("_vr_autoplay", False))
-            or bool(_vr_job),
+            or bool(_vr_job and not _vr_job.get("done")),
             # THE MEAL, GOING BACK DOWN. Handed as a data URI with a
             # stamp, so the browser saves it once and a rerun does not
             # save it again.
@@ -9578,10 +9581,25 @@ elif active == "vr":
                     _vr_job["index"] += 1
                     st.rerun()
                 else:
-                    # THE READING IS OVER. The job goes, the audio stays,
-                    # so the last block can still be replayed rather than
-                    # the deck emptying itself the moment it finishes.
-                    st.session_state.pop("_vr_job", None)
+                    # THE READING IS OVER — AND THE JOB STAYS.
+                    #
+                    # Baba, 25.8.2026: "you broke VR save. When I press
+                    # save, nothing's happening." His screenshot shows
+                    # 1/1 and 0:01 / 0:01 — the reading had FINISHED.
+                    #
+                    # This popped the job, and `save` requires the job,
+                    # because the job holds the parts and the cache that
+                    # the file is made from. So save worked while a
+                    # reading was playing and did NOTHING the moment it
+                    # ended — which is exactly when somebody wants to
+                    # keep what they just heard.
+                    #
+                    # The reason for popping was that the deck should not
+                    # empty itself when it finishes. It does not need to:
+                    # marking the job DONE leaves the audio, the parts and
+                    # the cache in place, and only stops the status line
+                    # claiming a part is still being made.
+                    _vr_job["done"] = True
 
     # AND BUILD AHEAD, after the player is on the page. Two, which is
     # Baba's own "generate two and have one extra": one ahead means a
@@ -9666,10 +9684,6 @@ elif active == "vr":
         st.session_state["_vr_said"] = VR.summarise(_words) if _words else ""
         USAGE.log("read", len(raw), UNIT_CHARS, "hume")
 
-    with st.container(key="nact_vr"):
-        st.button(t("vr_coffee") % _left if _left else t("vr_speak"),
-                  key="nact_vr_go", disabled=bool(_left) or not _has,
-                  on_click=_vr_go)
 
     _vr_err = st.session_state.pop("_vr_error", None)
     if _vr_err:
@@ -9687,7 +9701,21 @@ elif active == "vr":
         kept_set("vr_text", "")
 
 
-    box_links("vrbox", kept_text("vr_text"), on_clear=_vr_clear)
+    # REHEARSE JOINS THE ROW. Baba photographed it, 25.8.2026: "the
+    # rehearse is flying in the air and they're not the same size and
+    # font."
+    #
+    # He was right twice. It sat in its own container, LEFT-aligned,
+    # with a gap under it, while copy and clear were right-aligned in
+    # the row — two action links for the same box, in two places, at two
+    # sizes. And it broke the rule he set himself in v220: every action
+    # related to a text box lives in the upper right corner.
+    #
+    # It keeps its disabled state and its "coffee" countdown, which is
+    # exactly what the third element of an extra is for.
+    box_links("vrbox", kept_text("vr_text"), on_clear=_vr_clear,
+              extra=[(t("vr_coffee") % _left if _left else t("vr_speak"),
+                      ("nact_vr_go", _vr_go, bool(_left) or not _has))])
     kept_area("vr_text", height=120, label_visibility="collapsed",
               placeholder=t("vr_text_ph"))
 

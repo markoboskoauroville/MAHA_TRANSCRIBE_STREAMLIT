@@ -192,5 +192,25 @@ check("6i and VR its own", 'dl_name="rehearsal.mp3"' in app)
 check("6j both say how many parts are left rather than hanging",
       app.count("vr_stitch_wait") >= 2, app.count("vr_stitch_wait"))
 
+print("\n7 SAVE STILL WORKS WHEN THE READING HAS FINISHED")
+# Baba, 25.8.2026: "you broke VR save. When I press save, nothing's
+# happening." His screenshot showed 1/1 and 0:01 / 0:01 — the reading had
+# ENDED. The job was popped on completion, and save needs the job,
+# because the job holds the parts and the cache the file is made from.
+# So save worked while playing and did nothing the moment it finished,
+# which is exactly when somebody wants to keep what they just heard.
+check("7a a finished reading MARKS the job done", '_vr_job["done"] = True' in vr)
+check("7b rather than popping it, which is what broke save",
+      'pop("_vr_job", None)' not in vr[vr.index("THE READING IS OVER"):
+                                       vr.index("THE READING IS OVER") + 900])
+check("7c the save guard can still find a finished job — it asks for the "
+      "job, not for it to be playing",
+      '_vr_job and isinstance(_vr_ev, dict) and _vr_ev.get("save")' in vr)
+check("7d a finished reading does not claim to be making a part",
+      'not _vr_job.get("done") and _vr_job["index"] < _n' in vr)
+check("7e and does not autoplay itself on every rerun, now that the job "
+      "outlives it",
+      '_vr_job and not _vr_job.get("done")' in vr)
+
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

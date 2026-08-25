@@ -214,7 +214,13 @@ check("5l it no longer reads the store nothing writes",
 # on an empty string — it stayed green when a join was injected into
 # the reading path. Bounded by the end of _vr_go instead.
 _go = tab.index("def _vr_go")
-_play = tab[_go:tab.index("with st.container(key=\"nact_vr\")", _go)]
+# BOUNDED BY find(), NOT index(). The old end marker was the `nact_vr`
+# container, which v224 removed when `rehearse` joined the action row —
+# so this RAISED and killed the file, and the sweep printed no number.
+# Fifth index() of the day; checking-the-checks.md face 1.
+_end = tab.find('box_links("vrbox"', _go)
+check("5m0 the rehearse path is findable at all", _end > _go, (_go, _end))
+_play = tab[_go:_end] if _end > _go else ""
 check("5m the READING path joins nothing — blocks are played in turn",
       "join_audio" not in _play, _play[-200:])
 

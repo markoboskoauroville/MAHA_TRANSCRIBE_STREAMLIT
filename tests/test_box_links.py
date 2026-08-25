@@ -24,6 +24,19 @@ TWO FAULTS IN ONE ROW.
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ttt import theme  # noqa: E402
+from ttt import a11y  # noqa: E402
+
+
+def _root_rule():
+    """The html/:root font-size rule, or '' if there is none.
+
+    The whole sizing rule rests on there being none, so it is measured
+    here rather than asserted in a comment.
+    """
+    import re
+    m = re.search(r"(?:html|:root)\s*\{[^}]*font-size:\s*[^;]+;",
+                  a11y.css(1.5))
+    return m.group(0) if m else ""
 
 passed = failed = 0
 def check(n, c, d=""):
@@ -36,18 +49,28 @@ app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
 css = theme.css("amber", "mono", 1.0)
 
 print("1 ONE NUMBER, BOTH SIDES")
-for scale, want in ((1.0, 12), (1.5, 17), (2.5, 29)):
-    got = theme.box_link_px(scale)
-    print("       text scale %.1f -> %dpx" % (scale, got))
-    check("1a scale %.1f gives %dpx" % (scale, want), got == want, got)
-check("1b it never collapses to nothing at a small scale",
-      theme.box_link_px(0.1) >= 9, theme.box_link_px(0.1))
-check("1c and it GROWS with the reader's dial — a fixed size could not "
-      "match a rem at any setting but one",
-      theme.box_link_px(2.0) > theme.box_link_px(1.0))
+# THIS SECTION ASSERTED THE WRONG RULE AND WAS GREEN. It said the
+# component size must GROW with the text dial, and mutated correctly, and
+# was wrong: MEASURED, a11y.css never sets a root font-size, so `0.72rem`
+# on the Streamlit links resolves against the BROWSER DEFAULT and is
+# 11.5px at every setting. Multiplying by the scale made the component
+# disagree with its neighbours at every scale except 1.0 — the exact
+# mismatch v220 claimed to fix. Baba photographed it.
+#
+# checking-the-checks.md face 8: a test perfectly correct about the wrong
+# rule. Written the same day as the module.
+sizes = [theme.box_link_px(sc) for sc in (0.6, 0.8, 1.0, 1.5, 2.5)]
+print("       link px across the whole dial: %s" % sizes)
+print("       what the neighbours render at: %.1fpx" % (0.72 * 16))
+check("1a it is the SAME at every text size, because the neighbours are",
+      len(set(sizes)) == 1, sizes)
+check("1b and it matches what 0.72rem actually resolves to",
+      abs(sizes[0] - 0.72 * 16) <= 1, sizes[0])
+check("1c a11y really does NOT scale the root — the fact the whole rule "
+      "rests on",
+      "font-size" not in _root_rule(), _root_rule())
 check("1d the rem the page uses is the one this is derived from",
-      "font-size: %srem" % theme.BOX_LINK_REM in css
-      or str(theme.BOX_LINK_REM) in css, theme.BOX_LINK_REM)
+      str(theme.BOX_LINK_REM) in css, theme.BOX_LINK_REM)
 
 print("\n1b THE COMPONENT IS TOLD, NOT LEFT TO GUESS")
 check("1e cp_html takes the pixel size", "link_px" in
@@ -88,6 +111,26 @@ check("2e and not upward any more", "margin-top: -0.7rem" not in row)
 check("2f an empty box gets the gap back, or the single link sits on "
       "the border and reads as part of it",
       "_empty" in css and "margin-bottom: 0.2rem" in css)
+
+print("\n2c EVERY ACTION FOR A BOX IS IN ITS ROW — INCLUDING REHEARSE")
+# Baba photographed this: "the rehearse is flying in the air and they're
+# not the same size and font." It sat in its own container, LEFT-aligned,
+# with a gap under it, while copy and clear were right-aligned in the row
+# — two action links for the same box, in two places, at two sizes.
+#
+# Mutation C put it back in its own container and NOTHING WENT RED,
+# because nothing asserted where it lived. A rule with no check is a
+# rule until the next person moves it.
+check("2g rehearse is an extra ON the row, not a container of its own",
+      't("vr_speak")' in app
+      and app.index('t("vr_speak")') > app.index('box_links("vrbox"')
+      and app.index('t("vr_speak")') < app.index('kept_area("vr_text"'),
+      "rehearse is not between box_links and the box")
+check("2h its old container is gone", 'key="nact_vr"' not in app,
+      'key="nact_vr"' in app)
+check("2i and it keeps its disabled state and its countdown, which is "
+      "what an extra's third element is for",
+      '("nact_vr_go", _vr_go, bool(_left) or not _has)' in app)
 
 print("\n3 THE THINGS THAT MOVED WITH IT")
 # Moving a row above the box moves it above whatever it depends on.

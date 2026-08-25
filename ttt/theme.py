@@ -5,13 +5,32 @@ BOX_LINK_BASE_PX = 16 # the browser default the rem resolves against
 def box_link_px(text_scale: float = 1.0) -> int:
     """The action-link size in PIXELS, for a component to match.
 
-    An iframe's rem resolves against the IFRAME's root, never the
-    page's, so a component cannot simply be told 0.72rem. It has to
-    be handed the number the page arrived at — and both sides read
-    it from HERE, so there is one value and nothing to drift.
+    An iframe's rem resolves against the IFRAME's root, never the page's,
+    so a component cannot simply be told 0.72rem. It has to be handed the
+    number the page arrived at.
+
+    THE SCALE IS IGNORED, AND THAT IS THE POINT. v220 multiplied by
+    text_scale and Baba photographed the result: `copy` visibly smaller
+    than `clear` beside it.
+
+    MEASURED: a11y.css NEVER SETS A ROOT FONT-SIZE. It scales specific
+    elements — .reading-surface and friends — and leaves html alone. So
+    `0.72rem` on the action links resolves against the BROWSER DEFAULT
+    and is 11.5px at every text size the dial can reach.
+
+    Multiplying by the scale therefore made the component disagree with
+    its neighbours at every setting EXCEPT 1.0 — I introduced the exact
+    mismatch I had said I was fixing, and my own check asserted that the
+    two "grow together", which is a rule that was never true.
+    (checking-the-checks.md face 8: a test perfectly correct about the
+    wrong rule.)
+
+    `text_scale` is kept in the signature so callers do not change, and
+    ignored, with this comment saying why — deleting the argument would
+    lose the reason.
     """
-    return max(9, int(round(BOX_LINK_REM * BOX_LINK_BASE_PX
-                            * float(text_scale or 1.0))))
+    del text_scale                     # see above: rem does not follow it
+    return max(9, int(round(BOX_LINK_REM * BOX_LINK_BASE_PX)))
 
 
 """The visual language, lifted from Baba's own maha_transcribe app.
