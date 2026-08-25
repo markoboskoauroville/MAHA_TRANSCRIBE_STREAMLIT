@@ -267,3 +267,115 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
   }});
 </script>
 """
+
+
+# ---------------------------------------------------------------------
+# A GRID OF PILLS THAT COPY — one component, not one per pill
+#
+# Baba, 25.8.2026: "make both views look identical... action buttons, and
+# they can be written in multiple columns depending how wide the user
+# interface is. And they should be aligned left, not right. So checkmark,
+# no checkmark, it looks identical."
+#
+# WHY ONE COMPONENT AND NOT TWELVE. The first version put each pill in
+# its own iframe inside an st.columns row. Two things went wrong at once
+# and his screenshot showed both: every pill landed on its own line,
+# because an iframe is a block and twelve of them cannot share a row; and
+# every one was right-aligned, because `link=True` forces
+# justify-content: flex-end — correct for `copy` sitting at the end of a
+# box row, wrong for a grid.
+#
+# One iframe holding the whole grid fixes both, and it answers the worry
+# recorded in v204's delivery note: twelve clipboard components on one
+# page was never tested and now does not exist.
+#
+# IT WRAPS BY ITSELF. Flex with a min width per pill, so the number of
+# columns follows the width of the phone rather than a number chosen
+# here. Baba: "depends how wide the user interface is."
+#
+# THE COLOURS ARE PASSED IN, never guessed. An iframe inherits none of
+# the page's CSS variables — the lesson already written twice in this
+# file. The caller reads them from the theme and hands them over, so a
+# scheme change follows.
+# ---------------------------------------------------------------------
+
+GRID_MIN_PX = 96          # a pill narrower than this is hard to hit
+GRID_ROW_PX = 42          # one row of pills, including its gap
+
+
+def grid_height(count: int, per_row: int = 3) -> int:
+    """How tall the iframe must be. An iframe does not grow to fit its
+    content — it is given a height and clips whatever else there is, so
+    a wrong number here silently hides the last row of directions."""
+    rows = max(1, (max(0, int(count)) + per_row - 1) // per_row)
+    return rows * GRID_ROW_PX + 8
+
+
+def pill_grid(items, done_label: str = "copied", failed_label: str = "—",
+              bg: str = "#141a21", fg: str = "#f2ddb4",
+              line: str = "#23303d", lit: str = "#f59e0b") -> str:
+    """`items` is [(label, text_to_copy, tooltip)]. One press copies one.
+
+    THE PILL IS THE SAME PILL as the Streamlit buttons beside it —
+    999px, the same surface, the same border, the same ink — because the
+    whole point is that ticking the box changes what a press DOES and
+    nothing about what the row looks like.
+    """
+    rows = _js([{"label": str(a), "text": str(b), "tip": str(c or "")}
+                for a, b, c in (items or [])])
+    labels = _js({"done": done_label, "failed": failed_label})
+    return f"""
+<!doctype html><meta charset="utf-8">
+<style>
+  html, body {{ margin:0; padding:0; background:transparent; }}
+  #wrap {{
+    display:flex; flex-wrap:wrap; gap:6px;
+    justify-content:flex-start; align-items:flex-start;
+  }}
+  button {{
+    flex: 1 1 {GRID_MIN_PX}px; min-width:{GRID_MIN_PX}px; max-width:100%;
+    min-height:34px; border-radius:999px; cursor:pointer;
+    background:{bg}; color:{fg}; border:1px solid {line};
+    font-family:ui-monospace,Menlo,monospace; font-size:13px;
+    letter-spacing:.03em; padding:.28rem .7rem; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }}
+  button:active {{ transform:translateY(1px); }}
+  button.done {{ background:{lit}; color:{bg}; border-color:{lit}; }}
+</style>
+<div id="wrap"></div>
+<script>
+const ITEMS = {rows}, L = {labels};
+const wrap = document.getElementById('wrap');
+ITEMS.forEach(function(it){{
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = it.label;
+  if (it.tip) b.title = it.tip;
+  b.onclick = async function(){{
+    const was = it.label;
+    try {{
+      await navigator.clipboard.writeText(it.text);
+      b.textContent = L.done; b.classList.add('done');
+    }} catch (e) {{
+      // A CLIPBOARD CALL THAT NEVER ANSWERS is the fault four-tests.md
+      // names by name, so there is a fallback and not a dead button:
+      // select the text in a temporary field so it can be copied by
+      // hand, and say so on the pill itself.
+      try {{
+        const ta = document.createElement('textarea');
+        ta.value = it.text; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); ta.remove();
+        b.textContent = L.done; b.classList.add('done');
+      }} catch (e2) {{
+        b.textContent = L.failed;
+      }}
+    }}
+    setTimeout(function(){{
+      b.textContent = was; b.classList.remove('done');
+    }}, 1200);
+  }};
+  wrap.appendChild(b);
+}});
+</script>
+"""

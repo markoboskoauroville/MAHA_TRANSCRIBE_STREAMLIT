@@ -1618,3 +1618,28 @@ def css(scheme: str = "amber", font: str = "mono",
     hr {{ border-color: var(--line); margin: 0.6rem 0; }}
     </style>
     """
+
+
+def tone(name: str, scheme: str = "amber") -> str:
+    """One colour from a scheme, by name, as a hex string.
+
+    For COMPONENTS. An iframe inherits none of the page's CSS variables,
+    so a component that needs the palette must be handed it — the lesson
+    written twice in copybtn.py and paid for once when a pill row came
+    back in browser defaults. Reading it from here means a scheme change
+    follows instead of a hard-coded hex going quietly stale.
+    """
+    # TOKENS holds the surfaces and lines, SCHEMES only the accent and
+    # the prose ink. The first version of this read SCHEMES alone and
+    # returned the prose colour for EVERY name — so a pill would have
+    # been sand on sand, which is the invisible-label fault again, this
+    # time in a component. Caught by printing the four values instead of
+    # trusting the function.
+    sch = SCHEMES.get(scheme) or SCHEMES["amber"]
+    if name in ("accent", "amber"):
+        return sch["accent"]
+    if name in ("accent_hi", "amber_hi"):
+        return sch["accent_hi"]
+    if name == "prose":
+        return sch["prose"]
+    return TOKENS.get(name) or sch["prose"]

@@ -148,7 +148,7 @@ check("5b and so are the ? help marks as separate controls",
       "vr_too_many" not in tab or "help=_phr" in tab)
 check("5c pressing a word INSERTS a tag", "VR.insert_tag(" in tab)
 check("5d the phrase survives as the pill's own tooltip",
-      "_phr)" in tab and "help=help_text" in tab, "_phr" in tab)
+      "help=tip" in tab and "_phr)" in tab, "_phr" in tab)
 check("5e his own directions have an add", 't("vr_add")' in tab)
 check("5f which saves them for the session", "VR.add_own(" in tab)
 check("5g and inserts the tag in the same press",
@@ -158,7 +158,7 @@ check("5h the field is emptied in the CALLBACK, not after the widget "
       '"vr_own_new"] = ""' in tab
       and tab.index('"vr_own_new"] = ""') < tab.index('_oc1.text_input'))
 check("5i saved directions are rendered as pills of their own",
-      "_tag_pill(_col, _w, [_w]" in tab)
+      "_tag_rows([(_w, [_w]" in tab)
 
 print("\n5c WRITE IT, OR COPY IT")
 # The caret cannot be known — Streamlit has no way to ask. Baba's answer:
@@ -168,16 +168,23 @@ check("5p there is a switch between writing and copying",
 check("5q it is off by default, so the existing behaviour is unchanged "
       "for anyone who does not touch it",
       'setdefault("vr_tag_clip", False)' in tab)
-check("5r in clipboard mode a pill is a real copy component — nothing "
-      "else can reach the clipboard",
-      "copybtn.cp_html(VR.tag_for(words)" in tab)
-check("5s and it carries the TAG, not the bare word",
-      "cp_html(VR.tag_for(" in tab and "cp_html(_w" not in tab)
+check("5r in clipboard mode the whole grid is ONE component, not one "
+      "iframe per pill — twelve blocks cannot share a row",
+      "copybtn.pill_grid(" in tab and "cp_html(" not in tab,
+      [x for x in ("cp_html(",) if x in tab])
+check("5s and each pill carries the TAG, not the bare word",
+      "VR.tag_for(w)" in tab)
 check("5t writing mode still inserts", "on_click=_vr_insert" in tab)
 check("5u both rows go through ONE helper, so the built-ins and his own "
       "cannot behave differently",
-      tab.count("def _tag_pill") == 1 and tab.count("_tag_pill(") >= 3,
-      tab.count("_tag_pill("))
+      tab.count("def _tag_rows") == 1 and tab.count("_tag_rows(") >= 3,
+      tab.count("_tag_rows("))
+check("5u2 the component is given a height, or the last row is clipped "
+      "— an iframe does not grow to fit",
+      "copybtn.grid_height(" in tab)
+check("5u3 and the colours are handed over, since an iframe inherits "
+      "none of the page's variables",
+      'theme.tone("surface2", _sch)' in tab and '"scheme"' in tab)
 check("5v the hint line says WHICH mode is in force",
       't("vr_clip_hint")' in tab and 't("vr_tag_hint")' in tab)
 

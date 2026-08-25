@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v204 (copy the direction, or write it)"
+APP_VERSION = "v205 (one grid, two behaviours, one appearance)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8871,29 +8871,51 @@ elif active == "vr":
         # a copy component carrying its own tag, and one press copies it.
         # Same words, same place, same order; only the thing the press
         # does changes, which is what the checkbox above them announces.
+        # ONE GRID, TWO BEHAVIOURS, ONE APPEARANCE.
+        #
+        # In WRITE mode these are Streamlit buttons in a three-column
+        # row. In COPY mode they are one component drawing the same
+        # pills — one iframe for the whole grid, not one per pill.
+        #
+        # THE FIRST VERSION PUT EACH PILL IN ITS OWN IFRAME and Baba's
+        # screenshot showed both faults at once: every pill on its own
+        # line, because an iframe is a block and twelve cannot share a
+        # row; and every one right-aligned, because link mode forces
+        # justify-content: flex-end — right for `copy` at the end of a
+        # box row, wrong for a grid. See ttt/copybtn.py:pill_grid.
+        def _tag_rows(items):
+            """items = [(label, words, tooltip)]"""
+            if _to_clip:
+                # HIS SCHEME, NOT THE DEFAULT. An iframe inherits no CSS
+                # variables, so the colours are handed over — and they
+                # have to be HIS, or the pills stay amber when he picks
+                # green and the row stops looking like the app.
+                _sch = st.session_state.get("scheme", "amber")
+                components.html(
+                    copybtn.pill_grid(
+                        [(lbl, VR.tag_for(w), tip) for lbl, w, tip in items],
+                        done_label=t("copy_done_word"), failed_label="—",
+                        bg=theme.tone("surface2", _sch),
+                        fg=theme.tone("prose", _sch),
+                        line=theme.tone("line", _sch),
+                        lit=theme.tone("amber", _sch)),
+                    height=copybtn.grid_height(len(items)))
+                return
+            for _start in range(0, len(items), 3):
+                _cols = st.columns(3)
+                for _col, (lbl, w, tip) in zip(_cols,
+                                               items[_start:_start + 3]):
+                    _col.button(lbl, key="vrt_%s" % abs(hash(lbl)),
+                                help=tip, use_container_width=True,
+                                on_click=_vr_insert, args=(w,))
+
         st.session_state.setdefault("vr_tag_clip", False)
         st.checkbox(t("vr_to_clip"), key="vr_tag_clip")
         _to_clip = bool(st.session_state.get("vr_tag_clip"))
 
-        def _tag_pill(col, label, words, help_text):
-            if _to_clip:
-                with col:
-                    components.html(
-                        copybtn.cp_html(VR.tag_for(words), label=label,
-                                        done_label=t("copy_done_word"),
-                                        failed_label="—", size=0, link=True),
-                        height=34)
-            else:
-                col.button(label, key="vrt_%s" % abs(hash(label)),
-                           help=help_text, use_container_width=True,
-                           on_click=_vr_insert, args=(words,))
-
         with st.container(key="vrtags"):
-            for _start in range(0, len(VR.EMOTIONS), 3):
-                _cols = st.columns(3)
-                for _col, (_eid, _lbl, _phr) in zip(
-                        _cols, VR.EMOTIONS[_start:_start + 3]):
-                    _tag_pill(_col, _lbl, [_eid], _phr)
+            _tag_rows([(_lbl, [_eid], _phr)
+                       for _eid, _lbl, _phr in VR.EMOTIONS])
 
         # ---- HIS OWN DIRECTIONS ---------------------------------
         # Baba: "when user types direction, there should be one button
@@ -8909,14 +8931,11 @@ elif active == "vr":
         # paragraph.
         _own = VR.own_of(st.session_state)
         if _own:
+            # HIS OWN DIRECTIONS GO THROUGH THE SAME HELPER. Two rows of
+            # identical-looking pills behaving differently would be the
+            # worst of both.
             with st.container(key="vrownrow"):
-                for _s2 in range(0, len(_own), 3):
-                    _oc = st.columns(3)
-                    for _col, _w in zip(_oc, _own[_s2:_s2 + 3]):
-                        # HIS OWN DIRECTIONS FOLLOW THE SAME SWITCH. Two
-                        # rows of the same-looking pills behaving
-                        # differently would be the worst of both.
-                        _tag_pill(_col, _w, [_w], t("vr_own_help"))
+                _tag_rows([(_w, [_w], t("vr_own_help")) for _w in _own])
 
         def _vr_add_own():
             word = (st.session_state.get("vr_own_new") or "").strip()
