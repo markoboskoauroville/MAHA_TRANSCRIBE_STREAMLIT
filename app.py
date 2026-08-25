@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v189 (VR in two panels; the signature on the margin; the remote relay)"
+APP_VERSION = "v190 (the three things from the screenshots)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -7917,6 +7917,17 @@ elif active == "talk":
                     st.session_state["_talk_start_seen"] = _ev0.get("at")
                     _start = True
 
+        # UNDER THE PLAYER. Baba, 25.8.2026: "press play to read must
+        # always come under the player, not at the bottom. Who looks at
+        # the bottom? Baba doesn't look at the bottom."
+        #
+        # It was under the text box, which is where he first asked for
+        # it — but it is a CAPTION FOR THE PLAY KEY, and a caption
+        # belongs against the thing it names. Under the box it sat three
+        # controls away from the key it describes, and below the fold.
+        st.markdown('<div class="readhint">%s</div>' % html.escape(t("rd_hint")),
+                    unsafe_allow_html=True)
+
 
         def _clear_talk():
             st.session_state["talk_text"] = ""
@@ -7944,16 +7955,6 @@ elif active == "talk":
                      label_visibility="collapsed", placeholder=t("talk_placeholder"))
         box_links("rd", st.session_state.get("talk_text", ""),
                   on_clear=_clear_talk)
-        # A GREY LINE SAYING WHAT TO DO NEXT. Baba: "in gray letters
-        # under the text box put little note — press play to read."
-        #
-        # The play that starts a reading is the player's own, up at the
-        # top, and nothing on this screen said so. A person who pastes
-        # text and then looks for a "read" button finds none, because it
-        # was deliberately removed (§64) — this is the one line that
-        # makes that removal make sense.
-        st.markdown('<div class="readhint">%s</div>' % html.escape(t("rd_hint")),
-                    unsafe_allow_html=True)
 
         # THE PLAYER IS ALWAYS HERE, greyed until there is something to
         # play. Baba's rule from the start: "no new elements appearing on
@@ -8319,7 +8320,12 @@ elif active == "looks":
     # an app built for people who cannot see well would be exactly
     # backwards.
     with st.container(key="looksgroup_size"):
-        _sl, _sb, _sd, _il, _ib = st.columns([1.15, 0.85, 0.8, 1.25, 0.8])
+        # SIX COLUMNS, NOT FIVE. Baba, 25.8.2026: "interface size is
+        # missing default." Text size had one and interface size did
+        # not — the worst kind of asymmetry, two controls on one line
+        # that look like a pair and behave differently. Open item 8.
+        _sl, _sb, _sd, _il, _ib, _id = st.columns(
+            [1.05, 0.8, 0.75, 1.15, 0.8, 0.75])
         _sl.markdown('<div class="setlabel">%s</div>' % html.escape(
             t("looks_size")), unsafe_allow_html=True)
         _now_pct = int(round(a11y.clamp(st.session_state.get(
@@ -8367,10 +8373,17 @@ elif active == "looks":
 
         _il.markdown('<div class="setlabel">%s</div>' % html.escape(
             t("looks_iface")), unsafe_allow_html=True)
+        def _iface_default():
+            st.session_state["ui_scale"] = 1.0
+            st.session_state["_iface_pct"] = 100
+            persist_settings()
+
         _ib.number_input(
             t("looks_iface"), key="_iface_pct", value=_iface,
             min_value=50, max_value=200, step=5,
             label_visibility="collapsed", on_change=_iface_typed)
+        _id.button(t("looks_default"), key="iface_default",
+                   on_click=_iface_default, use_container_width=True)
 
     # LABEL ON THE LINE, like the interface language. Above the buttons
     # it was a row for one word, and under this screen's spacing it kept
