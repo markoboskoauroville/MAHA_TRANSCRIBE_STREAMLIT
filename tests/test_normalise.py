@@ -114,8 +114,19 @@ check("3b every BLOCK is levelled as it is built",
 check("3c and it happens before the block is cached, so a block is never "
       "stored at the wrong level",
       blk.index("normalise_speech") < blk.index('return job["cache"][i]'))
-check("3d there is no join left to level after",
-      "join_audio" not in vr)
+# Same correction as test_vr_tags 5m. The stitcher joins on purpose;
+# the reading path must not.
+# THE SLICE RAN BACKWARDS. _vr_block is defined ABOVE _vr_go in the
+# tab, so [_vr_go : _vr_block] covered NOTHING and the check passed
+# on an empty string — it stayed green when a join was injected into
+# the reading path. Bounded by the end of _vr_go instead.
+_go = vr.index("def _vr_go")
+_play = vr[_go:vr.index("with st.container(key=\"nact_vr\")", _go)]
+check("3d the READING path has no join left to level after",
+      "join_audio" not in _play, _play[-200:])
+check("3d2 and the stitcher's join is levelled per block before it, so "
+      "the saved file is even too",
+      "normalise_speech(data)" in vr[vr.index("def _vr_block"):])
 check("3e it reuses the recorder's own loudnorm, not a second set of "
       "numbers to drift from the first",
       "LOUDNORM" in open(os.path.join(os.path.dirname(__file__), "..",

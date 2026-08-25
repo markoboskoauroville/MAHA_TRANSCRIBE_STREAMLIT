@@ -203,8 +203,20 @@ check("5k each block carries its OWN direction",
 check("5l it no longer reads the store nothing writes",
       "VR.picked_of(" not in tab and "VR.note_of(" not in tab,
       [x for x in ("VR.picked_of(", "VR.note_of(") if x in tab])
-check("5m nothing is joined any more, so the WAV-header problem is gone",
-      "join_audio" not in tab)
+# THE CLAIM IS ABOUT THE READING PATH, NOT THE WHOLE TAB. join_audio
+# came back in v207 for the STITCHER, which is a different job: making
+# one file to keep, once, on purpose. What must not come back is a join
+# on the way to the PLAYER, because that is what made the whole text
+# render before a word played. My first version asserted the string was
+# absent anywhere and went red on a correct change.
+# THE SLICE RAN BACKWARDS. _vr_block is defined ABOVE _vr_go in the
+# tab, so [_vr_go : _vr_block] covered NOTHING and the check passed
+# on an empty string — it stayed green when a join was injected into
+# the reading path. Bounded by the end of _vr_go instead.
+_go = tab.index("def _vr_go")
+_play = tab[_go:tab.index("with st.container(key=\"nact_vr\")", _go)]
+check("5m the READING path joins nothing — blocks are played in turn",
+      "join_audio" not in _play, _play[-200:])
 
 
 # --- 6. TEASPOON GENERATION -------------------------------------------

@@ -789,6 +789,26 @@ def css(scheme: str = "amber", font: str = "mono",
       color: var(--amber) !important;
     }}
 
+    /* THE VR SCRIPT. The block being spoken is lit; the rest is there
+       so the person can see where they are in the whole piece, which is
+       what the Read tab gives and VR did not. Not a word highlight —
+       Hume returns no word timings, and a highlight that guessed would
+       be confidently wrong. */
+    .vrscript {{
+      margin: 0.4rem 0 0.2rem;
+      max-height: 34vh; overflow-y: auto;
+      font-size: 0.92rem; line-height: 1.55;
+    }}
+    .vrscript > div {{ padding: 3px 0; }}
+    .vrthen {{ color: var(--dim); opacity: 0.75; }}
+    .vrnow  {{ color: var(--prose); }}
+    /* The direction sits with its block, in the accent, so the screen
+       says what the voice is DOING without printing the brackets. */
+    .vrdir {{
+      color: var(--amber); font-size: 0.76rem;
+      letter-spacing: 0.06em; white-space: nowrap;
+    }}
+
     /* The tab signature: bottom right, in the same quiet monospace as
        the recorder's 00:00 counter, so it reads as a mark on the panel
        rather than as another control competing for attention. */

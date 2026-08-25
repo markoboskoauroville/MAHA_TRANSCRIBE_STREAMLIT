@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v206 (VR reads by the teaspoon)"
+APP_VERSION = "v207 (the stitcher, the script, and a box that keeps its text)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -356,6 +356,12 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_stitch":          {"en": "make one file of the whole reading",
+                           "hr": "napravi jednu datoteku cijelog čitanja"},
+    "vr_stitch_wait":     {"en": "make one file — %d parts still to render",
+                           "hr": "napravi jednu datoteku — još %d dijelova"},
+    "vr_save_all":        {"en": "save the whole reading",
+                           "hr": "spremi cijelo čitanje"},
     "vr_to_clip":         {"en": "copy the direction instead of writing it",
                            "hr": "kopiraj uputu umjesto da je upišeš"},
     "vr_clip_hint":       {"en": "press a direction to copy it, then paste "
@@ -3406,6 +3412,70 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
                     label, key, fn = kind, cb[0], cb[1]
                     st.button(label, key=key, on_click=fn,
                               use_container_width=True)
+
+
+# ---------------------------------------------------------------------
+# A TEXT BOX IS NEVER EMPTIED BY THE APP
+#
+# Baba, 25.8.2026: "When I press Rehearse or Play, the text box is
+# cleared. I cannot go back and read with another voice, or to fix
+# something, it's gone. So make anything pasted in any text box
+# persistent until a user clears it. It's only user action, the system
+# doesn't clear it."
+#
+# WHY IT EMPTIED, and it is my fault twice over. VR's block advance calls
+# st.rerun() a hundred lines ABOVE the text box, so on every hand-off the
+# script stops before the box is drawn — and Streamlit garbage-collects a
+# widget key whose widget did not render. The box came back empty and
+# nothing had cleared it.
+#
+# That is HOW_WE_WORK §63, "a widget key belongs to Streamlit, not to
+# you", and it is the SAME trap I fixed for VR's emotion checkboxes three
+# versions ago. I fixed the symptom there and left the cause here.
+#
+# THE ANSWER IS THE ONE T1 ALREADY USES: keep the value somewhere
+# Streamlit does not manage, and let the widget be only a VIEW of it. The
+# generation is not decoration — a text_area that already exists keeps
+# whatever the browser last sent it, and only a key it has never seen
+# takes a fresh `value=`.
+# ---------------------------------------------------------------------
+
+
+def kept_text(slot: str) -> str:
+    """What is in that box, from the store rather than from the widget."""
+    return st.session_state.get("_keep_" + slot, "") or ""
+
+
+def kept_key(slot: str) -> str:
+    return "kept_%s_%d" % (slot, int(st.session_state.get("_keepgen_" + slot, 0)))
+
+
+def kept_set(slot: str, value: str) -> None:
+    """Replace what is in the box AND remount it so the change is seen.
+
+    Only ever called for something a PERSON did: pasting, inserting a
+    tag, pressing clear. Nothing in the machinery calls this.
+    """
+    st.session_state["_keep_" + slot] = value or ""
+    st.session_state["_keepgen_" + slot] = int(
+        st.session_state.get("_keepgen_" + slot, 0)) + 1
+
+
+def kept_area(slot: str, **kw):
+    """A text box whose contents survive anything the app does to itself.
+
+    The widget writes back to the store on every change, so typing is
+    kept; the store is what everything else reads. A rerun that never
+    reaches this line can no longer lose the text, because the text does
+    not live here.
+    """
+    key = kept_key(slot)
+
+    def _typed():
+        st.session_state["_keep_" + slot] = st.session_state.get(key, "")
+
+    return st.text_area(slot, key=key, value=kept_text(slot),
+                        on_change=_typed, **kw)
 
 
 def tab_signature(name: str):
@@ -8644,6 +8714,104 @@ elif active == "vr":
         elif _cur:
             st.session_state["_vr_audio"] = _cur["audio"]
 
+    # ---- WHAT IS BEING READ, ON SCREEN ------------------------------
+    # Baba, 25.8.2026: "in VR build sentence display. What is read in
+    # audio should be displayed same as in the Read tab."
+    #
+    # R highlights the WORD, because Whisper gives it timings. Hume gives
+    # none, so this highlights the BLOCK — the sentences currently being
+    # spoken, lit, with the rest of the script around them in the quiet
+    # ink. That is as far as honesty goes: a word highlight without word
+    # timings would be a guess moving confidently across the screen, and
+    # word-timing.md's rule is that when two things disagree the app does
+    # LESS rather than highlighting the wrong thing.
+    #
+    # THE TAGS ARE NOT SHOWN. They are markup, not lines; the direction
+    # they carry is named beside the block instead, so the screen says
+    # what the voice is doing without reading the brackets aloud.
+    def _vr_script(job):
+        if not job or not job.get("parts"):
+            return
+        here = job["index"]
+        rows = []
+        for i, (words, sents) in enumerate(job["parts"]):
+            body = html.escape(" ".join(sents))
+            tag = (" <span class='vrdir'>%s</span>"
+                   % html.escape(", ".join(words))) if words else ""
+            cls = "vrnow" if i == here else "vrthen"
+            rows.append("<div class='%s'>%s%s</div>" % (cls, body, tag))
+        st.markdown("<div class='vrscript'>%s</div>" % "".join(rows),
+                    unsafe_allow_html=True)
+
+    _vr_script(_vr_job)
+
+    # ---- THE STITCHER -----------------------------------------------
+    # Baba asked me to confirm the save key stitched the parts. It did
+    # not: it downloaded whatever block the player was holding, named
+    # ttt-lll-3.mp3, and in VR the bytes were WAV under an mp3 name.
+    # Correct before the deck existed and a reading was one file; wrong
+    # the moment I split the audio in v206 and did not revisit it.
+    #
+    # THE COMPONENT CANNOT DO THIS. The blocks live in Python, in the
+    # job's cache; the player only ever sees one of them. So the stitch
+    # is a Streamlit download button beside the deck.
+    #
+    # IT FINISHES THE READING FIRST. On block three of nine the last six
+    # do not exist yet, so it builds them — which means a wait, and the
+    # wait is exactly what the teaspoon was built to remove. That is the
+    # honest trade and the button SAYS so rather than appearing to hang.
+    #
+    # ONE MP3, NOT NINE WAVs. join_audio re-encodes rather than
+    # stream-copying, which is what makes the seams seek properly, and
+    # mp3 is what a phone will hand to anything else.
+    if _vr_job and _vr_job.get("parts"):
+        def _vr_stitch():
+            job = st.session_state.get("_vr_job") or {}
+            paths, tmp = [], []
+            try:
+                for i in range(len(job.get("parts", ()))):
+                    got = _vr_block(i)
+                    if not got or got.get("err"):
+                        st.session_state["_vr_error"] = (
+                            got or {}).get("err") or t("vr_nothing")
+                        return None
+                    fh = tempfile.NamedTemporaryFile(suffix=".wav",
+                                                     delete=False)
+                    fh.write(got["audio"])
+                    fh.close()
+                    paths.append(fh.name)
+                    tmp.append(fh.name)
+                save_rings()
+                out = SPEECH.join_audio(paths)
+                tmp.append(out)
+                with open(out, "rb") as f:
+                    return f.read()
+            except Exception as e:                           # noqa: BLE001
+                errlog.add(st.session_state, "vr",
+                           "the reading could not be stitched",
+                           "{}: {}".format(type(e).__name__, e))
+                return None
+            finally:
+                ttt_audio.cleanup(*tmp)
+
+        _left = len([i for i in range(len(_vr_job["parts"]))
+                     if i not in _vr_job["cache"]])
+        if st.button(t("vr_stitch") if not _left
+                     else t("vr_stitch_wait") % _left,
+                     key="vr_stitch_go", use_container_width=True):
+            _whole = _vr_stitch()
+            if _whole:
+                st.session_state["_vr_whole"] = _whole
+        if st.session_state.get("_vr_whole"):
+            # THE BYTES MUST BE IN HAND BEFORE THE BUTTON IS DRAWN —
+            # st.download_button needs the data, not a promise of it, the
+            # same reason the recordings panel fetches first.
+            st.download_button(t("vr_save_all"),
+                               data=st.session_state["_vr_whole"],
+                               file_name="rehearsal.mp3", mime="audio/mpeg",
+                               key="vr_dl_all", use_container_width=True)
+
+
     _vr_audio = st.session_state.get("_vr_audio")
     if _wave_component is not None:
         _vr_ev = _wave_component(
@@ -8714,10 +8882,10 @@ elif active == "vr":
     _vr_i, _left = VR.pick_rested(_vr_ring["keys"], time.time())
     if _vr_i is None:
         _left = 0               # no usable key: that is an error, not a wait
-    _has = bool((st.session_state.get("vr_text") or "").strip())
+    _has = bool(kept_text("vr_text").strip())
 
     def _vr_go():
-        raw = (st.session_state.get("vr_text") or "").strip()
+        raw = kept_text("vr_text").strip()
         if not raw:
             st.session_state["_vr_error"] = t("vr_nothing")
             return
@@ -8767,13 +8935,18 @@ elif active == "vr":
     if _vr_said:
         st.caption(t("vr_now") % _vr_said)
 
-    st.text_area("vr", key="vr_text", height=120,
-                 label_visibility="collapsed", placeholder=t("vr_text_ph"))
+    # KEPT, NOT OWNED BY THE WIDGET. See kept_area: the block advance
+    # reruns before this line is reached, and a widget key whose widget
+    # did not render is cleaned up. The text lives in the store instead.
+    kept_area("vr_text", height=120, label_visibility="collapsed",
+              placeholder=t("vr_text_ph"))
 
     def _vr_clear():
-        st.session_state["vr_text"] = ""
+        # THE ONLY THING THAT EMPTIES THE BOX, and it is a person
+        # pressing clear.
+        kept_set("vr_text", "")
 
-    box_links("vrbox", st.session_state.get("vr_text", ""), on_clear=_vr_clear)
+    box_links("vrbox", kept_text("vr_text"), on_clear=_vr_clear)
 
     # TWO PANELS, NOT ONE WALL. Baba, 25.8.2026: "there are too many
     # buttons at once. We need to organize under the player in 2 tabs.
@@ -8899,9 +9072,9 @@ elif active == "vr":
         # only to be tested once is a variable that goes stale.
         def _vr_insert(words):
             body, caret = VR.insert_tag(
-                st.session_state.get("vr_text", ""),
+                kept_text("vr_text"),
                 st.session_state.get("_vr_caret"), VR.tag_for(words))
-            st.session_state["vr_text"] = body
+            kept_set("vr_text", body)
             st.session_state["_vr_caret"] = caret
 
         # WRITE IT, OR COPY IT. Baba, 25.8.2026: "put there a checkbox,
