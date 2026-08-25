@@ -48,7 +48,17 @@ def paginate(sentences, max_chars: int = PAGE_CHARS):
 
 
 def digest(text: str) -> str:
-    return hashlib.md5((text or "").encode("utf-8")).hexdigest()
+    """A fingerprint of the text, for noticing it CHANGED.
+
+    MD5 with usedforsecurity=False. Not a security hash and never used as
+    one — it answers "is this the same text as last render", nothing more.
+    The flag is there because on a FIPS-enabled Python hashlib.md5()
+    RAISES without it, which would take the reader down on a machine
+    nobody here has tested. Found by bandit at the delivery gate,
+    25.8.2026: four call sites, all of them fingerprints.
+    """
+    return hashlib.md5((text or "").encode("utf-8"),
+                       usedforsecurity=False).hexdigest()
 
 
 def highlight(text: str, start=None, end=None) -> str:

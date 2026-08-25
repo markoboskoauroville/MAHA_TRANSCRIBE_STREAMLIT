@@ -331,6 +331,39 @@ TRANSIENT_HINTS = (
 # voice.
 WAIT_SCHEDULE = (5, 30, 125)
 
+# AND JITTER, because a schedule without it SYNCHRONISES.
+#
+# Found at the delivery gate, 25.8.2026, G5. A long recording is split
+# into chunks and several are in flight at once. When the provider
+# refuses them — which is the whole reason this schedule exists — every
+# chunk starts the same countdown at the same instant and they all come
+# back at exactly 5s, then all at 30s, then all at 125s.
+#
+# So the retry that was meant to let the provider recover instead
+# delivers the same burst that caused the refusal, three more times. It
+# is the mechanism behind the 429 wall recorded in
+# MANTRA_MANIFEST/modules/quota-and-fallback.md, arriving from our own
+# side rather than theirs.
+#
+# FULL JITTER IS OVERKILL HERE and would sometimes retry after a second,
+# before a 60s key rest has ended. A fifth either way keeps the shape of
+# the schedule — 5s still means "a blip", 125s still outlasts a full
+# rest — while spreading a burst of chunks across a window wide enough
+# that they stop arriving together.
+JITTER_FRACTION = 0.2
+
+
+def jittered(pause: float, rand=None) -> float:
+    """`pause` spread by ±20%, never below a second.
+
+    `rand` is injectable so a test can pin it — a jitter nobody can make
+    deterministic is a jitter nobody can check.
+    """
+    import random as _r
+    r = rand or _r.random
+    span = float(pause) * JITTER_FRACTION
+    return max(1.0, float(pause) - span + (r() * 2 * span))
+
 
 def is_transient(err) -> bool:
     """Will waiting plausibly help? Unknown errors are treated as
@@ -365,7 +398,9 @@ def transcribe_one_chunk(transcribe_fn, path, waits=WAIT_SCHEDULE,
             last = str(e)
             if not is_transient(e) or attempt >= len(waits):
                 return None, last
-            pause = waits[attempt]
+            # JITTERED. Several chunks fail together and would otherwise
+            # retry together — see JITTER_FRACTION above.
+            pause = jittered(waits[attempt])
             if on_wait:
                 on_wait(attempt + 1, pause, last)
             sleep(pause)

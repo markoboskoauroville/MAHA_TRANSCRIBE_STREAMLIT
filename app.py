@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v212 (rest for as long as the provider asked)"
+APP_VERSION = "v213 (the delivery gate, run in full)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -7123,7 +7123,7 @@ def read_sentences_live(raw: str, synth_fn, doc_slot, sub_slot, audio_slot,
 
     pages = tk.paginate(sentences)
     n_pages = len(pages)
-    digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
+    digest = hashlib.md5(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
     if st.session_state.get(page_key + "_digest") != digest:
         st.session_state[page_key] = 0
         st.session_state[page_key + "_digest"] = digest
@@ -7682,7 +7682,7 @@ if active == "transcribe":
         flash("tx_new")
 
     if audio is not None:
-        digest = hashlib.md5(audio.getvalue()).hexdigest()
+        digest = hashlib.md5(audio.getvalue(), usedforsecurity=False).hexdigest()
         # THE DIGEST RECORDS THAT A TAKE WAS STARTED, NOT THAT IT
         # FINISHED, AND THOSE ARE NOT THE SAME FACT.
         #
@@ -7939,7 +7939,7 @@ if active == "transcribe":
 
     if picked is not None:
         raw = picked.getvalue()
-        digest = hashlib.md5(raw).hexdigest()
+        digest = hashlib.md5(raw, usedforsecurity=False).hexdigest()
         if st.session_state.get("_pick_digest") != digest:
             st.session_state["_pick_digest"] = digest
             name = (picked.name or "").lower()
