@@ -265,9 +265,9 @@ bPlay.onclick=function(){
     // NOTHING LOADED: this is the start of a reading, not a transport
     // press. Python hears it and builds the first block. The stamp lets
     // it ignore repeats, exactly as the finish signal does.
-    if(document.body.classList.contains('startable')){
-      setValue({at: Date.now(), start: true});
-    }
+    /* THE SAME LAG APPLIES TO PLAY. Reported always; Python decides
+       whether there is anything to start. */
+    setValue({at: Date.now(), start: true});
     return;
   }
   if(audio.paused){
@@ -306,10 +306,18 @@ bSave.onclick=function(){
      press is REPORTED either way and Python decides whether there is
      anything to make. `startable` says whether there is text; without
      even that, there is genuinely nothing to save. */
-  if(!audio.src && !document.body.classList.contains('startable')){
-    if(!PYMSG) msg.textContent = 'nothing to save yet';
-    return;
-  }
+  /* NO GUARD HERE AT ALL, AND THAT IS DELIBERATE.
+     v227 gated this on the `startable` class, and Baba still could not
+     save. The class comes from the LAST render's props — and on a phone
+     the text he just typed has not reached Python yet, because a
+     Streamlit text_area does not commit until it loses focus. Tapping a
+     button INSIDE this iframe is what blurs it, so at the instant of the
+     click the class is always one step behind reality.
+     A prop that lags cannot guard a press. So the press is always
+     REPORTED and Python decides — by the time it runs, the blur has
+     committed the text and it can see what is really there. If there is
+     genuinely nothing, Python says so, which is a sentence rather than
+     a dead button. */
   /* SAVE MEANS THE WHOLE READING, NOT THE BLOCK ON SCREEN.
      Baba, 25.8.2026: "it just saves current segment... we need to create
      a meal out of sausages, not to save one sausage."

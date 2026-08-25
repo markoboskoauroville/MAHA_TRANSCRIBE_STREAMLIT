@@ -228,10 +228,15 @@ front = open(os.path.join(os.path.dirname(__file__), "..",
 check("8a the component no longer refuses just because nothing is loaded",
       "if(!audio.src) return;" not in front,
       [l for l in front.splitlines() if "if(!audio.src) return;" in l])
-check("8b it reports the press when there is TEXT to work from",
-      "!document.body.classList.contains('startable')" in front)
-check("8c and says so when there is genuinely nothing, rather than "
-      "sitting silent", "nothing to save yet" in front)
+# v228 MOVED THE GUARD OUT OF THE COMPONENT. It used to check the
+# `startable` class, which lags a render behind, so on a phone it refused
+# the very press it was written to allow. Section 9 checks the new
+# arrangement; these two describe the one it replaced.
+check("8b it reports the press unconditionally, because a prop that "
+      "lags cannot guard one",
+      "{at: Date.now(), save: true}" in front)
+check("8c and PYTHON is where an empty box gets answered",
+      'not kept_text("vr_text").strip()' in vr and '"vr_nothing"' in vr)
 
 check("8d Python answers a save press with NO job, if there is text",
       'not _vr_job and kept_text("vr_text").strip()' in vr)
@@ -268,12 +273,62 @@ print("\n9 THE DECK KNOWS THERE IS TEXT, EVEN WITH NO AUDIO")
 # which is the only case that mattered. So the component's new guard
 # bailed on precisely the press it was written to allow. I built the road
 # and left the gate shut, and shipped it without pressing the button.
-check("9a startable means there is something to WORK FROM, not that "
-      "audio is already loaded",
-      'startable=bool(_vr_audio or kept_text("vr_text").strip())' in vr,
-      [l for l in vr.splitlines() if "startable=" in l])
-check("9b so it is true with text and no audio — the only case that "
-      "was ever broken", "kept_text(\"vr_text\").strip()" in vr)
+# v227 GATED THE PRESS ON A PROP AND HE STILL COULD NOT SAVE.
+#
+# `startable` comes from the LAST render. On a phone the text he has just
+# typed has not reached Python yet, because a Streamlit text_area does
+# not commit until it loses focus — and tapping a button inside the
+# iframe is what blurs it. So at the instant of the click the class is
+# always one step behind reality.
+#
+# A PROP THAT LAGS CANNOT GUARD A PRESS. The press is reported always and
+# Python decides, by which time the blur has committed the text.
+front = open(os.path.join(os.path.dirname(__file__), "..",
+                          "waveform_frontend", "index.html"),
+             encoding="utf-8").read()
+
+
+def _js_code(src):
+    """The JavaScript with /* */ and // comments stripped.
+
+    The comment explaining that `startable` was REMOVED contains the
+    word, so a check reading raw source matches its own explanation and
+    can only be made green by deleting the reason.
+    checking-the-checks.md face 2, met for the sixth time today.
+    """
+    out, inblock = [], False
+    for line in src.splitlines():
+        t = line.strip()
+        if inblock:
+            if "*/" in t:
+                inblock = False
+            continue
+        if t.startswith("/*"):
+            if "*/" not in t:
+                inblock = True
+            continue
+        if t.startswith("//"):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+_fc = _js_code(front)
+_sv_a, _sv_b = _fc.find("bSave.onclick"), _fc.find("audio.onplay")
+check("9a0 the save handler is findable", 0 < _sv_a < _sv_b, (_sv_a, _sv_b))
+_sv = _fc[_sv_a:_sv_b] if 0 < _sv_a < _sv_b else ""
+check("9a save reports the press without consulting a stale prop",
+      "startable" not in _sv, [l for l in _sv.splitlines()
+                               if "startable" in l])
+check("9b and it still reports it", '{at: Date.now(), save: true}' in _sv)
+_pl_a = _fc.find("bPlay.onclick")
+_pl = _fc[_pl_a:_sv_a] if 0 < _pl_a < _sv_a else ""
+check("9b2 play does the same — the lag is identical",
+      "startable" not in _pl and "{at: Date.now(), start: true}" in _pl,
+      [l for l in _pl.splitlines() if "startable" in l])
+check("9b3 an empty box gets a SENTENCE, not silence — the guard moved "
+      "to Python, it did not vanish",
+      'not kept_text("vr_text").strip()' in vr and '"vr_nothing"' in vr)
 
 print("\n9b AND PLAY IS NOT DEAD EITHER")
 # The same dead end one button along: once startable is true the deck

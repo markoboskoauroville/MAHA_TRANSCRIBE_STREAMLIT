@@ -115,8 +115,15 @@ print("\n3 THE START HANDSHAKE IS UNCHANGED")
 # re-reporting across reruns.
 check("3a the idle press still reports a start",
       "{at: Date.now(), start: true}" in front)
-check("3b only when there is something to start",
-      "classList.contains('startable')" in front)
+# v228 REMOVED THAT GATE, and removing it was the point. `startable`
+# comes from the last render, so on a phone the text just typed has not
+# reached Python yet and the class is a step behind. A prop that lags
+# cannot guard a press: it refused the very presses it was meant to
+# allow. Python decides now, where the text has actually arrived.
+check("3b it reports the press unconditionally, and PYTHON decides "
+      "whether there is anything to start",
+      'and not _vr_job and kept_text("vr_text").strip()' in app,
+      "no text guard in the vr start handler")
 check("3c Python still guards it with a stamp", '"_talk_start_seen"' in app)
 check("3d so one press cannot become two starts",
       '_ev0.get("at")' in app and "_start = True" in app)

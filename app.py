@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v227 (save and play work without rehearse)"
+APP_VERSION = "v228 (a prop that lags cannot guard a press)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3666,6 +3666,28 @@ def _kept_restore() -> None:
     """Put the browser's copy back, once, at the start of a session."""
     if st.session_state.get("_kept_restored"):
         return
+
+    # WAIT FOR THE BROWSER TO ANSWER, AND THIS IS THE WHOLE BUG.
+    #
+    # Baba: "I don't get this remembering of the last tab. It brings me
+    # back to the beginning every time." He blamed Firefox on Android.
+    # It is not Firefox.
+    #
+    # A Streamlit component returns its DEFAULT on the first render —
+    # None — because the browser has not replied yet. The reply arrives
+    # and Streamlit reruns. So on run 1 LS_DATA is EMPTY, and this marked
+    # itself done and never looked again when the data actually arrived
+    # on run 2.
+    #
+    # The remembered LOGIN works precisely because it has no such guard:
+    # `if not _authed` is re-tested on every run until it succeeds, so it
+    # catches the second one. I gave this a once-only flag and broke it.
+    #
+    # STORAGE_OK is False until the bridge has answered. An answer of
+    # "nothing stored" is still an answer and still ends the waiting —
+    # otherwise a first-ever visit would retry for ever.
+    if not STORAGE_OK:
+        return                       # ask again next run
     st.session_state["_kept_restored"] = True
     raw = LS_DATA.get(KEPT_LS_KEY)
     if not raw:
@@ -9665,7 +9687,7 @@ elif active == "vr":
                 and not _vr_job and kept_text("vr_text").strip()
                 and st.session_state.get("_vr_start_seen") != _vr_ev.get("at")):
             st.session_state["_vr_start_seen"] = _vr_ev.get("at")
-            _vr_go()
+            _vr_go()   # says vr_nothing itself if the box is empty
             if st.session_state.get("_vr_job"):
                 st.session_state["_vr_autoplay"] = True
                 st.rerun()
@@ -9686,6 +9708,15 @@ elif active == "vr":
         # `_vr_go` already turns the text into a job — the same planning
         # rehearse does — so this calls it rather than growing a second
         # way to plan.
+        # AN EMPTY BOX GETS A SENTENCE, NOT SILENCE. The component
+        # reports every press now, so this is where "there is nothing to
+        # do" has to be said out loud.
+        if (isinstance(_vr_ev, dict) and _vr_ev.get("save") and not _vr_job
+                and not kept_text("vr_text").strip()
+                and st.session_state.get("_vr_save_seen") != _vr_ev.get("at")):
+            st.session_state["_vr_save_seen"] = _vr_ev.get("at")
+            st.session_state["_vr_error"] = t("vr_nothing")
+
         if (isinstance(_vr_ev, dict) and _vr_ev.get("save")
                 and not _vr_job and kept_text("vr_text").strip()
                 and st.session_state.get("_vr_save_seen") != _vr_ev.get("at")):
