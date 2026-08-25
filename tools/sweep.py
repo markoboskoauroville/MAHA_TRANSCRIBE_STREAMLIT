@@ -94,13 +94,37 @@ NEEDS = {
 # delivery-gate §6.2 stages a deletion rather than folding it into
 # unrelated work. Listed instead, with the version that removed the
 # thing, so the debt is VISIBLE rather than either noisy or silent.
-REMOVED = {
-    "test_accounts.py": "the accounts system, removed in v185/v186 — "
-                        "delete this suite or restore the feature",
-    "test_engine_ui.py": "the eng_studio / eng_normal controls, which do "
-                         "not exist in app.py at all",
-    "test_engine_sheet.py": "the same eng_studio control",
+# I LABELLED THESE "STALE" AND I WAS WRONG.
+#
+# Baba, 25.8.2026, asked what to do with them and then said: "that should
+# be kept for studio users." So they are not suites testing a feature
+# that was deliberately retired. They are suites STILL DESCRIBING A
+# FEATURE THAT IS MEANT TO EXIST — and the feature is what went missing,
+# not the test.
+#
+# Calling them stale invited deleting them, which would have destroyed
+# the only written record of what the engine board did: two presses that
+# switch every route at once, Edge/Groq for normal and
+# Speechify/AssemblyAI/Claude for studio, plus a check-engine button and
+# a tier in the corner.
+#
+# MEASURED: route_stt and route_llm survive in exactly ONE place — the
+# list of settings that get persisted. Nothing reads them to choose a
+# provider. The board and the routing it drove were removed together, so
+# restoring the buttons alone would give a studio user two controls that
+# change a value nobody consults.
+#
+# They do not block, and they must not be deleted.
+MISSING = {
+    "test_engine_ui.py": "THE ENGINE BOARD, which Baba wants back for "
+                         "studio users — eng_normal / eng_studio / "
+                         "eng_check, and routing that reads route_*",
+    "test_engine_sheet.py": "the same engine board, from the sheet side",
+    "test_accounts.py": "the accounts screen — log_out_btn and the "
+                        "password section. Ask before deleting: this may "
+                        "be wanted for studio users too",
 }
+REMOVED = MISSING
 
 
 def _clear_caches():
@@ -175,7 +199,7 @@ def main(argv):
             skipped.append(n)
             continue
         if n in REMOVED:
-            print("  %-26s STALE — tests %s" % (n[:-3], REMOVED[n]))
+            print("  %-26s MISSING FEATURE — %s" % (n[:-3], REMOVED[n]))
             stale.append(n)
             continue
         passed, failed, note = _run(os.path.join(TESTS, n))
@@ -192,9 +216,10 @@ def main(argv):
     print()
     if stale:
         print()
-        print("  %d suite(s) test a feature that has been REMOVED. They do "
+        print("  %d suite(s) DESCRIBE A FEATURE THAT IS MISSING. They do "
               "not block," % len(stale))
-        print("  and they do not go away by themselves either:")
+        print("  and they are the only record of what it did — do not "
+              "delete them:")
         for n in stale:
             print("    %-24s %s" % (n[:-3], REMOVED[n]))
     if skipped:
