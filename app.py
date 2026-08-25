@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v230 (the prefix was the whole bug)"
+APP_VERSION = "v231 (help_text.py is gone; the rule it taught is not)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -89,12 +89,11 @@ _BUILD_STAMP = APP_VERSION
 if getattr(sys, "_ttt_build", None) != _BUILD_STAMP:
     for _name in [n for n in list(sys.modules) if n == "ttt" or n.startswith("ttt.")]:
         del sys.modules[_name]
-    for _name in ("talk_engine", "help_text"):
+    for _name in ("talk_engine",):
         sys.modules.pop(_name, None)
     sys._ttt_build = _BUILD_STAMP
 
 import talk_engine as tk
-import help_text
 from ttt import keyring as kr
 from ttt.providers import assemblyai as AAI
 from ttt import providers as PROVIDERS
@@ -1087,20 +1086,6 @@ def t(key: str) -> str:
     return entry.get(lang, entry.get("en", key))
 
 
-def safe_text(name: str) -> str:
-    """Pull a block of prose out of help_text for the current language.
-
-    Deliberately forgiving: help is documentation, and missing documentation
-    must never be able to take the app down (see HANDOVER.md, incident 1).
-    """
-    try:
-        block = getattr(help_text, name, {}) or {}
-        lang = st.session_state.get("ui_lang", "en")
-        return block.get(lang) or block.get("en") or ""
-    except Exception:
-        return ""
-
-
 # ----------------------------------------------------------------------
 # Secrets
 # ----------------------------------------------------------------------
@@ -1925,50 +1910,24 @@ if not st.session_state.get("_authed"):
             pass
 
 
-# Small constants that app.py needs are read through a guard, NEVER
-# straight off the module. Streamlit re-executes app.py on every rerun but
-# keeps imported modules cached in sys.modules for the life of the
-# process, so a warm process can run NEW app.py against an OLD help_text
-# — and a plain attribute access then dies with AttributeError on the
-# login screen, locking everyone out of the whole app.
+# A RULE PAID FOR TWICE, KEPT THOUGH ITS TABLE IS GONE.
 #
-# This has now happened twice (HANDOVER §1 was the same shape with
-# ls_bridge). The lesson was written down and then repeated anyway, so it
-# is worth stating as a rule: anything app.py reads from a local module
-# must survive that module being one version behind. A fallback here costs
-# nothing; an AttributeError costs the entire app.
-_LOGIN_FALLBACK = {
-    "MORE_LABEL": {"hr": "Što je ovo?", "en": "What is this?",
-                   "it": "Che cos'è?", "de": "Was ist das?",
-                   "fr": "Qu'est-ce que c'est ?"},
-    "LOGIN_LABELS": {"hr": {"password": "Lozinka", "remember": "Zapamti me",
-                            "wrong": "Pogrešna lozinka."}},
-    "WELCOME": {"hr": ""},
-    "LOGIN_GUIDE": {"hr": ""},
-}
-
-
-def _ht(name: str, lang: str):
-    """A value from help_text that cannot bring the app down.
-
-    Falls back to the module being absent, the table being absent, the
-    language being absent, and Croatian being absent — in that order. Any
-    of those is a cosmetic loss; an AttributeError on the login screen is
-    total, because nobody can get past it to reach anything else.
-    """
-    table = getattr(help_text, name, None)
-    if not isinstance(table, dict) or not table:
-        table = _LOGIN_FALLBACK.get(name, {})
-    if lang in table:
-        return table[lang]
-    if "hr" in table:
-        return table["hr"]
-    fb = _LOGIN_FALLBACK.get(name, {})
-    return fb.get(lang) or fb.get("hr") or ""
-
-
-def _more_label(lang: str) -> str:
-    return _ht("MORE_LABEL", lang) or _LOGIN_FALLBACK["MORE_LABEL"]["hr"]
+# Streamlit re-executes app.py on every rerun but keeps imported modules
+# cached in sys.modules for the life of the process, so a warm process
+# can run NEW app.py against an OLD local module — and a plain attribute
+# access then dies with AttributeError on the LOGIN SCREEN, locking
+# everyone out of the whole app.
+#
+# That happened twice: once with ls_bridge (HANDOVER §1) and once with
+# help_text. The rule: ANYTHING app.py READS FROM A LOCAL MODULE MUST
+# SURVIVE THAT MODULE BEING ONE VERSION BEHIND. A fallback costs nothing;
+# an AttributeError costs the entire app.
+#
+# _LOGIN_FALLBACK itself was removed in v231 with help_text — it guarded
+# a login screen that reads nothing from a local module any more. The
+# RULE is not removed with it. The next person to import something into
+# the login path needs this paragraph, and deleting it because the code
+# it described went away is how a lesson gets learned a third time.
 
 
 def check_password() -> bool:
