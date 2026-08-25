@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v191 (the remote window, both ways; the pill that had no label)"
+APP_VERSION = "v192 (the push was one render stale; the link folds away)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -1249,14 +1249,20 @@ if _REMOTE_VIEW:
     @st.fragment(run_every=REMOTE.POLL_SECONDS)
     def _remote_transcript():
         slot = REMOTE.get(REMOTE_STORE, _REMOTE_VIEW, REMOTE.SAY) or {}
-        # THE KEY CARRIES THE SEQUENCE. A disabled text_area keeps the
-        # value Streamlit first gave it, so a fresh key is what makes new
-        # text actually appear. Without this the box would sit there
-        # showing the first transcript for ever while the relay moved on.
+        # NO KEY. `value=` and `key=` together is the trap HOW_WE_WORK
+        # §63 names: a widget key belongs to Streamlit, not to you, and
+        # when a key exists Streamlit takes the value from session_state
+        # and IGNORES the one you passed. My first version worked around
+        # that by putting the sequence IN the key, which makes a brand
+        # new widget on every change — a growing pile of dead keys, and
+        # the scroll position lost each time.
+        #
+        # Without a key the widget is positional and `value` is simply
+        # what it shows. It is disabled, so nobody can type into it and
+        # there is nothing to read back.
         st.text_area(t("rem_said"), value=slot.get("text") or "",
                      height=260, disabled=True,
-                     label_visibility="collapsed",
-                     key="rem_box_%s" % slot.get("seq", 0))
+                     label_visibility="collapsed")
         if slot.get("at"):
             st.markdown(
                 '<div class="readhint">%s</div>' % html.escape(
@@ -7112,10 +7118,17 @@ _rem_code = remote_code()
 _rem_url = REMOTE.link_for(remote_base(), _rem_code)
 REMOTE.sweep(REMOTE_STORE)
 
-# PUSH: keep the window fed with the current transcript. Cheap and
-# idempotent — REMOTE.put only moves the sequence when the text actually
-# changes, so this running on every render costs one dict compare.
-REMOTE.put(REMOTE_STORE, _rem_code, t1_text(), REMOTE.SAY)
+# THE PUSH USED TO BE HERE AND IT WAS WRONG. Publishing the transcript
+# above the tab bar reads `_t1_text` BEFORE the T tab body has run — so
+# it always published the PREVIOUS render's text, and on the render where
+# a take actually lands it published the empty string. If nothing forced
+# another rerun, the window stayed empty for ever while showing a fresh
+# "updated 1m ago" — which is the window's own creation time, not an
+# arrival. Baba found exactly this with two tabs open, 25.8.2026.
+#
+# The pull stays here, because acting on arriving text has to happen
+# before the tabs draw. The push moved to the END of the script, where
+# the transcript is whatever this render actually produced.
 
 # PULL: has the far end sent something to read? One integer comparison.
 _hear = REMOTE.get(REMOTE_STORE, _rem_code, REMOTE.HEAR)
@@ -7133,14 +7146,38 @@ if REMOTE.arrived(_hear, st.session_state.get("_rem_heard_seq", 0)):
     flash("rem_arrived")
     st.rerun()
 
-st.markdown(
-    '<div class="remlink"><a href="%s" target="_blank" rel="noopener">%s</a>'
-    '<span class="remhint"> · %s</span></div>'
-    % (html.escape(_rem_url, quote=True), html.escape(t("rem_link")),
-       html.escape(t("rem_open"))),
-    unsafe_allow_html=True)
-st.markdown('<div class="remurl">%s</div>' % html.escape(_rem_url),
-            unsafe_allow_html=True)
+# ONE LINE UNTIL IT IS WANTED. Baba, 25.8.2026: "where is remote
+# transcription, we should have the same as in your notes, one
+# greater-than sign to collapse all the information. The user interface
+# is not burdened. It has only one line at the top. And when the user
+# uncollapses, he will see the action link."
+#
+# THE SAME EXPANDER AS `your notes`, deliberately — design-language.md §2:
+# a repeated element is the SAME element, built once and placed. A second
+# kind of fold-out invented for one row is a second thing to learn.
+#
+# It is closed by default because the address is needed once, at the
+# moment of setting the other device up, and never again in that session.
+# The link inside opens the window; the copy link puts the address on the
+# clipboard, which is the only sane way to move it to a laptop.
+with st.expander(t("rem_link"), expanded=False):
+    st.markdown(
+        '<div class="remlink"><a href="%s" target="_blank" rel="noopener">'
+        '%s</a></div>' % (html.escape(_rem_url, quote=True),
+                          html.escape(t("rem_open"))),
+        unsafe_allow_html=True)
+    st.markdown('<div class="remurl">%s</div>' % html.escape(_rem_url),
+                unsafe_allow_html=True)
+    # A COMPONENT, because nothing but a real button in a real document
+    # can reach the clipboard — the same reason `copy` under every text
+    # box is one. Its own stylesheet makes it look like the action links
+    # beside it. See HOW_WE_WORK, "why a component never quite matches
+    # the page".
+    components.html(
+        copybtn.cp_html(_rem_url, label=t("copy_word"),
+                        done_label=t("copy_done_word"),
+                        failed_label="—", size=0, link=True),
+        height=24)
 
 st.session_state.setdefault("active_tab", "transcribe")
 st.segmented_control(
@@ -9017,3 +9054,22 @@ elif active == "settings":
         # find. Removed rather than kept in sync.
 
     tab_signature("")
+
+
+# ---------------------------------------------------------------------
+# PUSH, LAST. Everything above has run, so `t1_text()` is what this
+# render actually produced rather than what the last one left behind.
+#
+# Cheap and idempotent by design: REMOTE.put only moves the sequence when
+# the text really changed, so running this on every render costs one dict
+# compare and cannot make the far end re-read the same line.
+#
+# Guarded, because this is the last line of the script and a failure here
+# must not be the thing that takes the page down after everything on it
+# has already drawn correctly.
+# ---------------------------------------------------------------------
+try:
+    if not _REMOTE_VIEW:
+        REMOTE.put(REMOTE_STORE, remote_code(), t1_text(), REMOTE.SAY)
+except Exception:                                            # noqa: BLE001
+    pass
