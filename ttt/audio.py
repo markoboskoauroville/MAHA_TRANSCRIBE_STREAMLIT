@@ -371,7 +371,29 @@ def is_transient(err) -> bool:
     time, while giving up on something temporary costs the audio."""
     text = str(err).lower()
     permanent = ("does not exist", "model_not_found", "invalid_request",
-                 "no keys", "not found (404)", "unsupported")
+                 "no keys", "not found (404)", "unsupported",
+                 # AUTH AND CREDIT ARE PERMANENT. Waiting 125 seconds does
+                 # not make a revoked key valid or a spent account solvent.
+                 #
+                 # MEASURED at the delivery gate, 25.8.2026, G6: with every
+                 # key dead this returned True, so every chunk was tried
+                 # FOUR times — once plus three waits of 5s, 30s and 125s —
+                 # spending a key on each attempt and taking about 160
+                 # seconds per chunk to arrive at the same refusal. That is
+                 # the "6 whisper calls over 8 redraws" the stress suite has
+                 # been reporting since the first run this morning.
+                 #
+                 # THE DISTINCTION THAT MATTERS: the ring has ALREADY walked
+                 # every key before this function is asked anything. So the
+                 # question here is not "is this key bad" but "will the
+                 # WHOLE RING be different in two minutes". For a rate limit
+                 # it will — that is what the 125s is for, outlasting a full
+                 # rest of every key at once. For a bad or unpaid key it
+                 # will not.
+                 "invalid api key", "invalid_api_key", "unauthorized",
+                 "401", "authentication error", "api token missing",
+                 "zero_credits", "credit balance", "insufficient",
+                 "payment required")
     if any(h in text for h in permanent):
         return False
     return any(h in text for h in TRANSIENT_HINTS) or True
@@ -430,11 +452,30 @@ def transcribe_any_size(path: str, transcribe_fn, progress_cb=None,
     of paths the caller should pass to cleanup() once finished with
     reusable_path.
     """
+    # THE LADDER IS FOR SIZE, NOT FOR AUTH — and it used to be walked
+    # whatever went wrong.
+    #
+    # MEASURED at the delivery gate, 25.8.2026, G6: with every key dead
+    # this made SIX provider calls for one take — direct, transcoded,
+    # then four chunk attempts — and swallowed the first two failures in
+    # silence. Six keys spent and about 160 seconds gone to arrive at the
+    # same refusal, then the whole thing repeated on the next redraw.
+    #
+    # Each rung exists to solve a SIZE problem: too big to send whole, so
+    # transcode; still too big, so chunk. None of that helps a revoked
+    # key or an empty account, which will refuse the chunks exactly as it
+    # refused the file.
+    #
+    # So a PERMANENT failure stops here and is raised, which also makes
+    # it loud — the caller's `except` writes it to the screen, and G6's
+    # other finding was that the person saw nothing at all.
     temps = []
     if os.path.getsize(path) <= safe_bytes:
         try:
             return transcribe_fn(path), "direct", path, temps
-        except Exception:
+        except Exception as e:
+            if not is_transient(e):
+                raise
             pass                      # even a small file can fail to upload
 
     flac_path = to_flac16k(path)
@@ -442,7 +483,9 @@ def transcribe_any_size(path: str, transcribe_fn, progress_cb=None,
     if os.path.getsize(flac_path) <= safe_bytes:
         try:
             return transcribe_fn(flac_path), "transcoded", flac_path, temps
-        except Exception:
+        except Exception as e:
+            if not is_transient(e):
+                raise
             pass                      # fall through to chunking, don't give up
 
     chunk_paths, chunk_dir = split_into_chunks(flac_path, chunk_seconds)

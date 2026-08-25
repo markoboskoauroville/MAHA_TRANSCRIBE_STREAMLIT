@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v213 (the delivery gate, run in full)"
+APP_VERSION = "v214 (the gate passes)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -363,6 +363,12 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "take_failed":        {"en": "That recording could not be turned into "
+                                 "text. The audio is still here — press new "
+                                 "to try again.",
+                           "hr": "Ta snimka nije mogla biti pretvorena u "
+                                 "tekst. Zvuk je i dalje tu — pritisni novo "
+                                 "za novi pokušaj."},
     "vr_too_long":        {"en": "that block is longer than %d characters "
                                  "— this is a bug, please tell Marko",
                            "hr": "taj dio je duži od %d znakova — ovo je "
@@ -7676,7 +7682,8 @@ if active == "transcribe":
         st.session_state["_mic_gen"] = st.session_state.get("_mic_gen", 0) + 1
         t1_set_text("")
         for k in ("_digest", "_pick_digest", "flac_path", "_transcript_prev",
-                  "_transcribe_method", "_last_run", "_stt_errors"):
+                  "_transcribe_method", "_last_run", "_stt_errors",
+                  "_take_error"):
             st.session_state.pop(k, None)
         _drop_take()
         flash("tx_new")
@@ -7911,11 +7918,35 @@ if active == "transcribe":
                 # spend a key on every redraw of the page.
                 st.session_state["_digest_done"] = True
                 st.session_state["_last_run"] = {"error": str(e)[:300]}
+                # AND A SENTENCE THAT SURVIVES THE RERUN.
+                #
+                # st.error draws on THIS run and is gone on the next, and
+                # on a phone the recorder component causes a rerun every
+                # few seconds — so the only message the person got was
+                # one they had to be looking at in the right second.
+                # `_last_run` did persist, but it is rendered ADMIN ONLY,
+                # correctly, because it carries codec names and provider
+                # refusals that nobody else can act on.
+                #
+                # So a failed take now leaves a plain sentence anyone can
+                # read, and it stays until they press new. This is the
+                # other half of fault 7 from Baba's 03:20 brief: "the
+                # worst of the five... it shows as nothing at all."
+                st.session_state["_take_error"] = str(e)[:200]
                 errlog.add(st.session_state, "transcribe",
                            f"{type(e).__name__}: {e}",
                            f"{stage.get('in','?')} {stage.get('in_kb',0)} KB"
                            if "stage" in dir() else "")
                 st.error(str(e))
+
+    # A FAILED TAKE SAYS SO, TO EVERYONE, UNTIL A NEW ONE IS STARTED.
+    # Not the admin status line below — this is the one sentence a person
+    # who cannot read easily can act on, and it is the difference between
+    # "the app is broken" and "that take did not work, try again".
+    _te = st.session_state.get("_take_error")
+    if _te:
+        st.error(t("take_failed"))
+        st.caption(_te)
 
     # THE LANGUAGE AND MODE ROW NOW SITS HERE, in the slot the status
     # line used to hold — directly under the deck.

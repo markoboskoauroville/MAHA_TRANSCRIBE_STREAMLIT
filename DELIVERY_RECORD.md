@@ -1,8 +1,14 @@
 # Delivery record — TTT-LLL v213 — 25.8.2026
 
 **The nine gates of `MANTRA_MANIFEST/modules/delivery-gate.md`, run in full on this app for the
-first time.** The verdict is **BLOCKED at G6**, with three named findings. That is the gate
-working: a run that could only ever come back green would not be a gate.
+first time.**
+
+**First verdict: BLOCKED at G6, three findings. Final verdict after fixing them: PASS.**
+
+Two of the three findings turned out to be MY OWN STALE `__pycache__`, not the app — the same
+cause that made the jitter suite report 18/5. The third was real and is fixed. Both the first
+verdict and the correction are kept here, because a record that only shows the tidy ending teaches
+nothing.
 
     ARTEFACT   the repository at HEAD. This is a Streamlit app — no build step,
                no CI. Streamlit Cloud serves `main` directly, so the artefact IS
@@ -91,7 +97,29 @@ behind the 429 wall in `quota-and-fallback.md`, arriving from our own side.
 **And nothing tested this path at all** — the retry loop had no suite, so the gap had nothing
 watching it. Fixed with ±20% jitter; `tests/test_retry_jitter.py`, 23 checks.
 
-### G6 · STRESS — **RED. THIS BLOCKS.** See findings below.
+### G6 · STRESS — PASS, after fixing the suite
+
+    SABOTAGE every key dead      2/2   1 whisper call over 8 redraws, error shown
+    SABOTAGE interrupted         2/2   the take is NOT marked done, and recovers
+    SOAK 50 redraws              2/2   transcript untouched, nothing re-transcribed
+    ENORMOUS a 2-minute take     1/1   reaches the box
+    EMPTY and MALFORMED          3/3   zero-byte, truncated webm, a picture
+                                       10 passed, 0 failed
+
+**SOAK, ENORMOUS, EMPTY and MALFORMED executed for the first time ever.** They had never once run:
+the file died before reaching them on every previous attempt.
+
+**Finding 1 and 2 were not real.** Sabotage 1 reported "6 whisper calls, no error rendered". Run
+against the same tree with clean bytecode it reports **1 call and the error shown** — the app was
+correct the whole time. The 6/no-error came from a stale `__pycache__`, exactly as the jitter suite
+reported 18/5 from the same cause.
+
+**Finding 3 was real, and it was in the harness.** An interrupted run leaves AppTest's widget table
+half-built, so the next `at.run()` either waits the full 300s timeout or raises `KeyError` looking
+up a widget that was never created. Four unbounded runs sat after the interruption — up to twenty
+minutes of hanging. Fixed three ways: the `KeyError` is recognised as the same event as the
+timeout, **the poisoned instance is rebuilt and the session carried across** (which is what a
+reconnecting browser actually gets), and every run in the file is bounded.
 
 ### G7 · BUDGETS — BASELINE ONLY, first run
 
@@ -125,7 +153,7 @@ RAM-only.** Nothing persisted is written in a new shape, so v212 can read everyt
 
 ---
 
-## FINDINGS THAT BLOCK
+## FINDINGS — AS FIRST REPORTED, AND WHAT THEY TURNED OUT TO BE
 
 **1 · The take path shows NOTHING when every key is dead.** Measured with all keys sabotaged: the
 failure is not rendered, so the person sees an app that appears to be doing nothing. **This is
@@ -150,8 +178,10 @@ They sit in **BLOCKS UNLESS WRITTEN DOWN AND ACCEPTED**, and they are written do
 
     a browser              nothing in v207-v213 has been opened on a phone.
                            Every visual claim is a source inspection
-    G6 soak                1000 cycles never ran: the suite hangs before it
+    G6 soak                50 redraws ran; 1000 cycles did not
     G6 monkey              no equivalent for a Streamlit app in this setup
+    two interruptions      in a row: AppTest raises KeyError on the second.
+                           Harness limit, not the app, and said so in the suite
     the stitcher           join_audio is measured (3 x 1s -> one 3.02s mp3) but
                            nobody has pressed the button on a real reading
     64 kbit, audibly       transparent for speech on paper; nobody has listened
