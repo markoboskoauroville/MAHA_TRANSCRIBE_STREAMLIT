@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v219 (an interrupted note take is skipped, not destroyed)"
+APP_VERSION = "v220 (every action in the same corner, all the same size)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3537,11 +3537,22 @@ def box_links(where: str, text: str, on_clear=None, extra=None):
                     # button styled into a link. Its own stylesheet makes
                     # it look like one.
                     components.html(
+                        # THE SAME NUMBER AS ITS NEIGHBOURS. theme.box_link_px
+                        # is where both sides read it from, so `copy` cannot
+                        # drift from `clear` at any text size — it used to be
+                        # a fixed 14px beside a 0.72rem that follows the
+                        # reader's dial.
                         copybtn.cp_html(body, label=t("copy_word"),
                                         done_label=t("copy_done_word"),
                                         failed_label="—", size=0,
-                                        link=True),
-                        height=24)
+                                        link=True,
+                                        link_px=theme.box_link_px(
+                                            st.session_state.get(
+                                                "text_scale",
+                                                a11y.DEFAULT_SCALE))),
+                        height=int(theme.box_link_px(
+                            st.session_state.get("text_scale",
+                                                 a11y.DEFAULT_SCALE)) * 1.9))
                 elif kind == "clear":
                     st.button(t("clear_word"), key="bl_clear_%s" % where,
                               on_click=cb, use_container_width=True)
@@ -7272,7 +7283,6 @@ def t1_redo() -> None:
     st.session_state[T1_UNDO] = stack[-T1_UNDO_DEPTH:]
     t1_set_text(nxt, remember=False)
 
-
 def t1_area_key() -> str:
     return "tx_area_%d" % int(st.session_state.get(T1_GEN, 0))
 
@@ -8520,6 +8530,16 @@ if active == "transcribe":
     def _sync_typed():
         st.session_state[T1_TEXT] = st.session_state.get(_area_key, "")
 
+    _steps = []
+    if t1_can_undo():
+        _steps.append((t("undo_word"), ("bl_undo_tx", t1_undo)))
+    if t1_can_redo():
+        _steps.append((t("redo_word"), ("bl_redo_tx", t1_redo)))
+
+    box_links("tx", t1_text(), on_clear=_clear_all,
+              extra=_steps + _extra + [(t("tx_tonote"),
+                                        ("tx_tonote", keep_as_note))])
+
     st.text_area(t("transcript_label"), value=t1_text(), key=_area_key,
                  height=200, on_change=_sync_typed,
                  label_visibility="collapsed", placeholder=t("transcript_ph"))
@@ -8571,15 +8591,6 @@ if active == "transcribe":
     #
     # Undo sits to the LEFT of clear, because it is the way back from
     # clear and reading order is the order things are reached.
-    _steps = []
-    if t1_can_undo():
-        _steps.append((t("undo_word"), ("bl_undo_tx", t1_undo)))
-    if t1_can_redo():
-        _steps.append((t("redo_word"), ("bl_redo_tx", t1_redo)))
-
-    box_links("tx", t1_text(), on_clear=_clear_all,
-              extra=_steps + _extra + [(t("tx_tonote"),
-                                        ("tx_tonote", keep_as_note))])
     if st.session_state.pop("_note_kept", None):
         st.caption(t("tx_tonote_done"))
 
@@ -8963,10 +8974,10 @@ elif active == "talk":
         # KEPT. R does not rerun mid-render today, so it does not lose
         # text — but the same trap is one feature away, and VR proved
         # what it costs when it arrives. See kept_area.
-        kept_area("talk_text", height=150, label_visibility="collapsed",
-                  placeholder=t("talk_placeholder"))
         box_links("rd", kept_text("talk_text"),
                   on_clear=_clear_talk)
+        kept_area("talk_text", height=150, label_visibility="collapsed",
+                  placeholder=t("talk_placeholder"))
 
         # THE PLAYER IS ALWAYS HERE, greyed until there is something to
         # play. Baba's rule from the start: "no new elements appearing on
@@ -9096,6 +9107,12 @@ elif active == "translate":
         do_translate()
         flash("tr_go")
 
+    _trsrc_body = kept_text("translate_src_text").strip()
+    box_links("trsrc", kept_text("translate_src_text"),
+              on_clear=_clear_src,
+              extra=([(t("tr_read_src"),
+                       ("nact_read_trsrc", lambda: tr_read("src")))]
+                     if _trsrc_body else None))
     kept_area("translate_src_text", height=120,
               label_visibility="collapsed", placeholder=t("translate_src_ph"))
     # READ JOINS THE ROW. Baba, 25.8.2026: "read should be together with
@@ -9116,12 +9133,6 @@ elif active == "translate":
     # THE EXTRA IS PASSED ONLY WHEN THERE IS TEXT, because box_links
     # renders the row whenever a module offers an extra — and a `read`
     # standing alone over an empty box is a link with nothing to read.
-    _trsrc_body = kept_text("translate_src_text").strip()
-    box_links("trsrc", kept_text("translate_src_text"),
-              on_clear=_clear_src,
-              extra=([(t("tr_read_src"),
-                       ("nact_read_trsrc", lambda: tr_read("src")))]
-                     if _trsrc_body else None))
 
     # TRANSLATE BELONGS TO THE MATRIX, not to the command row.
     #
@@ -9146,18 +9157,18 @@ elif active == "translate":
         kept_set("translate_out", "")
         flash("tr_out")
 
-    kept_area("translate_out", height=150,
-              label_visibility="collapsed", placeholder=t("translate_out_ph"))
-    # THE SAME ROW UNDER THE LOWER BOX. The upper box speaks the UPPER
-    # row's language and the lower box the lower one — that pairing is
-    # the whole point of two rows and two boxes, and getting it backwards
-    # would read a translation in the language it came from.
     _trout_body = kept_text("translate_out").strip()
     box_links("trout", kept_text("translate_out"),
               on_clear=_clear_out,
               extra=([(t("tr_read_src"),
                        ("nact_read_trout", lambda: tr_read("out")))]
                      if _trout_body else None))
+    kept_area("translate_out", height=150,
+              label_visibility="collapsed", placeholder=t("translate_out_ph"))
+    # THE SAME ROW UNDER THE LOWER BOX. The upper box speaks the UPPER
+    # row's language and the lower box the lower one — that pairing is
+    # the whole point of two rows and two boxes, and getting it backwards
+    # would read a translation in the language it came from.
 
     tab_signature(t("sig_translate"))
 
@@ -9578,15 +9589,15 @@ elif active == "vr":
     # KEPT, NOT OWNED BY THE WIDGET. See kept_area: the block advance
     # reruns before this line is reached, and a widget key whose widget
     # did not render is cleaned up. The text lives in the store instead.
-    kept_area("vr_text", height=120, label_visibility="collapsed",
-              placeholder=t("vr_text_ph"))
-
     def _vr_clear():
         # THE ONLY THING THAT EMPTIES THE BOX, and it is a person
         # pressing clear.
         kept_set("vr_text", "")
 
+
     box_links("vrbox", kept_text("vr_text"), on_clear=_vr_clear)
+    kept_area("vr_text", height=120, label_visibility="collapsed",
+              placeholder=t("vr_text_ph"))
 
     # TWO PANELS, NOT ONE WALL. Baba, 25.8.2026: "there are too many
     # buttons at once. We need to organize under the player in 2 tabs.

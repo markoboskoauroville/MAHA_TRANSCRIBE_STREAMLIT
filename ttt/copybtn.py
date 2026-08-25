@@ -154,7 +154,7 @@ def html(text: str, label: str, busy: str, done: str, failed: str,
 
 def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
             label: str = "CP", size: int = CP_SIZE,
-            link: bool = False) -> str:
+            link: bool = False, link_px: int = 0) -> str:
     """size=0 means a WORD pill rather than a circle — for command rows
     where the label has to be readable ("copy") instead of an initialism.
     Same behaviour and the same state changes either way."""
@@ -199,7 +199,23 @@ def cp_html(text: str, done_label: str = "OK", failed_label: str = "X",
     # browser — not the 11.5px the stylesheet's 0.72rem suggests, and
     # not the --dim this file was guessing at. Two stylesheets cannot be
     # kept in step by reasoning about them; they can be measured.
-    px = 14
+    # THE SIZE COMES FROM THE PAGE, NOT FROM HERE.
+    #
+    # Baba photographed the row, 25.8.2026: `copy` is visibly a different
+    # size from `clear` and `add to notes` beside it.
+    #
+    # MEASURED: the Streamlit links are font-size 0.72rem, so they follow
+    # the reader's chosen text size. This was a fixed 14px, which follows
+    # nothing. At the default they are already different, and every step
+    # he takes on the text-size dial pushes them further apart — they
+    # could never match, at any setting.
+    #
+    # An iframe's rem resolves against the IFRAME's root, never the
+    # page's, which is why this cannot simply be written as 0.72rem and
+    # left. The caller computes the pixels and hands them over. Two
+    # stylesheets cannot be kept in step by reasoning about them; they
+    # can be kept in step by having one number.
+    px = int(link_px or 14)
     LINKCSS = ("""
   button {
     height: %dpx !important; font-weight: 400 !important;

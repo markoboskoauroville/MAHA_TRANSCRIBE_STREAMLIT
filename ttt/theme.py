@@ -1,3 +1,19 @@
+BOX_LINK_REM = 0.72   # the size of an action link beside a text box
+BOX_LINK_BASE_PX = 16 # the browser default the rem resolves against
+
+
+def box_link_px(text_scale: float = 1.0) -> int:
+    """The action-link size in PIXELS, for a component to match.
+
+    An iframe's rem resolves against the IFRAME's root, never the
+    page's, so a component cannot simply be told 0.72rem. It has to
+    be handed the number the page arrived at — and both sides read
+    it from HERE, so there is one value and nothing to drift.
+    """
+    return max(9, int(round(BOX_LINK_REM * BOX_LINK_BASE_PX
+                            * float(text_scale or 1.0))))
+
+
 """The visual language, lifted from Baba's own maha_transcribe app.
 
 Read out of that app's stylesheet rather than eyeballed from screenshots,
@@ -1272,23 +1288,25 @@ def css(scheme: str = "amber", font: str = "mono",
       background: var(--surface-2) !important;
     }}
 
-    /* copy · clear UNDER EVERY BOX. One rule, one look, in T, R and
-       both halves of TR. Baba: "under all tabs we have text box, copy
-       clear under — as an action link, not an action button."
-       Glued to the box like add-to-notes was, and right-aligned so the
-       panel's actions line up down the same margin. */
+    /* THE ACTIONS SIT ABOVE THE BOX, IN THE UPPER RIGHT CORNER.
+       Baba, 25.8.2026: "every action button is at the top of the text
+       box in the upper right corner. So we are moving all action buttons
+       related to the text boxes to the upper right corner. Simple."
+       One rule, and now one PLACE — T, R, both halves of TR, and VR.
+       Before, the row hung under the box and every tab put a different
+       number of things under it, so the eye had to find them again in
+       each tab. Above and right is one corner to learn.
+       GLUED DOWNWARD now rather than upward: the row is the top edge of
+       the writing surface, so the gap it closes is the one BELOW it. */
     [class*="st-key-boxlinks_"] {{
-      /* GLUED TO THE BOX, which is right when there is text — the links
-         read as the bottom edge of the writing surface. Baba noticed it
-         is wrong when the box is EMPTY: with nothing in the box the
-         single link sits on the border and reads as part of it. The
-         empty case gets its own rule below. */
-      margin-top: -0.7rem !important;
+      margin-top: 0.1rem !important;
+      margin-bottom: -0.65rem !important;
     }}
-    /* AFTER the rule above, so it wins: both selectors match an empty
-       row and the later one takes it. */
+    /* An empty box needs the gap back, or the single link sits on the
+       border and reads as part of it — the same fault as before, in the
+       other direction. AFTER the rule above so it wins. */
     [class*="_empty"][class*="st-key-boxlinks_"] {{
-      margin-top: 0.25rem !important;
+      margin-bottom: 0.2rem !important;
     }}
     [class*="st-key-boxlinks_"] div[data-testid="stHorizontalBlock"] {{
       justify-content: flex-end !important;
