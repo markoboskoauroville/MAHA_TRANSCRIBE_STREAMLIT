@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v214 (the gate passes)"
+APP_VERSION = "v215 (stay signed in)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -363,6 +363,7 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "not_me":             {"en": "not me", "hr": "nisam ja"},
     "take_failed":        {"en": "That recording could not be turned into "
                                  "text. The audio is still here — press new "
                                  "to try again.",
@@ -1774,18 +1775,102 @@ def enter_remembered():
     return True
 
 
+def remember_me(user: str) -> None:
+    """Keep this person logged in on THIS browser until they say stop.
+
+    Baba, 25.8.2026: "I start something in the app, I put the app in the
+    background, I come back and it asks me to log in again and I lose my
+    session... I come back and my work is gone. I need to start from
+    scratch. I'm very, very frustrated."
+
+    ANDROID IS WHY. Switching to WhatsApp suspends the tab, the websocket
+    drops, and Streamlit ends the session — session_state goes with it,
+    including `_authed`. Nothing was broken; the app simply had no way to
+    know him on the way back.
+
+    WHY THIS IS BACK ON. It was switched off in v185 for a good reason
+    that no longer exists: it asked Apps Script to validate the token,
+    which was a network round trip and a script wake-up paid for by every
+    visitor on every visit. The door is a NAME IN SECRETS now, so the
+    check is a dictionary lookup in this process. The cost that justified
+    turning it off is gone; the frustration it causes is not.
+
+    WHAT IS STORED, AND WHAT IS NOT. Not the name. An HMAC of it, keyed
+    by a secret only the server has, with the name beside it so the
+    server knows whose signature to check:
+
+        {"u": "emina108", "s": "<hmac-sha256 of u, keyed by the server>"}
+
+    The signature is worthless on any other deployment and cannot be
+    computed by anyone holding the phone. Rotating the key logs everyone
+    out at once, which is the only revocation this app has.
+
+    IT IS STILL A KEY TO THIS ACCOUNT ON THIS DEVICE. That is what Remember
+    me MEANS, and the "not me" button exists so a shared phone has a way
+    out.
+    """
+    queue_ls(writes={AUTH_LS_KEY: json.dumps(
+        {"u": user, "s": _auth_sig(user)})})
+
+
+def _auth_secret() -> str:
+    """The key the signature is made with. Never leaves the server.
+
+    Falls back through what a deployment is guaranteed to have, so this
+    works on Cloud, on a laptop, and in a test without anything new being
+    added to Secrets. If NONE of them exists the signature is not made at
+    all and Remember me simply does not work — better than signing with
+    a constant every reader of this file would know.
+    """
+    for name in ("REMEMBER_SECRET", "SHEETS_TOKEN", "DRIVE_SECRET"):
+        try:
+            got = str(st.secrets.get(name) or "").strip()
+        except Exception:                                    # noqa: BLE001
+            got = ""
+        if got:
+            return got
+    return ""
+
+
+def _auth_sig(user: str) -> str:
+    key = _auth_secret()
+    if not key:
+        return ""
+    return hmac.new(key.encode(), (user or "").strip().lower().encode(),
+                    hashlib.sha256).hexdigest()
+
+
 if not st.session_state.get("_authed"):
-    # THE REMEMBERED LOGIN IS OFF (v185). It asked the browser for a
-    # stored token and then asked the accounts script to validate it,
-    # before the first screen could be drawn — a network round trip and
-    # an Apps Script wake-up that every person paid for on every visit,
-    # including the ones who were going to type their name anyway.
-    #
-    # Baba's door is now a name he types, so there is nothing to
-    # remember. _try_remembered and enter_remembered are left in place,
-    # unused, because the accounts system they belong to is still there
-    # and this is one line to put back.
-    pass
+    # BACK ON, AND LOCAL. No network, no Apps Script, no wake-up: the
+    # signature is checked in this process against a name that is already
+    # in Secrets. See remember_me above for why v185's reason to disable
+    # it does not apply any more.
+    _tok = LS_DATA.get(AUTH_LS_KEY)
+    if _tok:
+        try:
+            _blob = json.loads(_tok) if str(_tok).startswith("{") else {}
+            _who = str(_blob.get("u") or "").strip()
+            _sig = str(_blob.get("s") or "")
+            _want = _auth_sig(_who)
+            # compare_digest, not ==, so the comparison does not leak
+            # where two signatures start to differ.
+            if (_who and _sig and _want
+                    and hmac.compare_digest(_sig, _want)
+                    and _who.lower() in _named_people()):
+                st.session_state["_authed"] = True
+                st.session_state["_user"] = _who
+                st.session_state["_view_tier"] = _named_people()[_who.lower()]
+            elif _who and _sig:
+                # A TOKEN THAT NO LONGER CHECKS OUT IS REMOVED, not left
+                # to be retried on every visit. It means the name was
+                # taken out of Secrets or the secret was rotated, and
+                # both of those are "log in again", not "try for ever".
+                queue_ls(removes=[AUTH_LS_KEY])
+        except Exception:                                    # noqa: BLE001
+            # NEVER A DEPENDENCY, NEVER A CRASH. A remembered login that
+            # cannot be read is simply not a login, and the person meets
+            # the ordinary login screen.
+            pass
 
 
 # Small constants that app.py needs are read through a guard, NEVER
@@ -1883,6 +1968,13 @@ def check_password() -> bool:
         if typed.lower() in people:
             st.session_state["_authed"] = True
             st.session_state["_user"] = typed
+            # AND REMEMBER HIM, unless he unticked it. This is the whole
+            # point: the next time Android suspends the tab he comes back
+            # to his work instead of to this screen.
+            if st.session_state.get("_remember_me", True):
+                remember_me(typed)
+            else:
+                queue_ls(removes=[AUTH_LS_KEY])
             # THE VIEW OPENS AT WHAT THEY HOLD, not at the bottom. A
             # studio user should not have to press anything to get the
             # app they were given; the radio is for looking DOWN.
@@ -1897,6 +1989,14 @@ def check_password() -> bool:
     # both drawn on the first frame and stay drawn, whatever happens.
     box, entry = st.columns([6, 1], vertical_alignment="bottom")
     box.text_input("name", key="_user_input", label_visibility="collapsed")
+    # TICKED BY DEFAULT, on Baba's word: "Put Remember Me at the
+    # beginning, the check mark which is by default checked."
+    #
+    # It is BELOW the name and above nothing else, so the screen is still
+    # a box, a key and one line — §1, nothing appears and nothing
+    # disappears, and this is drawn on the first frame like the rest.
+    st.session_state.setdefault("_remember_me", True)
+    st.checkbox(t("remember_me"), key="_remember_me")
     entry.button("L", key="login_L", type="primary",
                  use_container_width=True, on_click=_pressed)
     return False
