@@ -766,6 +766,29 @@ def css(scheme: str = "amber", font: str = "mono",
       user-select: all;
     }}
 
+    /* THE DIRECTION TAGS WRAP. Baba: "you just need to wrap
+       automatically to the size of the interface. Wrap, wrap, wrap."
+       They are a paragraph of words, not a grid — twelve built-in and as
+       many of his own as he writes — so the row reflows rather than
+       clipping. Quieter than the tab pills, because pressing one INSERTS
+       rather than switches, and a row of loud buttons over a text box
+       reads as a menu. */
+    [class*="st-key-vrtags"] .stButton button,
+    [class*="st-key-vrownrow"] .stButton button {{
+      border-radius: 999px !important;
+      padding: 0.28rem 0.7rem !important;
+      font-size: 0.82rem !important;
+      min-height: 34px !important;
+      white-space: nowrap;
+    }}
+    /* His own directions carry the amber ink, so at a glance the row
+       says which words are his and which came with the app. The RING
+       stays ordinary, because colour is the state channel and this is
+       identity, not state. */
+    [class*="st-key-vrownrow"] .stButton button p {{
+      color: var(--amber) !important;
+    }}
+
     /* The tab signature: bottom right, in the same quiet monospace as
        the recorder's 00:00 counter, so it reads as a mark on the panel
        rather than as another control competing for attention. */

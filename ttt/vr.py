@@ -1,3 +1,4 @@
+import re
 """VR — Virtual Rehearsal. Hume AI, and the emotions it can be given.
 
 Baba, 24.8.2026: "we are creating a third thing called VR, virtual
@@ -317,3 +318,170 @@ def clamp_panel(value) -> str:
     inside the widget and take the whole page down — the same trap the
     tier radio already met and clamps for. Same fix, same reason."""
     return value if value in PANELS else DEFAULT_PANEL
+
+
+# ---------------------------------------------------------------------
+# DIRECTION TAGS — the direction moves INTO the text
+#
+# Baba, 25.8.2026: "You remove checkboxes. I don't need checkbox, forget
+# it... So if I press calm, it will insert where my cursor is. Calm. So
+# it starts with less than sign, it says calm, greater than sign. And
+# that's the emotion or direction to read the following sentence until
+# the new direction is found. And even a few directions can be in one
+# line: angry, afraid, tender."
+#
+# THIS CHANGES WHAT A DIRECTION IS. A tick-box says "read the WHOLE line
+# like this". A tag says "read from HERE like this, until the next tag".
+# One is a setting on the take; the other is punctuation in the script,
+# and a script is what an actor actually marks up.
+#
+#     <calm>The door opened. <angry>Who let you in?
+#
+# WHAT IT BUYS. One take can carry a turn. With tick-boxes, an angry
+# sentence after a calm one is two takes and two waits, and the join is
+# audible because the two were rendered separately.
+#
+# THE TAG IS THE WORD, LOWERCASED, IN ANGLE BRACKETS. Not a name from a
+# table — a tag is written by hand as often as it is pressed, and a form
+# somebody can type is a form they can also mistype, so parsing is
+# forgiving: case is ignored, spaces around the word are ignored, and
+# several words inside one pair of brackets are one direction with
+# several parts.
+# ---------------------------------------------------------------------
+
+TAG_OPEN = "<"
+TAG_CLOSE = ">"
+_TAG_RE = re.compile(r"<\s*([^<>]{1,80}?)\s*>")
+
+
+def tag_for(words) -> str:
+    """`"calm"` or `["angry", "afraid"]` -> `"<calm>"`, `"<angry, afraid>"`.
+
+    SEVERAL IN ONE PAIR OF BRACKETS, not several pairs. Baba: "even a few
+    directions can be in one line: angry, afraid, tender." `<angry>` then
+    `<afraid>` would read as the second REPLACING the first, since a tag
+    holds until the next one; inside one pair they are one direction with
+    three parts, which is what he means and what an actor writes.
+    """
+    if isinstance(words, str):
+        words = [words]
+    parts = [str(w).strip().lower() for w in (words or []) if str(w).strip()]
+    if not parts:
+        return ""
+    return TAG_OPEN + ", ".join(parts) + TAG_CLOSE
+
+
+def insert_tag(text: str, caret, tag: str):
+    """Put `tag` into `text` at `caret`. Returns (new_text, new_caret).
+
+    THE CARET IS CLAMPED, because it arrives from a previous render and
+    the text may have been shortened since — HOW_WE_WORK says slicing
+    past the end silently drops the tail, and that is somebody's writing.
+    `None` means the end, which is the honest answer when nothing has
+    told us otherwise.
+
+    A SPACE IS ADDED AFTER, never before. A tag governs what FOLLOWS it,
+    so it must not be glued to the word it is about to describe; and a
+    space in front would be inserted into the middle of somebody's word
+    if the caret happens to sit there.
+    """
+    body = text or ""
+    if not tag:
+        return body, (len(body) if caret is None else caret)
+    pos = len(body) if caret is None else max(0, min(int(caret), len(body)))
+    piece = tag if tag.endswith(" ") else tag + " "
+    return body[:pos] + piece + body[pos:], pos + len(piece)
+
+
+def tags_in(text: str) -> list:
+    """Every tag in the text, in order, as lists of words.
+
+    Used to tell somebody what their script currently says without
+    reading it back to them, and to check a round trip in a test.
+    """
+    out = []
+    for m in _TAG_RE.finditer(text or ""):
+        words = [w.strip().lower() for w in m.group(1).split(",")
+                 if w.strip()]
+        if words:
+            out.append(words)
+    return out
+
+
+def split_directed(text: str) -> list:
+    """The script as [(words, spoken_text)] — the whole point of tags.
+
+    Text before the first tag is spoken with NO direction, which is the
+    right default: somebody who has not marked anything up wants it read
+    plainly, not read as whatever the first tag happens to say.
+
+    Segments with nothing to speak are dropped, so two tags in a row do
+    not produce a silent take, and a tag at the very end is not a
+    request to render an empty string.
+    """
+    body = text or ""
+    out, pos, current = [], 0, []
+    for m in _TAG_RE.finditer(body):
+        chunk = body[pos:m.start()].strip()
+        if chunk:
+            out.append((list(current), chunk))
+        current = [w.strip().lower() for w in m.group(1).split(",")
+                   if w.strip()]
+        pos = m.end()
+    tail = body[pos:].strip()
+    if tail:
+        out.append((list(current), tail))
+    return out
+
+
+def strip_tags(text: str) -> str:
+    """The words alone, for anything that must not read the markup."""
+    return re.sub(r"\s{2,}", " ", _TAG_RE.sub(" ", text or "")).strip()
+
+
+# ---- THE PERSON'S OWN DIRECTIONS ------------------------------------
+# Baba: "when user types direction, there should be one button add and
+# then this direction is added on the insertion point... And when user
+# press Add, then you need to open one more box for next own direction.
+# So we have history of those things, and then the user can in this
+# session have multiple of his own presets."
+#
+# So a custom direction is not a one-off: writing it MAKES it, and it
+# stays on the panel beside the built-in ones for the rest of the
+# session. The built-in twelve are a starting vocabulary, not the limit
+# of what a rehearsal can ask for.
+
+OWN_KEY = "_vr_own"
+MAX_OWN = 24
+
+
+def own_of(state) -> list:
+    return list(state.get(OWN_KEY) or [])
+
+
+def add_own(state, text: str) -> list:
+    """Remember one of his own directions. Returns the new list.
+
+    NEWEST FIRST, because the one just written is the one about to be
+    used again. De-duped case-insensitively so pressing add twice on the
+    same words does not fill the panel with the same pill; the ORIGINAL
+    spelling is kept, since he chose it.
+
+    Capped, because this is a panel and not an archive — past MAX_OWN the
+    oldest falls off rather than the row growing until it fills a phone.
+    """
+    word = (text or "").strip()
+    if not word:
+        return own_of(state)
+    have = own_of(state)
+    kept = [w for w in have if w.strip().lower() != word.lower()]
+    out = ([word] + kept)[:MAX_OWN]
+    state[OWN_KEY] = out
+    return out
+
+
+def remove_own(state, text: str) -> list:
+    out = [w for w in own_of(state)
+           if w.strip().lower() != (text or "").strip().lower()]
+    state[OWN_KEY] = out
+    return out

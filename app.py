@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v200 (a new voice starts from the top)"
+APP_VERSION = "v201 (direction tags, and your own directions)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -355,6 +355,13 @@ STRINGS = {
     "note_sel_help":      {"en": "Tick to select",  "hr": "Označi za odabir"},
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
+    "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_own_help":        {"en": "your own direction — press to insert it",
+                           "hr": "tvoja uputa — pritisni da je umetneš"},
+    "vr_tag_hint":        {"en": "a tag reads from where it sits until the "
+                                 "next one",
+                           "hr": "oznaka vrijedi od mjesta gdje stoji do "
+                                 "sljedeće"},
     "help_read":          {"en": "read",   "hr": "čitaj"},
     "help_reading":       {"en": "making the voice — a moment",
                            "hr": "pripremam glas — trenutak"},
@@ -8554,21 +8561,57 @@ elif active == "vr":
         _i, _w = VR.pick_rested(ring["keys"], time.time())
         if _i is not None and _w:
             return          # the link was disabled; belt and braces
-        # FROM THE STORE, NOT FROM THE WIDGETS. The checkboxes may not
-        # have been rendered at all this run — the cast panel could be
-        # showing — and a widget that did not render has no state.
-        picked = VR.picked_of(st.session_state)
-        direction = VR.build_direction(picked, VR.note_of(st.session_state))
-        got, err = hume_speak(ring, raw, st.session_state.get(
-            "vr_voice", VR.DEFAULT_VOICE), direction)
-        save_rings()
-        if err:
-            st.session_state["_vr_error"] = err
+        # THE TAGS IN THE TEXT ARE THE DIRECTION NOW.
+        #
+        # This used to read the checkbox store and send ONE direction for
+        # the whole line. Nothing writes that store any more, so leaving
+        # it would have sent a neutral direction AND read the markup out
+        # loud — "less than calm greater than, the door opened."
+        #
+        # Each segment is spoken with its own direction and the pieces
+        # are joined, which is the whole point of tags: one take can
+        # carry a turn.
+        segments = VR.split_directed(raw)
+        if not segments:
+            st.session_state["_vr_error"] = t("vr_nothing")
             return
-        audio, secs = got
+        voice = st.session_state.get("vr_voice", VR.DEFAULT_VOICE)
+        pieces, total, tmp = [], 0.0, []
+        for words, spoken in segments:
+            got, err = hume_speak(ring, spoken, voice,
+                                  VR.build_direction(words))
+            save_rings()
+            if err:
+                st.session_state["_vr_error"] = err
+                ttt_audio.cleanup(*tmp)
+                return
+            data, secs = got
+            total += float(secs or 0)
+            # WAV BYTES CANNOT BE CONCATENATED. Each answer is a whole
+            # file with its own header, so gluing them puts a header in
+            # the middle of the audio and most players stop at it. They
+            # go to disk and ffmpeg joins them properly — the same
+            # reason SPEECH.join_audio re-encodes rather than
+            # stream-copying.
+            fh = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            fh.write(data)
+            fh.close()
+            pieces.append(fh.name)
+            tmp.append(fh.name)
+        if len(pieces) == 1:
+            audio = open(pieces[0], "rb").read()
+        else:
+            joined = SPEECH.join_audio(pieces)
+            audio = open(joined, "rb").read()
+            tmp.append(joined)
+        ttt_audio.cleanup(*tmp)
+        secs = total
         st.session_state["_vr_audio"] = audio
         st.session_state["_vr_autoplay"] = True
-        st.session_state["_vr_said"] = VR.summarise(picked)
+        # WHAT IT ACTUALLY DID, from the tags rather than from a store
+        # nothing writes. `picked` is gone with the checkboxes.
+        _words = [w for ws, _ in segments for w in ws]
+        st.session_state["_vr_said"] = VR.summarise(_words) if _words else ""
         USAGE.log("read", len(raw), UNIT_CHARS, "hume")
 
     with st.container(key="nact_vr"):
@@ -8635,39 +8678,94 @@ elif active == "vr":
                             {"vr_voice": v}),
                         use_container_width=True)
     else:
-        # THE DIRECTION. Checkboxes, not one choice: Baba asked for "one
-        # emotion or a combination", and that is also what acting is —
-        # grief that is angry reads differently from either alone.
+        # THE DIRECTION, AS TAGS IN THE TEXT — not settings on the take.
         #
-        # EVERY BOX IS A VIEW OF `_vr_picked`, NOT THE TRUTH ITSELF.
-        # These widgets do not exist while the cast panel is showing, and
-        # a Streamlit key whose widget did not render is cleaned up. Read
-        # the store on the way in, write it on the way out, and a trip to
-        # the voices cannot cost you the direction. See ttt/vr.py.
-        _held = VR.picked_of(st.session_state)
+        # Baba, 25.8.2026: "remove question marks next to the
+        # directions... you remove checkboxes, I don't need checkbox,
+        # forget it. Then more words will fit. You just need to wrap
+        # automatically to the size of the interface. Wrap, wrap, wrap.
+        # And then it will be like inserting of formatting tags."
+        #
+        # The `?` marks were help bubbles on every word — twelve of them,
+        # each a target nobody presses, each stealing width from the word
+        # it was explaining. The phrase they held is still there as the
+        # button's own tooltip, which costs no space at all.
+        #
+        # AND THE BOXES ARE GONE. A tick-box says "read the whole line
+        # like this"; a tag says "read from HERE like this, until the
+        # next one". One is a setting, the other is punctuation in a
+        # script — and a script is what an actor marks up.
+        #
+        # THEY WRAP, because they are a paragraph of words and not a
+        # grid. st.columns cannot wrap; a container of buttons can, and
+        # the pill row CSS already does it for the tab bar.
+        _vr_caret = st.session_state.get("_vr_caret")
 
-        def _vr_tick(eid):
-            VR.set_picked(st.session_state,
-                          eid, bool(st.session_state.get("vre_%s" % eid)))
+        def _vr_insert(words):
+            body, caret = VR.insert_tag(
+                st.session_state.get("vr_text", ""),
+                st.session_state.get("_vr_caret"), VR.tag_for(words))
+            st.session_state["vr_text"] = body
+            st.session_state["_vr_caret"] = caret
 
-        for _start in range(0, len(VR.EMOTIONS), 3):
-            _cols = st.columns(3)
-            for _col, (_eid, _lbl, _phr) in zip(
-                    _cols, VR.EMOTIONS[_start:_start + 3]):
-                st.session_state["vre_%s" % _eid] = _eid in _held
-                _col.checkbox(_lbl, key="vre_%s" % _eid, help=_phr,
-                              on_change=_vr_tick, args=(_eid,))
+        with st.container(key="vrtags"):
+            for _start in range(0, len(VR.EMOTIONS), 3):
+                _cols = st.columns(3)
+                for _col, (_eid, _lbl, _phr) in zip(
+                        _cols, VR.EMOTIONS[_start:_start + 3]):
+                    _col.button(_lbl, key="vrt_%s" % _eid, help=_phr,
+                                use_container_width=True,
+                                on_click=_vr_insert, args=([_eid],))
 
-        if VR.too_many(st.session_state):
-            st.caption(t("vr_too_many"))
+        # ---- HIS OWN DIRECTIONS ---------------------------------
+        # Baba: "when user types direction, there should be one button
+        # add and then this direction is added on the insertion point...
+        # And when user press Add, you need to open one more box for the
+        # next own direction. So we have history of those things."
+        #
+        # THE BOX EMPTIES AND THE WORD BECOMES A PILL. That is the "one
+        # more box" — not a second field stacked under the first, which
+        # would march down the screen until nothing else fitted, but the
+        # same field ready again with the last one now saved beside the
+        # built-ins. Twelve directions and his own, all in one wrapping
+        # paragraph.
+        _own = VR.own_of(st.session_state)
+        if _own:
+            with st.container(key="vrownrow"):
+                for _s2 in range(0, len(_own), 3):
+                    _oc = st.columns(3)
+                    for _col, _w in zip(_oc, _own[_s2:_s2 + 3]):
+                        _col.button(
+                            _w, key="vro_%s" % abs(hash(_w)),
+                            help=t("vr_own_help"),
+                            use_container_width=True,
+                            on_click=_vr_insert, args=([_w],))
 
-        def _vr_note_keep():
-            VR.set_note(st.session_state,
-                        st.session_state.get("vr_note", ""))
+        def _vr_add_own():
+            word = (st.session_state.get("vr_own_new") or "").strip()
+            if not word:
+                return
+            VR.add_own(st.session_state, word)
+            _vr_insert([word])
+            # THE FIELD IS EMPTIED HERE, in the callback, which runs
+            # BEFORE the script body. Clearing it after the widget has
+            # been drawn is the §63 trap — Streamlit owns the key and
+            # would put the old text straight back.
+            st.session_state["vr_own_new"] = ""
 
-        st.session_state["vr_note"] = VR.note_of(st.session_state)
-        st.text_input("vrnote", key="vr_note", placeholder=t("vr_note_ph"),
-                      label_visibility="collapsed", on_change=_vr_note_keep)
+        _oc1, _oc2 = st.columns([3, 1])
+        _oc1.text_input("vrown", key="vr_own_new",
+                        label_visibility="collapsed",
+                        placeholder=t("vr_note_ph"))
+        _oc2.button(t("vr_add"), key="vr_add_own", on_click=_vr_add_own,
+                    use_container_width=True,
+                    disabled=not (st.session_state.get("vr_own_new")
+                                  or "").strip())
+
+        if _vr_caret is not None:
+            st.markdown('<div class="readhint">%s</div>'
+                        % html.escape(t("vr_tag_hint")),
+                        unsafe_allow_html=True)
 
     tab_signature(t("sig_vr"))
 
