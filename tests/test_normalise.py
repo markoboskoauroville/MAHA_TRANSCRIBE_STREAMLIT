@@ -95,21 +95,28 @@ check("2c rubbish comes back UNCHANGED rather than lost — uneven audio "
 png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 500
 check("2d a picture is not turned into silence", A.normalise_speech(png) == png)
 
-print("\n3 BOTH HUME PATHS USE IT")
+print("\n3 EVERY HUME PATH USES IT")
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
            encoding="utf-8").read()
 vr = app[app.index('elif active == "vr":'):app.index('elif active == "looks":')]
 print("       searched the vr tab for normalise_speech on each path")
 pick = vr[vr.index("def _vr_pick_voice"):vr.index("_cur_voice = ")]
-go = vr[vr.index("def _vr_go"):vr.index("with st.container(key=\"nact_vr\")")]
+blk = vr[vr.index("def _vr_block"):vr.index("if _vr_job and _vr_job.get")]
 check("3a the PREVIEW is levelled before it reaches the player",
       "normalise_speech(audio)" in pick, pick[-300:])
-check("3b so is the REHEARSAL take", "normalise_speech(audio)" in go,
-      go[-300:])
-check("3c the take is levelled AFTER the segments are joined, not before "
-      "— one pass over the finished file, not one per request",
-      go.index("join_audio") < go.index("normalise_speech"))
-check("3d it reuses the recorder's own loudnorm, not a second set of "
+# THE REHEARSAL PATH CHANGED SHAPE IN v206 and these checks had to change
+# with it. There is no join any more: blocks are played in TURN, so each
+# one is levelled as it is built. The old checks asserted a join order
+# and went red on a correct change — the fourth time a check of mine has
+# described the code rather than the rule.
+check("3b every BLOCK is levelled as it is built",
+      "normalise_speech(data)" in blk, blk[-300:])
+check("3c and it happens before the block is cached, so a block is never "
+      "stored at the wrong level",
+      blk.index("normalise_speech") < blk.index('return job["cache"][i]'))
+check("3d there is no join left to level after",
+      "join_audio" not in vr)
+check("3e it reuses the recorder's own loudnorm, not a second set of "
       "numbers to drift from the first",
       "LOUDNORM" in open(os.path.join(os.path.dirname(__file__), "..",
                                       "ttt", "audio.py"),

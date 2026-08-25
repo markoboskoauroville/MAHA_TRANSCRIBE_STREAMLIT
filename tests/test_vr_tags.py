@@ -188,25 +188,103 @@ check("5u3 and the colours are handed over, since an iframe inherits "
 check("5v the hint line says WHICH mode is in force",
       't("vr_clip_hint")' in tab and 't("vr_tag_hint")' in tab)
 
-print("\n5b REHEARSE SPEAKS THE TAGS, IT DOES NOT READ THEM OUT")
+print("\n5b REHEARSE PLANS, IT DOES NOT READ THE TAGS OUT")
 # The trap this nearly shipped with: _vr_go read the checkbox store,
 # which nothing writes any more. It would have sent a neutral direction
-# for the whole line AND spoken the markup — "less than calm greater
-# than, the door opened."
-check("5j it splits the text into directed segments",
-      "VR.split_directed(raw)" in tab)
-check("5k each segment gets its OWN direction",
+# for the whole line AND spoken the markup out loud.
+#
+# THE JOIN CHECKS THAT LIVED HERE ARE GONE ON PURPOSE. Blocks are played
+# in turn now rather than concatenated, so there is nothing to join and
+# no WAV header to trip over. Section 6 checks what replaced them.
+check("5j it plans the reading into directed blocks",
+      "VR.plan_directed(raw" in tab)
+check("5k each block carries its OWN direction",
       "VR.build_direction(words)" in tab)
 check("5l it no longer reads the store nothing writes",
       "VR.picked_of(" not in tab and "VR.note_of(" not in tab,
       [x for x in ("VR.picked_of(", "VR.note_of(") if x in tab])
-check("5m WAV answers are joined through ffmpeg, not concatenated — "
-      "each is a whole file with its own header",
-      "SPEECH.join_audio(" in tab)
-check("5n one segment does not pay for a join it does not need",
-      "if len(pieces) == 1:" in tab)
-check("5o the temporary files are cleaned up on the failure path too",
-      tab.count("ttt_audio.cleanup(") >= 2, tab.count("ttt_audio.cleanup("))
+check("5m nothing is joined any more, so the WAV-header problem is gone",
+      "join_audio" not in tab)
+
+
+# --- 6. TEASPOON GENERATION -------------------------------------------
+# Baba: "Generate 1 sentence. While this is playing, generate 4. While
+# those 4 are playing, generate the next 4. For any length of text."
+print("\n6 THE PLAN — 1, then 4, and never across a direction")
+P = V.plan_directed
+
+
+def shape(text, **kw):
+    return [(",".join(w), len(ss)) for w, ss in P(text, **kw)]
+
+
+check("6a the first block is ONE sentence, so sound starts at once",
+      P("One. Two. Three. Four. Five. Six.")[0][1] == ["One."],
+      P("One. Two. Three. Four. Five. Six.")[0][1])
+check("6b then fours",
+      [n for _, n in shape("A. B. C. D. E. F. G. H. I. J.")] == [1, 4, 4, 1],
+      shape("A. B. C. D. E. F. G. H. I. J."))
+check("6c a long text keeps going in fours, whatever its length",
+      set(n for _, n in shape(" ".join("S%d." % i for i in range(41)))[1:-1])
+      == {4},
+      shape(" ".join("S%d." % i for i in range(41))))
+
+print("\n6b A BLOCK NEVER SPANS TWO DIRECTIONS")
+# One Hume request carries ONE description, so a tag ends the block even
+# when it has room left.
+sh = shape("<calm>One. Two. Three. Four. Five. Six. <angry>Seven. Eight.")
+print("       %s" % sh)
+check("6d the calm run breaks into 1 then 4 then the remainder",
+      [n for w, n in sh if w == "calm"] == [1, 4, 1], sh)
+check("6e and the angry text starts its OWN block",
+      [w for w, _ in sh][-1] == "angry", sh)
+check("6f a tag mid-run does not merge with what came before",
+      P("<calm>A. B. <sad>C.")[-1][0] == ["sad"], P("<calm>A. B. <sad>C."))
+
+print("\n6c THE COUNT RUNS ACROSS THE WHOLE READING")
+# If it restarted at every tag, the one-sentence wait would come back
+# every time the acting turned.
+sh2 = shape("<calm>A. <sad>B. C. D. E. F.")
+print("       %s" % sh2)
+check("6g only the FIRST block of the reading is one sentence",
+      [n for _, n in sh2] == [1, 4, 1], sh2)
+
+print("\n6d THE UGLY CASES")
+check("6h empty text is no plan", P("") == [])
+check("6i text with no tags still plans",
+      len(P("One. Two. Three. Four. Five.")) == 2,
+      shape("One. Two. Three. Four. Five."))
+check("6j a tag with nothing after it produces no empty block",
+      P("A. <calm>") == [([], ["A."])], P("A. <calm>"))
+huge = "x" * 4000 + "."
+check("6k a sentence past the budget is taken alone",
+      P(huge + " B. C.")[0][1] == [huge], len(P(huge + " B. C.")[0][1]))
+check("6l block_text joins a block for the voice",
+      V.block_text(([], ["A.", "B."])) == "A. B.")
+check("6m first=0 means no fast start",
+      shape("A. B. C. D. E.", first=0) == [("", 4), ("", 1)],
+      shape("A. B. C. D. E.", first=0))
+
+print("\n6e THE TAB BUILDS ONE BLOCK AT A TIME")
+print("       searched the vr tab for the deck")
+check("6n rehearse PLANS rather than synthesising everything",
+      "VR.plan_directed(raw" in tab)
+check("6o there is a per-block builder", "def _vr_block" in tab)
+check("6p the player is told which block of how many",
+      '_vr_job["index"] + 1' in tab and 'len(_vr_job["parts"])' in tab)
+check("6q a finished block advances the index", '_vr_job["index"] += 1' in tab)
+check("6r guarded by a stamp, so one finish is one advance",
+      '"_vr_seen"' in tab)
+check("6s it builds ahead while playing", "PREFETCH_AHEAD" in tab)
+check("6t the prefetch runs AFTER the player is drawn",
+      tab.index('key="vr_player"') < tab.index("PREFETCH_AHEAD"))
+check("6u ONE AT A TIME, because Hume's limit is per minute — a batch is "
+      "what makes a wall of 429s that poisons the next minute too",
+      "ThreadPoolExecutor" not in tab)
+check("6v a refusing block ends the job instead of retrying every redraw",
+      '_cur.get("err")' in tab and 'pop("_vr_job", None)' in tab)
+check("6w each block is levelled, since they are played in turn now",
+      "normalise_speech(data)" in tab)
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v205 (one grid, two behaviours, one appearance)"
+APP_VERSION = "v206 (VR reads by the teaspoon)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8596,21 +8596,106 @@ elif active == "vr":
     # k_hume tab is not the same thing as having no keys.
     hume_keys_from_secrets()
 
+    # ---- THE DECK, ONE BLOCK AT A TIME -----------------------------
+    # The teaspoon. Build the block being listened to, play it, and while
+    # it plays build the next two. Nothing waits for the whole text.
+    #
+    # THE SAME SHAPE AS R'S READER, deliberately: an index into `parts`,
+    # a cache beside it, a stamp so one finish is one advance, and the
+    # prefetch running AFTER the player is on the page — the player is a
+    # client-side iframe already playing, so Python carrying on here
+    # costs the listener nothing.
+    _vr_job = st.session_state.get("_vr_job")
+
+    def _vr_block(i):
+        """Build block i into the job's cache. Returns it, or None."""
+        job = st.session_state.get("_vr_job") or {}
+        if i in job.get("cache", {}) or i >= len(job.get("parts", ())):
+            return job.get("cache", {}).get(i)
+        words, sents = job["parts"][i]
+        ring = get_ring("hume")
+        got, err = hume_speak(ring, " ".join(sents).strip(), job["voice"],
+                              VR.build_direction(words))
+        if err:
+            return {"err": err}
+        data, _secs = got
+        # LEVELLED BLOCK BY BLOCK. Hume's voices arrive at wildly
+        # different volumes, and now that blocks are played in turn
+        # rather than joined, an unlevelled one is heard as a jump in the
+        # middle of the reading.
+        job["cache"][i] = {"audio": ttt_audio.normalise_speech(data)}
+        return job["cache"][i]
+
+    if _vr_job and _vr_job.get("parts"):
+        _idx = _vr_job["index"]
+        _cur = _vr_job["cache"].get(_idx)
+        if _cur is None:
+            with st.spinner(t("gen_part").format(i=_idx + 1,
+                                                 n=len(_vr_job["parts"]))):
+                _cur = _vr_block(_idx)
+            save_rings()
+        if _cur and _cur.get("err"):
+            # A VOICE THAT REFUSES IS A SENTENCE, NEVER A TRACEBACK, and
+            # the job goes rather than retrying the same block on every
+            # redraw — the bounded-retry lesson from G6.
+            st.session_state["_vr_error"] = _cur["err"]
+            st.session_state.pop("_vr_job", None)
+            _vr_job = None
+        elif _cur:
+            st.session_state["_vr_audio"] = _cur["audio"]
+
     _vr_audio = st.session_state.get("_vr_audio")
     if _wave_component is not None:
-        _wave_component(
+        _vr_ev = _wave_component(
             src=("data:audio/wav;base64," + _b64.b64encode(_vr_audio).decode()
                  if _vr_audio else ""),
             cues=[], words=[], wtimes=[],
             labels={"play": t("wave_play"), "pause": t("wave_pause"),
                     "back": t("wave_back"), "next": t("wave_next"),
                     "save": t("wave_save")},
-            part=1 if _vr_audio else 0, parts=1 if _vr_audio else 0,
+            part=(_vr_job["index"] + 1) if _vr_job else (1 if _vr_audio else 0),
+            parts=len(_vr_job["parts"]) if _vr_job else (1 if _vr_audio else 0),
             startable=bool(_vr_audio),
             scale=a11y.clamp(st.session_state.get("text_scale",
                                                  a11y.DEFAULT_SCALE)),
-            autoplay=bool(st.session_state.pop("_vr_autoplay", False)),
+            autoplay=bool(st.session_state.pop("_vr_autoplay", False))
+            or bool(_vr_job),
             key="vr_player", default=None)
+
+        # THE BLOCK FINISHED: move on. Guarded by a stamp, because the
+        # component re-reports the same press across reruns and one
+        # finish must be one advance.
+        if _vr_job and isinstance(_vr_ev, dict) and _vr_ev.get("at"):
+            if st.session_state.get("_vr_seen") != _vr_ev["at"]:
+                st.session_state["_vr_seen"] = _vr_ev["at"]
+                if _vr_job["index"] + 1 < len(_vr_job["parts"]):
+                    _vr_job["index"] += 1
+                    st.rerun()
+                else:
+                    # THE READING IS OVER. The job goes, the audio stays,
+                    # so the last block can still be replayed rather than
+                    # the deck emptying itself the moment it finishes.
+                    st.session_state.pop("_vr_job", None)
+
+    # AND BUILD AHEAD, after the player is on the page. Two, which is
+    # Baba's own "generate two and have one extra": one ahead means a
+    # slow request is heard as silence.
+    if _vr_job and _vr_job.get("parts"):
+        _want = [i for i in range(_vr_job["index"] + 1,
+                                  min(_vr_job["index"] + 1 + PREFETCH_AHEAD,
+                                      len(_vr_job["parts"])))
+                 if i not in _vr_job["cache"]]
+        for _i in _want:
+            # ONE AT A TIME, NOT IN PARALLEL. Hume's rate limit is PER
+            # MINUTE and apis/hume.md measured it: firing a batch is what
+            # produces a wall of 429s that poisons the next minute too. R
+            # can parallelise because Edge does not mind; this must not.
+            try:
+                _vr_block(_i)
+            except Exception:                                # noqa: BLE001
+                break        # a failed prefetch only costs a short wait
+        if _want:
+            save_rings()
 
     # REHEARSE SITS UNDER THE PLAYER. Baba, 25.8.2026: "the rehearse
     # action link goes under the player."
@@ -8640,62 +8725,33 @@ elif active == "vr":
         _i, _w = VR.pick_rested(ring["keys"], time.time())
         if _i is not None and _w:
             return          # the link was disabled; belt and braces
-        # THE TAGS IN THE TEXT ARE THE DIRECTION NOW.
+        # TEASPOON GENERATION. Baba, 25.8.2026: "Generate 1 sentence.
+        # While this is playing, generate 4. While those 4 are playing,
+        # generate the next 4. Fast response please. For any length of
+        # text we can read then."
         #
-        # This used to read the checkbox store and send ONE direction for
-        # the whole line. Nothing writes that store any more, so leaving
-        # it would have sent a neutral direction AND read the markup out
-        # loud — "less than calm greater than, the door opened."
+        # THIS USED TO SYNTHESISE EVERY SEGMENT BEFORE A SINGLE WORD
+        # PLAYED, and join them. On a long line that is the same "takes
+        # forever" fault R had, for the same reason.
         #
-        # Each segment is spoken with its own direction and the pieces
-        # are joined, which is the whole point of tags: one take can
-        # carry a turn.
-        segments = VR.split_directed(raw)
-        if not segments:
+        # So rehearse now only PLANS. Blocks are built one at a time by
+        # the deck below, the first is ONE sentence, and the rest arrive
+        # while the previous is playing.
+        #
+        # AND THE JOIN IS GONE WITH IT. Each block is its own file played
+        # in turn, so the WAV-header problem that needed ffmpeg does not
+        # arise: there is nothing to concatenate.
+        plan = VR.plan_directed(raw, sentences_of=tk.sentences_of)
+        if not plan:
             st.session_state["_vr_error"] = t("vr_nothing")
             return
-        voice = st.session_state.get("vr_voice", VR.DEFAULT_VOICE)
-        pieces, total, tmp = [], 0.0, []
-        for words, spoken in segments:
-            got, err = hume_speak(ring, spoken, voice,
-                                  VR.build_direction(words))
-            save_rings()
-            if err:
-                st.session_state["_vr_error"] = err
-                ttt_audio.cleanup(*tmp)
-                return
-            data, secs = got
-            total += float(secs or 0)
-            # WAV BYTES CANNOT BE CONCATENATED. Each answer is a whole
-            # file with its own header, so gluing them puts a header in
-            # the middle of the audio and most players stop at it. They
-            # go to disk and ffmpeg joins them properly — the same
-            # reason SPEECH.join_audio re-encodes rather than
-            # stream-copying.
-            fh = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            fh.write(data)
-            fh.close()
-            pieces.append(fh.name)
-            tmp.append(fh.name)
-        if len(pieces) == 1:
-            audio = open(pieces[0], "rb").read()
-        else:
-            joined = SPEECH.join_audio(pieces)
-            audio = open(joined, "rb").read()
-            tmp.append(joined)
-        ttt_audio.cleanup(*tmp)
-        # LEVELLED BEFORE IT IS EVER HEARD. Hume renders its voices at
-        # wildly different volumes, so a take can arrive loud enough to
-        # startle or quiet enough to be missed — and with tags, two
-        # segments at different levels make the join audible exactly
-        # where the acting is meant to turn. See ttt/audio.py.
-        audio = ttt_audio.normalise_speech(audio)
-        secs = total
-        st.session_state["_vr_audio"] = audio
-        st.session_state["_vr_autoplay"] = True
-        # WHAT IT ACTUALLY DID, from the tags rather than from a store
-        # nothing writes. `picked` is gone with the checkboxes.
-        _words = [w for ws, _ in segments for w in ws]
+        st.session_state["_vr_job"] = {
+            "parts": plan, "index": 0, "cache": {},
+            "voice": st.session_state.get("vr_voice", VR.DEFAULT_VOICE),
+        }
+        st.session_state.pop("_vr_audio", None)
+        st.session_state.pop("_vr_seen", None)
+        _words = [w for ws, _ in plan for w in ws]
         st.session_state["_vr_said"] = VR.summarise(_words) if _words else ""
         USAGE.log("read", len(raw), UNIT_CHARS, "hume")
 

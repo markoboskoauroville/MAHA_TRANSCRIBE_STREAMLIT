@@ -499,3 +499,75 @@ def voice_meta(name: str) -> str:
             if vn == name:
                 return "%s, %s" % (acc, age)
     return ""
+
+
+# ---------------------------------------------------------------------
+# TEASPOON GENERATION — 1, then 4, then 4, for any length of text
+#
+# Baba, 25.8.2026: "Generate 1 sentence. While this is playing, generate
+# 4 sentences. While these 4 are playing, generate the next 4. We want
+# teaspoon generations of audio files from Hume and playing back. Fast
+# response please. For any length of text we can read then."
+#
+# The same shape R already reads with, brought to VR — but VR has a
+# constraint R does not, and it decides the whole function:
+#
+#     A BLOCK CANNOT SPAN TWO DIRECTIONS. One Hume request carries ONE
+#     description, so the moment a <tag> changes the direction, the block
+#     must end whether it has four sentences or one.
+#
+# So this is plan_even with a second boundary laid over it. The count
+# runs across the WHOLE reading rather than restarting per segment,
+# because the point of `first=1` is that the FIRST thing heard arrives
+# quickly; a plan that restarted the count at every tag would give one
+# sentence, then four, then one again at the next tag, and the wait would
+# come back every time the acting turned.
+# ---------------------------------------------------------------------
+
+
+def plan_directed(text: str, first: int = 1, per_block: int = 4,
+                  max_chars: int = 1500, sentences_of=None):
+    """The reading as [(direction_words, [sentences])], in order.
+
+    `sentences_of` splits a chunk into sentences. It is passed in rather
+    than imported so this stays testable without the speech module, and
+    defaults to a plain split on terminators.
+    """
+    def _plain_split(chunk):
+        out, buf = [], ""
+        for ch in chunk:
+            buf += ch
+            if ch in ".!?" and buf.strip():
+                out.append(buf.strip())
+                buf = ""
+        if buf.strip():
+            out.append(buf.strip())
+        return out
+
+    split = sentences_of or _plain_split
+    plan = []
+    n_done = 0
+    for words, spoken in split_directed(text):
+        sents = [x for x in split(spoken) if x.strip()]
+        i = 0
+        while i < len(sents):
+            size = first if (n_done == 0 and first > 0) else per_block
+            size = max(1, int(size))
+            take, chars = [], 0
+            while len(take) < size and i + len(take) < len(sents):
+                nxt = sents[i + len(take)]
+                if take and chars + len(nxt) + 1 > max_chars:
+                    break
+                take.append(nxt)
+                chars += len(nxt) + 1
+            if not take:                  # one sentence past the budget
+                take = [sents[i]]
+            plan.append((list(words), take))
+            i += len(take)
+            n_done += 1
+    return plan
+
+
+def block_text(block) -> str:
+    """The words a block sends to the voice."""
+    return " ".join(block[1]).strip()
