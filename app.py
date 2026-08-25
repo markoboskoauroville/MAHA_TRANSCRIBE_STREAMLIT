@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v196 (nothing goes off the screen)"
+APP_VERSION = "v197 (a new reading replaces the one playing)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -8030,6 +8030,35 @@ elif active == "talk":
 
     job = st.session_state.get("_talk_job")
 
+    # A NEW READING ASKED FOR WHILE ONE IS PLAYING: THE NEW ONE WINS.
+    #
+    # Baba, 25.8.2026: "I went to help, pressed read, English started.
+    # I switched to Croatian, pressed read, and English was still
+    # playing. English was persistent. I couldn't stop it no matter
+    # what I do."
+    #
+    # `_auto_read` is consumed in the WRITING branch below. With a job
+    # already running the script takes the playing branch and never
+    # reaches it — so the flag sat unconsumed for the rest of the
+    # session and the old reading went on for ever. Nothing on the
+    # screen could clear it, because everything that starts a reading
+    # sets the same flag and the same flag was being ignored.
+    #
+    # HERE AND NOT IN HELP, because five places set `_auto_read` — the
+    # help row, "read this" from T, the archive, the notes. Fixing it in
+    # the caller would fix one of them and leave four, and the next one
+    # written would have the bug again.
+    #
+    # The stamps go with the job. They are the guards that stop the
+    # component re-reporting a press across reruns, and a stamp left
+    # over from the OLD reading would make the new one skip its first
+    # hand-off.
+    if st.session_state.get("_auto_read") and job:
+        for _k in ("_talk_job", "_talk_player_seen", "_talk_start_seen",
+                   "_talk_revoice"):
+            st.session_state.pop(_k, None)
+        job = None
+
     if job:
         # ---- PLAYING, one part at a time ----------------------------
         # Only ever ONE player on screen. When a part finishes, the
@@ -8891,6 +8920,35 @@ elif active == "help":
     # AND PLAY WORKS TOO, for free, because R's idle deck already treats
     # a press of play as "start reading". Baba: "if I press play on my
     # deck it will start to read. Play is for playback, the rule."
+    # ONE LANGUAGE CONTROL FOR HELP, AND IT IS THIS ONE.
+    #
+    # Baba switched to Croatian with the toggle INSIDE the page, pressed
+    # read, and got English. That toggle is client-side — it flips a div
+    # and writes localStorage, and Python never hears about it — so the
+    # screen followed one control and the voice followed another. Two
+    # controls for one idea, disagreeing in silence.
+    #
+    # The page's own buttons are hidden now (show_toggle=False) and this
+    # row chooses for both. What you see is what you hear.
+    #
+    # A SEPARATE VALUE FROM `ui_lang`, deliberately: reading the help in
+    # Croatian must not silently retranslate the whole app. It STARTS
+    # from ui_lang, because that is the language he already chose.
+    st.session_state.setdefault(
+        "help_lang",
+        "hr" if str(st.session_state.get("ui_lang", "hr")
+                    ).lower().startswith("hr") else "en")
+    _hl = st.session_state["help_lang"]
+    _hlc1, _hlc2 = st.columns(2)
+    _hlc1.button(t("lang_hr"), key="help_l_hr",
+                 type="primary" if _hl == "hr" else "secondary",
+                 use_container_width=True,
+                 on_click=lambda: st.session_state.update({"help_lang": "hr"}))
+    _hlc2.button(t("lang_en"), key="help_l_en",
+                 type="primary" if _hl == "en" else "secondary",
+                 use_container_width=True,
+                 on_click=lambda: st.session_state.update({"help_lang": "en"}))
+
     _hg = str(st.session_state.get("help_gender", "F")).upper()
     _hc1, _hc2, _hc3 = st.columns([1, 1, 1.4])
     _hc1.button(t("tr_voice_f"), key="help_g_f",
@@ -8906,8 +8964,7 @@ elif active == "help":
         # THE LANGUAGE THE PAGE IS SHOWING. Croatian help read by an
         # English voice is not a small wrongness, it is unlistenable —
         # which is worse than silent.
-        lang = "hr" if str(st.session_state.get(
-            "ui_lang", "hr")).lower().startswith("hr") else "en"
+        lang = st.session_state.get("help_lang", "hr")
         names = VOICES_BY_LANG.get(lang) or VOICES_BY_LANG["en"]
         # [female, male] in that order, in both languages — see
         # VOICES_BY_LANG. Index rather than a second mapping to keep in
@@ -8921,8 +8978,10 @@ elif active == "help":
     _hc3.button(t("help_read"), key="help_read_go",
                 on_click=_help_read, use_container_width=True)
 
-    components.html(HELP_PAGE.page(st.session_state.get("ui_lang", "hr")),
-                    height=620, scrolling=True)
+    components.html(
+        HELP_PAGE.page(st.session_state.get("help_lang", "hr"),
+                       show_toggle=False),
+        height=620, scrolling=True)
 
 
 elif active == "log":

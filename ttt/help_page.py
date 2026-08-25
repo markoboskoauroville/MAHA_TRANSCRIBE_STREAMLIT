@@ -293,14 +293,32 @@ service. There are several, so a tired one can rest.</dd>
 """
 
 
-def page(lang: str = "hr") -> str:
-    """One document holding both languages, with an instant toggle."""
+def page(lang: str = "hr", show_toggle: bool = True) -> str:
+    """One document holding both languages.
+
+    `show_toggle=False` hides the buttons INSIDE the page, for when the
+    language is chosen outside it.
+
+    WHY THAT OPTION EXISTS. The toggle in here is client-side: it flips
+    which div is shown and writes localStorage, and Python never hears
+    about it. Once the help could be READ ALOUD that became a trap — Baba
+    switched to Croatian with this toggle, pressed read, and got English,
+    because the voice was following `ui_lang` while the screen was
+    following localStorage. Two controls for one idea, disagreeing
+    silently.
+
+    So when the tab offers its own language buttons, these are hidden and
+    there is exactly one place to choose. The cost is a rerun on each
+    switch instead of an instant flip; the gain is that what you see is
+    what you hear.
+    """
     start = "hr" if str(lang).lower().startswith("hr") else "en"
+    _toggle = "" if not show_toggle else """
+  <button class="lang" id="bHR" type="button">HR</button>
+  <button class="lang" id="bEN" type="button">ENG</button>"""
     return f"""<!doctype html><meta charset="utf-8">
 <style>{CSS}</style>
-<div id="top">
-  <button class="lang" id="bHR" type="button">HR</button>
-  <button class="lang" id="bEN" type="button">ENG</button>
+<div id="top">{_toggle}
 </div>
 <div id="wrap">
   <div data-lang="hr">{HR}</div>
@@ -317,12 +335,17 @@ function show(l){{
   document.querySelectorAll('[data-lang]').forEach(function(d){{
     d.classList.toggle('show', d.getAttribute('data-lang') === l);
   }});
-  document.getElementById('bHR').classList.toggle('on', l === 'hr');
-  document.getElementById('bEN').classList.toggle('on', l === 'en');
+  // GUARDED, because the buttons are optional now. An unguarded
+  // getElementById on a hidden toggle returns null, and .classList on
+  // null throws — which would take the WHOLE page down and leave a
+  // blank help tab, not a missing button.
+  var _h = document.getElementById('bHR'), _e = document.getElementById('bEN');
+  if (_h) _h.classList.toggle('on', l === 'hr');
+  if (_e) _e.classList.toggle('on', l === 'en');
   try {{ localStorage.setItem('ttt_help_lang', l); }} catch(e) {{}}
 }}
-document.getElementById('bHR').onclick = function(){{ show('hr'); }};
-document.getElementById('bEN').onclick = function(){{ show('en'); }};
+if (_h) _h.onclick = function(){{ show('hr'); }};
+if (_e) _e.onclick = function(){{ show('en'); }};
 try {{
   var saved = localStorage.getItem('ttt_help_lang');
   if (saved === 'hr' || saved === 'en') cur = saved;
