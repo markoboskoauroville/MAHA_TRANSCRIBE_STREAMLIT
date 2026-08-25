@@ -88,13 +88,27 @@ ek_all = app[app.index("def hume_error_kind"):app.index("def hume_error_message"
 ek = "\n".join(l for l in ek_all.splitlines()
                if not l.lstrip().startswith("#"))
 print("       searched hume_error_kind's CODE for the credit case")
+# THE RULE MOVED, and these two moved with it. The credit case was
+# measured on Hume first and then found to apply to every provider, so it
+# lives in providers/base.classify_standard now — checking for it inside
+# hume_error_kind is checking the old address. The BEHAVIOUR is what
+# matters and it is asserted directly below, plus in full in
+# test_fallback_audit.
+from ttt.providers import base as _B  # noqa: E402
 check("3a an exhausted account is DEAD, so the ring moves on",
-      "zero_credits" in ek and 'return "dead"' in ek)
-check("3b it is matched on the body, not only the status — Hume answers "
+      _B.classify_standard(400, '{"slug":"zero_credits"}') == "dead",
+      _B.classify_standard(400, "zero_credits"))
+check("3a2 and hume_error_kind defers to that rule rather than keeping "
+      "a private copy",
+      "classify_standard(status, body)" in ek)
+check("3b it is matched on the BODY, not only the status — Hume answers "
       "400 for this, which used to fall through to soft",
-      "e0300" in ek.lower() and "credit balance" in ek.lower(), ek[-200:])
-check("3b2 and the measured error body is written down beside it",
-      "zero_credits" in ek_all)
+      _B.classify_standard(400, "Exhausted credit balance") == "dead"
+      and _B.classify_standard(400, "malformed") == "soft")
+check("3b2 and the measured error body is written down where the rule "
+      "lives", "zero_credits" in open(os.path.join(
+          os.path.dirname(__file__), "..", "ttt", "providers", "base.py"),
+          encoding="utf-8").read())
 check("3c 401 and 402 are still dead", "status in (401, 402)" in ek)
 check("3d 429 still RESTS a key rather than condemning it — valid and "
       "throttled is not the same as bad", 'return "cool"' in ek)

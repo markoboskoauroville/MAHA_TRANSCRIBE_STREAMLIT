@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v210 (nothing truncated, and an empty account falls back)"
+APP_VERSION = "v211 (one fallback rule, for every provider)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -3739,12 +3739,15 @@ def sp_default_voice(lang: str):
 
 
 
-def sp_error_kind(status: int) -> str:
-    if status in (401, 402, 403):
-        return "dead"
-    if status == 429:
-        return "cool"
-    return "soft"
+def sp_error_kind(status: int, body: str = "") -> str:
+    """Speechify's verdict, which is the shared one.
+
+    It kept its own copy of the map and so could not see a Cloudflare
+    403 or a 400 that means the account is empty — the same two blind
+    spots the Hume ring had. Deferring means there is ONE rule to fix
+    next time rather than four.
+    """
+    return PROVIDERS.base.classify_standard(status, body)
 
 
 def sp_error_message(status: int, body: str) -> str:
@@ -3777,7 +3780,9 @@ def sp_call(key: str, path: str, payload=None, method: str = "GET", timeout: int
             body = e.read().decode("utf-8", "replace")
         except Exception:
             body = ""
-        return None, sp_error_message(e.code, body), sp_error_kind(e.code)
+        # THE BODY IS PASSED. It was read for the MESSAGE and thrown away
+        # for the VERDICT, which is where the whole decision lives.
+        return None, sp_error_message(e.code, body), sp_error_kind(e.code, body)
     except Exception as e:
         return None, f"Could not reach Speechify: {e}", "soft"
 
@@ -3953,9 +3958,12 @@ def hume_error_kind(status: int, body: str = "") -> str:
     #
     # Condemned rather than rested, because credit does not come back in
     # sixty seconds. The owner tops it up or the account stays out.
-    low = (body or "").lower()
-    if status == 400 and ("zero_credits" in low or "e0300" in low
-                          or "credit balance" in low):
+    # THE SHARED RULE OWNS THE CREDIT CASE NOW. This was measured here
+    # first and then found to apply everywhere, so it moved to
+    # providers/base.classify_standard rather than staying a Hume
+    # speciality. What stays local below is genuinely Hume-only.
+    if PROVIDERS.base.classify_standard(status, body) == "dead" \
+            and status not in (401, 402, 403):
         return "dead"
     if status == 403:
         # 1010 is Cloudflare refusing the CLIENT, not Hume refusing the
@@ -4271,12 +4279,15 @@ ASSEMBLYAI_PREFIXES = ()
 AAI_BASE = "https://api.assemblyai.com"
 
 
-def aai_error_kind(status: int) -> str:
-    if status in (401, 403):
-        return "dead"
-    if status == 429:
-        return "cool"
-    return "soft"
+def aai_error_kind(status: int, body: str = "") -> str:
+    """AssemblyAI's verdict, which is the shared one.
+
+    ITS OWN COPY WAS MISSING 402 ENTIRELY — Speechify had it, this did
+    not — so a payment-required answer read as "soft" and stopped the
+    run instead of moving to the next key. Nobody had noticed because
+    nobody had run out of credit on AssemblyAI yet.
+    """
+    return PROVIDERS.base.classify_standard(status, body)
 
 
 def aai_error_message(status: int, body: str) -> str:
@@ -4311,7 +4322,7 @@ def aai_call(key: str, path: str, payload=None, method: str = "GET",
             resp = e.read().decode("utf-8", "replace")
         except Exception:
             resp = ""
-        return None, aai_error_message(e.code, resp), aai_error_kind(e.code)
+        return None, aai_error_message(e.code, resp), aai_error_kind(e.code, resp)
     except Exception as e:
         return None, f"Could not reach AssemblyAI: {e}", "soft"
 

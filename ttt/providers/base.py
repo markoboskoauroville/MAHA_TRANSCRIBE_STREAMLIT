@@ -195,11 +195,64 @@ def _message(status: int, body: str) -> str:
     return f"Refused ({status}) {detail or (body or '')[:150]}"
 
 
-def classify_standard(status: int) -> str:
-    """The verdict map almost every provider wants: auth/credit problems
-    bury the key, 429 rests it, everything else blames nobody."""
+# THE TWO THINGS A STATUS CODE ALONE CANNOT TELL YOU
+#
+# Audited 25.8.2026 across all four rings, after the Hume one was found
+# broken. Every classifier here took ONLY the status, and two whole
+# classes of failure are invisible that way:
+#
+#   A 403 THAT IS CLOUDFLARE, NOT THE PROVIDER. api.groq.com and
+#     api.hume.ai both sit behind it, and a request it does not like
+#     comes back 403 with "error code: 1010" — for EVERY key at once.
+#     MANTRA_MANIFEST/apis/hume.md measured it across 21 pairs: all 21
+#     gave 403/1010 without a User-Agent and all 21 gave 200 with one.
+#     Classified on status alone it reads as "every key is dead" and
+#     buries the whole ring permanently, with no way back but editing
+#     the store by hand.
+#
+#   A 400 THAT MEANS THE ACCOUNT IS EMPTY. MEASURED on Hume, 25.8.2026:
+#     an exhausted account answers 400 with slug zero_credits, code
+#     E0300 — not 402, which is what everyone codes for. 400 fell to
+#     "soft", and soft STOPS instead of rotating, so one empty account
+#     killed a reading while twenty others had credit.
+#
+# Both are decided by the BODY, so the body is read. This lives here
+# rather than in each provider because it is the same rule everywhere,
+# and the Hume bug existed precisely because its version lived alone.
+
+
+CLOUDFLARE_BLOCK = "1010"
+
+# Words a provider uses when the money has run out. Kept as substrings
+# rather than a status because every provider picks a different code for
+# it — Hume 400, Speechify 402, and AssemblyAI is unverified.
+NO_CREDIT_MARKS = ("zero_credits", "e0300", "credit balance",
+                   "insufficient", "quota exceeded", "out of credits",
+                   "payment required", "billing")
+
+
+def classify_standard(status: int, body: str = "") -> str:
+    """The verdict map almost every provider wants.
+
+    auth and credit problems bury the key, 429 rests it, a Cloudflare
+    block blames nobody, and everything else blames nobody either.
+
+    `body` is optional so old call sites keep working, but a caller that
+    has the body and does not pass it is throwing away the only thing
+    that separates a dead ring from a missing header.
+    """
+    low = (body or "").lower()
+    if status == 403 and CLOUDFLARE_BLOCK in low:
+        # NEVER condemn on this. It is the client being refused, not the
+        # key — and it hits every key identically, so condemning means
+        # losing the whole ring to a missing header.
+        return "soft"
     if status in (401, 402, 403):
         return "dead"
     if status == 429:
         return "cool"
+    if status == 400 and any(m in low for m in NO_CREDIT_MARKS):
+        # An empty account is dead, not soft. Condemned rather than
+        # rested, because credit does not come back in sixty seconds.
+        return "dead"
     return "soft"

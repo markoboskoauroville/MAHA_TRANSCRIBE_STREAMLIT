@@ -204,13 +204,25 @@ def classify_exception(exc) -> str:
     fallback for wrappers that do not carry one.
     """
     status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-    if isinstance(status, int):
-        return classify_standard(status)
     text = str(exc).lower()
+    if isinstance(status, int):
+        # THE MESSAGE IS PASSED AS THE BODY. api.groq.com is behind
+        # Cloudflare exactly as api.hume.ai is, and a 403 carrying
+        # "error code: 1010" is the CLIENT being refused, not the key —
+        # it hits all five keys identically. Classified on status alone
+        # it read as "every key is dead" and buried the whole ring, with
+        # no way back but editing the store by hand.
+        #
+        # This client already sends a User-Agent everywhere, so the trap
+        # is avoided at source; this is the second line of defence for
+        # the day a proxy strips it. MANTRA_MANIFEST/apis/groq.md.
+        return classify_standard(status, text)
     if "429" in text or "rate limit" in text or "too many requests" in text:
         return "cool"
     if "401" in text or "invalid api key" in text or "unauthorized" in text:
         return "dead"
+    if "1010" in text:
+        return "soft"          # Cloudflare, not the key — see above
     if "402" in text or "403" in text or "insufficient" in text or "quota" in text:
         return "dead"
     if "model_not_found" in text or "does not exist" in text \
