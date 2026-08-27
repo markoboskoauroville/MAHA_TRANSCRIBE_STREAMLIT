@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v231 (help_text.py is gone; the rule it taught is not)"
+APP_VERSION = "v232 (my tags — a panel, a store, and a door)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -379,6 +379,13 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_mytags":          {"en": "my tags", "hr": "moje oznake"},
+    "vr_tags_none":       {"en": "no tags of your own yet — write one above",
+                           "hr": "još nemaš svojih oznaka — napiši jednu gore"},
+    "vr_tags_out":        {"en": "save my tags to a file",
+                           "hr": "spremi moje oznake u datoteku"},
+    "vr_tags_in":         {"en": "load tags from a file",
+                           "hr": "učitaj oznake iz datoteke"},
     "rd_stop":            {"en": "stop reading", "hr": "prekini čitanje"},
     "vr_making":          {"en": "%s making part %d of %d · %d/%d done · %s",
                            "hr": "%s radim dio %d od %d · %d/%d gotovo · %s"},
@@ -9882,8 +9889,9 @@ elif active == "vr":
         st.session_state.get("_vr_panel"))
     st.segmented_control(
         "vrpanel", list(VR.PANELS),
-        format_func=lambda k: t("vr_voices") if k == "cast"
-        else t("vr_emotions"),
+        format_func=lambda k: {"cast": t("vr_voices"),
+                               "direction": t("vr_emotions")}.get(
+                                   k, t("vr_mytags")),
         key="_vr_panel", required=True, label_visibility="collapsed")
 
     if st.session_state["_vr_panel"] == "cast":
@@ -9958,6 +9966,82 @@ elif active == "vr":
                         help="%s · %s" % (_acc, _age),
                         on_click=_vr_pick_voice, args=(_vn,),
                         use_container_width=True)
+    elif st.session_state["_vr_panel"] == "tags":
+        # HIS OWN TAGS, WITH A WAY OUT.
+        #
+        # Baba, 25.8.2026: "Custom tags. Where I'm going to create my
+        # tags, for my emotions I need, and I can export them as a file
+        # and load them back if they are gone. But basically that needs
+        # to be stored in browser memory."
+        #
+        # THE EXPORT IS NOT A FEATURE, IT IS THE SAFETY NET. Browser
+        # storage is real storage until somebody clears their history,
+        # changes device or opens a private window — and then a
+        # vocabulary built over months is gone with no warning and no
+        # undo. He asked for the file in the same breath as the store,
+        # which is the right instinct.
+        #
+        # They already live in the browser: VR.OWN_KEY is in
+        # KEPT_CHOICES, saved and restored with everything else. This
+        # panel is where they get a home, a list, and a door.
+        _own_now = VR.own_of(st.session_state)
+
+        def _tag_add():
+            word = (st.session_state.get("vr_tag_new") or "").strip()
+            if not word:
+                return
+            VR.add_own(st.session_state, word)
+            # EMPTIED IN THE CALLBACK, before the widget is drawn — §63.
+            st.session_state["vr_tag_new"] = ""
+
+        _tc1, _tc2 = st.columns([3, 1])
+        _tc1.text_input("vrtag", key="vr_tag_new",
+                        label_visibility="collapsed",
+                        placeholder=t("vr_note_ph"))
+        _tc2.button(t("vr_add"), key="vr_tag_add", on_click=_tag_add,
+                    use_container_width=True,
+                    disabled=not (st.session_state.get("vr_tag_new")
+                                  or "").strip())
+
+        if _own_now:
+            # EACH WITH ITS OWN REMOVE. A list you can only add to is a
+            # list that fills with typos.
+            for _w in _own_now:
+                _r1, _r2 = st.columns([5, 1])
+                _r1.markdown('<div class="readhint">%s</div>'
+                             % html.escape(VR.tag_for([_w])),
+                             unsafe_allow_html=True)
+                _r2.button(t("clear_word"), key="vrtagdel_%s" % abs(hash(_w)),
+                           use_container_width=True,
+                           on_click=lambda w=_w: VR.remove_own(
+                               st.session_state, w))
+        else:
+            st.markdown('<div class="readhint">%s</div>'
+                        % html.escape(t("vr_tags_none")),
+                        unsafe_allow_html=True)
+
+        # ---- THE DOOR ------------------------------------------------
+        st.download_button(
+            t("vr_tags_out"), data=VR.export_own(_own_now).encode("utf-8"),
+            file_name="vr-tags.json", mime="application/json",
+            key="vr_tags_dl", use_container_width=True,
+            disabled=not _own_now)
+
+        _up = st.file_uploader(t("vr_tags_in"), key="vr_tags_up",
+                               type=["json", "txt"],
+                               label_visibility="collapsed")
+        if _up is not None and st.session_state.get("_vr_tags_seen") != _up.name:
+            # STAMPED BY NAME, or Streamlit re-offers the same file on
+            # every rerun and it would be imported for ever.
+            st.session_state["_vr_tags_seen"] = _up.name
+            _tags, _note = VR.import_own(_up.getvalue(), _own_now)
+            st.session_state[VR.OWN_KEY] = _tags
+            st.session_state["_vr_tags_note"] = _note
+            st.rerun()
+        _tn = st.session_state.pop("_vr_tags_note", None)
+        if _tn:
+            st.caption(_tn)
+
     else:
         # THE DIRECTION, AS TAGS IN THE TEXT — not settings on the take.
         #

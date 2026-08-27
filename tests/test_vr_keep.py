@@ -117,8 +117,21 @@ check("4a there is a stitcher", "def _vr_stitch" in vr)
 # after any more — the finished file is handed back DOWN to the player.
 check("4e the finished file is handed back to the deck, not to a second "
       "button", 'dl=(' in vr and "_vr_whole" in vr)
-check("4e2 and there is no second download control to press by mistake",
-      "st.download_button" not in vr, "st.download_button" in vr)
+# THERE IS ONE NOW, AND IT IS NOT THE SAME THING. v232 added a download
+# for his own TAGS, in the tags panel. The rule this check defends is
+# about the READING: v216 removed a second control for saving the AUDIO
+# because Baba pressed the obvious one and got a single block.
+#
+# A tags file and a rehearsal recording are not two ways to do one job.
+# So the claim is narrowed to what it always meant: no second control for
+# saving the READING.
+_deck = vr[:vr.find('_vr_panel"] == "tags"')] if '_vr_panel"] == "tags"' in vr else vr
+check("4e2 and there is no second control for saving the READING — the "
+      "fault Baba hit in v216",
+      "st.download_button" not in _deck,
+      [l for l in _deck.splitlines() if "download_button" in l])
+check("4e3 the tags export is a DIFFERENT job, and lives in its own panel",
+      'file_name="vr-tags.json"' in vr)
 # THE NAME MOVED WITH THE CONTROL. It was st.download_button's
 # file_name; now the deck saves the file, so the name goes DOWN as a prop
 # and the mime is in the data URI.

@@ -1,4 +1,4 @@
-"""VR's TWO PANELS — and the direction surviving a trip to the cast.
+"""VR's PANELS — and the direction surviving a trip to the cast.
 
     python3 tests/test_vr_panels.py
 
@@ -79,7 +79,15 @@ check("2a a nonsense panel clamps to the default",
       VR.clamp_panel("emotions-tab") == VR.DEFAULT_PANEL)
 check("2b None clamps too", VR.clamp_panel(None) == VR.DEFAULT_PANEL)
 check("2c a real one is left alone", VR.clamp_panel("direction") == "direction")
-check("2d there are exactly two panels", len(VR.PANELS) == 2, VR.PANELS)
+# THREE SINCE v232 — his own tags got a panel of their own. The claim
+# that matters is not the COUNT, it is that the two original panels are
+# still there and still first: adding a third must not have reordered
+# them, because clamp_panel falls back to the first and that fallback is
+# what somebody lands on.
+check("2d cast and direction are still the panels, in that order",
+      VR.PANELS[:2] == ("cast", "direction"), VR.PANELS)
+check("2d2 and the new one is added AFTER them, not in front",
+      VR.PANELS[2:] == ("tags",), VR.PANELS)
 
 print("\n3 A TRIP TO THE CAST AND BACK — the whole point\n")
 # What the tab does, in order, with the widget keys behaving the way
@@ -117,7 +125,11 @@ check("3e the direction sentence is unchanged by the round trip",
 print("\n4 THE PAGE ITSELF — inspected as text, and it says what it searched")
 APP = os.path.join(os.path.dirname(__file__), "..", "app.py")
 src = open(APP, encoding="utf-8").read()
-vr_tab = src[src.index('elif active == "vr":'):src.index('elif active == "looks":')]
+# find(), with the region checked — index() kills a suite instead of
+# reporting, and the sweep then shows a blank where a number belongs.
+_va, _vb = src.find('elif active == "vr":'), src.find('elif active == "looks":')
+check("0 the vr tab is findable", 0 < _va < _vb, (_va, _vb))
+vr_tab = src[_va:_vb] if 0 < _va < _vb else ""
 print("       searched the vr tab, %d chars" % len(vr_tab))
 
 

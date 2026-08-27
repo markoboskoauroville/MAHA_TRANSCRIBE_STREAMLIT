@@ -1,3 +1,5 @@
+import json
+import time
 import re
 """VR — Virtual Rehearsal. Hume AI, and the emotions it can be given.
 
@@ -329,7 +331,20 @@ def too_many(state) -> bool:
     return len(picked_of(state)) > MAX_EMOTIONS
 
 
-PANELS = ("cast", "direction")
+# A THIRD PANEL: HIS OWN TAGS, WITH A WAY OUT.
+#
+# Baba, 25.8.2026: "Create a new tab inside VR. Custom tags. Where I'm
+# going to create my tags, for my emotions I need, and I can export them
+# as a file and load them back if they are gone. But basically that needs
+# to be stored in browser memory."
+#
+# THE EXPORT IS NOT A FEATURE, IT IS THE SAFETY NET. Browser storage is
+# real storage until somebody clears their history, changes device, or
+# uses a private window — and then a vocabulary he built over months is
+# gone with no warning and no undo. He asked for the file in the same
+# breath as the store, which is the right instinct: keep it where it is
+# convenient, and be able to carry it out.
+PANELS = ("cast", "direction", "tags")
 DEFAULT_PANEL = "cast"
 
 
@@ -622,3 +637,96 @@ def plan_directed(text: str, first: int = 1, per_block: int = 4,
 def block_text(block) -> str:
     """The words a block sends to the voice."""
     return " ".join(block[1]).strip()
+
+
+# ---- CARRYING HIS TAGS IN AND OUT ------------------------------------
+
+TAGS_FILE_KIND = "ttt-lll.vr-tags"
+TAGS_FILE_VERSION = 1
+
+
+def export_own(words) -> str:
+    """His tags as a file. JSON, because it has to survive being edited.
+
+    NAMED AND VERSIONED, so a file found in a downloads folder in two
+    years says what it is and what read it. A bare list of strings is
+    unreadable the moment it leaves the app that wrote it.
+    """
+    return json.dumps({
+        "kind": TAGS_FILE_KIND,
+        "version": TAGS_FILE_VERSION,
+        "saved": time.strftime("%Y-%m-%d %H:%M"),
+        "tags": [str(w).strip() for w in (words or []) if str(w).strip()],
+    }, ensure_ascii=False, indent=2)
+
+
+def import_own(raw, existing=None):
+    """(tags, note). Forgiving on the way in, strict about what it is.
+
+    ADDS RATHER THAN REPLACES. Loading a file is almost always "put my
+    tags back", not "throw away what I have now" — and the second is not
+    undoable while the first is trivially so. Case-insensitive de-dupe,
+    existing kept first because they are what he is using today.
+
+    IT ALSO TAKES A PLAIN LIST, and a plain text file one-per-line,
+    because somebody will hand-write one and a parser that only accepts
+    its own output is a parser that says no to the obvious thing.
+    """
+    have = [str(w).strip() for w in (existing or []) if str(w).strip()]
+    if raw is None:
+        return have, "nothing to read"
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except Exception:                                    # noqa: BLE001
+            return have, "that file is not text"
+    body = str(raw).strip()
+    if not body:
+        return have, "that file is empty"
+
+    incoming, note = [], ""
+    try:
+        blob = json.loads(body)
+        if isinstance(blob, dict):
+            if blob.get("kind") and blob.get("kind") != TAGS_FILE_KIND:
+                # SAY WHOSE FILE IT IS rather than silently taking
+                # whatever happens to be under a "tags" key.
+                return have, "that file is not a VR tags file"
+            incoming = blob.get("tags") or []
+        elif isinstance(blob, list):
+            incoming = blob
+        else:
+            return have, "that file is not a list of tags"
+    except ValueError:
+        # NOT JSON: one per line, which is what a person writes by hand.
+        #
+        # BUT A TAG IS A WORD OR A PHRASE, and this fallback took
+        # anything — "%%%" became a tag on the first test I ran. A file
+        # of gibberish must not become his vocabulary, because the tags
+        # end up INSIDE his script as <like this> and a line of symbols
+        # there is a rehearsal that reads punctuation aloud.
+        #
+        # So a line has to contain a letter. Not a whitelist of
+        # characters — Croatian, accents and apostrophes all belong —
+        # just evidence that somebody wrote a word.
+        incoming = [ln for ln in body.splitlines()
+                    if any(ch.isalpha() for ch in ln)]
+        if not incoming:
+            return have, "no words in that file"
+        note = "read as one tag per line"
+
+    seen = {w.lower() for w in have}
+    added = 0
+    for w in incoming:
+        w = str(w).strip()
+        # THE SAME RULE WHATEVER THE FILE SHAPE. A JSON list of symbols
+        # is no better than a text file of them.
+        if not w or w.lower() in seen or not any(c.isalpha() for c in w):
+            continue
+        have.append(w)
+        seen.add(w.lower())
+        added += 1
+    have = have[:MAX_OWN]
+    if not added:
+        return have, note or "nothing new in that file"
+    return have, note or "added %d" % added
