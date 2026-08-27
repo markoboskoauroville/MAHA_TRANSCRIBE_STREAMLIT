@@ -730,3 +730,135 @@ def import_own(raw, existing=None):
     if not added:
         return have, note or "nothing new in that file"
     return have, note or "added %d" % added
+
+
+# ---- FILTERING THE CAST ----------------------------------------------
+#
+# Baba, 27.8.2026: "There are no filters by male and female. So we need
+# to put filters as checkboxes. It's one list and it's filtered out.
+# Checkbox male, female, then find all nationalities like Indian, UK,
+# American, and they by role, actor, narrator, and other roles."
+#
+# ONE LIST WITH FILTERS, NOT TABS, and he is right that it is better:
+# tabs make you choose one axis, checkboxes let you ask for a British
+# narrator, which is the question somebody casting actually has.
+#
+# WHERE THESE COME FROM, because two of the three are Hume's and one is
+# not, and that difference matters if the cast ever changes:
+#
+#   GENDER   Hume's own GENDER tag. Twelve and twelve, exactly.
+#   ACCENT   the accent ALREADY SHOWN on the voice's pill, looked up
+#            rather than derived — see accent_of for why the derivation
+#            was removed. Five groups: American 10, British 8,
+#            Transatlantic 2, Indian 2, Welsh 2.
+#   ROLE     NOT A HUME TAG AT ALL. Derived from the name, which is a
+#            guess dressed as data unless it is labelled — so it is
+#            labelled, here and in the panel. It happens to be a good
+#            guess: every one of the 24 falls cleanly into four groups.
+#
+# VERIFIED against the live library on 27.8.2026: all 24 of our names
+# exist in Hume's catalogue and their GENDER and ACCENT tags are what
+# these tables say.
+
+def accent_of(name: str) -> str:
+    """The accent shown on that voice's pill.
+
+    A LOOKUP, NOT A REDUCTION — and it was a reduction until a mutation
+    proved that machinery unreachable.
+    
+    The first version took Hume's raw ACCENT tag lists and picked the
+    most specific national one, because their tags OVERLAP: "British",
+    "English" and "Received Pronunciation" all sit on the same eight
+    voices, and boxes built from the raw lists would select the same
+    people three times.
+    
+    That reasoning is right and it solves a problem this app does not
+    have. VOICES already stores exactly one accent per voice — American,
+    British, Indian, Transatlantic, Welsh — put there when the cast was
+    written. Nothing passes live tags, so the reduction never ran.
+    
+    Found by mutating the overlap branch away and watching every check
+    stay GREEN. A branch no test can turn red is a branch nothing
+    reaches, and dead paths rot: the next person would maintain it.
+    
+    THE FILTER FOLLOWS THE PILL, which is the point either way. Hume
+    tags "Caring Mother" as Midwest and "Charming Cowgirl" as Texas
+    while both pills say American — and a box marked Texas that finds a
+    voice labelled American is a filter arguing with the thing it
+    filters.
+    """
+    for g in ("F", "M"):
+        for vn, acc, _age in VOICES.get(g, ()):
+            if vn == name:
+                return acc
+    return "other"
+
+
+ROLE_WORDS = (
+    ("narrator", ("narrator", "storyteller", "announcer")),
+    ("actor", ("actor", "actress")),
+    ("presenter", ("host", "journalist")),
+)
+
+
+def role_of(name: str) -> str:
+    """actor / narrator / presenter / character.
+
+    A GUESS FROM THE NAME, not a Hume tag — said plainly because a
+    filter that looks authoritative and is not will be trusted the one
+    time it is wrong. "character" is the honest catch-all: it means
+    "none of the three", not "we decided this is a character".
+    """
+    low = (name or "").lower()
+    for role, words in ROLE_WORDS:
+        if any(w in low for w in words):
+            return role
+    return "character"
+
+
+def facets(voices=None) -> dict:
+    """Every filter value actually present, with counts.
+
+    BUILT FROM THE CAST, never a hard-coded list. A box for an accent
+    nobody has is a box that always returns nothing, and adding a voice
+    should not mean remembering to add a checkbox.
+    """
+    rows = voices if voices is not None else [
+        (g, n, a, ag) for g in ("F", "M") for n, a, ag in VOICES[g]]
+    out = {"gender": {}, "accent": {}, "role": {}}
+    for g, n, _a, _ag in rows:
+        key = "female" if g == "F" else "male"
+        out["gender"][key] = out["gender"].get(key, 0) + 1
+        acc = accent_of(n)
+        out["accent"][acc] = out["accent"].get(acc, 0) + 1
+        r = role_of(n)
+        out["role"][r] = out["role"].get(r, 0) + 1
+    return out
+
+
+def filter_cast(gender=None, accents=None, roles=None):
+    """The cast, filtered. Returns [(gender, name, accent, age)].
+
+    NOTHING TICKED MEANS EVERYTHING, per axis. An empty filter is not a
+    request for an empty list — somebody who has ticked two accents and
+    no roles wants those accents in every role, and making them tick all
+    four roles as well would be a tax on the common case.
+
+    Axes are ANDed, values within an axis ORed: British OR Indian, AND
+    narrator. That is how the question is asked out loud.
+    """
+    gen = set(gender or ())
+    acc = set(accents or ())
+    rol = set(roles or ())
+    out = []
+    for g in ("F", "M"):
+        who = "female" if g == "F" else "male"
+        for name, a, age in VOICES[g]:
+            if gen and who not in gen:
+                continue
+            if acc and accent_of(name) not in acc:
+                continue
+            if rol and role_of(name) not in rol:
+                continue
+            out.append((g, name, a, age))
+    return out

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v232 (my tags — a panel, a store, and a door)"
+APP_VERSION = "v233 (one cast, three filters)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -379,6 +379,19 @@ STRINGS = {
     "tr_read_src":        {"en": "read",            "hr": "čitaj"},
     "tr_voice_f":         {"en": "female",          "hr": "ženski"},
     "vr_add":             {"en": "add",   "hr": "dodaj"},
+    "vr_f_gender":        {"en": "VOICE", "hr": "GLAS"},
+    "vr_f_accent":        {"en": "ACCENT", "hr": "NAGLASAK"},
+    "vr_f_role":          {"en": "ROLE (from the name, not from Hume)",
+                           "hr": "ULOGA (iz imena, ne od Humea)"},
+    "vr_f_none":          {"en": "no voice is all of those — untick "
+                                 "something",
+                           "hr": "nijedan glas nije sve to — otkvači nešto"},
+    "vrf_female":         {"en": "female", "hr": "ženski"},
+    "vrf_male":           {"en": "male",   "hr": "muški"},
+    "vrf_actor":          {"en": "actor",  "hr": "glumac"},
+    "vrf_narrator":       {"en": "narrator", "hr": "pripovjedač"},
+    "vrf_presenter":      {"en": "presenter", "hr": "voditelj"},
+    "vrf_character":      {"en": "character", "hr": "lik"},
     "vr_mytags":          {"en": "my tags", "hr": "moje oznake"},
     "vr_tags_none":       {"en": "no tags of your own yet — write one above",
                            "hr": "još nemaš svojih oznaka — napiši jednu gore"},
@@ -9952,9 +9965,58 @@ elif active == "vr":
         st.session_state.setdefault("vr_preview", True)
         st.checkbox(t("vr_preview"), key="vr_preview")
 
+        # FILTERS, NOT TABS. Baba, 27.8.2026: "There are no filters by
+        # male and female... It's one list and it's filtered out.
+        # Checkbox male, female, then find all nationalities like Indian,
+        # UK, American, and they by role, actor, narrator."
+        #
+        # He is right that checkboxes beat tabs here. Tabs make you
+        # choose ONE axis; boxes let you ask for a British narrator,
+        # which is the question somebody casting actually has.
+        #
+        # NOTHING TICKED MEANS EVERYTHING, per axis — an empty filter is
+        # not a request for an empty list, and making him tick all four
+        # roles to see them all would be a tax on the common case.
+        #
+        # BUILT FROM THE CAST, never a hard-coded list: a box for an
+        # accent nobody has is a box that always finds nothing.
+        _facets = VR.facets()
+        _sel = {}
+        for _axis, _label in (("gender", t("vr_f_gender")),
+                              ("accent", t("vr_f_accent")),
+                              ("role", t("vr_f_role"))):
+            _vals = sorted(_facets[_axis], key=lambda k: -_facets[_axis][k])
+            st.markdown('<div class="setlabel">%s</div>' % html.escape(_label),
+                        unsafe_allow_html=True)
+            _picked = []
+            for _start in range(0, len(_vals), 3):
+                _cols = st.columns(3)
+                for _c, _v in zip(_cols, _vals[_start:_start + 3]):
+                    # t() RETURNS THE KEY WHEN IT DOES NOT KNOW IT, so
+                    # `t(...) or _v` never falls back — the key is
+                    # truthy. Accents are proper nouns and have no
+                    # translation table, so "vrf_American" would have
+                    # been printed on the box. Asked properly instead.
+                    _lbl = t("vrf_%s" % _v)
+                    if _lbl == "vrf_%s" % _v:
+                        _lbl = _v
+                    if _c.checkbox("%s (%d)" % (_lbl, _facets[_axis][_v]),
+                                   key="vrf_%s_%s" % (_axis, _v)):
+                        _picked.append(_v)
+            _sel[_axis] = _picked
+
+        _cast = VR.filter_cast(gender=_sel["gender"], accents=_sel["accent"],
+                               roles=_sel["role"])
+        if not _cast:
+            # AN EMPTY RESULT SAYS SO. A blank space where pills were
+            # reads as the app breaking, not as "no voice is both".
+            st.markdown('<div class="readhint">%s</div>'
+                        % html.escape(t("vr_f_none")),
+                        unsafe_allow_html=True)
+
         _cur_voice = st.session_state.get("vr_voice", VR.DEFAULT_VOICE)
         for _g in ("F", "M"):
-            _rows = VR.VOICES[_g]
+            _rows = [(n, a, ag) for g2, n, a, ag in _cast if g2 == _g]
             for _start in range(0, len(_rows), 3):
                 _cols = st.columns(3)
                 for _col, (_vn, _acc, _age) in zip(_cols,
