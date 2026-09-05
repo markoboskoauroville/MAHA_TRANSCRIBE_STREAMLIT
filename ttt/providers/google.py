@@ -243,3 +243,85 @@ def retry_after(raw):
                 except ValueError:
                     return None
     return None
+
+
+# ---- THE THIRTY VOICES ----------------------------------------------
+#
+# docs/GOOGLE_ENGINE.md §5: "Thirty prebuilt, and Google publishes ONE
+# ADJECTIVE EACH — no gender, no age, no accent. Do not synthesise those
+# facets from how a name sounds. The VR tab's filters should show what
+# exists and no more; A BLANK IS A FACT AND A GUESS IS NOT."
+#
+# That rule is the whole of this table. Hume's cast carries an accent and
+# an age because Hume publishes them; Google publishes an adjective and
+# nothing else, and inventing the rest would put a filter on screen that
+# looks like Hume's and is made up. Somebody would cast from it.
+#
+# THE NAMES ARE MEASURED. They are the thirty in GOOGLE_TTS_STT's
+# src/10_app.py, which was built against the live API — not retyped from
+# a documentation page. Verified 5.9.2026: all thirty present.
+#
+# THE ADJECTIVES ARE GOOGLE'S OWN, from their TTS voice table. There is
+# NO API THAT PUBLISHES THEM — checked on 5.9.2026: there is no /voices
+# endpoint (404) and the model record carries no voice list. So they are
+# data here, and where Google gives none the entry is EMPTY rather than
+# filled with something plausible.
+VOICES = (
+    ("Zephyr", "Bright"),
+    ("Puck", "Upbeat"),
+    ("Charon", "Informative"),
+    ("Kore", "Firm"),
+    ("Fenrir", "Excitable"),
+    ("Leda", "Youthful"),
+    ("Orus", "Firm"),
+    ("Aoede", "Breezy"),
+    ("Callirrhoe", "Easy-going"),
+    ("Autonoe", "Bright"),
+    ("Enceladus", "Breathy"),
+    ("Iapetus", "Clear"),
+    ("Umbriel", "Easy-going"),
+    ("Algieba", "Smooth"),
+    ("Despina", "Smooth"),
+    ("Erinome", "Clear"),
+    ("Algenib", "Gravelly"),
+    ("Rasalgethi", "Informative"),
+    ("Laomedeia", "Upbeat"),
+    ("Achernar", "Soft"),
+    ("Alnilam", "Firm"),
+    ("Schedar", "Even"),
+    ("Gacrux", "Mature"),
+    ("Pulcherrima", "Forward"),
+    ("Achird", "Friendly"),
+    ("Zubenelgenubi", "Casual"),
+    ("Vindemiatrix", "Gentle"),
+    ("Sadachbia", "Lively"),
+    ("Sadaltager", "Knowledgeable"),
+    ("Sulafat", "Warm"),
+)
+
+DEFAULT_VOICE = "Kore"
+
+
+def voice_names() -> tuple:
+    return tuple(n for n, _ in VOICES)
+
+
+def tone_of(name: str) -> str:
+    """Google's own adjective, or "" — never a guess.
+
+    An empty answer is the honest one for a voice Google says nothing
+    about. The caller shows a blank; it does not fill one in.
+    """
+    for n, tone in VOICES:
+        if n == name:
+            return tone
+    return ""
+
+
+def tones() -> tuple:
+    """Every adjective actually present, for a filter built from the data.
+
+    Built from the table rather than written beside it, so a voice added
+    with a new adjective cannot end up unfilterable.
+    """
+    return tuple(sorted({tone for _, tone in VOICES if tone}))

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v234 (the Google pill is drawn, and the template is beside it)"
+APP_VERSION = "v235 (thirty voices, and a switch for every tab)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -863,6 +863,16 @@ STRINGS = {
     "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
     "settings_engine":    {"en": "Engine",             "hr": "Motor"},
     "eng_check":          {"en": "test",               "hr": "test"},
+    "tabs_help":          {"en": "tabs — what everyone gets",
+                           "hr": "kartice — što svi dobivaju"},
+    "tabs_note":          {"en": "Unticked hides that tab for every "
+                                 "user, including you. T, the engine "
+                                 "panel and the log cannot be hidden — "
+                                 "they are the way back.",
+                           "hr": "Neoznačeno skriva karticu svima, "
+                                 "uključujući tebe. T, ploča motora i "
+                                 "zapisnik se ne mogu sakriti — to je "
+                                 "put natrag."},
     "eng_keys_help":      {"en": "keys — the exact block to paste",
                            "hr": "ključevi — blok za zalijepiti"},
     "eng_keys_where":     {"en": "Streamlit Cloud → Settings → Secrets. "
@@ -1065,6 +1075,7 @@ STRINGS = {
     "looks_scheme":       {"en": "colour",           "hr": "boja"},
     "looks_preview":      {"en": "The quick brown fox jumps over the lazy dog. 0123456789",
                             "hr": "Gojazni đačić s ljutim che pjeva u fioci. 0123456789"},
+    "sig_help":           {"en": "help",              "hr": "pomoć"},
     "sig_looks":          {"en": "looks",             "hr": "izgled"},
     "sig_transcribe":     {"en": "transcribe",        "hr": "transkripcija"},
     "sig_read":           {"en": "read",              "hr": "čitanje"},
@@ -3667,6 +3678,87 @@ def adopt_sheet_keys():
         save_rings()
 
 
+# WHICH TABS EVERYONE GETS. The owner's switches, one per tab.
+#
+# Baba, 5.9.2026: "me as admin, in my admin control panel, I need to have
+# check marks for every tab in the interface so I can disable it for all
+# users, any tab."
+#
+# A GLOBAL setting, not a per-person one: he is turning a room off for
+# everybody, the way the engine row is global.
+#
+# THE OWNER'S OWN TABS ARE NOT SWITCHABLE, and that is the whole safety
+# of this. settings and log are how he gets back — a checkbox that can
+# hide the settings tab is a checkbox that locks the door from inside
+# with the key in the lock, and the only way back would be editing the
+# spreadsheet by hand from a phone.
+#
+# NOR IS `transcribe`. It is where somebody lands, and a landing tab that
+# is off is an app that opens on nothing. If he wants it gone the honest
+# answer is a different default, not an empty screen.
+TAB_SETTING = "tabs_off"
+TABS_NEVER_OFF = ("transcribe", "settings", "log")
+
+# THE LETTER AND THE WORD, BOTH ALREADY DEFINED, so the checkbox reads
+# "R — read" rather than a bare letter nobody can act on. Written here
+# once as a mapping from tab id to the two string keys that already
+# exist, rather than a third set of names to keep in step.
+TAB_WORDS = {
+    "transcribe": ("tab_transcribe", "sig_transcribe"),
+    "talk": ("tab_talk", "sig_read"),
+    "translate": ("tab_translate", "sig_translate"),
+    "vr": ("tab_vr", "sig_vr"),
+    "looks": ("tab_looks", "sig_looks"),
+    "help": ("tab_help", "sig_help"),
+}
+
+
+def tab_label(tab: str) -> str:
+    """"R — read", from the strings the tab bar and the signature use."""
+    letter, word = TAB_WORDS.get(tab, ("", ""))
+    l, w = (t(letter) if letter else ""), (t(word) if word else "")
+    # t() HANDS BACK THE KEY WHEN IT DOES NOT KNOW IT, so an unknown one
+    # would print "sig_help" on a checkbox. Asked properly.
+    if l == letter:
+        l = tab
+    if w == word:
+        w = ""
+    return ("%s — %s" % (l, w)) if w else l
+
+
+def tabs_off() -> set:
+    """Tabs the owner has switched off for everyone.
+
+    Read from the sheet config that is already fetched at login, so this
+    costs no round trip. Unreadable means NOTHING is off — a setting
+    that cannot be read must not be able to hide the app.
+    """
+    try:
+        raw = (st.session_state.get("_sheet_config") or {}).get(TAB_SETTING)
+    except Exception:                                        # noqa: BLE001
+        return set()
+    if not raw:
+        return set()
+    off = {p.strip() for p in str(raw).split(",") if p.strip()}
+    # THE GUARD HOLDS ON THE WAY OUT AS WELL AS THE WAY IN. A row written
+    # by an older version, or edited in the spreadsheet by hand, cannot
+    # take away the way back.
+    return off - set(TABS_NEVER_OFF)
+
+
+def set_tabs_off(off) -> bool:
+    """Write the owner's choice for everyone. True if it reached the sheet."""
+    keep = sorted(set(off) - set(TABS_NEVER_OFF))
+    ok = SHEET.put_setting(
+        str(st.secrets.get("SHEETS_URL", "") or ""),
+        str(st.secrets.get("SHEETS_TOKEN", "") or ""),
+        TAB_SETTING, ",".join(keep))
+    if ok:
+        # The cached config is stale the moment this lands.
+        st.session_state.pop("_sheet_config", None)
+    return bool(ok)
+
+
 def nav_tabs():
     """The tab list. The owner gets a second settings entry.
 
@@ -3698,6 +3790,12 @@ def nav_tabs():
     # VR SITS AFTER TR, so the tabs read T · R · TR · VR — the two
     # reading tabs, then the two that transform before they read.
     tabs = ["transcribe", "talk", "translate", "vr", "looks", "help"]
+    # WHAT THE OWNER HAS SWITCHED OFF, for everyone including himself —
+    # he needs to SEE what a family member sees, which is the whole
+    # reason the gold tabs are grouped at the end. A switch that only
+    # affected other people would be a switch he could never check.
+    off = tabs_off()
+    tabs = [x for x in tabs if x not in off]
     if is_admin():
         tabs += ["settings", "log"]
     return tabs
@@ -11065,6 +11163,48 @@ elif active == "settings":
                     st.markdown(
                         "**%s** — %s" % (_prov, t("eng_keys_n") % _n))
                     st.code(_tmpl, language="toml")
+
+            # WHICH TABS EVERYONE GETS. Baba, 5.9.2026: "me as admin, in
+            # my admin control panel, I need to have check marks for
+            # every tab in the interface so I can disable it for all
+            # users, any tab."
+            #
+            # TICKED MEANS ON, because a person reads a ticked box as
+            # "this is here". A list of things to switch OFF reads
+            # backwards and gets mis-set once, quietly, for everybody.
+            #
+            # T, settings and log have no box at all rather than a
+            # disabled one: settings and log are the way back, and T is
+            # where somebody lands. A box that cannot be unticked invites
+            # the question of why, and the honest answer — "because you
+            # would lock yourself out" — is better said by absence.
+            with st.expander(t("tabs_help"), expanded=False):
+                st.caption(t("tabs_note"))
+                _off = tabs_off()
+                _cols = st.columns(3)
+                _new_off = set(_off)
+                _switchable = [x for x in nav_tabs() + sorted(_off)
+                               if x not in TABS_NEVER_OFF]
+                _seen = []
+                for _t in _switchable:
+                    if _t in _seen:
+                        continue
+                    _seen.append(_t)
+                for _i, _t in enumerate(_seen):
+                    on = _cols[_i % 3].checkbox(
+                        tab_label(_t), value=_t not in _off,
+                        key="tabon_%s" % _t)
+                    if on:
+                        _new_off.discard(_t)
+                    else:
+                        _new_off.add(_t)
+                if _new_off != _off:
+                    st.session_state["_tabs_saved"] = set_tabs_off(_new_off)
+                    st.rerun()
+                if "_tabs_saved" in st.session_state:
+                    st.caption(t("eng_saved")
+                               if st.session_state.pop("_tabs_saved")
+                               else t("eng_notsaved"))
 
             # Did the global save land? A global setting that quietly
             # did not save is worse than one that never claimed to.
