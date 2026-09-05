@@ -69,3 +69,9 @@ Chat Claude pushes too. So Claude Code **pulls before it starts a step**
 and before it pushes, or the two will collide on `HANDOVER.md` and
 `app.py`. If a pull ever conflicts, stop and say so — do not resolve a
 conflict in `app.py` unsupervised.
+
+---
+
+## NEXT: Google as a third engine
+
+[`docs/GOOGLE_ENGINE.md`](../docs/GOOGLE_ENGINE.md) — one pill in the admin panel that moves the free tier from Edge/Groq to Google across all three routing tasks at once. Written 5.9.2026 from the session that built `GOOGLE_TTS_STT`, so the numbers in it are measured rather than read off a page. Start with the 429 mapping and write its test first: the retry hint has to be checked before the money words, and getting that backwards has already cost a live key once.
