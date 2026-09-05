@@ -208,3 +208,42 @@ credit* are both healthy accounts and must not read as failures.
 6. The VR tab: thirty voices, one adjective each, nothing invented.
 7. The reader: decide what the highlight does without word timings, and say so
    on screen.
+
+---
+
+## 9. The admin panel shows the template, not just the switch
+
+**Baba, 5.9.2026:** *"In the admin control panel there must be a help text, or
+even better an example of secret keys. Of course without keys, but as a
+template. I can easily copy and paste into Secrets and just fill up my keys."*
+
+A pill that switches to an engine whose keys are not set up yet has to say what
+setting them up looks like, **at the moment it is pressed**, not in a file
+somewhere. Nobody goes and finds `secrets.toml.example` while standing in the
+admin panel with a phone.
+
+So next to the engine pill, per engine:
+
+- **a copy button that yields the exact TOML block**, with placeholder keys and
+  the comments intact. It has to be copy-and-paste ready into Streamlit Cloud's
+  Settings → Secrets, with nothing to edit but the keys themselves.
+- **the count that is actually loaded right now**, so "0 keys found" answers the
+  question the copy button is there for.
+- **where it goes**: Settings → Secrets on Community Cloud, never the repository.
+
+The template is generated FROM the same list of secret names the loader reads,
+not written out again beside it. Two copies of a name is two places to drift
+apart, and the drift shows up as a person pasting a block that the app does not
+read.
+
+    GOOGLE_API_KEYS = [
+        "AQ.paste_your_first_key_here",
+        "AQ.paste_your_second_key_here",
+    ]
+
+with the three things that are not obvious carried in the comments: keys start
+with `AQ.`, quotas are per **project** not per key, and the free tier is **ten
+TTS requests per account per day**, which is why the list is a list.
+
+Do the same for `GROQ_API_KEYS` and the studio keys while you are there. One
+engine having a template and the others not is worse than none having one.
