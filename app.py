@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v233 (one cast, three filters)"
+APP_VERSION = "v234 (the Google pill is drawn, and the template is beside it)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -863,6 +863,14 @@ STRINGS = {
     "settings_lang":      {"en": "Interface language", "hr": "Jezik sučelja"},
     "settings_engine":    {"en": "Engine",             "hr": "Motor"},
     "eng_check":          {"en": "test",               "hr": "test"},
+    "eng_keys_help":      {"en": "keys — the exact block to paste",
+                           "hr": "ključevi — blok za zalijepiti"},
+    "eng_keys_where":     {"en": "Streamlit Cloud → Settings → Secrets. "
+                                 "Never the repository.",
+                           "hr": "Streamlit Cloud → Settings → Secrets. "
+                                 "Nikad u repozitorij."},
+    "eng_keys_n":         {"en": "%d keys loaded now",
+                           "hr": "%d ključeva sada učitano"},
     "eng_good":           {"en": "all parts answered", "hr": "svi dijelovi rade"},
     "eng_bad":            {"en": "this engine cannot run",
                            "hr": "ovaj motor ne može raditi"},
@@ -1181,6 +1189,185 @@ def owner_edge():
     st.markdown(
         "<style>.block-container{border-color:var(--amber) !important}</style>",
         unsafe_allow_html=True)
+
+
+# THE SECRET NAMES, IN ONE PLACE, READ BY BOTH THE LOADER AND THE
+# TEMPLATE.
+#
+# docs/GOOGLE_ENGINE.md §9: "The template is generated FROM the same list
+# of secret names the loader reads, not written out again beside it. Two
+# copies of a name is two places to drift apart, and the drift shows up
+# as a person pasting a block that the app does not read."
+#
+# So the admin panel's copy button and google_keys() below cannot
+# disagree: they are the same tuple.
+SECRET_NAMES = {
+    "google": ("GOOGLE_API_KEYS",),
+    "groq": ("GROQ_API_KEYS", "GROQ_API_KEY"),
+    "assemblyai": ("ASSEMBLYAI_API_KEYS",),
+    "speechify": ("SPEECHIFY_API_KEYS",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "hume": ("HUME_ACCOUNTS", "HUME_API_KEYS"),
+}
+
+
+# WHAT EACH SECRET IS FOR, IN THE WORDS SOMEBODY NEEDS AT THE MOMENT
+# THEY PASTE IT. Keyed by the SECRET NAME, so a name added to
+# SECRET_NAMES above and not described here is caught by a test rather
+# than shipping a template with a bare line in it.
+SECRET_NOTES = {
+    "GOOGLE_API_KEYS": (
+        "Keys from AI Studio start with AQ. — that is the only format",
+        "Google issues now. Old AIza keys are not made any more.",
+        "",
+        "QUOTAS ARE PER PROJECT, NOT PER KEY. Two keys made inside the",
+        "same Google Cloud project share one budget, so twenty keys from",
+        "one project is one budget wearing twenty hats. One key per",
+        "account.",
+        "",
+        "The free tier is TEN TTS REQUESTS PER ACCOUNT PER DAY, measured.",
+        "That is why this is a list: eighteen accounts is eighteen",
+        "budgets, and one account is one afternoon.",
+    ),
+    "GROQ_API_KEYS": (
+        "Whisper for speech in, and Llama for the text work.",
+        "A list so a rate-limited key can rest while another works.",
+    ),
+    "GROQ_API_KEY": (
+        "The older single-key form. Still read, so an existing setup",
+        "keeps working — but prefer the list above.",
+    ),
+    "ASSEMBLYAI_API_KEYS": ("Studio speech in.",),
+    "SPEECHIFY_API_KEYS": ("Studio speech out.",),
+    "ANTHROPIC_API_KEY": ("Studio text work.",),
+    "HUME_ACCOUNTS": (
+        "Virtual Rehearsal voices. A Hume credential is a PAIR — unlike",
+        "every other provider here — so each entry carries both halves.",
+    ),
+    "HUME_API_KEYS": (
+        "The older Hume form, keys with no secret. Still read.",
+    ),
+}
+
+# WHICH SECRETS ARE A LIST OF KEYS AND WHICH ARE A SINGLE VALUE. The
+# template has to be paste-ready, and a list rendered as a bare string
+# is a block that Streamlit accepts and the loader then reads as one
+# key spelled oddly.
+SECRET_SINGLE = ("GROQ_API_KEY", "ANTHROPIC_API_KEY")
+SECRET_PAIRS = ("HUME_ACCOUNTS",)
+
+# A PROVIDER WHOSE KEYS HAVE A VISIBLE SHAPE says so in the placeholder.
+SECRET_PREFIX = {"GOOGLE_API_KEYS": "AQ.", "GROQ_API_KEYS": "gsk_",
+                 "GROQ_API_KEY": "gsk_", "ANTHROPIC_API_KEY": "sk-ant-"}
+
+
+def secrets_template(provider: str) -> str:
+    """The TOML block for one provider, ready to paste. Nothing to edit
+    but the keys.
+
+    Baba, 5.9.2026: "In the admin control panel there must be a help
+    text, or even better an example of secret keys. Of course without
+    keys, but as a template. I can easily copy and paste into Secrets
+    and just fill up my keys."
+
+    A pill that switches to an engine whose keys are not set up has to
+    say what setting them up looks like AT THE MOMENT IT IS PRESSED.
+    Nobody goes and finds secrets.toml.example while standing in the
+    admin panel with a phone.
+
+    GENERATED FROM SECRET_NAMES, never written out beside it. Two copies
+    of a name is two places to drift apart, and the drift shows up as
+    somebody pasting a block the app does not read.
+    """
+    names = SECRET_NAMES.get(provider) or ()
+    if not names:
+        return ""
+    out = ["# --- %s %s" % (provider, "-" * max(0, 60 - len(provider)))]
+    # PLAIN KEYS FIRST, TABLES LAST, AND THIS IS TOML'S RULE NOT A
+    # PREFERENCE. Everything after a [[table]] header belongs to that
+    # table, so HUME_API_KEYS written below [[HUME_ACCOUNTS]] parses
+    # perfectly and lands INSIDE the account — and the loader, which
+    # reads it at top level, finds nothing.
+    #
+    # A block that parses, looks right and silently does nothing is the
+    # exact drift this template exists to prevent. Found by a check
+    # asking whether every name the loader reads is actually DEFINED,
+    # rather than merely present in the text.
+    names = sorted(names, key=lambda n: n in SECRET_PAIRS)
+    for name in names:
+        for line in SECRET_NOTES.get(name, ()):
+            out.append("# %s" % line if line else "#")
+        if name in SECRET_PAIRS:
+            out.append("[[%s]]" % name)
+            out.append('name = "an account name you will recognise"')
+            out.append('key = "paste_the_api_key_here"')
+            out.append('secret = "paste_the_secret_here"')
+        elif name in SECRET_SINGLE:
+            out.append('%s = "paste_your_key_here"' % name)
+        else:
+            # THE PLACEHOLDER CARRIES THE PREFIX where a provider has
+            # one. Baba's Google keys begin "AQ." and an extraction that
+            # assumed "AIza" sliced three characters off all twenty-one
+            # on 5.9.2026. A placeholder that shows the real shape is
+            # one fewer thing to get wrong, and the doc writes it this
+            # way for the same reason.
+            stub = SECRET_PREFIX.get(name, "")
+            out.append("%s = [" % name)
+            out.append('    "%spaste_your_first_key_here",' % stub)
+            out.append('    "%spaste_your_second_key_here",' % stub)
+            out.append("]")
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def secrets_loaded(provider: str) -> int:
+    """How many keys are ACTUALLY loaded for that provider right now.
+
+    "0 keys found" is the answer to the question the copy button exists
+    for, so it is shown beside it. Counting what the LOADER sees, not
+    what Secrets contains, because those differ exactly when something
+    is wrong — a misspelled name reads as zero, which is the truth the
+    person needs.
+    """
+    try:
+        if provider == "google":
+            return len(google_keys())
+        if provider == "groq":
+            return len(groq_keys())
+        if provider == "hume":
+            n = len(list(st.secrets.get("HUME_ACCOUNTS", []) or []))
+            return n + len(list(st.secrets.get("HUME_API_KEYS", []) or []))
+        total = 0
+        for name in SECRET_NAMES.get(provider, ()):
+            got = st.secrets.get(name)
+            if isinstance(got, str):
+                total += 1 if got.strip() else 0
+            elif got:
+                total += len(list(got))
+        return total
+    except Exception:                                        # noqa: BLE001
+        return 0
+
+
+def google_keys() -> list:
+    """Every Google key in Secrets.
+
+    A LIST, AND THAT IS THE MECHANISM RATHER THAN AN OPTIMISATION.
+    Google's free tier is TEN TTS REQUESTS PER ACCOUNT PER DAY,
+    hard-enforced — measured, not read off a table. Twenty-one accounts
+    is twenty-one budgets, and one account is one afternoon.
+
+    QUOTAS ARE PER PROJECT, NOT PER KEY. Two keys made inside one Google
+    Cloud project share a single budget, so twenty keys from one project
+    is one budget wearing twenty hats.
+
+    NO SHAPE IS ASSUMED. Keys from AI Studio begin "AQ." — an extraction
+    that assumed the older "AIza" prefix sliced three characters off
+    every key and made all twenty-one look invalid, on 5.9.2026. This
+    takes whatever is in the list.
+    """
+    keys = list(st.secrets.get("GOOGLE_API_KEYS", []))
+    return [str(k).strip() for k in keys if str(k).strip()]
 
 
 def groq_keys() -> list:
@@ -3228,7 +3415,27 @@ def user_admin_panel():
         # strings here would be a third place the names live, and this
         # panel is exactly where "normal" was still being shown after
         # v123 renamed it.
-        labels_by_id = {e.id: e.tier for e in EN.ENGINES}
+        # THE TIER IS NOT A NAME ONCE TWO ENGINES SHARE ONE.
+        #
+        # This showed e.tier, which read "free · studio" and was exactly
+        # right while there were two engines and two tiers. Google is a
+        # FREE-tier engine too, so the radio rendered "free · studio ·
+        # free" — two buttons with the same word, and no way to tell
+        # which one a person is on.
+        #
+        # Caught by test_admin_users 34b, which had been written to stop
+        # a third option appearing at all. It was right to object; the
+        # fix is a distinguishing label, not fewer engines.
+        #
+        # The tier still leads, because it is what somebody is ON. The
+        # engine's own name follows only when it has to.
+        _by_tier = {}
+        for _e in EN.ENGINES:
+            _by_tier.setdefault(_e.tier, []).append(_e.id)
+        labels_by_id = {
+            e.id: (e.tier if len(_by_tier.get(e.tier, ())) == 1
+                   else "%s · %s" % (e.tier, e.label.split(" / ")[0]))
+            for e in EN.ENGINES}
         # AN OLD ROW SAYS 'free' AND MUST NOT LAND ON THE WRONG BUTTON.
         # EN.get resolves the old word to the current engine; anything
         # unreadable falls to the first option rather than to nothing.
@@ -10805,18 +11012,59 @@ elif active == "settings":
             # engines in one line, so we do not have this hanging
             # button or orphan button." It acts on whichever engine is
             # chosen, so it belongs beside them rather than underneath.
-            elab, ecol1, ecol2, ecol3 = st.columns([0.9, 2.0, 2.6, 0.9])
+            # ONE COLUMN PER ENGINE, COUNTED, NOT TWO NAMED BY HAND.
+            #
+            # This was zip((ecol1, ecol2), EN.ENGINES) — two columns and
+            # three engines. zip STOPS AT THE SHORTER SIDE AND SAYS
+            # NOTHING, so the Google pill was simply never drawn: the
+            # engine existed, the routes existed, the tests passed, and
+            # the control Baba asked for was not on the screen.
+            #
+            # A row built from a hand-written list of columns is a row
+            # that silently drops whatever is added after it. Built from
+            # len(ENGINES) now, so adding a fourth engine cannot lose it.
+            _ncols = len(EN.ENGINES)
+            _row = st.columns([0.9] + [2.0] * _ncols + [0.9])
+            elab, ecols, echeck = _row[0], _row[1:-1], _row[-1]
             elab.text(t("settings_engine"))
             _now = engine_now()
             _now_id = _now.id if _now else ""
-            for col, eng in zip((ecol1, ecol2), EN.ENGINES):
+            for col, eng in zip(ecols, EN.ENGINES):
                 col.button(eng.label, key="eng_%s" % eng.id,
                            type="primary" if eng.id == _now_id else "secondary",
                            help=eng.note,
                            on_click=pick_engine, args=(eng.id,),
                            use_container_width=True)
-            ecol3.button(t("eng_check"), key="eng_check",
-                         on_click=run_engine_check, use_container_width=True)
+            echeck.button(t("eng_check"), key="eng_check",
+                          on_click=run_engine_check, use_container_width=True)
+
+            # THE TEMPLATE, AT THE MOMENT THE PILL IS PRESSED.
+            #
+            # Baba, 5.9.2026: "In the admin control panel there must be a
+            # help text, or even better an example of secret keys. Of
+            # course without keys, but as a template. I can easily copy
+            # and paste into Secrets and just fill up my keys."
+            #
+            # A pill that switches to an engine whose keys are not set up
+            # has to say what setting them up LOOKS LIKE, here, not in a
+            # file. Nobody finds secrets.toml.example while standing in
+            # the admin panel with a phone.
+            #
+            # THE COUNT IS THE POINT AS MUCH AS THE BLOCK. "0 keys found"
+            # is the answer to the question the copy button exists for,
+            # and it counts what the LOADER sees rather than what Secrets
+            # holds — those differ exactly when something is wrong.
+            with st.expander(t("eng_keys_help"), expanded=False):
+                st.caption(t("eng_keys_where"))
+                for _prov in sorted({p for e in EN.ENGINES
+                                     for p in e.routes.values()}):
+                    _tmpl = secrets_template(_prov)
+                    if not _tmpl:
+                        continue          # a keyless provider, e.g. edge
+                    _n = secrets_loaded(_prov)
+                    st.markdown(
+                        "**%s** — %s" % (_prov, t("eng_keys_n") % _n))
+                    st.code(_tmpl, language="toml")
 
             # Did the global save land? A global setting that quietly
             # did not save is worse than one that never claimed to.

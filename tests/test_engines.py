@@ -30,7 +30,31 @@ free = EN.get("free")
 studio = EN.get("studio")
 
 # --- the presets --------------------------------------------------
-check("1 two engines", len(EN.ENGINES) == 2, [e.id for e in EN.ENGINES])
+# THREE SINCE GOOGLE, and the count was never the claim. What matters is
+# that the two originals are still there, still first, and still say what
+# they said — DEFAULT falls back to the first, and a preset that quietly
+# reordered would move somebody's tier without anybody pressing anything.
+check("1 the two original engines are still present and first",
+      [e.id for e in EN.ENGINES][:2] == ["normal", "studio"],
+      [e.id for e in EN.ENGINES])
+check("1b and google is added after them, never in front",
+      [e.id for e in EN.ENGINES][2:] == ["google"],
+      [e.id for e in EN.ENGINES])
+check("1c the default is still the free tier — adding an engine must "
+      "not move anybody", EN.DEFAULT == "normal", EN.DEFAULT)
+
+# GOOGLE IS DELIBERATELY NOT A COMPLETE PAIR. Gemini returns no word
+# timings, so tts google would spend the scarcest budget in the app —
+# ten a day — to REMOVE the reader's word highlight. Two of three
+# routes, and the note on screen says why.
+_g = EN.get("google")
+check("1d google routes stt and llm to Gemini", _g.routes["stt"] == "google"
+      and _g.routes["llm"] == "google", _g.routes)
+check("1e and leaves tts on Edge, because Gemini has no word timings",
+      _g.routes["tts"] == "edge", _g.routes)
+check("1f and SAYS so, rather than leaving somebody to notice",
+      "word timings" in (_g.note or ""), _g.note)
+check("1g it is a free-tier engine", _g.tier == "free", _g.tier)
 check("2 Edge/Groq is the free one",
       free.routes == {"stt": "groq", "tts": "edge", "llm": "groq"}, free.routes)
 check("3 Speechify/AssemblyAI/Claude is the other",

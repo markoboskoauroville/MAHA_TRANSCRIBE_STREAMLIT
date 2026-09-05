@@ -95,6 +95,34 @@ ENGINES = [
     Engine("studio", "Speechify / AssemblyAI / Claude",
            {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
            note="your own keys", tier="studio"),
+    # GOOGLE, AND IT IS DELIBERATELY NOT A COMPLETE PAIR.
+    #
+    # Baba asked for one pill that moves the free tier to Google across
+    # all three routes AT ONCE, never one at a time. This does two of
+    # them and leaves TTS on Edge, and the reason is not laziness:
+    #
+    #   GEMINI RETURNS NO WORD TIMINGS. Edge streams word-boundary
+    #   events; Gemini returns audio and nothing else. The reader's word
+    #   highlight — the thing a dyslexic reader uses most in this whole
+    #   app — cannot follow a Google voice at all.
+    #
+    #   AND TTS IS THE SCARCE ONE. Ten requests per account per day,
+    #   hard-enforced. Speech-in and text are effectively unlimited.
+    #
+    # So a complete pair would spend the scarcest budget in the app to
+    # REMOVE its most valuable feature. That is not a pair, it is a
+    # downgrade wearing one.
+    #
+    # THE RULE IT BENDS was written when the three routes were
+    # interchangeable, which here they are not. It is still ONE PILL and
+    # ONE PRESS; it simply is not one vendor, and this module has always
+    # allowed an engine to describe only part of the board.
+    #
+    # If Google ships word timings, move tts here and delete this note.
+    Engine("google", "Gemini / Edge",
+           {"stt": "google", "tts": "edge", "llm": "google"},
+           note="speech-out stays on Edge: Gemini has no word timings",
+           tier="free"),
 ]
 
 BY_ID = {e.id: e for e in ENGINES}

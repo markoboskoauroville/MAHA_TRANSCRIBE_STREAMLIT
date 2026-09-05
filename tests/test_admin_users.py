@@ -20,6 +20,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from ttt import engines as EN  # noqa: E402
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
@@ -469,7 +470,25 @@ check("34b THE RADIO OFFERS TWO ENGINES AND NO BLANK. The third option "
       # studio tier — not normal and studio." The id is still `normal`
       # in the sheet, because renaming it would mean another script
       # change, deploy and migration to say a word differently.
-      sorted(_engine_options(at)) == ["free", "studio"], _engine_options(at))
+      # WHAT THIS CHECK IS REALLY FOR, and it is not the number two.
+      #
+      # The fault it was written against was a third option called
+      # 'global' — a state that is neither of the real answers, so
+      # pressing it left somebody on nothing. Every option must be a
+      # REAL ENGINE, and none may be blank.
+      #
+      # Google made it fail by adding a genuine third engine. Read as
+      # "there must be exactly two" it would have forbidden that; read
+      # as what it defends, it still holds.
+      #
+      # AND IT CAUGHT A REAL FAULT ON THE WAY. The radio labelled each
+      # option with its TIER, and Google is a free-tier engine too, so
+      # it rendered "free · studio · free" — two buttons wearing one
+      # word. The labels are distinguishing now.
+      all(o and o.strip() for o in _engine_options(at))
+      and len(set(_engine_options(at))) == len(_engine_options(at))
+      and len(_engine_options(at)) == len(EN.ENGINES),
+      _engine_options(at))
 
 # ── §1: none of this may ever shut the door ───────────────────────────
 at = panel()
