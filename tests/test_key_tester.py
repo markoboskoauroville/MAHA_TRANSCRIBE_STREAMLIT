@@ -472,7 +472,7 @@ check("...and the counter cannot run past the total",
 
 # WHAT MAY BE DELETED, AND WHAT MAY NOT. This is the one that protects
 # live accounts, so it is asserted on the RULE and not on the button.
-_drop = CODE.split("def _kt_drop")[1].split("st.button")[0]
+_drop = CODE.split("def _kt_drop_where")[1].split("if _bad:")[0]
 check("the drop region was found (%d chars)" % len(_drop),
       40 < len(_drop) < 600, len(_drop))
 
@@ -485,13 +485,26 @@ for keep in (_G.WORKING, _G.BUSY, _G.NO_CREDIT, _G.UNKNOWN):
 # just above — so rewriting the drop filter to "everything not working"
 # left this green while the button deleted live no-credit accounts. The
 # most dangerous mutation in this set was the one my check could not see.
-check("the DROP ITSELF asks deletable(), not its own opinion",
-      "GOOGLE_P.deletable(" in _drop, _drop)
-check("...and it keeps everything deletable() says no to",
-      "if not GOOGLE_P.deletable(" in _drop, _drop)
-check("the drop never compares against WORKING, which would bin "
+# THE FILTER MOVED WHEN THE SECOND BIN ARRIVED. It used to live in
+# _kt_drop; it is now the predicate passed at each call site, and the
+# helper itself is generic. So the assertion follows it to the call
+# site rather than staying pointed at a function that no longer decides
+# anything — which is how a check ends up green and meaningless.
+_refused_btn = CODE.split("if _bad:")[1].split("_poor =")[0]
+check("the refused button's block was found (%d chars)" % len(_refused_btn),
+      60 < len(_refused_btn) < 800, len(_refused_btn))
+check("the refused bin asks deletable(), not its own opinion",
+      "GOOGLE_P.deletable(" in _refused_btn, _refused_btn)
+check("the refused bin never compares against WORKING, which would bin "
       "no-credit and unknown accounts alike",
-      "WORKING" not in _drop, _drop)
+      "WORKING" not in _refused_btn, _refused_btn)
+_poor_btn = CODE.split("_poor = [r for r in found")[1].split("st.markdown")[0]
+check("the out-of-credit bin was found (%d chars)" % len(_poor_btn),
+      60 < len(_poor_btn) < 1200, len(_poor_btn))
+check("...and it removes ONLY no-credit, never refused or unknown",
+      "GOOGLE_P.NO_CREDIT" in _poor_btn
+      and "UNKNOWN" not in _poor_btn
+      and "deletable" not in _poor_btn, _poor_btn)
 check("UNKNOWN is offered a RETRY before any bin",
       't("kt_retry")' in CODE and 'GOOGLE_P.UNKNOWN' in CODE)
 check("...and the note says a 503 is the service, not the key",
@@ -502,9 +515,90 @@ check("the remove help says out-of-credit accounts are alive",
 # DELETING TOUCHES ONLY THE LIST THAT BUILDS THE BLOCK. Nothing is
 # revoked at the provider and no ring is written.
 check("dropping only rewrites the parsed list",
-      "st.session_state[KT_STATE] = keep" in _drop)
+      "st.session_state[KT_STATE] = [" in _drop, _drop[:120])
 check("...and calls nothing that could revoke anything",
       "delete" not in _drop.lower() and "revoke" not in _drop.lower())
+
+# =====================================================================
+print()
+print("4c TWO BINS, AND THE AUDIT THAT FEEDS THE HANDOFF")
+# =====================================================================
+
+check("there is a bin for refused", 'key="kt_drop"' in CODE)
+check("...and a SEPARATE bin for out-of-credit",
+      'key="kt_drop_poor"' in CODE)
+# The helper is DEFINED once and CALLED twice. Counting all three
+# occurrences would have passed with one button and a stray mention.
+check("they are two buttons, not one",
+      CODE.count("on_click=lambda: _kt_drop_where(") == 2,
+      CODE.count("on_click=lambda: _kt_drop_where("))
+# THE WHOLE REASON THEY ARE TWO. One press for both would make "the key
+# is wrong" and "the account is alive and empty" the same decision.
+check("the out-of-credit bin filters on NO_CREDIT and nothing else",
+      'r["verdict"] == GOOGLE_P.NO_CREDIT' in CODE)
+check("the refused bin still asks deletable()",
+      "GOOGLE_P.deletable(" in CODE)
+_ph = RAW.split('"kt_drop_poor_help"')[1][:500]
+check("the out-of-credit help says the accounts are ALIVE",
+      "ALIVE" in _ph, _ph[:80])
+check("...and that topping up makes the same key work again",
+      "topping the account up" in _ph, _ph[:80])
+check("...and that removing here closes nothing",
+      "does not close anything" in _ph, _ph[:80])
+
+# THE AUDIT MUST NOT ROT. It is the specification the local Claude Code
+# session works from, so a name that changes in the code and not in the
+# table sends that session to write a secrets file the app cannot read.
+_audit = open(os.path.join(ROOT, "docs", "SECRETS_AUDIT.md")).read()
+_appsrc = RAW + open(os.path.join(ROOT, "ttt", "keyring.py")).read()
+_live = re.findall(r"^\| `([A-Z_0-9]+)[^`]*` \| \w+ \| \*\*LIVE",
+                   _audit, re.M)
+check("the audit lists live names", len(_live) >= 14, len(_live))
+# SOME LIVE NAMES ARE MATCHED BY A PATTERN, NOT BY A LITERAL.
+# STUDIO_USER1 and FREE_USER7 are never written out in the source: the
+# tier scanner compiles ^(ADMIN|STUDIO|FREE)_USER\d*$ and walks the
+# secrets. My first version of this check called both DEAD, which would
+# have sent the local Claude Code session to delete the two names that
+# decide who can log in at all. A check that is confidently wrong about
+# a live name is worse than no check.
+_PATTERNED = {"STUDIO_USER": "STUDIO", "FREE_USER": "FREE",
+              "ADMIN_USER": "ADMIN"}
+_missing = []
+for n in _live:
+    if '"%s"' % n in _appsrc:
+        continue
+    stem = _PATTERNED.get(n)
+    if stem and "(ADMIN|STUDIO|FREE)_USER" in _appsrc:
+        continue
+    _missing.append(n)
+check("EVERY name the audit calls LIVE is read by the code, as a "
+      "literal or through the tier pattern",
+      not _missing, _missing)
+check("...and the tier pattern really is in the source",
+      "(ADMIN|STUDIO|FREE)_USER" in _appsrc)
+_dead = re.findall(r"^\| `([A-Z_0-9]+)` \| dead \| \*\*DEAD", _audit, re.M)
+check("the audit lists the dead ones", len(_dead) == 2, _dead)
+_alive = [n for n in _dead if '"%s"' % n in _appsrc]
+check("EVERY name the audit calls DEAD has no reader at all",
+      not _alive, _alive)
+
+# THE HANDOFF MUST POINT SOMEWHERE REAL.
+_hand = open(os.path.join(ROOT, "handoff", "CLAUDE_CODE_SECRETS.md")).read()
+for ref in ("ttt/keyparse.py", "docs/SECRETS_AUDIT.md"):
+    check("the handoff points at %s, and it exists" % ref,
+          ref in _hand and os.path.exists(os.path.join(ROOT, ref)))
+check("the handoff names the AQ. prefix and not the retired one",
+      "AQ." in _hand and ("AI" + "za") in _hand)
+check("...where the retired one appears ONLY as the thing to avoid",
+      _hand.count("AI" + "za") == 1)
+check("the handoff tells it never to print the key file",
+      "Do not print it" in _hand)
+check("...and to verify the TOML parses before he pastes it",
+      "tomllib" in _hand)
+check("...and names the dead secrets to drop",
+      "SHEETS_URL" in _hand and "SHEETS_TOKEN" in _hand)
+check("...and carries the measured verdicts, so it does not re-spend them",
+      "eighteen working" in _hand and "av.live.vmix" in _hand)
 
 # =====================================================================
 print()

@@ -688,6 +688,9 @@ STRINGS = {
     "kt_unknown_note":    {"en": "%d key(s) did not answer. That is the service, not the key — a 503 says nothing about the account. Test them again before removing anything.",
                            "hr": "%d ključ(eva) nije odgovorilo. To je usluga, ne ključ — 503 ne govori ništa o računu. Testiraj ih ponovno prije uklanjanja."},
     "kt_retry":           {"en": "Test the %d that did not answer", "hr": "Testiraj %d koji nisu odgovorili"},
+    "kt_drop_poor":       {"en": "Remove the %d out-of-credit key(s)", "hr": "Ukloni %d ključ(eva) bez kredita"},
+    "kt_drop_poor_help":  {"en": "These accounts are ALIVE — the keys are valid and the balance is empty. Removing them here only leaves them out of the block; it does not close anything, and topping the account up makes the same key work again.",
+                           "hr": "Ovi računi su ŽIVI — ključevi vrijede, a stanje je prazno. Uklanjanje ih samo izostavlja iz bloka; ništa se ne zatvara, a nadopunom računa isti ključ opet radi."},
     "keys_from_secrets":  {"en": "Keys come from Streamlit Secrets: %s",
                            "hr": "Ključevi dolaze iz Streamlit Secrets: %s"},
     "test_keys_btn":      {"en": "Test keys",           "hr": "Testiraj ključeve"},
@@ -11329,13 +11332,42 @@ elif active == "settings":
                         _kt_run_tests(_un)
                         st.rerun()
 
+                # TWO BINS, NEVER ONE. Baba asked for a button for the
+                # refused and a button for the out-of-credit, and they
+                # stay two buttons on purpose: they mean opposite things
+                # about the account behind them.
+                #
+                #   refused    401/403. The credential is wrong, revoked,
+                #              or for another provider. The account may
+                #              not even exist. Nothing is lost.
+                #   no credit  THE ACCOUNT IS ALIVE. The key is real and
+                #              valid and the balance is empty. Removing
+                #              it from the block is a decision to stop
+                #              using an account he still owns and could
+                #              top up in two minutes.
+                #
+                # One button labelled "remove the bad ones" would make
+                # those the same press, and keyring.md §2d exists because
+                # they are not: "calling no credit refused has somebody
+                # delete a live account they only needed to top up."
+                def _kt_drop_where(pred):
+                    st.session_state[KT_STATE] = [
+                        r for r in (st.session_state.get(KT_STATE) or [])
+                        if not pred(r)]
+
                 if _bad:
-                    def _kt_drop():
-                        keep = [r for r in (st.session_state.get(KT_STATE) or [])
-                                if not GOOGLE_P.deletable(r["verdict"])]
-                        st.session_state[KT_STATE] = keep
                     st.button(t("kt_drop") % len(_bad), key="kt_drop",
-                              on_click=_kt_drop, help=t("kt_drop_help"))
+                              help=t("kt_drop_help"),
+                              on_click=lambda: _kt_drop_where(
+                                  lambda r: GOOGLE_P.deletable(r["verdict"])))
+
+                _poor = [r for r in found
+                         if r["verdict"] == GOOGLE_P.NO_CREDIT]
+                if _poor:
+                    st.button(t("kt_drop_poor") % len(_poor), key="kt_drop_poor",
+                              help=t("kt_drop_poor_help"),
+                              on_click=lambda: _kt_drop_where(
+                                  lambda r: r["verdict"] == GOOGLE_P.NO_CREDIT))
 
                 # ONE ROW PER KEY, MASKED, WITH ITS ACCOUNT NAME. Never
                 # the middle of a key, and never a bare position — a
