@@ -720,12 +720,22 @@ STRINGS = {
     "img_no_model":       {"en": "No engine here can read pictures.",
                             "hr": "Nijedan pogon ovdje ne može čitati slike."},
     "img_done":           {"en": "Read from a picture.", "hr": "Pročitano iz slike."},
-    "read_failed":        {"en": "That voice would not read this — try "
-                                 "another voice, or again in a moment.",
-                           "hr": "Taj glas ovo nije mogao pročitati — "
-                                 "probaj drugi glas ili za koji trenutak."},
-    "gen_part":           {"en": "Making part {i} of {n}…",
-                            "hr": "Pripremam dio {i} od {n}…"},
+    # THE REASON, NOT A SHRUG. This said only "try another voice", which
+    # tells somebody nothing about a spent account, a 503 or a timeout —
+    # three different problems with three different answers.
+    "read_failed":        {"en": "That voice would not read this: %s",
+                           "hr": "Taj glas ovo nije mogao pročitati: %s"},
+    # VERBOSE, BECAUSE THAT IS THE RULE. Baba, 6.9.2026: "The rule for
+    # my apps is to always be verbose and show what it's doing... it
+    # should say making part one of three, please wait."
+    #
+    # And it names the ENGINE and the KEY, because "Making part 1 of 3"
+    # on its own is exactly what he watched for three minutes without
+    # learning anything. Google's own ring is slow and uneven —
+    # measured: two keys hang for 60s, one is spent, two answer in 2s —
+    # so the honest thing to show is which one is being asked.
+    "gen_part":           {"en": "Making part {i} of {n} on {eng} — this can take a minute, please wait…",
+                            "hr": "Pripremam dio {i} od {n} na {eng} — može potrajati minutu, pričekaj…"},
     "gen_audio":          {"en": "Making the audio…",  "hr": "Pripremam zvuk…"},
     "rd_hint":            {"en": "press play to read",
                            "hr": "pritisni play za čitanje"},
@@ -9581,13 +9591,15 @@ elif active == "talk":
             # minute. The honest answer is to say so and leave the app
             # standing, with the studio voices as the way past it.
             try:
-                with st.spinner(t("gen_part").format(i=idx + 1, n=len(parts))):
+                with st.spinner(t("gen_part").format(
+                        i=idx + 1, n=len(parts),
+                        eng=(EN.current(st.session_state) or EN.get(EN.DEFAULT)).short)):
                     cached = _make(idx)
             except Exception as e:
                 errlog.add(st.session_state, "read",
                            "the voice could not read this block",
                            "{}: {}".format(type(e).__name__, e))
-                st.error(t("read_failed"))
+                st.error(t("read_failed") % str(e)[:160])
                 cached = None
             save_rings()
 

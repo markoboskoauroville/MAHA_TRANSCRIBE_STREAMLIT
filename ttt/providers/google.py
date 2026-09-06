@@ -450,8 +450,13 @@ TTS_PER_DAY = 10
 # is indistinguishable from a freeze. 2 x 25s is fifty seconds worst
 # case, and a working call measured 17s — so a healthy key still fits
 # comfortably inside one try.
-SOFT_TRIES = 2
-TTS_TIMEOUT = 25
+# HOW MANY KEYS ARE TRIED AT ONCE, and how long one may hang.
+# Four covers the measured pattern — two slow, one spent, two good —
+# with room to spare, and the timeout is generous again because a slow
+# key no longer blocks a fast one.
+RACE_WIDTH = 8
+TTS_TIMEOUT = 60
+SOFT_TRIES = 2          # kept for the suite; the race supersedes it
 
 # Raw PCM, 24 kHz, mono, 16-bit — and NO RIFF HEADER, which nothing warns
 # you about. Measured: audio/L16;codec=pcm;rate=24000.
@@ -644,42 +649,62 @@ class Google(Provider):
         # LOUDLY. Spent accounts answer in 0.1s and do not count against
         # it — only calls that actually cost TIME do, so a ring full of
         # empty accounts still walks straight past them to a working one.
-        tried_slow = 0
+        # RACE THE KEYS, DO NOT QUEUE BEHIND THEM.
+        #
+        # MEASURED on Baba's own ring, 6.9.2026, voice Kore:
+        #
+        #     key 1   60.1s  TIMED OUT
+        #     key 2    0.3s  no credit
+        #     key 3   60.1s  TIMED OUT
+        #     key 4   40.6s  503
+        #     key 5    2.5s  WORKING
+        #     key 6    1.7s  WORKING
+        #
+        # A sequential walk spends its whole budget on the slow ones at
+        # the front and NEVER REACHES a good key — which is exactly what
+        # he saw: three minutes of "Making part 1 of 3…" and then "that
+        # voice would not read this". Tightening the cap in v262 made it
+        # strictly worse, because it gave up even sooner.
+        #
+        # Several keys at once, FIRST ANSWER WINS. A working key answers
+        # in about two seconds, so the whole thing takes about two
+        # seconds whatever the slow ones are doing. The dead ones answer
+        # instantly and cost nothing; the hung ones are simply left
+        # behind when the pool closes.
+        #
+        # This is the only shape that works here: the ring's problem was
+        # never which key to pick, it was waiting for the wrong one.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         last = "no keys"
-        for n, key in enumerate(order, 1):
-            i = ((begin + n - 1) % len(self.keys)) + 1
-            result, err, kind = attempt(key)
-            if not err:
-                # THE POSITION OF THE KEY THAT ACTUALLY WORKED, for the
-                # status line. Recorded on success only: a key that was
-                # tried and refused is not the key in use.
-                self.active_key = i
-                return result, None
-            last = err
-            # A 503 IS NOT A REASON TO GIVE UP ON THE WHOLE SENTENCE.
-            #
-            # This stopped on anything that was not dead or cool, which
-            # meant one `unknown` ended the reading — and Google hands
-            # out 503s freely: measured 6.9.2026, a single 503 cost 67
-            # SECONDS and then killed the sentence with twenty untried
-            # keys sitting behind it.
-            #
-            # gemini-speech.md §5b: unknown "says nothing about the key,
-            # try again". So it rotates like the others. Only a REFUSAL
-            # of the request itself — a bad model name, a malformed body
-            # — is worth stopping for, and that arrives as a 400, which
-            # verdict() reads as refused and buries the key rather than
-            # returning soft.
-            if kind is None:
-                return None, err
-            # ONLY A SLOW FAILURE COUNTS. A dead or spent key answers
-            # instantly, so walking a hundred of them is free; what must
-            # be bounded is waiting.
-            if kind == "soft":
-                tried_slow += 1
-                if tried_slow >= SOFT_TRIES:
-                    return None, ("Google did not answer after %d tries. "
-                                  "%s" % (tried_slow, err))
+        for start in range(0, len(order), RACE_WIDTH):
+            batch = order[start:start + RACE_WIDTH]
+            if not batch:
+                break
+            # NO `with` HERE, AND THAT IS THE WHOLE POINT.
+            # ThreadPoolExecutor's context manager calls
+            # shutdown(wait=True) on exit — so returning early from
+            # inside it still BLOCKS until every hung key finishes.
+            # Measured: a success in 2s still took 104s to return.
+            # The pool is shut down without waiting instead, and the
+            # hung threads are abandoned.
+            pool = ThreadPoolExecutor(max_workers=len(batch))
+            try:
+                futures = {pool.submit(attempt, k): k for k in batch}
+                for fut in as_completed(futures):
+                    try:
+                        result, err, kind = fut.result()
+                    except Exception as e:                   # noqa: BLE001
+                        last = str(e)[:120]
+                        continue
+                    if not err:
+                        key = futures[fut]
+                        if key in self.keys:
+                            self.active_key = self.keys.index(key) + 1
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        return result, None
+                    last = err
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
         return None, "All Google keys failed. Last: %s" % last
 
     # ---- key testing -------------------------------------------------

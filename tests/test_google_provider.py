@@ -388,14 +388,27 @@ got, err = G.Google(keys=["AQ.a", "AQ.b", "AQ.c"])._rotate(_soft)
 # three minutes of "Making part 1 of 3…" which reads as a freeze.
 # SOFT_TRIES is the number, and the check reads it rather than
 # hardcoding one, so tightening the cap does not make this red.
-check("a soft error tries another key rather than killing the job",
-      len(seen2) == G.SOFT_TRIES and G.SOFT_TRIES >= 2,
-      (len(seen2), G.SOFT_TRIES))
-check("...and stops rather than walking all twenty-one",
-      G.SOFT_TRIES < 5, G.SOFT_TRIES)
-check("the worst case is under a minute at this timeout",
-      G.SOFT_TRIES * G.TTS_TIMEOUT <= 60,
-      G.SOFT_TRIES * G.TTS_TIMEOUT)
+# THE WALK IS A RACE NOW, so "how many did it try" is a batch, not a
+# countdown. Measured on the real ring: two keys hang for 60s, one is
+# spent, two answer in about two seconds — so trying them ONE AT A TIME
+# spends the whole budget on the slow ones and never reaches a good
+# one. That is what "looping and looping" was.
+check("a soft error does not kill the job", len(seen2) > 1, len(seen2))
+# The fixture holds three keys, so the batch is the whole ring — a
+# batch is min(RACE_WIDTH, keys), not RACE_WIDTH flat.
+check("...a whole batch is tried at once, which here is all three",
+      len(seen2) == min(G.RACE_WIDTH, 3), (len(seen2), G.RACE_WIDTH))
+check("...wide enough to contain a working key on his ring",
+      G.RACE_WIDTH >= 6, G.RACE_WIDTH)
+# AND THE POOL IS NOT WAITED ON. ThreadPoolExecutor's context manager
+# calls shutdown(wait=True), so returning early still blocked until
+# every hung key finished — a 2s success took 104s to come back.
+_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "..", "ttt", "providers", "google.py")).read()
+check("the pool is shut down without waiting for hung keys",
+      "shutdown(wait=False, cancel_futures=True)" in _src)
+check("...and never entered as a context manager",
+      "with ThreadPoolExecutor" not in _src)
 
 # A key that works after two dead ones.
 seen3 = []
