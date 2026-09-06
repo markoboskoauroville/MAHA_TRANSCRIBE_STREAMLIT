@@ -636,6 +636,169 @@ check("...and says the code is not broken, because it is not",
       "Nothing is broken" in _msg, _msg[:70])
 check("...and exists in Croatian too", bool(STRINGS_HR.get("stale_modules")))
 
+
+# =====================================================================
+print()
+print("6 THE NAME RULE — robust against a file that changes shape")
+# =====================================================================
+#
+# Baba, 6.9.2026: "he must understand to attach the name to the account
+# which has like banner or title before it, and the one which doesn't
+# just doesn't... The structure of the file can change any time."
+
+GK = "AQ." + "a" * 45
+GK2 = "AQ." + "b" * 45
+HKEY = "H" + "k" * 47
+HSEC = "S" + "s" * 63
+
+
+def names(text):
+    return [(f.provider, f.label) for f in KP.extract(text) if f.usable]
+
+
+# A NAME IS ATTACHED ONLY WHEN THERE REALLY IS ONE.
+check("a name above the key is attached",
+      names("kalabhumi\n" + GK) == [("google", "kalabhumi")])
+check("a key alone gets NO name, not the line before it",
+      names(GK) == [("google", "")])
+check("a name below the key is still found, inside the block",
+      names(GK + "\nkalabhumi") == [("google", "kalabhumi")])
+
+# WHAT IS NOT A NAME, one case per rule. Each of these has appeared in a
+# real key file at some point, and each would have become an account
+# name under the old "take the line above" rule.
+for junk, why in [
+        ("https://aistudio.google.com/apikey", "a URL"),
+        ("www.hume.ai", "a bare domain"),
+        ("someone@example.com", "an email"),
+        ("6.9.2026.", "a date"),
+        ("API key", "a label word"),
+        ("Secret key", "the other label word"),
+        ("DELETED", "a status word"),
+        ("CANCELLED", "another status word"),
+        ("# gemini keys", "a heading"),
+        ("---", "a separator"),
+        ("12345", "a bare number"),
+]:
+    check("%s is not taken as a name" % why,
+          names(junk + "\n" + GK) == [("google", "")],
+          names(junk + "\n" + GK))
+
+# TWO KEYS IN ONE BLOCK EACH KEEP THEIR OWN NAME. Searching upward and
+# stopping at the previous key is what makes this work; taking "the
+# block's first line" would name both the same.
+check("two named keys in one block get their own names",
+      names("acct one\n" + GK + "\nacct two\n" + GK2)
+      == [("google", "acct one"), ("google", "acct two")])
+check("one name and two keys: only the first is named — the second is "
+      "NOT given its neighbour's name",
+      names("only name\n" + GK + "\n" + GK2)
+      == [("google", "only name"), ("google", "")])
+check("a name in a DIFFERENT block does not reach across the blank line",
+      names("acct one\n\n" + GK) == [("google", "")])
+
+# SEVERAL KEYS ON ONE LINE GET NO NAME. Nothing in the file says which
+# of them a title would belong to, and guessing puts a real account's
+# name on a stranger.
+check("a TOML list on one line yields keys with no names",
+      names('KEYS = ["%s", "%s"]' % (GK, GK2))
+      == [("google", ""), ("google", "")])
+
+# HUME.
+check("a hume pair keeps its account name",
+      names("acct\nAPI key\n" + HKEY + "\nSecret key\n" + HSEC)
+      == [("hume", "acct")])
+check("A HUME PAIR WITH NO NAME DOES NOT TAKE ITS OWN KEY AS ONE",
+      names("API key\n" + HKEY + "\nSecret key\n" + HSEC)
+      == [("hume", "")],
+      names("API key\n" + HKEY + "\nSecret key\n" + HSEC))
+check("a URL inside a hume block does not become the name",
+      names("acct\nhttps://x.y\nAPI key\n" + HKEY + "\nSecret key\n" + HSEC)
+      == [("hume", "acct")])
+# BOTH LABELS OR IT IS NOT A HUME BLOCK. A google key under the words
+# "API key" was swallowed whole: the hume path claimed the block and
+# the generic pass never ran.
+check("a google key labelled 'API key' is still found as google",
+      names("API key\n" + GK) == [("google", "")],
+      names("API key\n" + GK))
+
+print()
+print("7 A PLACEHOLDER IS NOT A KEY — the five lost accounts")
+# =====================================================================
+#
+# MEASURED on the real export, 6.9.2026: a Hume api key is 48 characters
+# and a secret is 64. FIVE of twenty-one accounts carry the SAME
+# nine-character placeholder where the api key should be.
+#
+# The old parser took whatever followed the label. So av.live.vmix was
+# paired with a placeholder, answered 401 "Invalid ApiKey", and WAS
+# REPORTED TO BABA AS A DEAD ACCOUNT. It is not known to be dead; its
+# key was simply not in the file. The other four shared that placeholder
+# and the de-duplication collapsed them into one — FOUR ACCOUNTS
+# VANISHED WITHOUT A WORD.
+
+short = "acct\nAPI key\nnotshown\nSecret key\n" + HSEC
+got = KP.extract(short)
+check("a placeholder api key yields NO usable key",
+      not [f for f in got if f.usable], got)
+check("...and the account is REPORTED, by name, not dropped",
+      [f.label for f in got if not f.usable] == ["acct"],
+      [(f.label, f.problem) for f in got])
+check("...and the problem says what was wrong",
+      "API key is missing" in got[0].problem, got[0].problem)
+check("a missing secret is reported too",
+      any("secret key is missing" in f.problem
+          for f in KP.extract("acct\nAPI key\n" + HKEY + "\nSecret key\n")),
+      [f.problem for f in KP.extract("acct\nAPI key\n" + HKEY + "\nSecret key\n")])
+
+# FIVE ACCOUNTS SHARING ONE PLACEHOLDER MUST BE FIVE REPORTS, NOT ONE.
+five = "\n\n".join("acct%d\nAPI key\nnotshown\nSecret key\n%s" % (i, "S" + str(i) + "s" * 62)
+                   for i in range(5))
+rep = [f for f in KP.extract(five) if not f.usable]
+check("five accounts with the same placeholder are five reports",
+      len(rep) == 5, len(rep))
+check("...each keeping its own name",
+      [f.label for f in rep] == ["acct%d" % i for i in range(5)],
+      [f.label for f in rep])
+
+# AND TWO GOOD ACCOUNTS THAT SHARE NOTHING ARE STILL TWO.
+two = ("a\nAPI key\n%s\nSecret key\n%s\n\nb\nAPI key\n%s\nSecret key\n%s"
+       % (HKEY, HSEC, "H" + "m" * 47, "S" + "t" * 63))
+check("two distinct pairs are two entries",
+      len([f for f in KP.extract(two) if f.usable]) == 2)
+
+# THE DOWNWARD SEARCH STOPS AT THE NEXT KEY TOO. Without that, a key
+# with nothing above it would reach past a SECOND key to borrow a name
+# that plainly belongs to the second one.
+check("a key does not reach past another key to find a name below",
+      names(GK + "\n" + GK2 + "\nbelongs to the second")
+      == [("google", ""), ("google", "belongs to the second")],
+      names(GK + "\n" + GK2 + "\nbelongs to the second"))
+
+# THE PAIR IS THE IDENTITY, NOT THE API KEY. Two accounts sharing an
+# api key but holding different secrets are two credentials; keying the
+# de-duplication on the api key alone silently keeps one and drops the
+# other — which is exactly how four accounts vanished.
+same_key = ("one\nAPI key\n%s\nSecret key\n%s\n\n"
+            "two\nAPI key\n%s\nSecret key\n%s"
+            % (HKEY, HSEC, HKEY, "S" + "u" * 63))
+_sk = [f for f in KP.extract(same_key) if f.usable]
+check("two accounts sharing an api key but not a secret stay TWO",
+      len(_sk) == 2, [(f.label, f.secret[:6]) for f in _sk])
+check("...and each keeps its own name",
+      [f.label for f in _sk] == ["one", "two"], [f.label for f in _sk])
+# And a genuine duplicate — the same file pasted twice — is still one.
+check("the very same pair twice is ONE entry",
+      len([f for f in KP.extract(
+          "a\nAPI key\n%s\nSecret key\n%s\n\na\nAPI key\n%s\nSecret key\n%s"
+          % (HKEY, HSEC, HKEY, HSEC)) if f.usable]) == 1)
+
+check("looks_like_value rejects a nine-character placeholder",
+      not KP.looks_like_value("notshown"))
+check("...and accepts a real 48-character key", KP.looks_like_value(HKEY))
+check("...and rejects anything with a space in it",
+      not KP.looks_like_value("this is not a key at all really"))
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

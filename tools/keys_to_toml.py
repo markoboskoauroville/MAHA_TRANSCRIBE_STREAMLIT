@@ -168,7 +168,14 @@ def read_folder(folder):
 
 def test_all(found, quiet=False):
     """Test every key, in parallel, drawing progress as answers land."""
-    todo = [f for f in found if f.provider in KP.KNOWN_HERE]
+    # AN ENTRY THE PARSER ALREADY CALLED UNUSABLE IS NOT TESTED.
+    # Five of Baba's Hume accounts have no api key in the file at all;
+    # sending an empty string to the provider gets a 401, which reads as
+    # REFUSED and turns "your file is missing this key" into "this
+    # account is dead". That is the exact mistake this parser change
+    # exists to stop making.
+    todo = [f for f in found
+            if f.provider in KP.KNOWN_HERE and getattr(f, "usable", True)]
     results = {}
     done, total = 0, len(todo)
     if not total:
@@ -220,6 +227,11 @@ def build(found, results, keep_empty=False):
     """The TOML text, and the report rows. Returns (text, rows)."""
     rows, keep = [], []
     for f in found:
+        if not getattr(f, "usable", True):
+            # NOT A VERDICT ABOUT THE ACCOUNT. The file is incomplete,
+            # and saying so is more useful than any test result.
+            rows.append((f, "incomplete", f.problem, False))
+            continue
         if f.provider not in KP.KNOWN_HERE:
             rows.append((f, "not used here", "", False))
             continue
@@ -305,8 +317,20 @@ def report(rows):
     print()
     print("  " + "  ".join("%s: %d" % (k, counts[k]) for k in sorted(counts)))
     print("  written: %d of %d" % (sum(1 for r in rows if r[3]), len(rows)))
+    incomplete = [(f.label or "(unnamed)", d) for f, v, d, _w in rows
+                  if v == "incomplete"]
+    if incomplete:
+        print()
+        print("  %d account(s) named in the file have NO USABLE KEY IN IT."
+              % len(incomplete))
+        print("  These are NOT failed tests — nothing was tested, because")
+        print("  there was nothing to test. The account may be perfectly")
+        print("  fine; go back to the provider's dashboard and copy the")
+        print("  key again.")
+        for name, why in incomplete:
+            print("    %-24s %s" % (name, why))
     dropped = [f.label or f.provider for f, v, _d, w in rows
-               if not w and v != "not used here"]
+               if not w and v not in ("not used here", "incomplete")]
     if dropped:
         print("  LEFT OUT, by name: %s" % ", ".join(dropped))
         print("  Out-of-credit accounts are ALIVE -- topping one up makes")

@@ -72,16 +72,63 @@ SK_SPEECHIFY_MIN = 44
 KNOWN_HERE = ("google", "groq", "assemblyai", "speechify", "anthropic", "hume")
 
 
+# WHAT A LABELLED VALUE MUST LOOK LIKE TO BE A KEY AT ALL.
+#
+# MEASURED on Baba's own Hume export, 6.9.2026: a real Hume API key is
+# 48 characters and a real secret is 64. FIVE of his twenty-one accounts
+# carry a NINE-CHARACTER placeholder where the API key should be — the
+# same nine characters in all five, because the dashboard did not print
+# the key.
+#
+# The old parser took whatever line followed the "API key" label. So
+# av.live.vmix was paired with a placeholder and answered 401 "Invalid
+# ApiKey", which was read as A DEAD ACCOUNT and reported to Baba as one.
+# The account may be perfectly healthy; the key was simply not in the
+# file. The other four were dropped without a word, because they carried
+# the SAME placeholder and the de-duplication treated them as one.
+#
+# So a labelled value is now checked before it is believed, and an
+# account whose key is missing is REPORTED rather than guessed at.
+MIN_LABELLED_LEN = 24
+
+
+def looks_like_value(v: str) -> bool:
+    """Could this line be a credential at all?
+
+    Deliberately loose — providers differ and a new one will differ
+    again — but long enough and plain enough to exclude a placeholder,
+    a word, a date or "not shown".
+    """
+    v = (v or "").strip()
+    if len(v) < MIN_LABELLED_LEN:
+        return False
+    if " " in v:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9._\-]+", v))
+
+
 class Found:
-    """One key, its provider, the words above it, and its other half."""
+    """One key, its provider, the words above it, and its other half.
 
-    __slots__ = ("key", "provider", "label", "secret")
+    `problem` is set when something was recognised but is NOT USABLE —
+    an account whose key is missing from the file, for instance. Such an
+    entry is still returned, because "this account has no key here" is
+    something a person must be told, and silently dropping it is how
+    four accounts disappeared without a word.
+    """
 
-    def __init__(self, key, provider, label="", secret=None):
+    __slots__ = ("key", "provider", "label", "secret", "problem")
+
+    def __init__(self, key, provider, label="", secret=None, problem=""):
         self.key = key
         self.provider = provider
         self.label = label or ""
         self.secret = secret
+        self.problem = problem or ""
+
+    @property
+    def usable(self) -> bool:
+        return not self.problem
 
     @property
     def known_here(self) -> bool:
@@ -146,79 +193,206 @@ def _next_non_empty(lines, start: int) -> int:
     return j
 
 
+# WORDS THAT ARE NEVER SOMEBODY'S ACCOUNT NAME.
+#
+# Baba, 6.9.2026: "In the text I am adding some text which is not the
+# key. Usually it's always the name of the account. For some keys I
+# don't have account, for some I have. So he must understand to attach
+# the name to the account which has like banner or title before it, and
+# the one which doesn't just doesn't... The structure of the file can
+# change any time."
+#
+# So a name is found BY ELIMINATION inside its block, never by counting
+# lines — keyring.md 10d: "a block sometimes has a URL above the name,
+# or a note under the key, and counting lines breaks on the first one
+# that does."
+#
+# AND WHEN NOTHING IN THE BLOCK LOOKS LIKE A NAME, THE ANSWER IS NO
+# NAME. An empty label is a fact. Borrowing the line above — which is
+# what the first version did — eventually gives one key the name of the
+# account before it, and a wrong name is worse than a blank one because
+# a person acts on it.
+NOT_A_NAME = {
+    "api key", "secret key", "api", "key", "keys", "secret", "token",
+    "deleted", "cancelled", "canceled", "expired", "revoked", "new",
+    "old", "unused", "spent", "dead", "n/a", "na", "none", "null",
+    "-", "--", "---", "*", "x",
+}
+
+_URLISH = re.compile(r"(https?://|www\.|\S+@\S+\.\S+)", re.I)
+_DATEISH = re.compile(r"^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}\.?$")
+NAME_MAX = 60
+
+
+def looks_like_name(line: str) -> bool:
+    """Could this line be what somebody called an account?"""
+    t = (line or "").strip()
+    if not t or len(t) > NAME_MAX:
+        return False
+    if t.lower() in NOT_A_NAME:
+        return False
+    if t.startswith("#") or t.startswith("//"):
+        return False
+    if _URLISH.search(t) or _DATEISH.match(t):
+        return False
+    if classify(t) is not None:
+        return False              # it is a key, not a name
+    # A NAME HAS A LETTER IN IT. A bare number, a row of dashes or a
+    # stray punctuation line is separator furniture, not a title.
+    return any(c.isalpha() for c in t)
+
+
+def _blocks(text):
+    """The file split on blank lines, each a list of stripped lines.
+
+    A file with NO blank lines is ONE block, and everything below still
+    works on it: the name is then found by looking upward from each key
+    rather than across the whole block.
+    """
+    out = []
+    for chunk in re.split(r"\n\s*\n", text or ""):
+        lines = [ln.strip() for ln in chunk.split("\n") if ln.strip()]
+        if lines:
+            out.append(lines)
+    return out
+
+
+def _name_for(block, key_index, used):
+    """The account name for the key at `key_index` in this block.
+
+    NEAREST NAME-LIKE LINE ABOVE, WITHIN THE BLOCK, NOT ALREADY SPOKEN
+    FOR. Upward rather than "the block's first line", so a block holding
+    two named keys gives each its own name. Stopping at the block edge
+    and at any other key means a key with nothing above it gets NOTHING
+    rather than the previous account's name.
+    """
+    for i in range(key_index - 1, -1, -1):
+        if i in used:
+            break                      # another key owns everything above
+        if classify(block[i]) is not None:
+            break                      # a key: the boundary between two
+        if looks_like_name(block[i]):
+            used.add(i)
+            return block[i]
+    # NOTHING ABOVE. Some exports put the name under the value, so look
+    # down — still inside the block, still stopping at the next key.
+    for i in range(key_index + 1, len(block)):
+        if classify(block[i]) is not None:
+            break
+        if i not in used and looks_like_name(block[i]):
+            used.add(i)
+            return block[i]
+    return ""
+
+
+def _hume_pairs(block, out, consumed, problems):
+    """Pairs read from the LABELS, with the values CHECKED.
+
+    Both halves are plain alphanumeric, so shape cannot tag them and
+    only the labels can. But a LABEL DOES NOT MAKE THE LINE BENEATH IT A
+    KEY: five of Baba's twenty-one accounts carry a nine-character
+    placeholder where the API key should be, and taking it produced a
+    401 that was read as a dead account and reported to him as one.
+    """
+    lower = [ln.lower() for ln in block]
+    # BOTH LABELS, OR THIS IS NOT A HUME BLOCK. A block holding only the
+    # words "API key" above an ordinary AQ. key is somebody labelling
+    # their Google key, and claiming it here swallowed it entirely —
+    # the generic pass never ran and the key vanished.
+    if "api key" not in lower or "secret key" not in lower:
+        return False
+
+    def index_after(label):
+        return lower.index(label) + 1 if label in lower else -1
+
+    ai, si = index_after("api key"), index_after("secret key")
+    api = block[ai] if 0 <= ai < len(block) else ""
+    sec = block[si] if 0 <= si < len(block) else ""
+
+    # THE VALUES ARE NOT NAME CANDIDATES. A Hume api key is 48 plain
+    # letters and digits, which is under NAME_MAX and has letters in it —
+    # so without excluding it BY POSITION, a pair with no account name
+    # took its own api key as its name and put a credential on screen
+    # wherever that label is shown.
+    name = ""
+    for idx, line in enumerate(block):
+        if idx in (ai, si):
+            continue
+        if looks_like_name(line):
+            name = line
+            break
+    if not looks_like_value(api):
+        # THE ACCOUNT IS REPORTED, NOT DROPPED. It is named in the file
+        # and a person needs to know that its key is not.
+        problems.append(Found("", "hume", name,
+                              problem="the API key is missing from the file "
+                                      "(%d characters where a key should be)"
+                                      % len(api)))
+        if sec:
+            consumed.add(sec)
+        return True
+    if not looks_like_value(sec):
+        problems.append(Found(api, "hume", name,
+                              problem="the secret key is missing from the file"))
+        consumed.add(api)
+        return True
+    # KEYED BY THE PAIR, NOT BY THE API KEY ALONE. Keying on the api key
+    # meant five accounts sharing one placeholder collapsed into one and
+    # FOUR VANISHED WITHOUT A WORD.
+    out.setdefault((api, sec), Found(api, "hume", name, sec))
+    consumed.add(api)
+    consumed.add(sec)
+    return True
+
+
 def extract(text: str):
     """Every key in a messy note. Returns [Found], first seen order.
 
-    TWO PASSES, and the order between them is the whole reason this works.
+    BLOCK BY BLOCK, because that is the only structure these files
+    reliably have, and the structure inside a block changes without
+    warning. Inside a block, keys are found by SHAPE and names by
+    ELIMINATION.
 
-    HUME EXPORTS A PAIR PER ACCOUNT:
+    Hume is done first, per block, because its two halves are plain
+    alphanumeric and only the labels can tag them; whatever it takes is
+    marked consumed so the generic pass cannot report the same secret
+    again as a loose key of its own.
 
-        <account name>
-        API key
-        <api key>
-        Secret key
-        <secret key>
-
-    Both halves are plain alphanumeric with no prefix, so SHAPE CANNOT
-    TAG THEM — only the labels can. Hume's auth needs both (basic
-    base64(key:secret) against oauth2-cc/token), so they are stored
-    together and the account name is kept beside them.
-
-    Pass 1 takes those pairs and marks both halves CONSUMED. Pass 2 then
-    walks every token normally, skipping anything pass 1 took. Run the
-    other way round, the generic pass would take twenty-one accounts as
-    forty-two keys — half of them secrets that authenticate nothing, in
-    a ring where every second key fails for no visible reason.
+    Entries carrying a `problem` come LAST and have `usable` False. They
+    are returned rather than dropped because "this account has no key in
+    the file" is the most useful thing the parser can say about it.
     """
-    lines = (text or "").split("\n")
     out = {}
     consumed = set()
-
-    # --- Pass 1: Hume account pairs -----------------------------------
-    i = 0
-    prev_non_empty = ""
-    while i < len(lines):
-        t = lines[i].strip()
-        if t.lower() == "api key":
-            account = prev_non_empty
-            a = _next_non_empty(lines, i + 1)
-            api_key = lines[a].strip() if a < len(lines) else ""
-            k = a + 1
-            while k < len(lines) and lines[k].strip().lower() != "secret key":
-                k += 1
-            s = _next_non_empty(lines, k + 1)
-            secret = (lines[s].strip()
-                      if k < len(lines) and s < len(lines) else "")
-            if api_key and secret:
-                if api_key not in out:
-                    out[api_key] = Found(api_key, "hume", account, secret)
-                consumed.add(api_key)
-                consumed.add(secret)
-                prev_non_empty = ""
-                i = s + 1
+    problems = []
+    for block in _blocks(text):
+        if _hume_pairs(block, out, consumed, problems):
+            continue
+        used = set()
+        # WHOLE LINES FIRST, so a key on its own line can claim the name
+        # above it before any token-splitting happens.
+        for idx, line in enumerate(block):
+            if line in consumed or line == "DELETED":
                 continue
-        if t:
-            prev_non_empty = t
-        i += 1
-
-    # --- Pass 2: ordinary single-token keys ---------------------------
-    for idx, line in enumerate(lines):
-        # THE LABEL IS THE LINE ABOVE, unless that line is itself a key.
-        # A run of keys one per line would otherwise label each with the
-        # one before it, which reads as though somebody named them.
-        label = ""
-        if idx > 0:
-            prev = lines[idx - 1].strip()
-            if prev and not _line_has_key(prev):
-                label = prev
-        for tok in _tokens(line):
-            if tok == "DELETED" or tok in out or tok in consumed:
-                continue
-            pid = classify(tok)
+            pid = classify(line)
             if pid is None:
                 continue
-            out[tok] = Found(tok, pid, label)
-    return list(out.values())
+            used.add(idx)
+            out.setdefault(line, Found(line, pid, _name_for(block, idx, used)))
+        # THEN TOKENS INSIDE LINES — a TOML list, a JSON blob, a
+        # comma-separated paste. These get NO name: nothing in the file
+        # says which of several tokens on one line a title belongs to,
+        # and guessing would put a real account's name on a stranger.
+        for line in block:
+            if classify(line) is not None:
+                continue
+            for tok in _tokens(line):
+                if tok == "DELETED" or tok in out or tok in consumed:
+                    continue
+                pid = classify(tok)
+                if pid is not None:
+                    out.setdefault(tok, Found(tok, pid, ""))
+    return list(out.values()) + problems
 
 
 def by_provider(found):
