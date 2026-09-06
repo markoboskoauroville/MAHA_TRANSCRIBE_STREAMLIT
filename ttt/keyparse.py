@@ -235,6 +235,8 @@ def looks_like_name(line: str) -> bool:
         return False
     if _URLISH.search(t) or _DATEISH.match(t):
         return False
+    if _is_assignmentish(t):
+        return False
     if classify(t) is not None:
         return False              # it is a key, not a name
     # A NAME HAS A LETTER IN IT. A bare number, a row of dashes or a
@@ -283,6 +285,100 @@ def _name_for(block, key_index, used):
             used.add(i)
             return block[i]
     return ""
+
+
+# AN ASSIGNMENT LINE IS NEVER A NAME.
+#
+# FOUND BY A CLAUDE CODE SESSION ON 6.9.2026, and it had already
+# happened: running the v246 tool over a previous secrets.toml printed
+# the first characters of SHEETS_TOKEN's VALUE on screen, as the "label"
+# of the token beneath it. `SHEETS_TOKEN = "abcde…"` is 52 characters,
+# has letters, is not a URL and is not a date, so every rule in
+# looks_like_name said yes.
+#
+# The label is shown in the key tester panel and printed by the report,
+# so a name that contains a value puts a credential on a screen. A name
+# is a NAME: it does not assign, and it does not contain a long run of
+# key-shaped characters.
+_ASSIGNMENT = re.compile(r"^\s*[\w.\[\]-]+\s*[:=]\s*\S")
+_LONGRUN = re.compile(r"[A-Za-z0-9_.\-]{20,}")
+
+
+def _is_assignmentish(t: str) -> bool:
+    return bool(_ASSIGNMENT.match(t)) or bool(_LONGRUN.search(t))
+
+
+# READING BACK WHAT WE OURSELVES WROTE.
+#
+# THE ROUND TRIP WAS BROKEN AND NOBODY HAD TRIED IT. keys_to_toml.py
+# writes Hume accounts as TOML tables:
+#
+#     [[HUME_ACCOUNTS]]
+#     name   = "kalabhumi"
+#     key    = "..."
+#     secret = "..."
+#
+# and extract() could not read that back — 21 blocks in, ZERO pairs out.
+# The parser was written for the dashboard export and only ever tested
+# against it, so the one file this project GENERATES was the one shape
+# it could not parse. A session running the tool over last time's
+# secrets.toml found every Hume account missing.
+#
+# The lesson is older than this bug: a format you emit is a format you
+# must be able to read, and the test for that is a round trip.
+_TOML_TABLE = re.compile(r"^\[\[?\s*([A-Za-z_][\w.]*)\s*\]\]?$")
+_TOML_ASSIGN = re.compile(r'^\s*([A-Za-z_][\w.-]*)\s*=\s*"([^"]*)"\s*,?\s*$')
+
+
+def _toml_table(block, out, consumed, problems):
+    """A `[[HUME_ACCOUNTS]]` table, or any block of `field = "value"`
+    lines carrying a key and a secret. Returns True if it claimed it.
+
+    Only the FIELD NAMES are trusted here, exactly as the labelled
+    export is trusted: a Hume key and secret are plain alphanumeric and
+    shape can never tag them.
+    """
+    fields = {}
+    header = ""
+    for line in block:
+        m = _TOML_TABLE.match(line)
+        if m:
+            header = m.group(1).lower()
+            continue
+        m = _TOML_ASSIGN.match(line)
+        if m:
+            fields.setdefault(m.group(1).lower(), m.group(2))
+    if "key" not in fields:
+        return False
+    if header and "hume" not in header:
+        return False
+    # A HUME TABLE MISSING ITS SECRET IS CLAIMED ANYWAY, so that the
+    # account is REPORTED BY NAME rather than falling through to the
+    # generic pass, where its key becomes an anonymous token and the
+    # account it belongs to is never mentioned. Mutation testing found
+    # this: requiring both fields looked safer and quietly lost the
+    # more useful answer.
+    if "secret" not in fields and "hume" not in header:
+        return False
+    api, sec = fields.get("key", ""), fields.get("secret", "")
+    name = fields.get("name", "")
+    if not looks_like_value(api):
+        problems.append(Found("", "hume", name,
+                              problem="the API key is missing from the file "
+                                      "(%d characters where a key should be)"
+                                      % len(api)))
+        if sec:
+            consumed.add(sec)
+        return True
+    if not looks_like_value(sec):
+        problems.append(Found(api, "hume", name,
+                              problem="the secret key is missing from the file"))
+        consumed.add(api)
+        return True
+    out.setdefault((api, sec), Found(api, "hume", name, sec))
+    consumed.add(api)
+    consumed.add(sec)
+    return True
 
 
 def _hume_pairs(block, out, consumed, problems):
@@ -366,6 +462,11 @@ def extract(text: str):
     consumed = set()
     problems = []
     for block in _blocks(text):
+        # OUR OWN OUTPUT FIRST. A previous secrets.toml is the file most
+        # likely to be in that folder, and it was the one shape this
+        # parser could not read.
+        if _toml_table(block, out, consumed, problems):
+            continue
         if _hume_pairs(block, out, consumed, problems):
             continue
         used = set()

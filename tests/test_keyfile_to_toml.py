@@ -15,6 +15,8 @@ import keys_to_toml as B                       # noqa: E402
 from ttt import keyparse as KP                   # noqa: E402
 from ttt.providers import google as G            # noqa: E402
 
+import tomllib                                  # noqa: E402
+
 passed = failed = 0
 
 
@@ -231,6 +233,126 @@ check("a report that WOULD contain a key is REFUSED, not warned about",
       ok, why)
 check("...and the refusal names the account so it can be found",
       "oops" not in why)
+
+
+print()
+print("6 THE ROUND TRIP — we must be able to read what we write")
+# =====================================================================
+#
+# FOUND BY A CLAUDE CODE SESSION, 6.9.2026, running this tool over a
+# PREVIOUS secrets.toml: 21 Hume blocks in, ZERO pairs out. The parser
+# was written for the dashboard export and only ever tested against it,
+# so the one file this project GENERATES was the one shape it could not
+# read back. The tool wrote [[HUME_ACCOUNTS]] tables and the parser saw
+# nothing.
+#
+# A format you emit is a format you must be able to read, and the test
+# for that is a round trip. It is cheap and it did not exist.
+
+rt_rows = [
+    (F("google", G1, "alive"), G.WORKING, "", True),
+    (F("google", G2, "second"), G.WORKING, "", True),
+    (F("hume", HK, "kalabhumi", HS), G.WORKING, "", True),
+    (F("hume", "H" + "m" * 47, "svaram", "S" + "t" * 63), G.WORKING, "", True),
+]
+rt_text, _ = B.build([r[0] for r in rt_rows],
+                     {r[0].key: (r[1], r[2]) for r in rt_rows})
+
+back = KP.extract(rt_text)
+usable = [f for f in back if f.usable]
+by = {}
+for f in usable:
+    by.setdefault(f.provider, []).append(f)
+
+check("the file we wrote parses as TOML", bool(tomllib.loads(rt_text)))
+check("READING IT BACK finds both google keys",
+      sorted(f.key for f in by.get("google", [])) == sorted([G1, G2]),
+      [f.key[:12] for f in by.get("google", [])])
+check("READING IT BACK finds BOTH hume pairs — this was zero",
+      len(by.get("hume", [])) == 2, len(by.get("hume", [])))
+check("...each with its secret intact",
+      all(f.secret for f in by.get("hume", [])),
+      [(f.label, bool(f.secret)) for f in by.get("hume", [])])
+check("...and its account name",
+      sorted(f.label for f in by.get("hume", [])) == ["kalabhumi", "svaram"],
+      sorted(f.label for f in by.get("hume", [])))
+check("no account is lost in the round trip",
+      len(usable) == 4, [(f.provider, f.label) for f in usable])
+check("nothing is reported as a problem",
+      not [f for f in back if not f.usable],
+      [f.problem for f in back if not f.usable])
+
+# AND ROUND TRIP TWICE, because a second pass is what a person actually
+# does: build, look at it, build again from the same folder.
+again = KP.extract(B.build([f for f in usable],
+                           {f.key: (G.WORKING, "") for f in usable})[0])
+check("a SECOND round trip is stable — same counts, same names",
+      sorted((f.provider, f.label) for f in again if f.usable)
+      == sorted((f.provider, f.label) for f in usable),
+      sorted((f.provider, f.label) for f in again if f.usable))
+
+# THE TABLE PATH'S GUARDS. A TOML block must carry BOTH halves and both
+# must look like credentials — the same rule as the labelled export, for
+# the same reason: a field name does not make the value beneath it a key.
+_no_secret = '[[HUME_ACCOUNTS]]\nname = "half"\nkey = "%s"' % HK
+_ns = KP.extract(_no_secret)
+check("a table with a key and NO secret yields no usable pair",
+      not [f for f in _ns if f.provider == "hume" and f.usable],
+      [(f.provider, f.usable) for f in _ns])
+check("...and the account is REPORTED BY NAME rather than lost as an "
+      "anonymous token",
+      [f.label for f in _ns if not f.usable] == ["half"],
+      [(f.label, f.problem[:34]) for f in _ns])
+
+_ph = ('[[HUME_ACCOUNTS]]\nname = "placeheld"\nkey = "notshown"\n'
+       'secret = "%s"' % HS)
+_got = KP.extract(_ph)
+check("a placeholder key in a TOML table yields no usable pair",
+      not [f for f in _got if f.usable], _got)
+check("...and the account is reported by name",
+      [f.label for f in _got if not f.usable] == ["placeheld"],
+      [(f.label, f.problem[:30]) for f in _got])
+
+_ph2 = ('[[HUME_ACCOUNTS]]\nname = "nosecret"\nkey = "%s"\n'
+        'secret = "short"' % HK)
+check("a placeholder SECRET in a table is reported too",
+      any("secret key is missing" in f.problem
+          for f in KP.extract(_ph2) if not f.usable),
+      [f.problem[:40] for f in KP.extract(_ph2)])
+
+# A NON-HUME TABLE MUST NOT BE CLAIMED. Only a header naming hume, or no
+# header at all, may produce a pair.
+_other = ('[[SOMETHING_ELSE]]\nname = "x"\nkey = "%s"\nsecret = "%s"'
+          % (HK, HS))
+check("a table under a different header is not read as a hume pair",
+      not [f for f in KP.extract(_other) if f.provider == "hume"],
+      [(f.provider, f.label) for f in KP.extract(_other)])
+
+print()
+print("7 A VALUE CAN NEVER BECOME A NAME")
+# =====================================================================
+#
+# The v246 tool printed the first characters of SHEETS_TOKEN's VALUE on
+# a terminal, as the "label" of the token beneath it. The label is shown
+# in the key tester panel and printed by the report, so a name holding a
+# value puts a credential on a screen.
+
+for line in ['SHEETS_TOKEN = "abcde12345678901234567890123456789012"',
+             'DRIVE_SECRET="xyz9876543210987654321098765432109876"',
+             'api_key: abcde12345678901234567890123456789012',
+             '    "AQ.%s",' % ("q" * 45)]:
+    got = KP.extract(line + "\n" + G1)
+    labels = [f.label for f in got if f.usable]
+    check("an assignment line is not a label: %.34s" % line,
+          all(not lab for lab in labels), labels)
+
+check("looks_like_name refuses an assignment",
+      not KP.looks_like_name('SHEETS_TOKEN = "abcdefghijklmnopqrstuvwxyz12"'))
+check("...and any line holding a 20+ character run",
+      not KP.looks_like_name("note abcdefghijklmnopqrstuvwxyz123"))
+check("...while an ordinary account name still passes",
+      KP.looks_like_name("kalabhumi") and KP.looks_like_name("marko.bosko croatia")
+      and KP.looks_like_name("AV LIVE VMIX"))
 
 print()
 print("%d passed, %d failed" % (passed, failed))
