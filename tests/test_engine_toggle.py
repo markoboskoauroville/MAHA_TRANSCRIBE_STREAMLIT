@@ -480,6 +480,66 @@ finally:
     shutil.move(BAK, SEC)
 check("the secrets file was put back", "paste_your" in open(SEC).read())
 
+
+print()
+print("9 THE STATUS LINE NAMES THE KEY BY POSITION")
+# =====================================================================
+#
+# Baba, 6.9.2026: "in status line always specifies which engine is used,
+# what API key by number. So if I have five API keys, you can write
+# Google API two/five, so I see what's going on in status."
+
+def sigtext(at):
+    return " ".join(m.value for m in at.markdown if "tabsig" in m.value)
+
+a = app("talk")
+a.run()
+sig = sigtext(a)
+check("the status line carries the engine name", "Edge" in sig, sig[-120:])
+check("...and a key position beside it", "/" in sig, sig[-120:])
+# A DASH UNTIL SOMETHING HAS BEEN ASKED. Showing 1/2 before any call
+# would be a claim about a key that has never been tried.
+check("nothing used yet reads as a dash, not as key 1",
+      "\u2013/" in sig, sig[-120:])
+
+# THE NUMBER IS A POSITION AND NEVER A FRAGMENT OF A KEY. keyring.md
+# §10d: on Gemini the first six characters are identical on every key,
+# so a masked prefix identifies nothing and leaks something.
+import re as _re                                  # noqa: E402
+_keys = list(P.get("groq").keys or []) + list(P.get("google").keys or [])
+check("NO KEY MATERIAL IS ON THE STATUS LINE",
+      not any(k and len(k) >= 8 and k[:8] in sig for k in _keys))
+check("...and no eight-character run of one either",
+      not _re.search(r"[A-Za-z0-9_]{16,}", sig.split("tabsig")[-1]),
+      sig[-120:])
+
+# THE POSITION IS RECORDED ONLY BY A KEY THAT ACTUALLY WORKED.
+gp = GP.Google(keys=["AQ.one", "AQ.two", "AQ.three"])
+check("a fresh provider has used nothing", gp.active_key == 0)
+tried = []
+
+
+def _third_works(key):
+    tried.append(key)
+    if len(tried) < 3:
+        return None, "401", "dead"
+    return "ok", None, None
+
+
+gp._rotate(_third_works)
+check("the position of the key that WORKED is recorded, not the ones "
+      "that were refused", gp.active_key == 3, gp.active_key)
+
+gp2 = GP.Google(keys=["AQ.one", "AQ.two"])
+gp2._rotate(lambda k: (None, "401", "dead"))
+check("a ring where every key failed records nothing",
+      gp2.active_key == 0, gp2.active_key)
+
+# THE ENGINE NAME, NOT THE VENDOR. §0 rule 2 — the free engine's number
+# belongs to the transcriber's keys, and the line still says "Edge".
+check("the status names the ENGINE, not the provider behind the keys",
+      "Groq" not in sig and "groq" not in sig, sig[-120:])
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

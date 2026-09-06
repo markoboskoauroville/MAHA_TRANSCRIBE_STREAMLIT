@@ -581,6 +581,7 @@ class Google(Provider):
     def __init__(self, keys=None, ring=None):
         self.keys = list(keys or [])
         self.ring = ring
+        self.active_key = 0
 
     def _rotate(self, attempt):
         """Same contract as Groq._rotate: run `attempt(key)` down the ring
@@ -589,9 +590,13 @@ class Google(Provider):
             from .. import keyring
             return keyring.rotate(self.ring, attempt)
         last = "no keys"
-        for key in self.keys:
+        for i, key in enumerate(self.keys, 1):
             result, err, kind = attempt(key)
             if not err:
+                # THE POSITION OF THE KEY THAT ACTUALLY WORKED, for the
+                # status line. Recorded on success only: a key that was
+                # tried and refused is not the key in use.
+                self.active_key = i
                 return result, None
             last = err
             if kind not in ("dead", "cool"):

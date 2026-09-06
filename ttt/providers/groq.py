@@ -28,6 +28,7 @@ class Groq(Provider):
 
     def __init__(self, keys=None, ring=None):
         self.keys = list(keys or [])
+        self.active_key = 0
         # The ring is optional so this provider still works standalone in a
         # test with a plain key list. When the app supplies one, every call
         # rotates through it and a 429 becomes a hand-off instead of a
@@ -41,9 +42,10 @@ class Groq(Provider):
         if self.ring is not None:
             return keyring.rotate(self.ring, attempt)
         last = "no keys"
-        for key in self.keys:
+        for i, key in enumerate(self.keys, 1):
             result, err, kind = attempt(key)
             if not err:
+                self.active_key = i          # the position, for the status line
                 return result, None
             last = err
             if kind not in ("dead", "cool"):

@@ -4034,6 +4034,10 @@ def tab_signature(name: str):
     # page went on saying "Edge / Groq" for nine versions while the
     # commit message said otherwise.
     label = (eng.tier if eng else t("eng_mixed"))
+    # AND WHICH KEY. Its own segment rather than folded into the tier,
+    # because the tier answers "what am I paying for" and this answers
+    # "what is running right now".
+    keyline = engine_status(eng)
     res = st.session_state.get("_engine_check") or {}
     mark = ""
     # THROUGH EN.get, NOT BY STRING. A verdict recorded before the engine
@@ -4062,7 +4066,7 @@ def tab_signature(name: str):
         who = USER            # the "shared" default, which names nobody
 
     bits = [x for x in (html.escape(name), html.escape(label) + mark,
-                        html.escape(who)) if x]
+                        html.escape(keyline), html.escape(who)) if x]
 
     # THE ENGINE SWITCH SITS BESIDE THE ENGINE NAME.
     #
@@ -4101,6 +4105,52 @@ def tab_signature(name: str):
     st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
                 unsafe_allow_html=True)
     _foot_links(eng)
+
+
+def engine_status(eng) -> str:
+    """"Google 2/21" — which engine, and which of its keys is in use.
+
+    Baba, 6.9.2026: "in status line always specifies which engine is
+    used, what API key by number. So if I have five API keys, you can
+    write Google API two/five, so I see what's going on in status."
+
+    A POSITION, NEVER A FRAGMENT OF A KEY. keyring.md §10d: on Gemini
+    the first six characters are identical on every key, so a masked
+    prefix identifies nothing and leaks something. "2/21" identifies
+    everything and is safe in a screenshot.
+
+    WHICH PROVIDER'S KEY. The one doing the SPEECH if it needs a key,
+    because that is what the engine name beside it refers to; otherwise
+    the first of its providers that does. On the free engine that means
+    Edge is keyless and the number belongs to the transcriber — so the
+    line reads "Edge 2/5" and the 5 is the app's own Groq keys. The
+    vendor is not named, per §0 rule 2; the ENGINE is, which is what he
+    reads it as.
+
+    A DASH UNTIL SOMETHING HAS ACTUALLY BEEN ASKED. Showing 1/21 before
+    any call would be a claim about a key that has never been tried, and
+    the whole point of this line is to say what is going on rather than
+    what probably will.
+    """
+    if eng is None:
+        return t("eng_mixed")
+    prov = None
+    for task in ("tts", "stt", "llm"):
+        cand = PROVIDERS.get(eng.routes.get(task, ""))
+        if cand is not None and getattr(cand, "needs_key", False):
+            prov = cand
+            break
+    if prov is None:
+        return eng.short                     # keyless throughout
+    total = len(getattr(prov, "keys", None) or [])
+    if not total:
+        # A KEYED PROVIDER WITH NO KEYS is a real state and worth
+        # showing: it is why the engine will not work.
+        total = len((get_ring(prov.id) or {}).get("keys", []) or [])
+    used = int(getattr(prov, "active_key", 0) or 0)
+    if not total:
+        return "%s 0/0" % eng.short
+    return "%s %s/%d" % (eng.short, used if used else "\u2013", total)
 
 
 def _foot_links(eng):

@@ -106,6 +106,24 @@ class Provider:
     metered_by_call = False
     calls_per_day = 0
 
+    # WHICH KEY ANSWERED LAST, AS A POSITION.
+    #
+    # Baba, 6.9.2026: "in status line always specifies which engine is
+    # used, what API key by number. So if I have five API keys, you can
+    # write Google API two/five, so I see what's going on."
+    #
+    # A POSITION AND NEVER A FRAGMENT. keyring.md §10d: "the usual
+    # first-six-last-four mask still puts real characters into a
+    # scrollback, and on Gemini the first six are IDENTICAL on every
+    # key, so it identifies nothing while leaking something. Print the
+    # POSITION: key 7 of 21. It identifies everything and leaks
+    # nothing." This number is safe on a screenshot.
+    #
+    # 0 means NOTHING HAS BEEN ASKED OF THIS PROVIDER YET, which is not
+    # the same as key 1 — showing 1 before any call would be a claim
+    # about a key that has never been tried.
+    active_key = 0
+
     def test_key(self, key: str):
         """Return (error, kind) — (None, None) when the key is good.
         kind is "dead" | "cool" | "soft" so the ring knows what to do."""
