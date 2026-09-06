@@ -106,7 +106,13 @@ check("1o None for both is handled", keys == [])
 print("\n2 THE APP DOES THE SAME")
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
            encoding="utf-8").read()
-fn = app[app.index("def hume_keys_from_secrets"):app.index("def hume_keys_to_sheet")]
+# hume_keys_to_sheet WAS THE END MARKER and went with the spreadsheet in
+# v237. index() then raised and killed this file — find(), with the
+# region checked, so a moved marker reports instead of crashing.
+_ha = app.find("def hume_keys_from_secrets")
+_hb = app.find("\ndef ", _ha + 10)
+check("0 the secrets reader is findable", 0 < _ha < _hb, (_ha, _hb))
+fn = app[_ha:_hb] if 0 < _ha < _hb else ""
 print("       searched hume_keys_from_secrets, %d chars" % len(fn))
 check("2a it reads HUME_ACCOUNTS", '"HUME_ACCOUNTS"' in fn)
 check("2b and HUME_API_KEYS", '"HUME_API_KEYS"' in fn)
@@ -117,10 +123,14 @@ check("2e it saves the ring only when something was added",
       "if added:" in fn and "save_rings()" in fn)
 
 vr = app[app.index('elif active == "vr":'):app.index('elif active == "looks":')]
-check("2f the tab pulls the sheet FIRST", "hume_keys_from_sheet()" in vr)
-check("2g then Secrets as the floor", "hume_keys_from_secrets()" in vr)
-check("2h in that order, so the sheet wins",
-      vr.index("hume_keys_from_sheet()") < vr.index("hume_keys_from_secrets()"))
+# THE SHEET WAS THE FIRST SOURCE AND SECRETS THE FLOOR UNDER IT. With the
+# spreadsheet gone there is one source, so an ordering claim has nothing
+# left to order — and "the sheet wins" is not a rule that can be
+# rewritten, only retired.
+check("2f the tab fills the ring from Secrets",
+      "hume_keys_from_secrets()" in vr)
+check("2g and from nowhere else — one source means nothing to keep in "
+      "step", "hume_keys_from_sheet" not in vr, "the sheet reader is back")
 
 print("\n3 PREVIEW GOES DOWN THE SAME PATH AS REHEARSE")
 # Baba: "when I say preview voices, you go to the same path as I'm

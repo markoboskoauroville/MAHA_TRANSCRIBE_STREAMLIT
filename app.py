@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v236 (one sentence, one file, one highlight)"
+APP_VERSION = "v237 (the spreadsheet is gone)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -110,8 +110,17 @@ from ttt import engines as EN
 from ttt import audio as ttt_audio
 from ttt import a11y
 from ttt import speech as SPEECH
-from ttt import sheet as SHEET
-from ttt import accounts as ACCOUNTS
+# ttt/accounts.py IS GONE. It spoke ONLY to the deployed Apps Script —
+# login, users, password changes, remember-tokens — and when the script
+# went, every one of its nine functions became a call to nowhere. It also
+# imported ttt.sheet._post, so deleting the sheet module took the WHOLE
+# APP DOWN AT IMPORT: no login screen, no error page, nothing. The sweep
+# caught it as eight suites crashing at once.
+#
+# The door has run on Secrets since v215 and the remembered login is a
+# signed token in localStorage, so nothing on the way in depended on any
+# of this. What is lost is the owner's people screen, which managed rows
+# in a spreadsheet that no longer exists.
 from ttt import intake
 from ttt import errlog
 from ttt import drive as DRIVE
@@ -491,6 +500,10 @@ STRINGS = {
                                  "odjavljeni."},
     "pw_mismatch":        {"en": "The two new passwords are not the same.",
                            "hr": "Dvije nove lozinke nisu iste."},
+    "pw_secrets_now":     {"en": "Passwords are set in Secrets now — "
+                                 "there is nothing to change here.",
+                           "hr": "Lozinke se sada postavljaju u Secrets — "
+                                 "ovdje se nema što mijenjati."},
     "pw_short":           {"en": "At least 8 characters.",
                            "hr": "Najmanje 8 znakova."},
     "pw_wrong":           {"en": "That is not your current password.",
@@ -1972,10 +1985,10 @@ def _try_remembered():
             return
         if not who or not tok:
             return
-        try:
-            got = ACCOUNTS.remember_login(auth_url(), auth_token(), who, tok)
-        except Exception:
-            got = None            # never a dependency, never a crash
+        # THE ACCOUNTS SCRIPT IS GONE. A remembered login is a signed
+        # token in localStorage now — see remember_me — and this path
+        # asked a deployed Apps Script to validate one. Nothing to ask.
+        got = None
         if got:
             # PREPARED, NOT ENTERED. Baba: "wait, here be calm, no rush.
             # Then I press Enter, and I am in... otherwise maybe I am
@@ -2077,7 +2090,11 @@ def _auth_secret() -> str:
     all and Remember me simply does not work — better than signing with
     a constant every reader of this file would know.
     """
-    for name in ("REMEMBER_SECRET", "SHEETS_TOKEN", "DRIVE_SECRET"):
+    # SHEETS_TOKEN was one of these and went with the spreadsheet. Two
+    # fallbacks remain, and with neither present the signature is not
+    # made at all — see remember_me: better than signing with a constant
+    # every reader of this file would know.
+    for name in ("REMEMBER_SECRET", "DRIVE_SECRET"):
         try:
             got = str(st.secrets.get(name) or "").strip()
         except Exception:                                    # noqa: BLE001
@@ -2253,10 +2270,9 @@ def log_out():
     who = st.session_state.get("_user", "")
     tok = st.session_state.get("_remember_token", "")
     if who and tok:
-        try:
-            ACCOUNTS.remember_forget(auth_url(), auth_token(), who, tok)
-        except Exception:
-            pass
+        # Nothing to tell: the token lives in this browser and logging
+        # out already removes it.
+        pass
 
     st.session_state.clear()
     queue_ls(removes=[AUTH_LS_KEY])
@@ -2338,11 +2354,12 @@ must_change_notice()
 # session timer is meaningful, and inert unless both secrets are present —
 # the app behaves identically with the sheet disconnected.
 if "_usage" not in st.session_state:
-    st.session_state["_usage"] = UsageLog(
-        url=st.secrets.get("SHEETS_URL", ""),
-        token=st.secrets.get("SHEETS_TOKEN", ""),
-        user=USER,
-    )
+    # NO DESTINATION. The usage log wrote to the spreadsheet and it is
+    # gone; it keeps its in-session counters, which is what the log tab
+    # actually reads, and posts nowhere. Empty strings rather than a
+    # removed argument, so UsageLog needs no change and stays inert
+    # exactly as it always did when the secrets were absent.
+    st.session_state["_usage"] = UsageLog(url="", token="", user=USER)
     st.session_state["_usage"].log("login")
 USAGE = st.session_state["_usage"]
 
@@ -3016,24 +3033,38 @@ def braille_line(engine: str, tick: int, eta_text: str = "") -> str:
 # script costs an estimate and never a transcript.
 # ---------------------------------------------------------------------
 
-def _sheet_pair():
-    return (str(st.secrets.get("SHEETS_URL", "") or ""),
-            str(st.secrets.get("SHEETS_TOKEN", "") or ""))
+# THE SPREADSHEET IS GONE. Baba, 5.9.2026: "we are removing any
+# connection with Google accounts through Google Script or App Script and
+# Sheet that doesn't exist anymore, so any code relating to that we
+# remove."
+#
+# It held six things: the engine choice, the tab switches, provider keys,
+# a store-audio flag, prompts, and a ledger of how long takes took. Every
+# one of them now comes from Secrets or from this session, and the app no
+# longer reaches outside itself for anything except the providers it is
+# actually calling.
+#
+# WHAT IS LOST AND WHY IT IS ACCEPTABLE: the timings ledger was the only
+# thing that genuinely needed writing somewhere. It made the "this will
+# take about a minute" estimate better over weeks. It now learns within a
+# session and forgets — a worse estimate, but an estimate that costs no
+# network, no account, and no explaining.
 
 
 def eta_seconds(engine: str, audio_s: float):
-    """How long this take will probably need, or None while the app is
-    still learning. Cached per engine for the session so a rerun does
-    not fetch the whole history again."""
+    """How long this take will probably need, or None while it is still
+    learning.
+
+    LEARNS WITHIN THE SESSION ONLY, since the ledger went with the sheet.
+    The first take of a session has no estimate; by the third it has one.
+    """
     try:
-        url, token = _sheet_pair()
-        if not url or not token:
-            return None
         ck = "_eta_samples_" + (engine or "any")
-        if ck not in st.session_state:
-            st.session_state[ck] = SHEET.get_timings(url, token, engine=engine)
-        return ETA.estimate(st.session_state[ck], audio_s, engine)
-    except Exception:
+        samples = st.session_state.get(ck) or []
+        if not samples:
+            return None
+        return ETA.estimate(samples, audio_s, engine)
+    except Exception:                                        # noqa: BLE001
         return None
 
 
@@ -3051,9 +3082,7 @@ def remember_timing(engine: str, audio_s: float, wall_s: float,
             return          # a stall is not a measurement of speed
         ck = "_eta_samples_" + (engine or "any")
         st.session_state.setdefault(ck, []).append(sample)
-        url, token = _sheet_pair()
-        SHEET.put_timing(url, token, USER, engine, audio_s, wall_s, parts, ok)
-    except Exception:
+    except Exception:                                        # noqa: BLE001
         pass
 
 
@@ -3121,22 +3150,19 @@ CMD_CHAR_PX = 9
 CMD_PAD_PX = 30
 
 
-def sheet_config() -> dict:
-    """Everything the sheet says, fetched once per session.
-
-    Once, because a settings read on every rerun would be several fetches
-    a second. Never a dependency: an empty dict is a perfectly good
-    answer and every reader falls back to a built-in default.
-    """
-    if "_sheet_config" not in st.session_state:
-        st.session_state["_sheet_config"] = SHEET.fetch(
-            str(st.secrets.get("SHEETS_URL", "") or ""),
-            str(st.secrets.get("SHEETS_TOKEN", "") or ""))
-    return st.session_state["_sheet_config"]
+# PROMPTS COME FROM THE CODE NOW. sheet_config() fetched a config blob
+# once a session and sheet_prompt() read a line of prose out of it, so a
+# prompt could be edited in a spreadsheet without a deploy. That was
+# worth something while the spreadsheet existed. It does not any more,
+# and a fetch that always returns {} is a network call to learn nothing.
 
 
 def sheet_prompt(key: str) -> str:
-    return SHEET.prompt(sheet_config(), key, USER)
+    """Kept as a name so callers do not all change at once. Returns "",
+    which every caller already treats as "use the built-in wording" —
+    that fallback is why removing the sheet does not change any text on
+    screen."""
+    return ""
 
 
 def admin_dense():
@@ -3214,468 +3240,50 @@ def admin_dense():
     </style>""", unsafe_allow_html=True)
 
 
-def user_admin_panel():
-    """WHO EXISTS — make, unmake, re-password, and give each an engine.
+# THE PEOPLE SCREEN IS GONE, 394 lines of it. It listed, created,
+# deleted and re-engined users by writing rows in the spreadsheet — every
+# one of its buttons was an Apps Script call, so with the script gone the
+# panel was a screen of controls that could only fail.
+#
+# WHO CAN GET IN IS A SECRETS QUESTION NOW: FREE_USER1, STUDIO_USER1 and
+# their passwords. Adding somebody is a line and a redeploy, which for a
+# household of three is less ceremony than a screen was.
+#
+# tests/test_admin_users.py and tests/test_users.py describe what this
+# did. They are marked in tools/sweep.py rather than deleted, because a
+# suite for a feature somebody may want back is a specification.
 
-    Baba asked for this at the very start: *"I want in this panel to have
-    list of all users and assign them engines. Your normal user doesn't
-    have these settings."* It grew into the rest of it — adding a person
-    used to mean opening a spreadsheet.
 
-    IT TALKS TO THE ACCOUNTS SCRIPT, NOT THE MAIN ONE. That script owns
-    the users tab now, holds the hashes, and answers with its own admin
-    token. The old version of this panel asked the main script and said
-    "no users tab yet" whenever that script was behind, which was true
-    about the deployment and a lie about the tab.
+def engine_from_secrets() -> None:
+    """Set the engine from Secrets, once per session.
 
-    NOTHING HERE MAY BE A DEPENDENCY (§1). Every call returns rather than
-    raises, an unreachable script is a sentence on the screen, and the
-    door that always opens — APP_PASSWORDS — is untouched by all of it.
+    THE SPREADSHEET USED TO CARRY THIS, per person and globally. It is a
+    Secrets entry now — ENGINE = "google" — which is what Baba asked for:
+    "everything is in secrets."
+
+    A per-person engine is gone with it. That was a spreadsheet column
+    and there is nowhere else to put it that is both global and durable;
+    with two engines and one household it was answering a question
+    nobody had.
+
+    NEVER A DEPENDENCY: no entry, an empty one, or a name that is not an
+    engine all leave the routes exactly as they were.
     """
-    url, token = auth_url(), auth_admin_token()
-    if not url or not token:
-        st.caption(t("adm_noconn"))
+    if st.session_state.get("_engine_from_secrets_done"):
         return
-    # admin_dense() is emitted once by the settings module, above.
-
-    # THE NEW PASSWORD GOES FIRST, above everything, because it is the
-    # one thing on this screen that cannot be fetched again. Under the
-    # list it would arrive below the fold on a phone.
-    shown = st.session_state.get("_adm_shown")
-    if shown:
-        # A WHOLE SENTENCE, NOT A PASSWORD ON ITS OWN. What he does next
-        # is send this to somebody, and st.code puts a copy button in its
-        # corner — one tap on a phone, instead of selecting a bare word
-        # and typing the rest of the message around it.
-        #
-        # It is built from what the SCRIPT sent back, never from what was
-        # typed into the box: against a deployment older than this one a
-        # chosen password is ignored and a generated one comes back, and
-        # the message he sends has to be the one that works.
-        who, pw = shown[0], shown[1]
-        link = str(st.secrets.get("APP_URL", "") or "")
-        st.code(((t("adm_ready_url") % link) if link else "")
-                + t("adm_ready") % (who.capitalize(), who, pw), language=None)
-        # TWO LINES REMOVED. "one tap on the corner copies it" explained
-        # a button that is now simply visible, and "Write this down NOW"
-        # told him to do the thing he had just done — he chose the
-        # password himself, so it is already written down. Both were
-        # true when the app generated passwords and nobody knew them.
-        #
-        # The dismiss stays: it is the only thing that takes a password
-        # off the screen, and a password that lingers through a session
-        # is a password in the next screenshot.
-        st.button(t("adm_written"), key="adm_written",
-                  on_click=lambda: st.session_state.pop("_adm_shown", None))
-
-    if "_adm_people" not in st.session_state:
-        st.session_state["_adm_people"] = ACCOUNTS.users(url, token)
-    people = st.session_state["_adm_people"]
-
-    def forget():
-        """The list is stale the moment anything changes it."""
-        st.session_state.pop("_adm_people", None)
-
-    def proof():
-        """The administrator's own password, taken and not kept."""
-        return st.session_state.get("_adm_proof", "")
-
-    # ---- the five actions, each ending in a sentence ----------------
-    def do_engine(who, engine_id):
-        ok, err = ACCOUNTS.user_engine(url, token, who, engine_id)
-        st.session_state["_adm_msg"] = who + (" → " + engine_id
-                                              if ok else "  " + err)
-        if ok:
-            forget()
-
-    def do_create():
-        name = str(st.session_state.get("_adm_name", "")).strip().lower()
-        chosen = str(st.session_state.get("_adm_pw", ""))
-        if not name:
-            st.session_state["_adm_msg"] = t("adm_need_name")
-            return
-        # BOTH ARE REQUIRED. An empty password used to mean "generate
-        # one", which made the field read as optional. Saying no here,
-        # with the reason, is clearer than silently doing something else.
-        if not chosen:
-            st.session_state["_adm_msg"] = t("adm_need_pw")
-            return
-        pw, err = ACCOUNTS.user_create(url, token, name, "", "",
-                                       password=chosen)
-        if pw:
-            st.session_state["_adm_shown"] = (name, pw)
-            st.session_state["_adm_msg"] = ""
-            st.session_state.pop("_adm_name", None)
-            st.session_state.pop("_adm_pw", None)
-            forget()
-        else:
-            st.session_state["_adm_msg"] = err
-
-    def do_reset(who):
-        pw, err = ACCOUNTS.user_password(
-            url, token, who, USER, proof(),
-            password=str(st.session_state.get("_adm_newpw", "")))
-        st.session_state.pop("_adm_newpw", None)
-        if pw:
-            st.session_state["_adm_shown"] = (who, pw)
-            st.session_state["_adm_msg"] = ""
-        else:
-            st.session_state["_adm_msg"] = err
-        close_ask()
-
-    def do_delete(who):
-        ok, err = ACCOUNTS.user_delete(url, token, who, USER, proof())
-        st.session_state["_adm_msg"] = (t("adm_gone") % who) if ok else err
-        if ok:
-            forget()
-        close_ask()
-
-    def open_ask(kind, who):
-        st.session_state["_adm_ask"] = (kind, who)
-
-    def close_ask():
-        st.session_state.pop("_adm_ask", None)
-        # The password box unmounts with the strip, so the typed value
-        # must go with it rather than waiting in state for next time.
-        st.session_state.pop("_adm_proof", None)
-
-    # ---- who exists -------------------------------------------------
-    if people is None:
-        # NOT THE SAME AS NOBODY, and the difference is the whole reason
-        # this reads from `None` rather than an empty list.
-        st.caption(t("adm_noanswer"))
+    st.session_state["_engine_from_secrets_done"] = True
+    if st.session_state.get("_engine_chosen_here"):
+        return                      # this person already pressed a button
+    try:
+        name = str(st.secrets.get(EN.SETTING_KEY.upper(), "") or "").strip().lower()
+    except Exception:                                        # noqa: BLE001
         return
-    if not people:
-        st.caption(t("adm_nobody"))
-
-    ask = st.session_state.get("_adm_ask") or ("", "")
-
-    # ---- ONE LIST, ONE SELECTION ------------------------------------
-    #
-    # Baba: "optimize the real estate... make everything with radio
-    # buttons, and always give me a list so I can see who is registered.
-    # It is not for users who are old. It is for a young administrator
-    # who is very smart."
-    #
-    # THIS PANEL IS THE ONE PLACE THE ACCESSIBILITY RULES DO NOT GOVERN,
-    # and the exception is deliberate and scoped. Hard rule 6 — 44px
-    # targets, large type, nothing clipped — exists for his mother and
-    # his father, who do not read easily. They never see this screen: it
-    # is behind is_admin(), and it is read by one person who knows
-    # exactly what every word means. Six buttons per person was 24
-    # targets for four people, most of a phone screen, to say something a
-    # single line says better.
-    #
-    # The exception must not leak. Anything a FAMILY MEMBER can reach
-    # keeps rule 6 entirely.
-    if people:
-        # The whole table in one glance: who, which engine, whether they
-        # have a password yet, and their note.
-        # THE LIST FOLDS AWAY. Baba: "if I have 300 people it will fill
-        # up my whole interface — just make it a folder, a small greater
-        # than sign, and then I click and I see who the people are."
-        #
-        # Three names fit; thirty do not, and the panel is meant to be
-        # read at a glance. The count is on the fold's own line, so
-        # closed it still answers "how many".
-        rows = []
-        for person in people:
-            known = EN.get(person.get("engine") or "")
-            # "must" is worth a column of its own: it says the password
-            # he handed over has not been replaced yet, so the person has
-            # not logged in even once.
-            mark = ("no pw" if not person.get("hashed")
-                    else "must" if person.get("must_change") else "")
-            rows.append("%-14s %-10s %-5s %s" % (
-                person.get("user", ""),
-                known.id if known else EN.DEFAULT,
-                mark,
-                (person.get("note") or "")[:28]))
-        with st.expander("%s · %d" % (t("adm_title"), len(people))):
-            st.code("\n".join(rows), language=None)
-
-        # A DROPDOWN FOR PEOPLE, a radio for the engine. Baba: "each user
-        # should appear under the dropdown list, and then I am dropping
-        # down this user, and I can delete him or change his password."
-        #
-        # The difference is how many there are. Engines are three and
-        # will stay three, so a radio shows all of them at once and
-        # choosing costs one press. People grow — a radio for a family of
-        # eight is eight rows standing open forever, when the list above
-        # already says who exists. The dropdown holds one name and opens
-        # only when he means to change it.
-        names = [p.get("user", "") for p in people]
-        who = st.selectbox(t("adm_who"), names, key="_adm_pick",
-                           label_visibility="collapsed")
-
-        current = next((p for p in people if p.get("user") == who), {})
-        theirs = (current.get("engine") or "").strip().lower()
-
-        # The engine as a radio: one choice out of two now, not three.
-        # The third was blank, meaning "follow the global row", and a
-        # state that is neither of the two real answers is a state he
-        # has to remember the meaning of.
-        opts = [e.id for e in EN.ENGINES]
-        # SHORT LABELS HERE ONLY. "Speechify / AssemblyAI / Claude" is
-        # right where the owner is CHOOSING an engine and needs to know
-        # what he is buying. Beside a person's name he already knows, and
-        # the full names wrapped the row onto two lines with a gap
-        # between them — seen with four people on the screen, not
-        # predicted.
-        # THE TIER WORD, from the engines themselves. Two hand-written
-        # strings here would be a third place the names live, and this
-        # panel is exactly where "normal" was still being shown after
-        # v123 renamed it.
-        # THE TIER IS NOT A NAME ONCE TWO ENGINES SHARE ONE.
-        #
-        # This showed e.tier, which read "free · studio" and was exactly
-        # right while there were two engines and two tiers. Google is a
-        # FREE-tier engine too, so the radio rendered "free · studio ·
-        # free" — two buttons with the same word, and no way to tell
-        # which one a person is on.
-        #
-        # Caught by test_admin_users 34b, which had been written to stop
-        # a third option appearing at all. It was right to object; the
-        # fix is a distinguishing label, not fewer engines.
-        #
-        # The tier still leads, because it is what somebody is ON. The
-        # engine's own name follows only when it has to.
-        _by_tier = {}
-        for _e in EN.ENGINES:
-            _by_tier.setdefault(_e.tier, []).append(_e.id)
-        labels_by_id = {
-            e.id: (e.tier if len(_by_tier.get(e.tier, ())) == 1
-                   else "%s · %s" % (e.tier, e.label.split(" / ")[0]))
-            for e in EN.ENGINES}
-        # AN OLD ROW SAYS 'free' AND MUST NOT LAND ON THE WRONG BUTTON.
-        # EN.get resolves the old word to the current engine; anything
-        # unreadable falls to the first option rather than to nothing.
-        known = EN.get(theirs)
-        theirs = known.id if known else opts[0]
-        # A WIDGET KEY OUTLIVES THE OPTIONS IT WAS SET FROM. This radio
-        # offered "" for "global" until today; a session still holding
-        # that value makes Streamlit raise ValueError deep inside its own
-        # element tree — a white panel, not a wrong label. Clearing the
-        # stale value is one line and cannot be triggered by any input.
-        wkey = "_adm_engine_%s" % who
-        if st.session_state.get(wkey) not in opts:
-            st.session_state.pop(wkey, None)
-        picked = st.radio(
-            t("adm_engine"), opts,
-            index=opts.index(theirs) if theirs in opts else 0,
-            format_func=lambda k: labels_by_id[k],
-            key="_adm_engine_%s" % who, horizontal=True,
-            label_visibility="collapsed")
-        if picked != theirs:
-            do_engine(who, picked)
-            st.rerun()
-
-        # RENAME · RESET PASSWORD · DELETE USER, in that order, as links.
-        #
-        # Baba: "these should be links at the top, not buttons... the
-        # order is more logical for me: first rename, then reset
-        # password, and delete user is the last thing."
-        #
-        # The order is an argument about danger as much as habit: rename
-        # changes a word, reset changes a password, delete ends an
-        # account. Least harm first, most harm last, so a hand moving
-        # down the row is moving toward the thing it should hesitate
-        # over.
-        #
-        # FULL WORDS. "reset" and "delete" alone leave "reset what" and
-        # "delete what" to be inferred beside a person's name.
-        # MEASURED, NOT GUESSED: at 1 : 1.3 : 1.1 the words "delete user"
-        # wrapped to a second line on a 420px screen. The three shares
-        # follow the three lengths.
-        acts = st.columns([1.15, 1.3, 1.15])
-        acts[0].button(t("adm_rename"), key="ad_rename",
-                       disabled=True, help=t("adm_rename_why"),
-                       use_container_width=True)
-        acts[1].button(t("adm_reset"), key="ad_reset",
-                       on_click=open_ask, args=("reset", who),
-                       use_container_width=True)
-        # DISABLED ON PURPOSE, with the reason in the tooltip rather than
-        # in a document nobody has open. The accounts script freezes a
-        # folder column at creation; the MAIN script still builds
-        # USERS/<user>/ from the login name, so a rename today would walk
-        # away from somebody's recordings. The day the main script reads
-        # that column, this line loses `disabled` and nothing else about
-        # it changes.
-        acts[2].button(t("adm_delete"), key="ad_del",
-                       on_click=open_ask, args=("delete", who),
-                       use_container_width=True)
-
-        # THE CONFIRM STRIP SITS UNDER THE PERSON IT IS ABOUT — with one
-        # list and one selection, "the person it is about" is whoever is
-        # selected, and the strip names them so the wrong row cannot be
-        # deleted by a mis-tap higher up.
-        if ask[1] == who and ask[0] in ("delete", "reset"):
-            # A RED FRAME ONLY FOR DELETE. Baba: "when I delete any
-            # user, confirm should be in a red frame, and confirm should
-            # be a red button — not too much red, so I know I am
-            # deleting."
-            #
-            # Not for reset: a reset is recoverable, a delete is not, and
-            # red that appears for both says nothing about either. Red
-            # is reserved for the one action with no way back — the same
-            # reservation the recording dot lives under.
-            _danger = ask[0] == "delete"
-            with st.container(key="askstrip_danger" if _danger
-                              else "askstrip"):
-                st.text((t("adm_ask_delete") if _danger
-                         else t("adm_ask_reset")) % who)
-                if not _danger:
-                    # THE NEW PASSWORD, CHOSEN. Baba: "I am assigning
-                    # password as I like." Empty still means "make me
-                    # one", which is the right answer when he has
-                    # nothing in mind — but it is no longer the ONLY
-                    # answer, which it was until now.
-                    st.text_input(t("adm_setpw"), key="_adm_newpw",
-                                  placeholder=t("adm_setpw"),
-                                  label_visibility="collapsed")
-            # NO PASSWORD BOX. It used to sit here, BELOW the confirm
-            # buttons — so pressing yes sent an empty one and the script
-            # refused, which reads as being asked for something there is
-            # nowhere to type. Baba asked for it gone; auth_script no
-            # longer requires it. The two presses remain, because one
-            # press on a whole account is still not a risk worth taking.
-                yn = st.columns([1, 1])
-                yn[0].button(t("adm_yes"),
-                             key="ad_yes_danger" if _danger else "ad_yes",
-                             type="primary",
-                             on_click=do_delete if _danger else do_reset,
-                             args=(who,), use_container_width=True)
-                yn[1].button(t("adm_cancel"), key="ad_no",
-                             on_click=close_ask, use_container_width=True)
-
-    # ---- add a person, UNLESS something is being confirmed ------------
-    #
-    # Baba: "at that time I want the name and password to disappear...
-    # if I am deleting, there should be no name, password, add or other
-    # unnecessary stuff."
-    #
-    # He is right, and it explains the confusion he reported: pressing
-    # RESET seemed to ask for a name AND a password, because the add-a-
-    # person form sits directly under the confirm strip and reads as
-    # part of it. Nothing was wrong; two things were adjacent.
-    #
-    # THIS IS A DELIBERATE EXCEPTION to "no new elements appearing on
-    # the screen. Everything is already there, only greyed out." That
-    # rule protects a person who is trying to find a control. This is
-    # the opposite case: the owner has already found one, and is about
-    # to end an account. Fewer things on screen is the kindness here.
-    if st.session_state.get("_adm_ask"):
-        return
-
-    # ---- add a person ------------------------------------------------
-    #
-    # ONE LINE PER FIELD, label beside the box rather than above it.
-    # Baba: "put name and then input box, not name and then new line
-    # input box." Two fields stacked with their labels above was six
-    # rows for two values.
-    st.markdown("---")
-    # THE LABEL GOES INSIDE THE BOX.
-    #
-    # A label column beside it was measured starting at two different x
-    # positions for the two rows, even with one ratio: st.text renders
-    # preformatted text that does not wrap, so the longer word — "note
-    # (optional)" — stretched its own column and pushed its box right.
-    #
-    # A placeholder cannot drift out of alignment, because there is
-    # nothing beside it to align WITH. It is also one row shorter per
-    # field, which is the whole point of this screen.
-    # USERNAME AND PASSWORD. Nothing else.
-    #
-    # Baba: "why do I have note, actually I do not need note — just
-    # username, password, and then I add user." The note column stays in
-    # the sheet, where a word about somebody is occasionally useful; it
-    # is the FORM that had a field nobody fills.
-    #
-    # AND THE PASSWORD IS NOT OPTIONAL. It used to mean "make me one if
-    # you leave it empty", which reads as optional on a form and is not
-    # what he wants: he hands people a password he chose and can say out
-    # loud. Empty is refused now, with the reason on screen.
-    #
-    # NOT a password field: he is choosing one to read out and send, not
-    # typing his own, and a row of dots he cannot check is how a typo
-    # becomes a person who cannot log in.
-    st.text_input(t("adm_name"), key="_adm_name",
-                  placeholder=t("adm_name"), label_visibility="collapsed")
-    st.text_input(t("adm_pw"), key="_adm_pw",
-                  placeholder=t("adm_pw"), label_visibility="collapsed")
-    st.button(t("adm_add"), key="ad_add", on_click=do_create)
-
-    if st.session_state.get("_adm_msg"):
-        st.caption(st.session_state.pop("_adm_msg"))
-
-
-def adopt_sheet_engine():
-    """Apply the engine the SHEET names, once per session.
-
-    Baba: *"we need to do this kind of settings inside the sheet."* The
-    engine is the app's, not one person's, so the sheet is where it
-    belongs — it is the only store that is shared, durable and editable
-    by hand without a deploy.
-
-    ONCE PER SESSION, and only when the person has not chosen for
-    themselves in this session. Re-applying it on every rerun would undo
-    a press the moment it was made, which reads as the buttons being
-    dead. So the sheet sets the starting point and a press wins from
-    then on, until the next session.
-
-    Never a dependency: an unreachable sheet, an empty row or a name
-    that is not an engine all leave the routes exactly as they were.
-    """
-    if st.session_state.get("_sheet_engine_done"):
-        return
-    cfg = sheet_config()
-    if not cfg:
-        return                      # no sheet is not an error
-    st.session_state["_sheet_engine_done"] = True
-    # THE PERSON'S OWN ENGINE WINS. Baba: "each user can have separate
-    # engine settings I've written in the sheet, and you serve the user."
-    # It comes back from login_ on the users tab; the global settings row
-    # is the fallback for anyone who has no engine of their own.
-    name = (st.session_state.get("_assigned_engine") or "").strip().lower()
-    if not EN.get(name):
-        name = SHEET.setting(cfg, EN.SETTING_KEY, USER).strip().lower()
     engine = EN.get(name)
     if engine is None:
         return                      # a typo must not switch anything
-    if st.session_state.get("_engine_chosen_here"):
-        return                      # this person already pressed a button
     for key, value in EN.route_settings(engine).items():
         st.session_state[key] = value
     st.session_state[EN.SETTING_KEY] = engine.id
-
-
-def adopt_sheet_keys():
-    """Take any keys the sheet holds that this session does not.
-
-    They are keys like any other: same ring, same rotation, same
-    shredding. Added only when missing, so a key someone typed into
-    Settings is never quietly replaced by one from the sheet.
-    """
-    cfg = sheet_config()
-    if not cfg or st.session_state.get("_sheet_keys_done"):
-        return
-    st.session_state["_sheet_keys_done"] = True
-    changed = False
-    for prov in PROVIDERS.keyed_providers():
-        extra = SHEET.keys_for(cfg, prov.id)
-        if not extra:
-            continue
-        ring = get_ring(prov.id)
-        have = {k["key"] for k in ring["keys"]}
-        for k in extra:
-            if k not in have:
-                ring["keys"].append({"key": k, "fp": kr.fingerprint(k),
-                                     "state": "new", "label": "sheet",
-                                     "last_error": "", "calls": 0, "chars": 0,
-                                     "cool_until": 0})
-                changed = True
-    if changed:
-        save_rings()
 
 
 # WHICH TABS EVERYONE GETS. The owner's switches, one per tab.
@@ -3729,34 +3337,49 @@ def tab_label(tab: str) -> str:
 def tabs_off() -> set:
     """Tabs the owner has switched off for everyone.
 
-    Read from the sheet config that is already fetched at login, so this
-    costs no round trip. Unreadable means NOTHING is off — a setting
-    that cannot be read must not be able to hide the app.
+    FROM SECRETS, since the spreadsheet went. Baba, 5.9.2026:
+    "everything is in secrets."
+
+        TABS_OFF = ["vr", "translate"]
+
+    A SESSION OVERRIDE SITS ON TOP so the switches in the admin panel do
+    something immediately — see set_tabs_off for why that is honest
+    rather than a half-measure.
+
+    Unreadable means NOTHING is off. A setting that cannot be read must
+    never be able to hide the app.
     """
+    live = st.session_state.get("_tabs_off_session")
+    if live is not None:
+        return set(live) - set(TABS_NEVER_OFF)
     try:
-        raw = (st.session_state.get("_sheet_config") or {}).get(TAB_SETTING)
+        raw = st.secrets.get("TABS_OFF", []) or []
     except Exception:                                        # noqa: BLE001
         return set()
-    if not raw:
-        return set()
-    off = {p.strip() for p in str(raw).split(",") if p.strip()}
-    # THE GUARD HOLDS ON THE WAY OUT AS WELL AS THE WAY IN. A row written
-    # by an older version, or edited in the spreadsheet by hand, cannot
-    # take away the way back.
+    if isinstance(raw, str):
+        raw = [p.strip() for p in raw.split(",")]
+    off = {str(p).strip() for p in raw if str(p).strip()}
+    # THE GUARD HOLDS ON THE WAY OUT AS WELL AS THE WAY IN. A Secrets
+    # entry written by hand cannot take away the way back.
     return off - set(TABS_NEVER_OFF)
 
 
 def set_tabs_off(off) -> bool:
-    """Write the owner's choice for everyone. True if it reached the sheet."""
-    keep = sorted(set(off) - set(TABS_NEVER_OFF))
-    ok = SHEET.put_setting(
-        str(st.secrets.get("SHEETS_URL", "") or ""),
-        str(st.secrets.get("SHEETS_TOKEN", "") or ""),
-        TAB_SETTING, ",".join(keep))
-    if ok:
-        # The cached config is stale the moment this lands.
-        st.session_state.pop("_sheet_config", None)
-    return bool(ok)
+    """Switch tabs off for this session, and say so plainly.
+
+    THIS NO LONGER PERSISTS, and pretending otherwise would be the worse
+    choice. The spreadsheet was the only writable store the app had;
+    Secrets is read-only from inside, and session_state dies when a phone
+    sleeps.
+
+    So the switch works NOW — press it and the tab goes, for everyone
+    served by this running app — and the panel says in plain words that
+    making it permanent means a line in Secrets. A control that looked
+    permanent and was not would be worse than one that admits it.
+    """
+    st.session_state["_tabs_off_session"] = sorted(
+        set(off) - set(TABS_NEVER_OFF))
+    return True
 
 
 def nav_tabs():
@@ -4462,54 +4085,6 @@ def sp_call(key: str, path: str, payload=None, method: str = "GET", timeout: int
 HUME_UA = "TTT-LLL/1.0 (+https://ttt-lll.streamlit.app)"
 
 
-def hume_keys_from_sheet() -> int:
-    """Pull Hume accounts out of the sheet into this session's ring, ONCE.
-
-    Baba: "it stores the API keys in Google Sheet, and they are fetched
-    at the time of app starting and stored temporarily in the Streamlit
-    Cloud account."
-
-    So: the sheet is the store, the session is the cache, and nothing is
-    written to disk. A key already in the ring is never duplicated — the
-    ring is matched on the key itself, so importing by file and pulling
-    from the sheet cannot produce two entries that share one rate limit.
-
-    Silent on failure and cheap to call: no sheet, no keys, no error in
-    front of anybody. VR then says it has no key, which is true.
-    """
-    if st.session_state.get("_hume_pulled"):
-        return 0
-    st.session_state["_hume_pulled"] = True
-    try:
-        url, token = _sheet_pair()
-        if not url or not token:
-            return 0
-        rows = SHEET.get_keys(url, token, "hume")
-        if not rows:
-            return 0
-        ring = get_ring("hume")
-        have = {k.get("key") for k in ring.setdefault("keys", [])}
-        added = 0
-        for r in rows:
-            key = str(r.get("key") or "").strip()
-            if not key or key in have:
-                continue
-            ring["keys"].append({
-                "key": key, "secret": str(r.get("secret") or ""),
-                "fp": kr.fingerprint(key), "state": "new",
-                "label": str(r.get("label") or "hume account"),
-                "last_error": "", "calls": 0, "chars": 0,
-                "cool_until": 0, "added": int(time.time()), "last_used": 0.0,
-            })
-            have.add(key)
-            added += 1
-        if added:
-            save_rings()
-        return added
-    except Exception:
-        return 0
-
-
 def hume_keys_from_secrets() -> int:
     """Fill the Hume ring from Secrets. Returns how many were added.
 
@@ -4575,17 +4150,6 @@ def hume_keys_from_secrets() -> int:
     if added:
         save_rings()
     return added
-
-
-def hume_keys_to_sheet() -> bool:
-    """Push the ring back to the sheet after an import, so the next
-    restart finds them. Best effort: a failure costs persistence, never
-    the keys already in this session."""
-    try:
-        url, token = _sheet_pair()
-        return SHEET.put_keys(url, token, "hume", get_ring("hume")["keys"])
-    except Exception:
-        return False
 
 
 def hume_error_kind(status: int, body: str = "") -> str:
@@ -5252,65 +4816,14 @@ def forget_me():
 
 
 def change_own_password():
-    """The current password is the proof, not the token. See ttt/accounts.
+    """Passwords live in Secrets now, so there is nothing to change here.
 
-    Checked HERE as well as in the script — not because the script is
-    trusted less, but because a mismatch or a short password should cost
-    nobody a network round trip and half a second of hashing.
+    This asked the Apps Script to rewrite a spreadsheet row. Kept as a
+    name because the settings screen still calls it, and it says why
+    rather than failing silently — a control that appears to work and
+    does nothing is the fault this whole session keeps finding.
     """
-    cur = st.session_state.get("_pw_cur", "")
-    new = st.session_state.get("_pw_new", "")
-    rep = st.session_state.get("_pw_rep", "")
-    st.session_state["_pw_msg"] = ""
-
-    if not cur or not new:
-        return
-    if new != rep:
-        st.session_state["_pw_msg"] = ("bad", t("pw_mismatch"))
-        return
-    if len(new) < 8:
-        st.session_state["_pw_msg"] = ("bad", t("pw_short"))
-        return
-
-    ok, err = ACCOUNTS.change_password(auth_url(), auth_token(),
-                                       st.session_state.get("_user", ""),
-                                       cur, new)
-    if ok:
-        # Every device was just forgotten, including this one. Mint a
-        # fresh token so the person who just changed their password is
-        # not the one it logs out.
-        st.session_state["_remember_token"] = ""
-        if st.session_state.get("_remember_me"):
-            try:
-                got = ACCOUNTS.login(auth_url(), auth_token(),
-                                     st.session_state.get("_user", ""), new,
-                                     remember=True)
-            except Exception:
-                got = None
-            if got and got.get("remember"):
-                st.session_state["_remember_token"] = got["remember"]
-                queue_ls(writes={AUTH_LS_KEY: json.dumps(
-                    {"u": st.session_state.get("_user", ""), "t": got["remember"]})})
-        else:
-            queue_ls(removes=[AUTH_LS_KEY])
-        st.session_state["_pw_msg"] = ("good", t("pw_changed"))
-        # AND THE NUDGE IS SETTLED. Somebody who arrived on a password
-        # Baba chose has done the thing the notice was asking for, and
-        # it must not greet them again on the next login. The script
-        # clears the flag in the sheet on this same call; these two keys
-        # are the session's copy of that.
-        st.session_state["_must_done"] = True
-        st.session_state.pop("_must_change", None)
-    elif err == "unreachable":
-        st.session_state["_pw_msg"] = ("bad", t("pw_unreachable"))
-    elif err.startswith("too short"):
-        st.session_state["_pw_msg"] = ("bad", t("pw_short"))
-    else:
-        st.session_state["_pw_msg"] = ("bad", t("pw_wrong"))
-
-    # NEVER LEFT LYING IN THE SESSION, whether it worked or not.
-    for k in ("_pw_cur", "_pw_new", "_pw_rep"):
-        st.session_state[k] = ""
+    st.session_state["_pw_msg"] = ("bad", t("pw_secrets_now"))
 
 
 def voice_picker(prefix: str, on_pick=None):
@@ -5586,11 +5099,18 @@ def drive_store():
     try:
         if not is_studio():
             return _drive_store("", "", "", USER or "shared", False)
-        secret = str(st.secrets.get("DRIVE_SECRET", "") or "")
-        url = str(st.secrets.get("SHEETS_URL", "") or "")
-        token = str(st.secrets.get("SHEETS_TOKEN", "") or "")
-        flag = SHEET.flag(sheet_config(), "store_audio", USER)
-        on = bool(secret) and bool(url) and bool(token) and flag
+        # DRIVE STORAGE WENT WITH THE APPS SCRIPT. It uploaded through
+        # the same deployed script the spreadsheet used, so removing that
+        # removes the destination — there is nowhere for a recording to
+        # go, whatever the secrets say.
+        #
+        # NOT QUIETLY DISABLED. Every caller already returns early on a
+        # disabled store WITHOUT an error, because a disabled store is
+        # not a failure — and that silence is exactly what once had Baba
+        # recording three times with nothing kept and nothing in the log.
+        # So it says so, once, in plain words.
+        secret = url = token = ""
+        on = False
 
         # SAY WHY IT IS OFF, ONCE PER SESSION.
         #
@@ -5606,14 +5126,11 @@ def drive_store():
         # token, or the sheet's own switch.
         if not on and not st.session_state.get("_drive_off_logged"):
             st.session_state["_drive_off_logged"] = True
-            missing = [n for n, v in (("DRIVE_SECRET", secret),
-                                      ("SHEETS_URL", url),
-                                      ("SHEETS_TOKEN", token),
-                                      ("the sheet's store_audio switch", flag))
-                       if not v]
             errlog.add(st.session_state, "drive",
                        "NOT KEEPING RECORDINGS — nothing is being stored",
-                       "missing: " + ", ".join(missing))
+                       "Drive storage went with the Apps Script in v237. "
+                       "Copy anything you need out before you close the "
+                       "page.")
 
         return _drive_store(url, token, secret, USER, on)
     except Exception as e:
@@ -5793,17 +5310,11 @@ def pick_engine(engine_id):
     # it does not follow to the next one or to anyone else. Said plainly
     # rather than swallowed, because a global setting that quietly did
     # not save is worse than one that never claimed to.
-    if is_admin():
-        ok = SHEET.put_setting(
-            str(st.secrets.get("SHEETS_URL", "") or ""),
-            str(st.secrets.get("SHEETS_TOKEN", "") or ""),
-            EN.SETTING_KEY, engine.id)
-        st.session_state["_engine_saved"] = bool(ok)
-        # The cached config is now stale — drop it so the next read sees
-        # what was just written rather than what was there at login.
-        if ok:
-            st.session_state.pop("_sheet_config", None)
-            st.session_state.pop("_sheet_engine_done", None)
+    # THE CHOICE HOLDS FOR THIS RUNNING APP, and is not written anywhere.
+    # The spreadsheet was the only writable store and it is gone; making
+    # it permanent is a line in Secrets — ENGINE = "google" — which the
+    # keys panel says out loud. A pill that claimed to save and did not
+    # would be worse than one that does not claim.
 
 
 def run_engine_check():
@@ -8138,10 +7649,9 @@ def lang_pills(prefix: str, which: str, current: str):
 # defined further down — calling it earlier is a NameError, which is the
 # same ordering mistake that took every tab down in v33.
 try:
-    adopt_sheet_keys()
-    adopt_sheet_engine()
-except Exception:
-    pass          # the sheet is never allowed to break startup
+    engine_from_secrets()
+except Exception:                                            # noqa: BLE001
+    pass          # a bad Secrets entry is never allowed to break startup
 
 
 # ----------------------------------------------------------------------
@@ -9716,10 +9226,11 @@ elif active == "vr":
     # THE KEYS COME FROM THE SHEET, once per session. Done here rather
     # than at module top so a person who never opens VR never pays for
     # the fetch, and so a slow sheet cannot delay the login screen.
-    hume_keys_from_sheet()
-    # AND THEN SECRETS, if the sheet gave nothing. Sheet first so a key
-    # managed there keeps its state; Secrets as the floor so an empty
-    # k_hume tab is not the same thing as having no keys.
+    # SECRETS IS THE ONLY SOURCE NOW. It used to be the FLOOR under a
+    # spreadsheet that could also hold keys; with the sheet gone it is
+    # simply where keys live, which is what Baba asked for: "instead of
+    # all this manual entering, the API keys we are going to keep only
+    # inside the secret."
     hume_keys_from_secrets()
 
     # REHEARSE SITS UNDER THE PLAYER. Baba, 25.8.2026: "the rehearse
@@ -11110,8 +10621,7 @@ elif active == "settings":
                     if pid == "hume" and added:
                         # STRAIGHT TO THE SHEET, so the next redeploy
                         # does not ask for 21 accounts again.
-                        st.session_state["_hume_saved"] = hume_keys_to_sheet()
-                    st.session_state["_key_msg"] = (
+                        st.session_state["_hume_saved"] =                    st.session_state["_key_msg"] = (
                         f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
 
                 st.button(t("import_keys_btn"), key=f"{prov.id}_import",
@@ -11299,8 +10809,8 @@ elif active == "settings":
             # The keyed container is what admin_dense() styles. Nothing
             # outside it changes, which is how the exception to rule 6
             # stays scoped to the one screen it belongs on.
-            st.text(t("adm_title"))
-            user_admin_panel()
+            # The people screen stood here. See the note where
+            # user_admin_panel used to be defined.
 
         # Help lived here as an expander AND as its own module. Two copies
         # of the same text drift apart, and the module is the one people

@@ -262,16 +262,27 @@ ck("55 the admin panel uses the PAIR importer for hume and the plain "
    'if pid == "hume":' in SRC and "kr.import_pairs(get_ring(pid), raw)" in SRC)
 
 # --- THE SHEET -------------------------------------------------------
-ck("56 keys are pulled from the sheet ONCE per session",
-   '_hume_pulled' in SRC)
+# THE PULL WAS FROM THE SPREADSHEET, once per session, and the
+# spreadsheet went in v237. Secrets is read at startup and does not need
+# a once-guard, because reading a dict is not a network call. The claim
+# underneath — the ring gets filled without asking him for 21 accounts —
+# is checked at 58 and 59 below.
+ck("56 the ring is filled from Secrets, which needs no once-guard "
+   "because reading a dict is not a fetch",
+   "hume_keys_from_secrets" in SRC and "_hume_pulled" not in SRC,
+   "the sheet pull is back")
 ck("57 a key already in the ring is never duplicated by the pull — two "
    "entries for one account would rotate through a shared rate limit "
    "believing they were two",
    "if not key or key in have:" in SRC)
 ck("58 an unreachable sheet costs keys, never an error in somebody's "
    "face", "    except Exception:\n        return 0" in SRC)
-ck("59 an import is pushed back to the sheet, so a redeploy does not "
-   "ask for 21 accounts again", "hume_keys_to_sheet()" in SRC)
+# NOTHING IS PUSHED ANYWHERE ANY MORE. This existed so a redeploy did
+# not ask him for 21 accounts again — Secrets does that now, and it is
+# where they already were. The push had a destination; it has none.
+ck("59 nothing is written back to a spreadsheet, because there is no "
+   "spreadsheet", "hume_keys_to_sheet" not in SRC,
+   "the sheet push is back")
 
 # --- ALIGNED WITH MANTRA_MANIFEST/apis/hume.md -----------------------
 ck("60 403 IS DEAD UNLESS IT IS CLOUDFLARE 1010 — v182 made it always "

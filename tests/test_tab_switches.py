@@ -109,9 +109,14 @@ check("4c the never-off tabs have NO box rather than a disabled one — a "
       "if x not in TABS_NEVER_OFF" in code)
 check("4d it writes globally, like the engine row", "set_tabs_off(" in code)
 check("4e and says whether the write landed", '"_tabs_saved"' in code)
-check("4f the cached config is dropped after a write, or the next read "
-      "shows what was there before",
-      0 < _wa < _wb and 'pop("_sheet_config", None)' in code[_wa:_wb])
+# THERE IS NO CACHED SHEET CONFIG TO DROP since v237. The switch writes
+# to the session and tabs_off consults the session BEFORE Secrets, which
+# is what makes a press take effect at once — that ordering is the new
+# version of this claim.
+check("4f a press takes effect immediately, because the session "
+      "override is read before Secrets",
+      0 < code.find('"_tabs_off_session"') < code.find('st.secrets.get("TABS_OFF"'),
+      (code.find('"_tabs_off_session"'), code.find('st.secrets.get("TABS_OFF"')))
 check("4g the label carries the letter AND the word — a bare letter is "
       "not something somebody can act on", "def tab_label" in code)
 check("4h built from strings that already exist, not a third set of "

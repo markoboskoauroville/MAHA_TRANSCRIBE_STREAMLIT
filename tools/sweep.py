@@ -119,7 +119,17 @@ MISSING = {
     "test_engine_ui.py": "THE ENGINE BOARD, which Baba wants back for "
                          "studio users — eng_normal / eng_studio / "
                          "eng_check, and routing that reads route_*",
-    "test_engine_sheet.py": "the same engine board, from the sheet side",
+    "test_engine_sheet.py": "the engine board AND the spreadsheet it read "
+                            "from — the sheet was removed in v237",
+    "test_admin_users.py": "the owner's PEOPLE SCREEN — listing, adding "
+                           "and deleting users by writing spreadsheet "
+                           "rows. Removed with the Apps Script in v237",
+    "test_must_change.py": "the forced password change, which rewrote a "
+                           "spreadsheet row through the Apps Script. "
+                           "Passwords are Secrets entries since v237",
+    "test_users.py": "logging in against the spreadsheet's user list, "
+                     "removed in v237. The door reads Secrets now and "
+                     "test_door covers it",
     "test_accounts.py": "the accounts screen — log_out_btn and the "
                         "password section. Ask before deleting: this may "
                         "be wanted for studio users too",
