@@ -462,6 +462,44 @@ check("every capability a provider claims has a method",
       all(hasattr(get("google"), m)
           for m in ("transcribe", "synth", "complete", "voices", "test_key")))
 
+
+print()
+print("A BATCH THAT ANSWERS NOTHING IS ABANDONED")
+# =====================================================================
+#
+# Baba, 6.9.2026: "for Google Wave, if it takes too long you need to
+# cancel that and go to the next key."
+#
+# The per-call timeout is the ceiling for a call that is WORKING. The
+# batch deadline is different: if nothing in eight has answered yet,
+# this group has no fast key in it and waiting out the rest is loss.
+#
+# MEASURED on his ring, four live runs: 25.5s, 2.9s, 2.3s, 6.6s —
+# average 9.3s, against 14 to 68s before.
+
+check("there is a batch deadline", isinstance(G.BATCH_DEADLINE, int))
+check("...short, because a working key answers in about two seconds",
+      2 < G.BATCH_DEADLINE <= 20, G.BATCH_DEADLINE)
+check("...and shorter than one call's own ceiling",
+      G.BATCH_DEADLINE < G.TTS_TIMEOUT, (G.BATCH_DEADLINE, G.TTS_TIMEOUT))
+_gsrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "..", "ttt", "providers", "google.py")).read()
+check("the wait itself carries the deadline",
+      "as_completed(futures, timeout=BATCH_DEADLINE)" in _gsrc)
+check("...and running out of time is caught",
+      "except TimeoutError:" in _gsrc)
+# NOTHING IS CONDEMNED BY A DEADLINE. Slowness says nothing about
+# whether a key works — that is the same rule as `unknown`, and the
+# whole reason the ring exists.
+_late = _gsrc.split("except TimeoutError:")[1][:400]
+check("a slow batch marks no key dead",
+      "dead" not in _late and "mark_dead" not in _late, _late[:110])
+check("...it just says nobody was quick",
+      "answered within" in _late)
+# AND THE WALK CONTINUES. Abandoning a batch is not abandoning the ring.
+check("the next batch is still tried",
+      "for start in range(0, len(order), RACE_WIDTH)" in _gsrc)
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

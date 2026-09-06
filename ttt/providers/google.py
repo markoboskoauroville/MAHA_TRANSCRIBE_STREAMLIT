@@ -455,6 +455,10 @@ TTS_PER_DAY = 10
 # with room to spare, and the timeout is generous again because a slow
 # key no longer blocks a fast one.
 RACE_WIDTH = 8
+# HOW LONG A WHOLE BATCH MAY TAKE BEFORE IT IS ABANDONED. A working key
+# answers in about two seconds; twelve leaves room for a slow-but-real
+# one without waiting out the hung ones.
+BATCH_DEADLINE = 12
 TTS_TIMEOUT = 60
 SOFT_TRIES = 2          # kept for the suite; the race supersedes it
 
@@ -690,7 +694,22 @@ class Google(Provider):
             pool = ThreadPoolExecutor(max_workers=len(batch))
             try:
                 futures = {pool.submit(attempt, k): k for k in batch}
-                for fut in as_completed(futures):
+                # A DEADLINE ON THE BATCH, NOT ONLY ON EACH CALL.
+                #
+                # Baba, 6.9.2026: "for Google Wave, if it takes too long
+                # you need to cancel that and go to the next key."
+                #
+                # The per-call timeout is 60s, which is the right ceiling
+                # for a call that is genuinely working — but if NOTHING
+                # in this batch of eight has answered in BATCH_DEADLINE,
+                # the batch has no fast key in it and waiting out the
+                # rest is pure loss. Measured: a working key answers in
+                # about two seconds, so twelve is already generous.
+                #
+                # Giving up on the batch is not giving up on the ring —
+                # the next eight are tried immediately, and the
+                # abandoned threads are left to expire on their own.
+                for fut in as_completed(futures, timeout=BATCH_DEADLINE):
                     try:
                         result, err, kind = fut.result()
                     except Exception as e:                   # noqa: BLE001
@@ -703,6 +722,12 @@ class Google(Provider):
                         pool.shutdown(wait=False, cancel_futures=True)
                         return result, None
                     last = err
+            except TimeoutError:
+                # NOT AN ERROR ABOUT ANY KEY. Nobody in this batch was
+                # quick; that says nothing about whether they work, so
+                # nothing is condemned and the walk simply moves on.
+                last = ("no key in that group answered within %ds"
+                        % BATCH_DEADLINE)
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
         return None, "All Google keys failed. Last: %s" % last
