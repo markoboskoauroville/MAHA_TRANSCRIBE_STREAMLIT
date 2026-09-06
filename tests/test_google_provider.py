@@ -357,7 +357,13 @@ def _all_dead(key):
 
 
 got, err = G.Google(keys=["AQ.a", "AQ.b", "AQ.c"])._rotate(_all_dead)
-check("a dead key rolls forward to the next", seen == ["AQ.a", "AQ.b", "AQ.c"], seen)
+# THE ORDER OF THE WALK IS NO LONGER FIXED — every call starts one
+# further along the ring, so three parallel prefetch workers do not all
+# queue behind key 1. What must still be true is that ALL of them are
+# tried, exactly once each.
+check("a dead key rolls forward to the next",
+      sorted(seen) == ["AQ.a", "AQ.b", "AQ.c"], seen)
+check("...each tried exactly once", len(seen) == len(set(seen)), seen)
 check("...and the whole ring failing is an error, not a crash", err)
 
 # AN ERROR NO KEY CAN FIX STOPS IMMEDIATELY rather than burning the ring.
@@ -370,7 +376,15 @@ def _soft(key):
 
 
 got, err = G.Google(keys=["AQ.a", "AQ.b", "AQ.c"])._rotate(_soft)
-check("a soft error does not walk the ring", seen2 == ["AQ.a"], seen2)
+# A SOFT ERROR NOW WALKS THE RING TOO, and that is the fix, not a
+# regression. Measured 6.9.2026: Google hands out 503s freely, one cost
+# 67 SECONDS and then killed the whole sentence with twenty untried keys
+# behind it. gemini-speech.md §5b: unknown "says nothing about the key,
+# try again". Only a refusal of the REQUEST — a bad model, a malformed
+# body — is worth stopping for, and that arrives as 400 and is read as
+# refused, not soft.
+check("a soft error tries the other keys rather than killing the job",
+      len(seen2) == 3, seen2)
 
 # A key that works after two dead ones.
 seen3 = []

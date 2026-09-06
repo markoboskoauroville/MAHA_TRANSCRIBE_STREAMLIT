@@ -89,8 +89,8 @@ print("\n2 THE READING PLAN IS 1, 4, 4")
 # what it gets depends on the voice: one sentence at a time for anything
 # unmetered, blocks for a voice allowed ten requests a day. Both light
 # exactly what is sounding, because the file is the unit either way.
-check("2a the reader asks the planner, passing the metering answer",
-      "SPEECH.plan_for(" in app and "metered=talking_is_metered()" in app)
+check("2a the reader asks for one sentence at a time",
+      "SPEECH.plan_sentences(sentences)" in app)
 check("2a2 and an unmetered voice gets one sentence at a time",
       len(S.plan_for(["A.", "B.", "C."], metered=False)) == 3)
 sizes = [len(b) for b, _ in S.plan_even(["S."] * 25, first=1)]

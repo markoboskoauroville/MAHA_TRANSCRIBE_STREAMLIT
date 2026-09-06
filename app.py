@@ -4164,6 +4164,23 @@ def _foot_line(name, tier, who, eng):
         st.session_state.update(EN.route_settings(nxt))
         st.session_state[EN.SETTING_KEY] = nxt.id
         st.session_state.pop("_engine_check", None)
+        # AND THE READING STARTS AGAIN, IN THE NEW ENGINE.
+        #
+        # Baba, 6.9.2026: "If I'm generating audio in the read tab in
+        # Edge, and I press Google in that moment, all my ex work is
+        # deleted of audio files and I'm in the new mode. Then I can
+        # press play again and generation comes immediately."
+        #
+        # _revoice has done exactly this for a VOICE change since
+        # 25.8.2026 — cache dropped, index to zero, stamps cleared —
+        # and the engine switch did NONE of it. So the cached Edge
+        # audio stayed in the job and the new engine carried on from
+        # the middle of it: half a reading in one voice, half in
+        # another, and a save that stitched the two together.
+        #
+        # An engine change is a bigger change than a voice change, so
+        # it cannot do less. Same function, so the two cannot drift.
+        _revoice()
 
     def _dim(text):
         return ('<div class="tabsig tabsig_l">%s</div>' % html.escape(text))
@@ -9852,8 +9869,32 @@ elif active == "talk":
                     # metered by the call, which the provider reports
                     # about itself. The block is still the file, so the
                     # highlight stays exact; it is only coarser.
-                    "parts": SPEECH.plan_for(
-                        sentences, metered=talking_is_metered()),
+                    # ONE SENTENCE PER FILE, ON EVERY ENGINE.
+                    #
+                    # Baba, 6.9.2026: "You need to create one sentence
+                    # at a time and then play it in a player. So it is
+                    # going to start quickly. While this sentence is
+                    # playing, you continue generating other sentences...
+                    # Speed is the summit of this app."
+                    #
+                    # v238 gave Google BLOCKS OF FOUR to protect its ten
+                    # requests per account per day. That trade is now
+                    # reversed DELIBERATELY, by him, and the arithmetic
+                    # is worth writing down rather than leaving implied:
+                    #
+                    #   blocks of four   5 requests for 20 sentences,
+                    #                    and NO SOUND until four have
+                    #                    been made — about twelve
+                    #                    seconds of nothing.
+                    #   one sentence     20 requests, and sound after
+                    #                    about three.
+                    #
+                    # Twenty-one accounts is 210 requests a day, so an
+                    # ordinary reading costs a tenth of a day and a very
+                    # long document could spend all of it. The key
+                    # counter in the footer is what makes that visible
+                    # rather than surprising.
+                    "parts": SPEECH.plan_sentences(sentences),
                     "full_text": " ".join(sentences),
                     "index": 0, "cache": {}, "synth": synth_fn,
                 }

@@ -67,6 +67,12 @@ import re
 
 # ---- the five words --------------------------------------------------
 
+# WHERE THE NEXT CALL BEGINS ITS WALK. Module level and locked, so
+# parallel workers in one reading genuinely get different accounts.
+import threading as _threading
+_START = [0]
+_START_LOCK = _threading.Lock()
+
 WORKING = "working"
 BUSY = "busy"
 NO_CREDIT = "no credit"
@@ -589,8 +595,31 @@ class Google(Provider):
         if self.ring is not None:
             from .. import keyring
             return keyring.rotate(self.ring, attempt)
+        # EVERY CALL STARTS AT A DIFFERENT KEY.
+        #
+        # Measured 6.9.2026, and it is the difference between a reading
+        # that starts in seconds and one that does not start at all.
+        # Three sentences are prefetched IN PARALLEL, and every worker
+        # used to begin at key 1 — so all three queued behind the same
+        # account, walked the same dead ones in lockstep, and shared one
+        # account's three-per-minute wall.
+        #
+        # Several of the twenty-one accounts are out of credit and answer
+        # in 0.1s, so walking them is cheap; what is NOT cheap is three
+        # workers waiting on the same slow account at once. Starting each
+        # call one further along spreads them across the ring.
+        #
+        # NOT keyring.md's "sort by budget remaining" — that answers a
+        # different question, spending evenly across a DAY. This is about
+        # not colliding within a SECOND, and the two do not conflict:
+        # this only chooses where to begin.
+        with _START_LOCK:
+            _START[0] = (_START[0] + 1) % max(1, len(self.keys))
+            begin = _START[0]
+        order = self.keys[begin:] + self.keys[:begin]
         last = "no keys"
-        for i, key in enumerate(self.keys, 1):
+        for n, key in enumerate(order, 1):
+            i = ((begin + n - 1) % len(self.keys)) + 1
             result, err, kind = attempt(key)
             if not err:
                 # THE POSITION OF THE KEY THAT ACTUALLY WORKED, for the
@@ -599,7 +628,21 @@ class Google(Provider):
                 self.active_key = i
                 return result, None
             last = err
-            if kind not in ("dead", "cool"):
+            # A 503 IS NOT A REASON TO GIVE UP ON THE WHOLE SENTENCE.
+            #
+            # This stopped on anything that was not dead or cool, which
+            # meant one `unknown` ended the reading — and Google hands
+            # out 503s freely: measured 6.9.2026, a single 503 cost 67
+            # SECONDS and then killed the sentence with twenty untried
+            # keys sitting behind it.
+            #
+            # gemini-speech.md §5b: unknown "says nothing about the key,
+            # try again". So it rotates like the others. Only a REFUSAL
+            # of the request itself — a bad model name, a malformed body
+            # — is worth stopping for, and that arrives as a 400, which
+            # verdict() reads as refused and buries the key rather than
+            # returning soft.
+            if kind is None:
                 return None, err
         return None, "All Google keys failed. Last: %s" % last
 

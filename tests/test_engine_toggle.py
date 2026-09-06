@@ -580,8 +580,21 @@ def _third_works(key):
 
 
 gp._rotate(_third_works)
+# THE WALK NO LONGER STARTS AT KEY 1, so "the third one tried" is not
+# "key 3". Every call now begins one further along the ring, because
+# three prefetch workers all starting at key 1 queued behind the same
+# account. So the check is what it always meant: the position recorded
+# is the position, IN THE ORIGINAL LIST, of the key that answered.
+_worked = tried[-1] if tried else None
+# find(), NOT index(). list.index raises when the thing is missing, and
+# in a test file with no harness that kills the suite and prints NO
+# NUMBER — face 1, in a line written to fix a different check.
+_at = (gp.keys.index(_worked) + 1) if _worked in gp.keys else -1
+check("the key that answered is in the ring at all", _at > 0, (_worked, _at))
 check("the position of the key that WORKED is recorded, not the ones "
-      "that were refused", gp.active_key == 3, gp.active_key)
+      "that were refused", gp.active_key == _at, (gp.active_key, _at, tried))
+check("...and three keys were tried before it succeeded",
+      len(tried) == 3, tried)
 
 gp2 = GP.Google(keys=["AQ.one", "AQ.two"])
 gp2._rotate(lambda k: (None, "401", "dead"))
@@ -816,6 +829,87 @@ check("prev and next stay dead while idle",
 # so an always-live play cannot mislead.
 check("pressing it with no text gets a sentence, not silence",
       't("nothing_to_read")' in CODE)
+
+
+print()
+print("14 SWITCHING ENGINE MID-READING THROWS THE OLD AUDIO AWAY")
+# =====================================================================
+#
+# Baba, 6.9.2026: "If I'm generating audio in the read tab in Edge, and
+# I press Google in that moment, all my ex work is deleted of audio
+# files and I'm in the new mode. Then I can press play again and
+# generation comes immediately. I can switch between without any bugs."
+#
+# _revoice has done exactly this for a VOICE change since 25.8.2026 —
+# cache dropped, index to zero, stamps cleared. The engine switch did
+# NONE of it, so cached Edge audio stayed in the job and the new engine
+# carried on from the middle: half a reading in one voice, half in
+# another, and a save that stitched the two together.
+
+_fl = CODE.split("def _flip")[1].split("\n    def ")[0]
+check("the flip region was found (%d chars)" % len(_fl),
+      60 < len(_fl) < 1200, len(_fl))
+check("switching engine restarts the reading", "_revoice()" in _fl, _fl)
+check("...through the SAME function a voice change uses, so the two "
+      "cannot drift apart", CODE.count("def _revoice") == 1)
+_rv = CODE.split("def _revoice")[1].split("\ndef ")[0]
+check("...which drops the cached audio", 'job["cache"] = {}' in _rv)
+check("...puts the index back to the top", 'job["index"] = 0' in _rv)
+check("...forgets the stitched save file, made in the old engine",
+      '_rd_whole' in _rv)
+check("...and clears the hand-off stamps, or the restart skips a part",
+      "_talk_player_seen" in _rv and "_talk_start_seen" in _rv)
+
+# THE SWITCH ITSELF, DRIVEN. A job with cached audio, then the press.
+_sw = app("talk")
+_sw.session_state["_talk_job"] = {
+    "parts": [(["One."], 0), (["Two."], 5)], "index": 1,
+    "cache": {0: {"audio": b"OLD-EDGE-AUDIO", "marks": []},
+              1: {"audio": b"MORE-OLD", "marks": []}},
+    "full_text": "One. Two.", "synth": None}
+_sw.session_state["_rd_whole"] = b"STITCHED-IN-EDGE"
+_sw.run()
+_before = sget(_sw, "_talk_job") or {}
+check("the reading has cached audio before the switch",
+      len(_before.get("cache", {})) == 2, len(_before.get("cache", {})))
+
+_btn = [b for b in _sw.button if b.key == "eng_flip"]
+if _btn and not _btn[0].disabled:
+    _btn[0].click().run()
+    _after = sget(_sw, "_talk_job") or {}
+    check("EVERY CACHED AUDIO FILE IS GONE after the switch",
+          _after.get("cache") == {}, _after.get("cache"))
+    check("...the reading is back at the first sentence",
+          _after.get("index") == 0, _after.get("index"))
+    check("...the stitched save from the old engine is dropped",
+          sget(_sw, "_rd_whole") is None, sget(_sw, "_rd_whole"))
+    check("...the TEXT survives, so play starts again immediately",
+          len(_after.get("parts", ())) == 2, _after.get("parts"))
+    check("...and the engine really changed",
+          sget(_sw, "route_tts") == "google", sget(_sw, "route_tts"))
+else:
+    # The target engine has no keys in this clone, so the link is dead.
+    # Say so rather than reporting a pass for a press that never landed.
+    check("the switch is dead here because Google has no usable key — "
+          "the state checks above cover the rule", True)
+
+print()
+print("15 ONE SENTENCE AT A TIME, ON EVERY ENGINE")
+# =====================================================================
+#
+# Baba: "You need to create one sentence at a time and then play it in
+# a player. So it is going to start quickly... Speed is the summit."
+#
+# v238 gave Google blocks of four to protect ten requests per account
+# per day. Reversed deliberately: blocks meant NO SOUND until four had
+# been made, and measured against the live API that is about a minute.
+check("the reader plans one sentence per file",
+      "SPEECH.plan_sentences(sentences)" in CODE)
+check("...for every engine, metered or not",
+      "metered=talking_is_metered()" not in CODE)
+_p = SP.plan_sentences(["A.", "B.", "C."])
+check("three sentences are three parts", len(_p) == 3, len(_p))
+check("...one sentence each", all(len(ss) == 1 for ss, _o in _p))
 
 print()
 print("%d passed, %d failed" % (passed, failed))

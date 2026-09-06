@@ -119,12 +119,17 @@ print("2 THE REAL THING — the app, not the function")
 # calls this, which is the gap between "the function works" and "the
 # feature works".
 
-check("the reader calls plan_for", "SPEECH.plan_for(" in APP)
-check("the reader no longer calls plan_sentences directly",
-      "SPEECH.plan_sentences(" not in APP)
-check("it passes the metering answer, not a constant",
-      re.search(r"SPEECH\.plan_for\(\s*sentences,\s*metered=talking_is_metered\(\)",
-                APP) is not None)
+# THE READER CALLS plan_sentences DIRECTLY NOW. plan_for still exists
+# and is still tested above — it is the right shape for any provider
+# metered by the call — but the READER no longer chooses: Baba,
+# 6.9.2026, "one sentence at a time... speed is the summit", so every
+# engine gets one sentence per file and the quota trade is his to make.
+check("the reader plans one sentence per file",
+      "SPEECH.plan_sentences(sentences)" in APP)
+check("...and no longer branches on metering",
+      "metered=talking_is_metered()" not in APP)
+check("plan_for is still available for a provider that needs it",
+      "def plan_for" in SPEECH_SRC)
 check("talking_is_metered is defined", "def talking_is_metered(" in APP)
 check("...and it asks the PROVIDER, through the route",
       re.search(r'def talking_is_metered.*?current_routes\(\)\.get\("tts"\)'
