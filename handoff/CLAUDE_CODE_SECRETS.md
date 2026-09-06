@@ -227,6 +227,68 @@ placeholders at the top and you fill them in with him.
 
 ---
 
+## 5b. WHEN YOU ARE DONE, REPORT BACK
+
+**Marko will paste your report into the chat that wrote this brief, and
+that session will assess it.** So write it to be checked, not to be
+believed.
+
+**The factual half is generated for you.** The tool writes `REPORT.md`
+beside the output on every run, including `--dry-run`:
+
+    python3 tools/keys_to_toml.py ~/that-folder -o secrets.toml --report REPORT.md
+
+It holds the counts, the verdicts, every account NOT written with its
+name and reason, and the sha256, byte count and TOML parse result of the
+file you produced. It is asserted to contain **no key material** before
+it is written — the check refuses to write rather than warn — so it is
+safe to paste whole.
+
+**You add the half a tool cannot know**, under the line at the bottom:
+
+    - which access lines you filled in, and where the values came from
+    - anything in the folder that was NOT a key file, by name
+    - any decision you took WITHOUT asking him, and why
+    - WHAT YOU DID NOT DO, as plainly as what you did
+
+**That last one is the most valuable part of the document and the one
+you will be tempted to leave empty.** A report with nothing in it is not
+a stronger report than one with an honest hole; it is a less believable
+one. If you could not test a provider because no key of that kind was in
+the folder, say so. If you guessed at something, say you guessed.
+
+**Rules for the report itself:**
+
+- **No key material, ever** — not whole, not masked, not "the first six
+  characters". Account names are fine and are what make a finding
+  actionable. Positions are fine: "key 7 of 21".
+- **Counts, not adjectives.** "18 written, 2 out of credit, 1 refused, 5
+  incomplete" is checkable. "Most keys worked" is not.
+- **Do not repair the numbers.** If the tool says 5 accounts are
+  incomplete, report 5. The person reading it has the previous run's
+  numbers and will compare.
+
+### What will be checked
+
+So you know what you are being assessed against, and can check it first:
+
+1. **Does the arithmetic close?** credentials found = written + not
+   written. If accounts went missing between the two, that is the
+   failure this whole brief exists to prevent — 21 Hume blocks once
+   produced 17 pairs and nothing said so.
+2. **Does the sha256 in the report match the file he actually pasted?**
+3. **Does `secrets.toml` parse, and hold the names in
+   `docs/SECRETS_AUDIT.md` and no others?**
+4. **Is anything from §4d — `SHEETS_URL`, `SHEETS_TOKEN` — still in it?**
+5. **Are the access lines present?** No tool can invent them; a file
+   without them means nobody can log in.
+6. **Does the report contain a key?** If it does, that key is burned and
+   must be rotated at the provider — say so immediately and plainly,
+   in the same message you notice it.
+7. **Is the NOT DONE section empty?** An empty one is a finding.
+
+---
+
 ## 6. THE TWO THINGS MOST LIKELY TO GO WRONG
 
 **A pasted-but-unfilled template counts as keys.** The app now refuses

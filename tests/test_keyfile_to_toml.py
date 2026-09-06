@@ -138,6 +138,100 @@ check("it proves the TOML parses before he pastes it", "tomllib" in src)
 check("an empty result is called a parser problem, not an empty folder",
       "not\\nan empty folder" in src or "not" in src and "empty folder" in src)
 
+
+print()
+print("5 THE REPORT — generated, checkable, and key-free")
+# =====================================================================
+#
+# Baba, 6.9.2026: the Claude Code session reports back and that report
+# gets assessed. So the factual half is GENERATED rather than written
+# from memory — a session can misremember what it did; a digest and a
+# set of counts cannot.
+
+import tempfile                                  # noqa: E402
+
+rows_for_report = [
+    (F("google", G1, "alive"), G.WORKING, "", True),
+    (F("google", G2, "empty"), G.NO_CREDIT, "no credit left", False),
+    (F("google", G3, "rejected"), G.REFUSED, "401", False),
+    (F("hume", HK, "acct.one", HS), G.WORKING, "", True),
+    (F("hume", "", "no.key.here"), "incomplete",
+     "the API key is missing from the file", False),
+]
+text_written = 'GOOGLE_API_KEYS = ["%s"]\n' % G1
+tmp = tempfile.mkdtemp()
+rp = os.path.join(tmp, "REPORT.md")
+rep = B.write_report(rp, rows_for_report, os.path.join(tmp, "s.toml"),
+                     text_written, tmp)
+
+check("the report is written", os.path.exists(rp))
+check("it is 0600", oct(os.stat(rp).st_mode)[-3:] == "600",
+      oct(os.stat(rp).st_mode)[-3:])
+
+# THE ONE THAT MATTERS MOST.
+check("NO KEY MATERIAL IS IN THE REPORT",
+      not any(k in rep for k in (G1, G2, G3, HK, HS)),
+      [k[:10] for k in (G1, G2, G3, HK, HS) if k in rep])
+check("...not even a masked fragment", "…" not in rep and "..." not in rep)
+# Only the NOT-WRITTEN accounts are named, and that is the right
+# choice: those are the ones somebody has to act on. The written ones
+# are covered by the per-provider counts, and the arithmetic check
+# below is what catches one going missing.
+check("account NAMES of what was NOT written are present",
+      "empty" in rep and "no.key.here" in rep and "rejected" in rep)
+check("...and the written ones are counted per provider",
+      "written, google" in rep and "written, hume" in rep)
+
+# COUNTS, NOT ADJECTIVES.
+check("every verdict is counted", "working" in rep and "no credit" in rep
+      and "refused" in rep and "incomplete" in rep)
+check("what was NOT written is listed by name",
+      "empty" in rep and "rejected" in rep and "no.key.here" in rep)
+check("the reason is given beside each", "401" in rep)
+
+# A NUMBER THE OUTSIDE WORLD WILL CONFIRM.
+import hashlib as _h                             # noqa: E402
+check("the sha256 of the written file is in the report",
+      _h.sha256(text_written.encode()).hexdigest() in rep)
+check("the byte count is in the report", str(len(text_written)) in rep)
+check("whether it parses as TOML is stated", "parses as TOML: yes" in rep)
+
+# THE ARITHMETIC MUST CLOSE. This is the check that would have caught
+# 21 hume blocks producing 17 pairs.
+check("credentials found equals written plus not written",
+      "credentials found %d" % len(rows_for_report) in rep,
+      [l for l in rep.splitlines() if "credentials found" in l])
+
+check("the session is asked for what a tool cannot know",
+      "WHAT WAS NOT DONE" in rep)
+check("...and for decisions taken without asking", "without asking" in rep)
+
+# --dry-run STILL REPORTS. A run that tested and wrote nothing is still
+# a run somebody needs the numbers from.
+rep2 = B.write_report(rp, rows_for_report, "x.toml", None, tmp)
+check("a dry run still produces a report", "--dry-run" in rep2)
+check("...and says no file was written", "no file was written" in rep2)
+
+# THE REFUSAL IS REAL, not a warning. Proven by feeding it a row whose
+# key IS in the text it would write.
+# HOW A KEY WOULD ACTUALLY REACH A REPORT: through a LABEL or a detail
+# string, not through the secrets file — the report never quotes that.
+# The parser now refuses to take a credential as a name, but this is
+# the second line of defence for the day a new file shape defeats it.
+# My first version of this check fed a key that was only in the
+# secrets file, so the guard had nothing to find and stayed quiet.
+LEAK = "LEAKYKEY" + "z" * 30
+leaky = [(F("google", LEAK, LEAK), G.WORKING, "", False)]
+try:
+    B.write_report(rp, leaky, "s.toml", "K = 1\n", tmp)
+    ok, why = False, "it wrote the report anyway"
+except SystemExit as e:
+    ok, why = "REFUSED" in str(e), str(e)[:60]
+check("a report that WOULD contain a key is REFUSED, not warned about",
+      ok, why)
+check("...and the refusal names the account so it can be found",
+      "oops" not in why)
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
