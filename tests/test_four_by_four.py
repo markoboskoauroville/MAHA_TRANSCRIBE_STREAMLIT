@@ -102,8 +102,21 @@ print("       searched app.py for plan_even, plan_blocks and PREFETCH_AHEAD")
 # moment `first=1` was added — a test failing for a reason unconnected to
 # the feature, which four-tests.md names under "test the test". It asks
 # whether the reader plans with plan_even, not how it spells the call.
-check("2a the reader plans with plan_even",
-      re.search(r"SPEECH\.plan_even\(sentences[,)]", app) is not None)
+# THE READER MOVED TO ONE SENTENCE PER FILE IN v236, so plan_even is no
+# longer what R calls. It is not dead: it is the planner for engines
+# metered by the CALL rather than by the minute — Google's free tier is
+# ten TTS requests per account per day, and a sentence-per-file paragraph
+# would spend an account.
+#
+# So this suite tests the PLANNER, which is unchanged and still correct.
+# What it must not do is claim the reader uses it.
+check("2a plan_even still exists for engines metered by the call",
+      "def plan_even" in open(os.path.join(
+          os.path.dirname(__file__), "..", "ttt", "speech.py"),
+          encoding="utf-8").read())
+check("2a2 and the READER no longer uses it — it lights one sentence at "
+      "a time now", "SPEECH.plan_even(sentences" not in app,
+      "the reader is back on plan_even")
 check("2b and no longer with the doubling planner",
       "SPEECH.plan_blocks(sentences)" not in app)
 m = re.search(r"^PREFETCH_AHEAD = (\d+)", app, re.M)
@@ -116,7 +129,11 @@ check("2e the prefetch runs AFTER the player is on the page, so building "
       > app.index('key="talk_player"'))
 check("2f block 0 is played, not waited past — the player renders "
       "before the prefetch",
-      app.index('key="talk_player"') < app.index("PREFETCH_AHEAD, len(parts)"))
+      # THE PREFETCH IS BOUNDED BY SPEECH.BUFFER_AHEAD SINCE v236, when
+      # the reader went to one sentence per file. index() then raised and
+      # killed this file, so the sweep printed no number — find(), and
+      # both bounds checked.
+      0 < app.find('key="talk_player"') < app.find("SPEECH.BUFFER_AHEAD"))
 
 print("\n2b PLAN_BLOCKS IS KEPT, NOT DELETED")
 # MAINTENANCE.md: record a reversal rather than erase it. TR still uses

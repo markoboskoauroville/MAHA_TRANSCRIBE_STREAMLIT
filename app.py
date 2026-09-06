@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v235 (thirty voices, and a switch for every tab)"
+APP_VERSION = "v236 (one sentence, one file, one highlight)"
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -5478,11 +5478,32 @@ def _render_page(page_sentences: list, current_idx: int, doc_slot,
     teleprompters cannot fight over it: VR's marker is `vrhere`, this
     one is `rdhere`.
     """
+    # THE WHOLE SENTENCE IS LIT, NOT A WORD INSIDE IT.
+    #
+    # Baba, 5.9.2026: "we want absolute precision or nothing, otherwise
+    # it's confusing... you highlight the sentence you are playing, not
+    # the actual word. We cannot do that. Only Speechify can do that."
+    #
+    # HE IS RIGHT AND THIS IS NOT A LOSS. A word mark was a CLAIM about
+    # where the voice had got to, made from timings of three different
+    # honesties — Speechify's real, Edge's close but drifting on
+    # Croatian, Gemini's absent entirely. A mark that is nearly right is
+    # worse than none: it teaches the eye to distrust the page.
+    #
+    # Now one sentence is one audio file, so the sentence being lit IS
+    # the file that is sounding. There is no clock to drift against, and
+    # it looks identical on every engine — a reader should not be able to
+    # tell which engine is running by watching the page.
+    #
+    # word_start and word_end are still in the signature and IGNORED, so
+    # every caller keeps working; the argument that no longer means
+    # anything is named here rather than silently doing nothing.
+    del word_start, word_end
     parts = []
     for j, s in enumerate(page_sentences):
         if j == current_idx:
-            parts.append("<span id='rdhere'>%s</span>"
-                         % _highlight_span(s, word_start, word_end))
+            parts.append("<span id='rdhere' class='rdnow'>%s</span>"
+                         % html.escape(s))
         else:
             parts.append(html.escape(s))
     # THE SAME ANCHOR AS VR — top of the box, and only the box. See
@@ -9349,7 +9370,17 @@ elif active == "talk":
         # in the worker touches Streamlit — st.* is not thread-safe, so
         # the workers only synthesise and write files, and save_rings()
         # is called back here on the main thread.
-        wanted = [i for i in range(idx + 1, min(idx + 1 + PREFETCH_AHEAD, len(parts)))
+        # THREE AHEAD NOW, NOT TWO. Baba: "buffer 3 in memory, 3
+        # sentences, so the transition is without any delay."
+        #
+        # Two was right for blocks of four sentences — each one bought
+        # perhaps fifteen seconds of cover. A single sentence buys two or
+        # three, so the same two-deep buffer empties between hand-offs
+        # and the reading ticks. Three sentences is the smallest buffer
+        # that survives one slow request at this block size.
+        wanted = [i for i in range(idx + 1,
+                                   min(idx + 1 + SPEECH.BUFFER_AHEAD,
+                                       len(parts)))
                   if i not in job["cache"]]
         if wanted:
             try:
@@ -9544,7 +9575,21 @@ elif active == "talk":
                     # evenness and a slow first word. This gives both,
                     # and it is one number rather than a second
                     # algorithm — see ttt/speech.py, "FOUR BY FOUR".
-                    "parts": SPEECH.plan_even(sentences, first=1),
+                    # ONE SENTENCE, ONE FILE. Baba, 5.9.2026: "we want
+                    # absolute precision or nothing, otherwise it's
+                    # confusing. Generate each sentence in a separate
+                    # file... then you highlight the sentence you are
+                    # playing."
+                    #
+                    # This was plan_even — one sentence, then fours —
+                    # which is the right shape when the highlight comes
+                    # from word timings and the wrong one when the
+                    # highlight IS the block. A block of four sentences
+                    # can only light four sentences at once.
+                    #
+                    # See ttt/speech.py:plan_sentences for why this is
+                    # exact rather than merely finer.
+                    "parts": SPEECH.plan_sentences(sentences),
                     "full_text": " ".join(sentences),
                     "index": 0, "cache": {}, "synth": synth_fn,
                 }

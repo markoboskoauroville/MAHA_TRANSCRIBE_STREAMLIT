@@ -318,6 +318,75 @@ def block_texts(sentences, max_chars: int = 1500, max_sentences: int = 32):
 BLOCK_SENTENCES = 4
 
 
+# ---------------------------------------------------------------------
+# ONE SENTENCE, ONE FILE — absolute precision or nothing
+#
+# Baba, 5.9.2026: "The engines which do not support precise timings, like
+# Speechify — Edge also doesn't support, it kind of supports but it's not
+# precise, so we can also remove that part. WE WANT ABSOLUTE PRECISION OR
+# NOTHING, otherwise it's confusing. Generate each sentence in a separate
+# file and play each sentence as a file. Buffer 3 in memory so the
+# transition is without any delay. Then you highlight the sentence you
+# are playing."
+#
+# WHY THIS IS RIGHT AND NOT A COMPROMISE. Every highlight until now was a
+# CLAIM about where the voice had got to, made from timings of varying
+# honesty: Speechify's are real, Edge's word boundaries are close but
+# drift on Croatian, and Gemini publishes none at all. Three engines,
+# three different amounts of wrong, and a mark that is nearly right is
+# worse than none — it teaches the eye to distrust the page.
+#
+# A SENTENCE PER FILE MAKES THE HIGHLIGHT TRUE BY CONSTRUCTION. There is
+# nothing to synchronise: the file that is playing IS the sentence that
+# is lit. It cannot drift because there is no clock involved, and it is
+# identical on every engine — which is the other half of what he asked
+# for, since a reader should not be able to tell which engine is running
+# by watching the page.
+#
+# WHAT IT COSTS, said plainly: more requests. A hundred sentences is a
+# hundred calls rather than twenty-five blocks of four. That is fine for
+# Edge, which is free and local, and it is exactly the wrong shape for
+# Google, whose free tier is TEN TTS REQUESTS PER ACCOUNT PER DAY — one
+# paragraph would spend an account. So this planner is for the engines
+# that read aloud by the sentence, and plan_even stays for the ones
+# metered by the call.
+BUFFER_AHEAD = 3
+
+
+def plan_sentences(sentences, max_chars: int = 1500):
+    """One sentence per block. Returns [(sentences, char_offset)].
+
+    The same shape plan_even returns, so the deck that plays blocks does
+    not learn a second vocabulary.
+
+    A SENTENCE LONGER THAN THE PROVIDER WILL TAKE is still split, at a
+    space, because a request that comes back 413 is a sentence that never
+    plays — and the pieces stay separate blocks rather than being merged
+    back, so what is lit is always exactly what is sounding.
+    """
+    out, offset = [], 0
+    for raw in sentences or ():
+        s = str(raw)
+        if not s.strip():
+            offset += len(s) + 1
+            continue
+        pieces = [s]
+        if len(s) > max_chars:
+            pieces, rest = [], s
+            while len(rest) > max_chars:
+                cut = rest.rfind(" ", 0, max_chars)
+                if cut <= 0:
+                    cut = max_chars
+                pieces.append(rest[:cut].strip())
+                rest = rest[cut:].strip()
+            if rest:
+                pieces.append(rest)
+        for piece in pieces:
+            out.append(([piece], offset))
+            offset += len(piece) + 1
+    return out
+
+
 def plan_even(sentences, per_block: int = BLOCK_SENTENCES,
               max_chars: int = 1500, first: int = 0):
     """Even blocks of `per_block` sentences. Returns [(sentences, offset)].

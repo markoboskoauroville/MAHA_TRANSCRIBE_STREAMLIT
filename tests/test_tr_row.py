@@ -80,8 +80,13 @@ check("1n they are not the same call twice",
       tr.count('tr_read("src")') == 1 and tr.count('tr_read("out")') == 1)
 
 print("\n2 THE READING PLAN IS 1, 4, 4")
-check("2a the reader asks for a one-sentence first block",
-      "SPEECH.plan_even(sentences, first=1)" in app)
+# 1,4,4 WAS THE RIGHT SHAPE WHILE THE HIGHLIGHT CAME FROM WORD TIMINGS.
+# v236 made one sentence one audio file, so the block IS the highlight
+# and a block of four could only light four sentences at once. The
+# fast-start reasoning survives: one sentence is still what plays first,
+# it is simply what plays every time now.
+check("2a the reader asks for one sentence at a time",
+      "SPEECH.plan_sentences(sentences)" in app)
 sizes = [len(b) for b, _ in S.plan_even(["S."] * 25, first=1)]
 print("       25 sentences -> %s" % sizes)
 check("2b the first block is ONE sentence — sound starts at once",

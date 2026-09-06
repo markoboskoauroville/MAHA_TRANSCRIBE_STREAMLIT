@@ -824,6 +824,15 @@ def css(scheme: str = "amber", font: str = "mono",
       color: var(--amber) !important;
     }}
 
+    /* THE SENTENCE BEING SPOKEN. One audio file is one sentence, so
+       this is exact rather than approximate — see _render_page. The
+       same weight the word mark used to carry, because it is carrying
+       the same job: saying where the voice is. */
+    .rdnow {{
+      color: var(--amber) !important;
+      font-weight: 500;
+    }}
+
     /* THE READER'S TELEPROMPTER. The same idea as .vrscript and the
        same numbers, because it IS the same idea — design-language.md §2,
        a repeated element is the SAME element. R keeps the word

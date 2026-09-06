@@ -77,9 +77,21 @@ check("2a the spoken sentence carries a marker", "id='rdhere'" in rd)
 check("2b anchored to the top of its box, exactly as VR",
       "b.scrollTop" in rd and "block:'center'" not in _live(rd))
 check("2c guarded the same way", "if(!e||!b)return;" in rd)
-check("2d R KEEPS ITS WORD HIGHLIGHT — Whisper gives word timings and "
-      "Hume does not, so R can do what VR cannot",
-      "_highlight_span(s, word_start, word_end)" in rd)
+# THE WORD HIGHLIGHT IS GONE ON PURPOSE, v236. Baba: "we want absolute
+# precision or nothing, otherwise it's confusing... you highlight the
+# sentence you are playing, not the actual word."
+#
+# R could do it and the others could not, and that WAS the problem: three
+# engines with three different amounts of drift, and a mark that is
+# nearly right teaches the eye to distrust the page. One sentence is one
+# audio file now, so the lit sentence IS the file sounding.
+check("2d R lights the whole SENTENCE, which is exact by construction "
+      "rather than accurate by timing",
+      "class='rdnow'" in rd and "_highlight_span(s, word_start" not in rd,
+      "a word span is still rendered")
+check("2d2 and it looks the same as VR's, because both are now the same "
+      "claim: this block is the one sounding",
+      "class='rdnow'" in rd and "vrnow" in vr)
 # CODE, NOT PROSE. "vrhere" IS in R's renderer — in the docstring that
 # explains why the two markers differ. A check that cannot tell an
 # explanation from an implementation would force the explanation to be
