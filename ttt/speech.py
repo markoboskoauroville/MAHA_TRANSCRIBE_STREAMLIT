@@ -63,6 +63,44 @@ def plan_chunks(sentences, max_chars: int = CHUNK_CHARS):
     return chunks
 
 
+def audio_mime(data) -> str:
+    """What these bytes actually are, read from their own first bytes.
+
+    THE BUG THIS FIXES MADE GOOGLE SILENT AND SAID NOTHING. Every player
+    in this app was handed "data:audio/mpeg;base64,...", hardcoded,
+    because for two years every voice here returned MP3. Gemini returns
+    a WAV — we write the RIFF header ourselves, providers/google.py —
+    and a browser given RIFF bytes under an MP3 label does not guess:
+    it declines to decode and plays nothing. No error, no console
+    warning, no failed request. The reading simply never starts.
+
+    So the label follows the AUDIO rather than the assumption. Sniffed
+    rather than declared, because the alternative is a new return value
+    on every provider's synth() and four call sites that must all
+    remember to pass it — and the bytes already know.
+    """
+    b = bytes(data or b"")[:12]
+    if b[:4] == b"RIFF" and b[8:12] == b"WAVE":
+        return "audio/wav"
+    if b[:4] == b"OggS":
+        return "audio/ogg"
+    if b[:4] == b"fLaC":
+        return "audio/flac"
+    if b[:3] == b"ID3" or (len(b) > 1 and b[0] == 0xFF and (b[1] & 0xE0) == 0xE0):
+        return "audio/mpeg"
+    # UNKNOWN FALLS BACK TO MP3, which is what every existing voice
+    # returns — so a shape nobody has seen behaves exactly as before
+    # rather than newly breaking.
+    return "audio/mpeg"
+
+
+def audio_src(data) -> str:
+    """A data: URL carrying the right type. One place, four callers."""
+    import base64 as _b
+    return "data:%s;base64,%s" % (audio_mime(data),
+                                  _b.b64encode(bytes(data or b"")).decode())
+
+
 def join_audio(paths, out_path: str = None) -> str:
     """One file out of many. Re-encodes rather than stream-copying:
     concatenating MP3 frames directly leaves gaps and confuses seeking in

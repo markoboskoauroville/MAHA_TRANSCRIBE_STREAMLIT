@@ -643,6 +643,7 @@ STRINGS = {
     "stale_modules":      {"en": "This app is running a new app.py against an older copy of its own modules, still held in memory. Nothing is broken in the code. Open **Manage app** at the lower right and press **Reboot app**.",
                            "hr": "Aplikacija koristi novi app.py sa starijom kopijom vlastitih modula koja je ostala u memoriji. Kod nije pokvaren. Otvori **Manage app** dolje desno i pritisni **Reboot app**."},
     "where_am_i":         {"en": "Where am I?", "hr": "Gdje sam?"},
+    "voice_gender":       {"en": "Voice", "hr": "Glas"},
     "voice_female":       {"en": "Female", "hr": "Ženski"},
     "voice_male":         {"en": "Male", "hr": "Muški"},
     "log_out_link":       {"en": "log out", "hr": "odjava"},
@@ -5550,69 +5551,93 @@ def voice_picker(prefix: str, on_pick=None, engine: str = ""):
 
 
 def google_voice_row(prefix="talkg", on_pick=None):
-    """Two dropdowns, female and male, ten voices each.
+    """A radio for female or male, then ONE list of ten voices.
 
-    Baba, 6.9.2026: "when I change engine there are different voices.
-    You need to give me a drop-down menu for the voices now. Two
-    drop-down menus: male and female... And I want just ten voices, none
-    more than ten."
+    Baba, 6.9.2026: "there is a list of female and male voices, but
+    which one is speaking? How can the user select that? You need to do
+    radio buttons for female and male voice, and then there are two
+    options there."
 
-    WHY DROPDOWNS HERE AND BUTTONS FOR EDGE. Edge has four voices and
-    they fit on one line, so a row of buttons shows every choice at
-    once and costs one press. Google has thirty. A row of thirty is
-    unreadable and a row of ten is still four lines on a phone, so the
-    shape that fits is a list that opens.
+    HE IS RIGHT AND v252 WAS WRONG. Two dropdowns side by side both hold
+    a value at all times, so the screen showed two names and answered
+    "which of these is speaking" with neither. A control that cannot be
+    read is worse than one that is harder to reach.
 
-    TWO, NOT ONE WITH A FILTER. He asked for two and two is right: the
-    question a person actually has is "a woman or a man", and answering
-    it by opening one list and reading past the wrong half is work.
+    A RADIO SAYS ONE IS IN FORCE — that is what a radio is for, and it
+    is already this app's rule elsewhere: keyring.md §6, "one is in
+    force; a radio says so and a tick-box does not." So the radio picks
+    the half, and the single list under it holds the voice. Two controls,
+    one answer, and the answer is always visible.
 
-    THE GENDER IS GOOGLE'S OWN, from their Gemini-TTS table. It is not
-    inferred from how a name sounds — that is the guess this project
-    refuses to make, and it is why the table was checked against Google
-    rather than filled in by ear.
-
-    TEN IS THE CAP. Thirty names is a list nobody reads to the end of.
+    SWITCHING THE RADIO MOVES THE VOICE. If it did not, the radio would
+    say Female while a male voice went on speaking — the same lie in a
+    new place. Changing side takes the first voice of that side.
     """
-    current = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
+    voice = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
+    gkey, vkey = "%s_gender" % prefix, "%s_voice" % prefix
 
-    # WHICH BOX DID HE TOUCH? Both always hold a value, so comparing
-    # them against the current voice cannot tell a choice from a
-    # leftover — my first version did exactly that and picked the wrong
-    # box. on_change fires only for the one that actually changed, which
-    # is the question, answered by Streamlit instead of guessed at.
-    def _take(key):
-        picked = st.session_state.get(key)
+    # THE RADIO STARTS ON THE VOICE THAT IS ACTUALLY SPEAKING, so the
+    # screen agrees with the sound on the first render as well as after
+    # a press.
+    st.session_state.setdefault(gkey, "F" if GOOGLE_P.gender_of(voice) != "M"
+                                else "M")
+
+    # THERE WAS AN on_change ON THE RADIO TOO, AND IT WAS REDUNDANT.
+    # It corrected the voice when the side changed — and so does the
+    # render body below, every render, which is where the guarantee
+    # belongs. Two places doing one job is two places to drift, and a
+    # mutation proved the point: breaking the callback changed NOTHING
+    # observable, because the body was already fixing it.
+    #
+    # So the body owns it, alone, and the radio just sets the side.
+
+    def _voice_changed():
+        picked = st.session_state.get(vkey)
         if picked:
             st.session_state["google_voice"] = picked
             if on_pick:
                 on_pick()
 
-    def _row(col, gender, label, key):
-        pairs = GOOGLE_P.top_voices(gender, 10)
-        names = [n for n, _tone in pairs]
+    with st.container(key="voicerow_google"):
+        st.radio(t("voice_gender"), ("F", "M"), key=gkey, horizontal=True,
+                 format_func=lambda g: t("voice_female") if g == "F"
+                 else t("voice_male"),
+                 label_visibility="collapsed")
+
+        pairs = GOOGLE_P.top_voices(st.session_state[gkey], 10)
+        names = [n for n, _t in pairs]
         # THE ADJECTIVE RIDES WITH THE NAME. "Kore" says nothing; "Kore
         # — Firm" is the only thing Google publishes about it, and it is
         # what makes a list of star names choosable.
-        shown = {n: ("%s — %s" % (n, tone) if tone else n)
-                 for n, tone in pairs}
-        # THE LIST HOLDING THE CURRENT VOICE OPENS ON IT; the other opens
-        # on its own first entry. A dropdown that resets to the top on
-        # every render loses the choice just made, and Streamlit reruns
-        # constantly.
-        idx = names.index(current) if current in names else 0
-        with col:
-            st.caption(label)
-            st.selectbox(label, names, index=idx, key=key,
-                         format_func=lambda n: shown.get(n, n),
-                         label_visibility="collapsed",
-                         on_change=_take, args=(key,))
-
-    with st.container(key="voicerow_google"):
-        c1, c2 = st.columns(2)
-        _row(c1, "F", t("voice_female"), "%s_f" % prefix)
-        _row(c2, "M", t("voice_male"), "%s_m" % prefix)
-    return st.session_state.get("google_voice", current)
+        shown = {n: ("%s — %s" % (n, tone) if tone else n) for n, tone in pairs}
+        # THE ONE PLACE THE SHOWN VOICE AND THE SPOKEN VOICE ARE MADE
+        # THE SAME. If the voice in force is not on this side of the
+        # radio — because the side just changed — it moves to the first
+        # of the new side. Otherwise the radio would say Female while a
+        # male voice went on speaking, which is the lie this control
+        # exists to stop telling.
+        current = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
+        if current not in names and names:
+            current = names[0]
+            # AND THE WIDGET'S OWN KEY, before the box is created —
+            # legal, and necessary: a selectbox whose stored value is
+            # not among its options is a widget Streamlit has to guess
+            # about.
+            st.session_state[vkey] = current
+        # WRITTEN EVERY RENDER, NOT ONLY WHEN IT CHANGES. Until this
+        # line, google_voice was unset on the first render and synth()
+        # fell back to DEFAULT_VOICE — which happened to be the same
+        # name, so the screen and the sound agreed BY COINCIDENCE. The
+        # day the default moves they would disagree silently, and
+        # "which one is speaking" would have the wrong answer with
+        # nothing on screen to show it.
+        if current:
+            st.session_state["google_voice"] = current
+        st.selectbox(t("voice_gender"), names,
+                     index=names.index(current) if current in names else 0,
+                     key=vkey, format_func=lambda n: shown.get(n, n),
+                     label_visibility="collapsed", on_change=_voice_changed)
+    return st.session_state.get("google_voice", voice)
 
 
 def do_correct():
@@ -8342,7 +8367,7 @@ def tr_deck():
     scale = a11y.clamp(st.session_state.get("text_scale", a11y.DEFAULT_SCALE))
     if _wave_component is not None:
         _wave_component(
-            src=("data:audio/mpeg;base64," + _b64.b64encode(loaded).decode()
+            src=(SPEECH.audio_src(loaded)
                  if loaded else ""),
             cues=[], words=[], wtimes=[],
             labels={"play": t("wave_play"), "pause": t("wave_pause"),
@@ -9550,7 +9575,7 @@ elif active == "talk":
             # Baba: "you just remove that player and put at the same place
             # the other player."
             ev = _wave_component(
-                src="data:audio/mpeg;base64," + base64.b64encode(cached["audio"]).decode(),
+                src=SPEECH.audio_src(cached["audio"]),
                 cues=wave_cues(cached["marks"]), words=[], wtimes=[],
                 labels={"play": t("wave_play"), "pause": t("wave_pause"),
                         "back": t("wave_back"), "next": t("wave_next"),
@@ -10289,7 +10314,7 @@ elif active == "vr":
             # the data-URI carries a third on top of whatever it holds.
             # A wav mime on mp3 bytes is the same lie the old save key
             # told with its filename.
-            src=("data:audio/mpeg;base64," + _b64.b64encode(_vr_audio).decode()
+            src=(SPEECH.audio_src(_vr_audio)
                  if _vr_audio else ""),
             cues=[], words=[], wtimes=[],
             labels={"play": t("wave_play"), "pause": t("wave_pause"),
@@ -10324,8 +10349,7 @@ elif active == "vr":
             # THE MEAL, GOING BACK DOWN. Handed as a data URI with a
             # stamp, so the browser saves it once and a rerun does not
             # save it again.
-            dl=("data:audio/mpeg;base64," + _b64.b64encode(
-                st.session_state["_vr_whole"]).decode()
+            dl=(SPEECH.audio_src(st.session_state["_vr_whole"])
                 if st.session_state.get("_vr_whole") else ""),
             dl_at=int(st.session_state.get("_vr_whole_at", 0)),
             dl_name="rehearsal.mp3",

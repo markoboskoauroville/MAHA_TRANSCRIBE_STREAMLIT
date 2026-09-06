@@ -432,11 +432,29 @@ try:
     g = gapp()
     g.run()
     check("the google reader renders", not g.exception, g.exception)
+    # v252 PUT TWO DROPDOWNS HERE AND v254 REPLACED THEM WITH A RADIO
+    # AND ONE LIST. Two boxes both held a value, so the screen answered
+    # "which voice is speaking" with two names and therefore neither.
+    # These checks now read the ONE list, once per side of the radio.
     boxes = {x.key: x for x in g.selectbox}
-    check("there are TWO dropdowns", len(boxes) == 2, sorted(boxes))
-    check("one female, one male",
-          "talkvoice_f" in boxes and "talkvoice_m" in boxes, sorted(boxes))
-    for key, gender in (("talkvoice_f", "F"), ("talkvoice_m", "M")):
+    check("there is ONE list, not two", len(boxes) == 1, sorted(boxes))
+    check("...and a radio saying which side it holds",
+          len(g.radio) == 1 and list(g.radio[0].options) == ["Female", "Male"],
+          [r.options for r in g.radio])
+    for side, gender in (("Female", "F"), ("Male", "M")):
+        # SET THE STATE, NOT THE WIDGET. radio.set_value() proved
+        # unreliable once the key already held a value from an earlier
+        # press in the same test — it silently kept the old side and the
+        # assertion then described the wrong list. The session key is
+        # what the code actually reads.
+        g.session_state["talkvoice_gender"] = gender
+        g.run()
+        # RE-READ THE BOX AFTER THE PRESS. Holding a reference from
+        # before the rerun reads the OLD list and the assertion then
+        # describes the wrong side — which is how the first version of
+        # this loop reported the male list as failing to be female.
+        boxes = {"talkvoice_voice": g.selectbox[0]}
+        key = "talkvoice_voice"
         opts = boxes[key].options
         check("%s offers TEN, no more" % key, len(opts) == 10, len(opts))
         names = [o.split(" — ")[0] for o in opts]
@@ -447,19 +465,20 @@ try:
               [(n, GP.gender_of(n)) for n in names[:3]])
         check("%s: the adjective is shown beside the name" % key,
               all(" — " in o for o in opts), opts[:2])
-    check("the two lists share no voice",
-          not (set(boxes["talkvoice_f"].options)
-               & set(boxes["talkvoice_m"].options)))
+    g.session_state["talkvoice_gender"] = "F"
+    g.run()
     check("the female list leads with the voice Google's own docs use",
-          boxes["talkvoice_f"].options[0].startswith("Kore"),
-          boxes["talkvoice_f"].options[0])
-    check("the labels say Female and Male",
-          {"Female", "Male"} <= {c.value for c in g.caption},
-          [c.value for c in g.caption][:6])
+          g.selectbox[0].options[0].startswith("Kore"),
+          g.selectbox[0].options[0])
+    g.session_state["talkvoice_gender"] = "M"
+    g.run()
+    check("the male list leads with Google's own first choice",
+          g.selectbox[0].options[0].startswith("Charon"),
+          g.selectbox[0].options[0])
 
     # PICKING ONE STICKS. A dropdown that resets on every render loses
     # the choice a person just made — and Streamlit reruns constantly.
-    boxes["talkvoice_m"].select("Puck — Upbeat").run()
+    g.selectbox[0].select("Puck — Upbeat").run()
     check("choosing a voice is remembered",
           sget(g, "google_voice") == "Puck", sget(g, "google_voice"))
     g.run()
@@ -539,6 +558,142 @@ check("a ring where every key failed records nothing",
 # belongs to the transcriber's keys, and the line still says "Edge".
 check("the status names the ENGINE, not the provider behind the keys",
       "Groq" not in sig and "groq" not in sig, sig[-120:])
+
+
+print()
+print("10 THE PLAYER IS TOLD WHAT THE AUDIO ACTUALLY IS")
+# =====================================================================
+#
+# Baba, 6.9.2026: "Sound dub or our tab, which supposedly generates the
+# audio, does not work with Google."
+#
+# THE CAUSE: every player in this app was handed
+# "data:audio/mpeg;base64,..." — hardcoded, because for two years every
+# voice here returned MP3. Gemini returns a WAV. A browser given RIFF
+# bytes under an MP3 label DOES NOT GUESS: it declines to decode and
+# plays nothing. No error, no console warning, no failed request. The
+# reading simply never started, which is why it looked like the tab was
+# broken rather than the label.
+
+from ttt import speech as SP                      # noqa: E402
+from ttt.providers.google import to_wav           # noqa: E402
+
+_wav = to_wav(b"\x00\x01" * 500)
+check("a Gemini WAV is called audio/wav", SP.audio_mime(_wav) == "audio/wav",
+      SP.audio_mime(_wav))
+check("an MP3 with an ID3 tag is still audio/mpeg",
+      SP.audio_mime(b"ID3\x04\x00" + b"\x00" * 32) == "audio/mpeg")
+check("a bare MP3 frame is still audio/mpeg",
+      SP.audio_mime(b"\xff\xfb\x90\x00" + b"\x00" * 32) == "audio/mpeg")
+check("ogg and flac are named too",
+      SP.audio_mime(b"OggS" + b"\x00" * 32) == "audio/ogg"
+      and SP.audio_mime(b"fLaC" + b"\x00" * 32) == "audio/flac")
+# UNKNOWN FALLS BACK TO MP3 — what every existing voice returns — so a
+# shape nobody has seen behaves exactly as before rather than newly
+# breaking.
+for junk in (b"", None, b"\x00\x00\x00\x00", b"nonsense"):
+    check("junk falls back to mpeg, never to nothing: %.12r" % (junk,),
+          SP.audio_mime(junk) == "audio/mpeg", SP.audio_mime(junk))
+
+check("the data URL carries the sniffed type",
+      SP.audio_src(_wav).startswith("data:audio/wav;base64,"),
+      SP.audio_src(_wav)[:26])
+check("...and round-trips the bytes",
+      __import__("base64").b64decode(SP.audio_src(_wav).split(",", 1)[1]) == _wav)
+
+# NO PLAYER MAY HARDCODE THE TYPE AGAIN. This is the check that would
+# have caught it: a grep for the literal, with comments stripped.
+check("NOT ONE PLAYER STILL HARDCODES audio/mpeg IN A data: URL",
+      "data:audio/mpeg;base64," not in CODE,
+      [l for l in CODE.splitlines() if "data:audio/mpeg" in l][:2])
+check("...and they all go through the one helper",
+      CODE.count("SPEECH.audio_src(") >= 3, CODE.count("SPEECH.audio_src("))
+
+print()
+print("11 A RADIO SAYS WHICH VOICE IS SPEAKING")
+# =====================================================================
+#
+# Baba: "there is a list of female and male voices, but which one is
+# speaking? How can the user select that? You need to do radio buttons
+# for female and male voice, and then there are two options there."
+#
+# Two dropdowns both held a value at all times, so the screen showed two
+# names and answered "which is speaking" with neither.
+
+shutil.copy(SEC, BAK)
+try:
+    _raw2 = open(SEC).read()
+    _t2 = '"AQ.paste_your_first_key_here"'
+    assert _t2 in _raw2, "the placeholder key moved"
+    open(SEC, "w").write(
+        _raw2.replace(_t2, '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"'))
+
+    def gapp2():
+        a = app("talk")
+        a.session_state["route_stt"] = "google"
+        a.session_state["route_tts"] = "google"
+        a.session_state["route_llm"] = "google"
+        return a
+
+    r = gapp2()
+    r.run()
+    check("the reader renders on google", not r.exception, r.exception)
+    check("there is ONE radio", len(r.radio) == 1, len(r.radio))
+    check("...with exactly two options",
+          list(r.radio[0].options) == ["Female", "Male"], r.radio[0].options)
+    check("there is ONE list, not two", len(r.selectbox) == 1,
+          [x.key for x in r.selectbox])
+    check("...holding ten voices", len(r.selectbox[0].options) == 10,
+          len(r.selectbox[0].options))
+
+    # THE SCREEN AND THE SOUND AGREE, and not by coincidence: the voice
+    # is written every render, so a moved default cannot silently split
+    # what is shown from what is spoken.
+    shown = r.selectbox[0].options[0].split(" — ")[0]
+    check("the voice in session IS the one at the top of the list",
+          sget(r, "google_voice") == shown, (sget(r, "google_voice"), shown))
+    check("...and it is a female voice, matching the radio",
+          GP.gender_of(sget(r, "google_voice")) == "F",
+          sget(r, "google_voice"))
+
+    # SWITCHING SIDES MOVES THE VOICE. If it did not, the radio would
+    # say Female while a male voice went on speaking.
+    # THROUGH THE WIDGET, so the on_change callback actually fires.
+    # Setting the session key directly — which the block above does —
+    # bypasses it, and a mutation that broke _side_changed stayed GREEN
+    # because nothing in the suite ever pressed the radio.
+    # THE RAW OPTION VALUE, "M", NOT THE LABEL "Male". AppTest matches
+    # against the option list the code passed — ("F", "M") — and a label
+    # from format_func is SILENTLY IGNORED: no error, no change, and the
+    # next assertion then describes a press that never happened. That
+    # cost two false failures here before it was measured.
+    r.radio[0].set_value("M").run()
+    check("switching to Male changes the voice being used",
+          GP.gender_of(sget(r, "google_voice")) == "M",
+          sget(r, "google_voice"))
+    check("...and the list under it is the male list",
+          all(GP.gender_of(o.split(" — ")[0]) == "M"
+              for o in r.selectbox[0].options),
+          r.selectbox[0].options[:3])
+    r.selectbox[0].select("Puck — Upbeat").run()
+    check("picking from the list sets the voice",
+          sget(r, "google_voice") == "Puck", sget(r, "google_voice"))
+    r.run()
+    check("...and it survives a rerun", sget(r, "google_voice") == "Puck")
+    check("the radio stays on Male with a male voice chosen",
+          sget(r, "talkvoice_gender") == "M", sget(r, "talkvoice_gender"))
+
+    # AND BACK, through the widget again: the guard must move the voice
+    # in BOTH directions, or the radio says Female while Puck speaks.
+    r.radio[0].set_value("F").run()
+    check("switching back to Female moves the voice with it",
+          GP.gender_of(sget(r, "google_voice")) == "F",
+          sget(r, "google_voice"))
+    check("...and it is the first of the female list",
+          sget(r, "google_voice") == GP.top_voices("F", 10)[0][0],
+          sget(r, "google_voice"))
+finally:
+    shutil.move(BAK, SEC)
 
 print()
 print("%d passed, %d failed" % (passed, failed))

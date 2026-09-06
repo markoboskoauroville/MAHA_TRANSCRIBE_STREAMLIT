@@ -135,8 +135,20 @@ check("4e3 the tags export is a DIFFERENT job, and lives in its own panel",
 # THE NAME MOVED WITH THE CONTROL. It was st.download_button's
 # file_name; now the deck saves the file, so the name goes DOWN as a prop
 # and the mime is in the data URI.
+# 4f CHANGED IN v254 AND THIS CHECK WAS RIGHT TO GO RED. It asserted
+# "data:audio/mpeg;base64" — hardcoded — which is exactly the bug that
+# made Google silent: a browser handed RIFF bytes under an MP3 label
+# declines to decode and plays nothing, with no error anywhere. The mime
+# now follows the AUDIO, sniffed from its own first bytes.
+#
+# The NAME stays .mp3 and that is still right here: VR stitches through
+# speech.join_audio, which re-encodes with libmp3lame, so the file this
+# link carries really is an MP3 whatever the voice returned.
 check("4f the file is named for what it actually is",
-      'dl_name="rehearsal.mp3"' in vr and "data:audio/mpeg;base64" in vr)
+      'dl_name="rehearsal.mp3"' in vr)
+check("4f2 and the type is read off the audio, never hardcoded",
+      "SPEECH.audio_src(" in vr and "data:audio/mpeg;base64" not in vr,
+      [l for l in vr.splitlines() if "data:audio" in l][:2])
 check("4g VR hands its own block builder to the shared stitcher",
       "stitch_reading(len(job.get" in vr and "_vr_block" in vr)
 check("4h and reports a refusing block on screen rather than silently",
