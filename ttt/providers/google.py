@@ -73,6 +73,44 @@ import threading as _threading
 _START = [0]
 _START_LOCK = _threading.Lock()
 
+# KEYS THAT SAID "NO CREDIT", SO THE RING STOPS OFFERING THEM.
+#
+# Baba, 6.9.2026: "I have activated prepaid credit on two accounts and
+# the rest I didn't. Those accounts are always giving me 'there is not
+# enough credit', but other accounts are fine. If an account is out of
+# credit, I want to ignore it and use only free accounts."
+#
+# An account with BILLING TURNED ON and an empty prepaid balance answers
+# 429 "prepayment credits are depleted" to everything, for ever, until
+# somebody pays. An account with billing OFF just uses the free tier and
+# works. So the empty ones are not merely slow — they are noise, and
+# with eight raced at once they take seats a working key needed.
+#
+# FINGERPRINTS, NOT KEYS. keyring.md §5: nothing that could be pasted
+# into a request is held anywhere it does not have to be.
+#
+# MOVED TO THE BACK, NEVER DELETED. Two reasons. A daily allowance does
+# come back at midnight Pacific, and a person can top an account up
+# between one reading and the next — a ring that forgets a key for ever
+# would keep him locked out of an account he has just paid for. And if
+# EVERY key ends up in here, the set is cleared and the whole ring is
+# tried again: better a slow answer than a confident "no keys left".
+_SPENT = set()
+
+
+def _mark_spent(key):
+    _SPENT.add(_fp(key))
+
+
+def _fp(key):
+    import hashlib as _h
+    return _h.sha256(str(key or "").encode()).hexdigest()[:16]
+
+
+def spent_count():
+    """How many keys are being skipped. For the status line and tests."""
+    return len(_SPENT)
+
 WORKING = "working"
 BUSY = "busy"
 NO_CREDIT = "no credit"
@@ -637,7 +675,19 @@ class Google(Provider):
         with _START_LOCK:
             _START[0] = (_START[0] + 1) % max(1, len(self.keys))
             begin = _START[0]
-        order = self.keys[begin:] + self.keys[:begin]
+        rotated = self.keys[begin:] + self.keys[:begin]
+        # LIVE KEYS FIRST, SPENT ONES LAST. Not removed — see _SPENT —
+        # so a topped-up or newly reset account is still reachable, just
+        # after everything more likely to work.
+        live = [k for k in rotated if _fp(k) not in _SPENT]
+        spent = [k for k in rotated if _fp(k) in _SPENT]
+        if not live:
+            # EVERYTHING IS MARKED. Either the day rolled over or the
+            # marks are wrong; both are answered by forgetting them and
+            # asking again rather than refusing to try.
+            _SPENT.clear()
+            live, spent = rotated, []
+        order = live + spent
         # A CAP, OR THE RING BECOMES THE HANG.
         #
         # v257 made an unknown rotate instead of stopping, which was
@@ -721,6 +771,11 @@ class Google(Provider):
                             self.active_key = self.keys.index(key) + 1
                         pool.shutdown(wait=False, cancel_futures=True)
                         return result, None
+                    if kind == "dead" and any(
+                            m in str(err).lower() for m in MONEY_MARKS):
+                        # AN EMPTY ACCOUNT, remembered so the next call
+                        # does not spend a race seat on it.
+                        _mark_spent(futures[fut])
                     last = err
             except TimeoutError:
                 # NOT AN ERROR ABOUT ANY KEY. Nobody in this batch was

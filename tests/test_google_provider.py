@@ -500,6 +500,65 @@ check("...it just says nobody was quick",
 check("the next batch is still tried",
       "for start in range(0, len(order), RACE_WIDTH)" in _gsrc)
 
+
+print()
+print("AN EMPTY ACCOUNT IS SKIPPED, NOT DELETED")
+# =====================================================================
+#
+# Baba, 6.9.2026: "I have activated prepaid credit on two accounts and
+# the rest I didn't. Those accounts are always giving me 'there is not
+# enough credit', but other accounts are fine... If an account is out of
+# credit, I want to ignore it and use only free accounts."
+#
+# An account with BILLING ON and an empty prepaid balance answers 429
+# "prepayment credits are depleted" to everything, for ever, until
+# somebody pays. One with billing OFF uses the free tier and works. With
+# eight keys raced at once, the empty ones take seats a working key
+# needed.
+#
+# MEASURED on his ring: 31s, 34.6s while it learned which were empty,
+# then 2.1s and 2.0s. Sixteen of twenty-one marked.
+
+G._SPENT.clear()
+_g = G.Google(keys=["a", "b", "c"])
+check("nothing is skipped to begin with", G.spent_count() == 0)
+G._mark_spent("a")
+G._mark_spent("b")
+check("marking two is counted", G.spent_count() == 2, G.spent_count())
+
+_seen = []
+_g._rotate(lambda k: (_seen.append(k), (None, "x", "soft"))[1])
+check("the unspent key is tried FIRST", _seen[0] == "c", _seen)
+# NOT DELETED. A daily allowance comes back at midnight Pacific and a
+# person can top an account up between two readings — a ring that
+# forgot a key for ever would lock him out of one he had just paid for.
+check("...and the spent ones are still reachable behind it",
+      sorted(_seen) == ["a", "b", "c"], _seen)
+
+G._mark_spent("c")
+_seen2 = []
+_g._rotate(lambda k: (_seen2.append(k), (None, "x", "soft"))[1])
+check("when EVERY key is marked the marks are forgotten",
+      len(_seen2) == 3 and G.spent_count() == 0,
+      (len(_seen2), G.spent_count()))
+
+# FINGERPRINTS, NOT KEYS. keyring.md §5.
+G._SPENT.clear()
+G._mark_spent("AQ.somethingsecret")
+check("what is remembered is a fingerprint, never the key",
+      not any("AQ.somethingsecret" in x for x in G._SPENT), list(G._SPENT))
+check("...and it is short", all(len(x) <= 32 for x in G._SPENT))
+G._SPENT.clear()
+
+_src2 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "..", "ttt", "providers", "google.py")).read()
+# ONLY MONEY MARKS IT. A 401, a 503 or a timeout must never put a key
+# in here — being refused, being broken and being slow are three other
+# things, and only one of them means "this will never work again".
+_mark = _src2.split("_mark_spent(futures[fut])")[0][-320:]
+check("only a MONEY verdict marks a key spent", "MONEY_MARKS" in _mark)
+check("...and only a dead one", 'kind == "dead"' in _mark)
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
