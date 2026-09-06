@@ -657,6 +657,10 @@ STRINGS = {
     "speechify_title":    {"en": "Speechify (premium voices)", "hr": "Speechify (premium glasovi)"},
     "stale_modules":      {"en": "This app is running a new app.py against an older copy of its own modules, still held in memory. Nothing is broken in the code. Open **Manage app** at the lower right and press **Reboot app**.",
                            "hr": "Aplikacija koristi novi app.py sa starijom kopijom vlastitih modula koja je ostala u memoriji. Kod nije pokvaren. Otvori **Manage app** dolje desno i pritisni **Reboot app**."},
+    "where_am_i":         {"en": "Where am I?", "hr": "Gdje sam?"},
+    "log_out_link":       {"en": "log out", "hr": "odjava"},
+    "eng_switch_link":    {"en": "switch to %s", "hr": "prebaci na %s"},
+    "eng_switch_dead":    {"en": "one engine", "hr": "jedan motor"},
     "kt_title":           {"en": "Key tester", "hr": "Tester ključeva"},
     "kt_intro":           {"en": "Paste anything with keys in it — a note, a dashboard export, an old secrets block. Nothing is saved until you copy the result into Secrets.",
                            "hr": "Zalijepi bilo što s ključevima — bilješku, izvoz s nadzorne ploče, stari secrets blok. Ništa se ne sprema dok rezultat ne kopiraš u Secrets."},
@@ -3239,6 +3243,31 @@ def talking_engine() -> str:
     return str(st.session_state.get("voice_engine") or "edge")
 
 
+# WHAT SURVIVES A LOG OUT.
+#
+# Only how the screen is set up — the reading size, the language, the
+# help level. Everything else goes, and that is the point: this app is
+# shared with his family on one phone, so logging out has to mean the
+# next person cannot read what the last one wrote. Clearing the
+# credential alone would leave the transcript, the reader's text, the
+# notes and the key rings sitting there behind a fresh login screen.
+#
+# An ALLOWLIST rather than a list of things to remove, because the
+# removal list is the one that silently goes stale: every feature added
+# after it stores something new, and nobody remembers to add it.
+KEEP_ON_LOGOUT = ("ui_lang", "text_scale", "help_level", "help_lang")
+
+
+def log_out():
+    """End the session and leave nothing of it behind."""
+    for key in list(st.session_state.keys()):
+        if key not in KEEP_ON_LOGOUT:
+            st.session_state.pop(key, None)
+    # AND THE REMEMBER-ME TOKEN, or the next run walks straight back in
+    # and the log out looks broken.
+    queue_ls(removes=[AUTH_LS_KEY])
+
+
 def talking_is_metered() -> bool:
     """Is every speech request counted against a small daily allowance?
 
@@ -4070,62 +4099,84 @@ def tab_signature(name: str):
     # to switch to it is DISABLED, not hidden — a studio user sees the
     # same furniture in the same place, greyed, and the help text says
     # why. A control that vanishes moves the page under somebody's thumb.
-    ecol1, ecol2 = st.columns([1, 0.001 + 0.14])
-    with ecol1:
-        st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
-                    unsafe_allow_html=True)
-    with ecol2:
-        _engine_switch(eng)
+    # "WHERE AM I?" IS ALWAYS ON THE PAGE.
+    #
+    # Baba, 6.9.2026: "I always want to see the text 'Where am I?'"
+    #
+    # The line under it already answered the question — tab, tier, who
+    # you are — but it answered a question nobody had been asked. Three
+    # dim words separated by dots read as decoration until something
+    # tells you they are an answer. The label is what turns them into
+    # one, and it costs one line.
+    #
+    # ALWAYS, not when something is wrong and not only on some tabs:
+    # §1, nothing appears and nothing disappears.
+    st.markdown('<div class="tabsig">' + html.escape(t("where_am_i"))
+                + '</div>', unsafe_allow_html=True)
+    st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
+                unsafe_allow_html=True)
+    _foot_links(eng)
 
 
-def _engine_switch(eng):
-    """One press, the whole engine. Free users included.
+def _foot_links(eng):
+    """switch engine · log out, as LINKS, at the foot of every tab.
 
-    THE CHOICES ARE DERIVED, NEVER LISTED. The engines offered are the
-    ones sharing a tier with the engine now running — see
-    engines.for_tier. A written-down ("normal", "google") would be right
-    today and silently wrong the day a third free engine lands, because a
-    toggle offering two of three looks exactly like one offering two of
-    two.
+    Baba, 6.9.2026: "Please give a logout action link at the bottom of
+    the page. For switching engine, put also an action link."
 
-    A MIXED BOARD OFFERS THE FREE SET, so somebody who patched one
-    crosspoint by hand has a way back to a whole engine.
+    LINKS, NOT BUTTONS, and that is his standing rule for anything that
+    is not the main action on a screen: "as an action link, not an
+    action button." A button says press me; these two are there to be
+    found when wanted, not to be offered.
 
-    THIS TAB DOES NOT KNOW A VENDOR'S NAME. §0 rule 2. It reads
-    `engine.label` off the object; the words "Gemini" and "Edge" appear
-    in ttt/engines.py and not here.
+    THE CONTAINER KEY BEGINS "boxlinks_" ON PURPOSE. The stylesheet
+    already turns everything under that prefix into a link — right
+    aligned, dim, underlined, following the reader's text size — so
+    this row is the same shape as copy and clear under every text box.
+    One visual language, and no second stylesheet to drift from the
+    first.
+
+    LOG OUT HAD BEEN GONE SINCE v237, when the accounts screen was
+    removed with the spreadsheet. tests/test_accounts still lists
+    log_out_btn as a missing feature. On a phone shared with his family
+    there was no way out but closing the tab, which does not clear the
+    remembered login.
     """
     here = eng.id if eng else ""
     family = EN.for_tier(eng.tier) if eng else EN.for_tier("free")
     nxt = EN.next_in(family, here)
 
-    # WHY IT MIGHT BE DEAD, IN THE ORDER A PERSON WOULD ASK.
-    if nxt is None:
-        why, ok = t("eng_only_one"), False
-    elif not all(provider_usable(PROVIDERS.get(pid))
-                 for pid in nxt.provider_ids
-                 if PROVIDERS.get(pid) is not None):
-        # OFFERED BUT NOT READY is a real state and it must say so. An
-        # engine whose keys are not in Secrets would otherwise be chosen,
-        # fall back route by route, and leave somebody believing they
-        # were hearing a voice they were not.
-        why, ok = t("eng_not_ready") % nxt.label, False
-    else:
-        why, ok = t("eng_switch_to") % nxt.label, True
+    ready = bool(nxt) and all(
+        provider_usable(PROVIDERS.get(pid))
+        for pid in (nxt.provider_ids if nxt else ())
+        if PROVIDERS.get(pid) is not None)
 
-    def _flip():
-        # WRITTEN AS ROUTES, NOT AS A NAME. engines.route_settings is the
-        # same thing the patch bay writes, so the two views of the board
-        # cannot disagree — and tab_signature derives the corner label
-        # back out of the routes, so what it says is what is running.
-        st.session_state.update(EN.route_settings(nxt))
-        st.session_state[EN.SETTING_KEY] = nxt.id
-        # A VERDICT BELONGS TO THE ENGINE THAT EARNED IT. Leaving the old
-        # check behind would put a tick beside an engine nobody tested.
-        st.session_state.pop("_engine_check", None)
+    with st.container(key="boxlinks_foot"):
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if nxt is None:
+                why, label = t("eng_only_one"), t("eng_switch_dead")
+            elif not ready:
+                why, label = (t("eng_not_ready") % nxt.label,
+                              t("eng_switch_link") % nxt.label)
+            else:
+                why, label = (t("eng_switch_to") % nxt.label,
+                              t("eng_switch_link") % nxt.label)
 
-    st.button(SYM["engine"], key="eng_flip", help=why, disabled=not ok,
-              on_click=_flip if ok else None)
+            def _flip():
+                st.session_state.update(EN.route_settings(nxt))
+                st.session_state[EN.SETTING_KEY] = nxt.id
+                st.session_state.pop("_engine_check", None)
+
+            # THE GLYPH RIDES WITH THE WORDS. ⇄ alone was a puzzle at
+            # the foot of a page; the words alone lose the mark he has
+            # already learned. Both, and the aria name still matches.
+            st.button("%s %s" % (SYM["engine"], label), key="eng_flip",
+                      help=why, disabled=not ready,
+                      on_click=_flip if ready else None)
+        with c2:
+            st.button(t("log_out_link"), key="foot_logout",
+                      help=t("log_out_link"), on_click=log_out)
 
 
 def name_the_symbols():

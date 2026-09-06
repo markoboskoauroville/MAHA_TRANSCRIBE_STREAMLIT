@@ -112,6 +112,15 @@ print("2 THE REAL THING — the app, rendered")
 # past the login: the login has its own suite (test_door), and driving it
 # again here would make this test fail for reasons that have nothing to
 # do with an engine toggle.
+def sget(at, key, default=None):
+    """AppTest's session_state is not a dict — no .get(), and a missing
+    key raises. Every other AppTest suite here carries this helper."""
+    try:
+        return at.session_state[key]
+    except (KeyError, AttributeError):
+        return default
+
+
 def app(tab="talk"):
     at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=90)
     at.session_state["_authed"] = True
@@ -134,7 +143,13 @@ check("the toggle is ON THE PAGE, by key", "eng_flip" in keys, keys[:12])
 btn = [b for b in at.button if b.key == "eng_flip"]
 if btn:
     b = btn[0]
-    check("it wears the glyph", b.label == GLYPH, b.label)
+    # IT IS A LINK NOW, NOT A GLYPH-ONLY BUTTON. Baba, 6.9.2026: "For
+    # switching engine, put also an action link." The glyph rides with
+    # the words: alone at the foot of a page it was a puzzle, and the
+    # words alone lose the mark he has already learned.
+    check("it wears the glyph", b.label.startswith(GLYPH), b.label)
+    check("...and says in words what it will do",
+          len(b.label) > len(GLYPH) + 3, b.label)
     check("it carries help text saying what it will do", bool(b.help), b.help)
     # NOT READY, AND SAYING SO. This clone has placeholder Google keys in
     # secrets, so the target engine is offered and cannot work — and the
@@ -183,16 +198,23 @@ check("the switch is given a spoken name for assistive technology",
 
 # NOTHING APPEARS, NOTHING DISAPPEARS. The failure this guards is a
 # button rendered only when it is usable, which moves the page.
-sw = CODE[CODE.find("def _engine_switch"):]
+# THE CONTROL MOVED into _foot_links when it became an action link, so
+# the region these checks read moves with it. A check left pointing at
+# a function that no longer exists reads as a failure of the feature
+# rather than of the check — and one pointing at a function that no
+# longer DECIDES anything is worse, because it stays green.
+sw = CODE[CODE.find("def _foot_links"):]
 sw = sw[:sw.find("\ndef ", 10)] if "\ndef " in sw[10:] else sw
 check("the switch region was found and is a sensible size (%d chars)"
       % len(sw), 400 < len(sw) < 4000, len(sw))
-check("the button is rendered UNCONDITIONALLY, never inside an if",
-      sw.count("st.button(") == 1, sw.count("st.button("))
+# TWO BUTTONS NOW: the engine link and the way out. Both rendered
+# unconditionally — nothing appears, nothing disappears.
+check("both footer links are rendered UNCONDITIONALLY",
+      sw.count("st.button(") == 2, sw.count("st.button("))
 check("it is greyed with disabled=, not hidden",
-      "disabled=not ok" in sw, sw[-200:])
-check("every path sets a reason, so a dead button always explains itself",
-      sw.count("why, ok =") == 3, sw.count("why, ok ="))
+      "disabled=not ready" in sw, sw[-200:])
+check("every path sets a reason, so a dead link always explains itself",
+      sw.count("why, label = ") == 3, sw.count("why, label = "))
 
 # §0 RULE 2 — the tab must not know a vendor.
 for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",
@@ -258,6 +280,94 @@ check("adding the toggle did not change any engine's routes",
       [{"stt": "groq", "tts": "edge", "llm": "groq"},
        {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
        {"stt": "google", "tts": "google", "llm": "google"}])
+
+
+
+print()
+print("5 THE FOOT OF THE PAGE — where am I, and the way out")
+# =====================================================================
+
+for tab in ("transcribe", "talk", "translate", "vr", "looks", "help",
+            "settings"):
+    a = app(tab)
+    a.run()
+    md = " ".join(m.value for m in a.markdown)
+    keys = [b.key for b in a.button]
+    check("tab %-10s asks 'Where am I?'" % tab, "Where am I?" in md)
+    check("tab %-10s offers the way out" % tab, "foot_logout" in keys,
+          keys[:8])
+    check("tab %-10s offers the engine link" % tab, "eng_flip" in keys)
+    check("tab %-10s renders without raising" % tab, not a.exception,
+          a.exception)
+
+# ONE CONTROL, NOT TWO. The glyph-only button it replaced is gone; two
+# implementations of one control are two places to drift.
+check("the old glyph-only switch is gone", "def _engine_switch" not in CODE)
+check("there is exactly one engine control", CODE.count('key="eng_flip"') == 1,
+      CODE.count('key="eng_flip"'))
+
+# THE LINK LOOK IS THE EXISTING ONE. The container key begins
+# "boxlinks_", which the stylesheet already turns into right-aligned
+# dim underlined text that follows the reader's size dial. No second
+# stylesheet to drift from the first.
+check("the footer reuses the action-link container",
+      'key="boxlinks_foot"' in CODE)
+
+print()
+print("6 LOGGING OUT LEAVES NOTHING BEHIND")
+# =====================================================================
+#
+# This app is shared with his family on one phone. Clearing the
+# credential alone would leave the transcript, the reader's text, the
+# notes and the key rings sitting behind a fresh login screen.
+# log_out_btn has been listed as a MISSING FEATURE since v237.
+
+at = app("talk")
+at.run()
+at.session_state["talk_text"] = "private text"
+at.session_state["_t1_text"] = "a transcript"
+at.session_state["_rings"] = {"hume": {"keys": [{"key": "SECRET"}], "active": 0}}
+at.session_state["text_scale"] = 1.4
+at.session_state["ui_lang"] = "hr"
+at.run()
+check("the work is there before logging out",
+      sget(at, "talk_text") == "private text")
+
+at.button(key="foot_logout").click().run()
+check("the credential is gone", sget(at, "_authed") is None)
+check("the name is gone", sget(at, "_user") is None)
+check("THE READER'S TEXT IS GONE — the next person must not read it",
+      sget(at, "talk_text") is None, sget(at, "talk_text"))
+check("the transcript is gone", sget(at, "_t1_text") is None)
+check("THE KEY RINGS ARE GONE", not sget(at, "_rings"), sget(at, "_rings"))
+
+# BUT HOW THE SCREEN IS SET UP SURVIVES. Logging out is not a reason to
+# make somebody with low vision find the text-size dial again.
+check("the reading size survives", sget(at, "text_scale") == 1.4,
+      sget(at, "text_scale"))
+check("the language survives", sget(at, "ui_lang") == "hr",
+      sget(at, "ui_lang"))
+check("logging out does not raise", not at.exception, at.exception)
+
+# AN ALLOWLIST, NOT A REMOVE-LIST. A remove-list is the one that goes
+# stale: every feature added after it stores something new and nobody
+# remembers to add it.
+check("what survives is an allowlist", "KEEP_ON_LOGOUT" in CODE)
+check("...and it is short", len(re.findall(r'"\w+"', CODE.split(
+      "KEEP_ON_LOGOUT = (")[1].split(")")[0])) <= 6)
+check("the loop removes everything NOT on it",
+      "if key not in KEEP_ON_LOGOUT" in CODE)
+
+# THE REMEMBER-ME TOKEN. Asserted on the source: the localStorage bridge
+# consumes _pending_ls on the very next render, so by the time an
+# AppTest can look, it has already been cleared — the observable proof
+# lives in a browser and this is the honest substitute.
+_lo = CODE.split("def log_out")[1].split("\ndef ")[0]
+check("the log-out region was found (%d chars)" % len(_lo),
+      60 < len(_lo) < 900, len(_lo))
+check("logging out also drops the remembered login, or the next run "
+      "walks straight back in",
+      "queue_ls(removes=[AUTH_LS_KEY])" in _lo, _lo)
 
 print()
 print("%d passed, %d failed" % (passed, failed))
