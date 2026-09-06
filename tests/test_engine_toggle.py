@@ -150,7 +150,13 @@ if btn:
     #
     # v250 read "switch to Gemini" — the OTHER engine — so the one word
     # on screen was always the one word that was NOT true.
-    check("it names the engine that is RUNNING", b.label == "Edge", b.label)
+    # THE KEY POSITION RIDES WITH THE NAME NOW. Baba, 6.9.2026:
+    # "after that you need to write Google or Edge, depends where we
+    # are... Translate free Google key." One cell, one press, and the
+    # engine word is no longer printed twice on two lines.
+    check("it names the engine that is RUNNING",
+          b.label.split()[0] == "Edge", b.label)
+    check("...and carries its key position", "/" in b.label, b.label)
     check("...and NOT the one it would switch to",
           "Gemini" not in b.label and "Google" not in b.label, b.label)
     check("no glyph on it — a mark beside a status is a second thing to "
@@ -158,7 +164,8 @@ if btn:
           GLYPH not in b.label, b.label)
     check("...and no instruction words either",
           "switch" not in b.label.lower(), b.label)
-    check("it is ONE word", len(b.label.split()) == 1, b.label)
+    check("it is the engine and its key, nothing else",
+          len(b.label.split()) == 2, b.label)
     # WHERE IT WOULD GO IS IN THE TOOLTIP, which is not on the page.
     check("the target is in the help, not on the line", bool(b.help), b.help)
     check("it carries help text saying what it will do", bool(b.help), b.help)
@@ -220,7 +227,7 @@ check("no aria mapping is left for the removed glyph",
 # a function that no longer exists reads as a failure of the feature
 # rather than of the check — and one pointing at a function that no
 # longer DECIDES anything is worse, because it stays green.
-sw = CODE[CODE.find("def _foot_links"):]
+sw = CODE[CODE.find("def _foot_line"):]
 sw = sw[:sw.find("\ndef ", 10)] if "\ndef " in sw[10:] else sw
 check("the switch region was found and is a sensible size (%d chars)"
       % len(sw), 400 < len(sw) < 4000, len(sw))
@@ -228,6 +235,8 @@ check("the switch region was found and is a sensible size (%d chars)"
 # unconditionally — nothing appears, nothing disappears.
 check("both footer links are rendered UNCONDITIONALLY",
       sw.count("st.button(") == 2, sw.count("st.button("))
+check("the whole footer is ONE row", sw.count("st.columns(") == 1,
+      sw.count("st.columns("))
 check("it is greyed with disabled=, not hidden",
       "disabled=not ready" in sw, sw[-200:])
 # THE LABEL NO LONGER VARIES — it is always the running engine — so
@@ -236,8 +245,8 @@ check("it is greyed with disabled=, not hidden",
 # longer exists.
 check("every path sets a reason, so a dead link always explains itself",
       sw.count("why = ") == 3, sw.count("why = "))
-check("...and the label is the running engine on every path",
-      sw.count("label = eng.short") == 1, sw.count("label = eng.short"))
+check("...and the label is engine_status on every path",
+      sw.count("engine_status(eng)") == 1, sw.count("engine_status(eng)"))
 
 # §0 RULE 2 — the tab must not know a vendor.
 for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",
@@ -316,7 +325,15 @@ for tab in ("transcribe", "talk", "translate", "vr", "looks", "help",
     a.run()
     md = " ".join(m.value for m in a.markdown)
     keys = [b.key for b in a.button]
-    check("tab %-10s asks 'Where am I?'" % tab, "Where am I?" in md)
+    # "WHERE AM I?" IS GONE. Baba: "First text is 'Where am I?' but not
+    # 'Where am I?' You need to type the name of the tab." He wanted to
+    # SEE where he is; I printed the QUESTION instead of trusting the
+    # answer underneath it, and it cost a whole line on a phone.
+    check("tab %-10s does NOT print the question" % tab,
+          "Where am I?" not in md)
+    check("tab %-10s names itself instead" % tab,
+          any(w in md for w in ("transcribe", "read", "translate", "vr",
+                                "looks", "help")), md[-80:])
     check("tab %-10s offers the way out" % tab, "foot_logout" in keys,
           keys[:8])
     check("tab %-10s offers the engine link" % tab, "eng_flip" in keys)
@@ -514,12 +531,28 @@ def sigtext(at):
 a = app("talk")
 a.run()
 sig = sigtext(a)
-check("the status line carries the engine name", "Edge" in sig, sig[-120:])
-check("...and a key position beside it", "/" in sig, sig[-120:])
+# THE ENGINE AND ITS KEY MOVED INTO THE PRESSABLE CELL. They used to
+# be printed in the dim text AND again as a link below it, so the word
+# appeared twice on two lines. One place now, and it is the switch.
+_flip = [b for b in a.button if b.key == "eng_flip"][0]
+# THE TAB NAME AND THE TIER ARE ON THE LINE. This is the whole of what
+# he asked for — "you need to type the name of the tab... then after
+# that you need to write Google or Edge" — and nothing asserted it, so
+# emptying the lead cell left the suite green with a footer that said
+# only "Google –/2 · log out".
+_lead = [m.value for m in a.markdown if "tabsig_l" in m.value]
+check("the footer names the TAB", any("talk" in x or "read" in x
+                                      for x in _lead), _lead[:1])
+check("...and the tier beside it", any("free" in x for x in _lead), _lead[:1])
+check("...on ONE line, in one cell", len(_lead) >= 1, len(_lead))
+
+check("the footer carries the engine name", "Edge" in _flip.label,
+      _flip.label)
+check("...and a key position beside it", "/" in _flip.label, _flip.label)
 # A DASH UNTIL SOMETHING HAS BEEN ASKED. Showing 1/2 before any call
 # would be a claim about a key that has never been tried.
 check("nothing used yet reads as a dash, not as key 1",
-      "\u2013/" in sig, sig[-120:])
+      "\u2013/" in _flip.label, _flip.label)
 
 # THE NUMBER IS A POSITION AND NEVER A FRAGMENT OF A KEY. keyring.md
 # §10d: on Gemini the first six characters are identical on every key,
@@ -527,7 +560,8 @@ check("nothing used yet reads as a dash, not as key 1",
 import re as _re                                  # noqa: E402
 _keys = list(P.get("groq").keys or []) + list(P.get("google").keys or [])
 check("NO KEY MATERIAL IS ON THE STATUS LINE",
-      not any(k and len(k) >= 8 and k[:8] in sig for k in _keys))
+      not any(k and len(k) >= 8 and k[:8] in (sig + _flip.label)
+              for k in _keys))
 check("...and no eight-character run of one either",
       not _re.search(r"[A-Za-z0-9_]{16,}", sig.split("tabsig")[-1]),
       sig[-120:])

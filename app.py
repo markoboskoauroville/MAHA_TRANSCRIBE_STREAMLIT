@@ -4000,6 +4000,52 @@ def stitch_reading(count: int, get_block, on_error=None):
         ttt_audio.cleanup(*tmp)
 
 
+def engine_status(eng) -> str:
+    """"Google 2/21" — which engine, and which of its keys is in use.
+
+    Baba, 6.9.2026: "in status line always specifies which engine is
+    used, what API key by number. So if I have five API keys, you can
+    write Google API two/five, so I see what's going on in status."
+
+    A POSITION, NEVER A FRAGMENT OF A KEY. keyring.md §10d: on Gemini
+    the first six characters are identical on every key, so a masked
+    prefix identifies nothing and leaks something. "2/21" identifies
+    everything and is safe in a screenshot.
+
+    WHICH PROVIDER'S KEY. The one doing the SPEECH if it needs a key,
+    because that is what the engine name beside it refers to; otherwise
+    the first of its providers that does. On the free engine that means
+    Edge is keyless and the number belongs to the transcriber — so the
+    line reads "Edge 2/5" and the 5 is the app's own Groq keys. The
+    vendor is not named, per §0 rule 2; the ENGINE is, which is what he
+    reads it as.
+
+    A DASH UNTIL SOMETHING HAS ACTUALLY BEEN ASKED. Showing 1/21 before
+    any call would be a claim about a key that has never been tried, and
+    the whole point of this line is to say what is going on rather than
+    what probably will.
+    """
+    if eng is None:
+        return t("eng_mixed")
+    prov = None
+    for task in ("tts", "stt", "llm"):
+        cand = PROVIDERS.get(eng.routes.get(task, ""))
+        if cand is not None and getattr(cand, "needs_key", False):
+            prov = cand
+            break
+    if prov is None:
+        return eng.short                     # keyless throughout
+    total = len(getattr(prov, "keys", None) or [])
+    if not total:
+        # A KEYED PROVIDER WITH NO KEYS is a real state and worth
+        # showing: it is why the engine will not work.
+        total = len((get_ring(prov.id) or {}).get("keys", []) or [])
+    used = int(getattr(prov, "active_key", 0) or 0)
+    if not total:
+        return "%s 0/0" % eng.short
+    return "%s %s/%d" % (eng.short, used if used else "\u2013", total)
+
+
 def tab_signature(name: str):
     """A quiet word at the bottom right saying which tab you are on.
 
@@ -4066,165 +4112,74 @@ def tab_signature(name: str):
     elif not st.session_state.get("_user"):
         who = USER            # the "shared" default, which names nobody
 
-    bits = [x for x in (html.escape(name), html.escape(label) + mark,
-                        html.escape(keyline), html.escape(who)) if x]
-
-    # THE ENGINE SWITCH SITS BESIDE THE ENGINE NAME.
+    # ONE LINE, LEFT, AND THE TAB NAME FIRST.
     #
-    # Baba, 6.9.2026: "I want to be able to give free users ability to
-    # change engines. So on all the tabs they have access to, put one
-    # toggle, engine 1 or engine 2, so they can try both and see what
-    # works better."
+    # Baba, 6.9.2026: "All text at the bottom now they are taking three
+    # lines, and this all can be one line... First text is 'Where am I?'
+    # but not 'Where am I?' You need to type the name of the tab...
+    # Then after that you need to write Google or Edge, depends where we
+    # are... Logout should be the last thing and make everything in one
+    # line aligning to the left side of the screen."
     #
-    # IT GOES HERE AND NOWHERE ELSE. Every tab already ends by calling
-    # tab_signature, and this corner already answers "which engine am I
-    # on" — so the control that CHANGES that answer belongs next to it.
-    # design-language.md §2: a repeated element is built once and placed,
-    # never built per tab. Putting a copy in each tab body would be six
-    # copies to drift apart, and the drift always shows up as the same
-    # control behaving differently depending on where you found it.
+    # "WHERE AM I?" IS GONE, AND PUTTING IT THERE WAS A MISREADING OF
+    # HIS OWN WORDS. He said he wanted to SEE where he is; I printed the
+    # QUESTION instead of trusting the answer underneath it. The line
+    # already says "translate", which is the answer, so the label was a
+    # heading over a heading — and it cost a whole line on a phone.
     #
-    # NOTHING APPEARS AND NOTHING DISAPPEARS. §1. The button is rendered
-    # on every tab, every render, for every tier. When there is nowhere
-    # to switch to it is DISABLED, not hidden — a studio user sees the
-    # same furniture in the same place, greyed, and the help text says
-    # why. A control that vanishes moves the page under somebody's thumb.
-    # "WHERE AM I?" IS ALWAYS ON THE PAGE.
+    #     translate · free · Google 2/18 · marko · log out
     #
-    # Baba, 6.9.2026: "I always want to see the text 'Where am I?'"
-    #
-    # The line under it already answered the question — tab, tier, who
-    # you are — but it answered a question nobody had been asked. Three
-    # dim words separated by dots read as decoration until something
-    # tells you they are an answer. The label is what turns them into
-    # one, and it costs one line.
-    #
-    # ALWAYS, not when something is wrong and not only on some tabs:
-    # §1, nothing appears and nothing disappears.
-    st.markdown('<div class="tabsig">' + html.escape(t("where_am_i"))
-                + '</div>', unsafe_allow_html=True)
-    st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
-                unsafe_allow_html=True)
-    _foot_links(eng)
+    # The ENGINE IS THE SWITCH. It used to be printed here AND again as
+    # a link below, so the word "Google" appeared twice on two lines.
+    # One word, one place, and pressing it changes engine.
+    _foot_line(name, label + mark, who, eng)
 
 
-def engine_status(eng) -> str:
-    """"Google 2/21" — which engine, and which of its keys is in use.
+def _foot_line(name, tier, who, eng):
+    """The whole footer, on one row, left-aligned.
 
-    Baba, 6.9.2026: "in status line always specifies which engine is
-    used, what API key by number. So if I have five API keys, you can
-    write Google API two/five, so I see what's going on in status."
+    FOUR CELLS, and the two that are pressable are the last two: the
+    engine, and the way out. Baba: "logout should be the last thing."
 
-    A POSITION, NEVER A FRAGMENT OF A KEY. keyring.md §10d: on Gemini
-    the first six characters are identical on every key, so a masked
-    prefix identifies nothing and leaks something. "2/21" identifies
-    everything and is safe in a screenshot.
-
-    WHICH PROVIDER'S KEY. The one doing the SPEECH if it needs a key,
-    because that is what the engine name beside it refers to; otherwise
-    the first of its providers that does. On the free engine that means
-    Edge is keyless and the number belongs to the transcriber — so the
-    line reads "Edge 2/5" and the 5 is the app's own Groq keys. The
-    vendor is not named, per §0 rule 2; the ENGINE is, which is what he
-    reads it as.
-
-    A DASH UNTIL SOMETHING HAS ACTUALLY BEEN ASKED. Showing 1/21 before
-    any call would be a claim about a key that has never been tried, and
-    the whole point of this line is to say what is going on rather than
-    what probably will.
-    """
-    if eng is None:
-        return t("eng_mixed")
-    prov = None
-    for task in ("tts", "stt", "llm"):
-        cand = PROVIDERS.get(eng.routes.get(task, ""))
-        if cand is not None and getattr(cand, "needs_key", False):
-            prov = cand
-            break
-    if prov is None:
-        return eng.short                     # keyless throughout
-    total = len(getattr(prov, "keys", None) or [])
-    if not total:
-        # A KEYED PROVIDER WITH NO KEYS is a real state and worth
-        # showing: it is why the engine will not work.
-        total = len((get_ring(prov.id) or {}).get("keys", []) or [])
-    used = int(getattr(prov, "active_key", 0) or 0)
-    if not total:
-        return "%s 0/0" % eng.short
-    return "%s %s/%d" % (eng.short, used if used else "\u2013", total)
-
-
-def _foot_links(eng):
-    """switch engine · log out, as LINKS, at the foot of every tab.
-
-    Baba, 6.9.2026: "Please give a logout action link at the bottom of
-    the page. For switching engine, put also an action link."
-
-    LINKS, NOT BUTTONS, and that is his standing rule for anything that
-    is not the main action on a screen: "as an action link, not an
-    action button." A button says press me; these two are there to be
-    found when wanted, not to be offered.
-
-    THE CONTAINER KEY BEGINS "boxlinks_" ON PURPOSE. The stylesheet
-    already turns everything under that prefix into a link — right
-    aligned, dim, underlined, following the reader's text size — so
-    this row is the same shape as copy and clear under every text box.
-    One visual language, and no second stylesheet to drift from the
-    first.
-
-    LOG OUT HAD BEEN GONE SINCE v237, when the accounts screen was
-    removed with the spreadsheet. tests/test_accounts still lists
-    log_out_btn as a missing feature. On a phone shared with his family
-    there was no way out but closing the tab, which does not clear the
-    remembered login.
+    The container key begins "boxlinks_" so the stylesheet already makes
+    the buttons read as links — dim, underlined, following the reader's
+    text size. One visual language, no second stylesheet.
     """
     here = eng.id if eng else ""
     family = EN.for_tier(eng.tier) if eng else EN.for_tier("free")
     nxt = EN.next_in(family, here)
-
     ready = bool(nxt) and all(
         provider_usable(PROVIDERS.get(pid))
         for pid in (nxt.provider_ids if nxt else ())
         if PROVIDERS.get(pid) is not None)
 
+    if nxt is None:
+        why = t("eng_only_one")
+    elif not ready:
+        why = t("eng_not_ready") % nxt.label
+    else:
+        why = t("eng_switch_to") % nxt.short
+
+    def _flip():
+        st.session_state.update(EN.route_settings(nxt))
+        st.session_state[EN.SETTING_KEY] = nxt.id
+        st.session_state.pop("_engine_check", None)
+
+    def _dim(text):
+        return ('<div class="tabsig tabsig_l">%s</div>' % html.escape(text))
+
+    lead = "  ·  ".join(x for x in (name, tier) if x)
+    tail = "  ·  ".join([""] + ([who] if who else []) + [""])
+
     with st.container(key="boxlinks_foot"):
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            # IT SAYS WHAT IS RUNNING, NOT WHAT IT WOULD SWITCH TO.
-            #
-            # Baba, 6.9.2026: "I just want to be edge or Google. When
-            # it's edge, it's edge. When it's Google, it's Google. We
-            # don't write there what is not present. I want to see what
-            # is present at the moment I click, and then it switch to
-            # another one... I want to have this like a status line."
-            #
-            # v250 read "⇄ switch to Gemini", which is the OTHER engine
-            # — so the one word on screen was always the one word that
-            # was NOT true. At a glance that is worse than saying
-            # nothing: it answers "which am I on" with the wrong name.
-            #
-            # NO GLYPH EITHER. A mark beside a status is a second thing
-            # to read before the first one lands, and the underline
-            # already says it can be pressed.
-            #
-            # Where it would go is in the HELP, which is a tooltip and
-            # not on the page — so the line stays one word.
-            label = eng.short if eng else t("eng_mixed")
-            if nxt is None:
-                why = t("eng_only_one")
-            elif not ready:
-                why = t("eng_not_ready") % nxt.label
-            else:
-                why = t("eng_switch_to") % nxt.short
-
-            def _flip():
-                st.session_state.update(EN.route_settings(nxt))
-                st.session_state[EN.SETTING_KEY] = nxt.id
-                st.session_state.pop("_engine_check", None)
-
-            st.button(label, key="eng_flip", help=why, disabled=not ready,
-                      on_click=_flip if ready else None)
-        with c2:
+        cols = st.columns([0.001 + 0.30, 0.001 + 0.26,
+                           0.001 + 0.16, 0.001 + 0.20, 1.0])
+        cols[0].markdown(_dim(lead + "  ·"), unsafe_allow_html=True)
+        with cols[1]:
+            st.button(engine_status(eng), key="eng_flip", help=why,
+                      disabled=not ready, on_click=_flip if ready else None)
+        cols[2].markdown(_dim(tail if who else "·"), unsafe_allow_html=True)
+        with cols[3]:
             st.button(t("log_out_link"), key="foot_logout",
                       help=t("log_out_link"), on_click=log_out)
 
