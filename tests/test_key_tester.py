@@ -430,6 +430,84 @@ check("Google's measured facts are unchanged in the provider",
 
 # =====================================================================
 print()
+print("4b THE SPINNER, THE SPEED, AND WHAT MAY BE DELETED")
+# =====================================================================
+
+_run = CODE.split("def _kt_run_tests")[1].split("\ndef ")[0]
+check("the runner region was found (%d chars)" % len(_run),
+      300 < len(_run) < 3000, len(_run))
+
+# PARALLEL, because every one of these waits on a network.
+check("keys are tested in parallel", "ThreadPoolExecutor" in _run)
+check("...eight at a time, not all twenty-one at once",
+      "KT_WORKERS" in _run and "KT_WORKERS = 8" in CODE)
+check("results are taken as they LAND, not in submission order — the "
+      "name shown must be the one that just finished",
+      "as_completed(futures)" in _run)
+
+# THE MAIN THREAD DRAWS. A worker calling st.* writes into nothing.
+check("no st.* call happens inside a worker",
+      "kt_verdict" in _run and "pool.submit(kt_verdict" in _run)
+check("the drawing is done in the loop on the main thread",
+      "slot.text(" in _run)
+
+# NOT on_click: a callback cannot draw, so the spinner would appear only
+# after the last key answered — which is the wait being complained about.
+check("Test all runs inline, not through on_click",
+      'st.button(t("kt_test_all"), key="kt_test")' in CODE
+      and 'key="kt_test",\n                          on_click' not in CODE)
+
+# THE SPINNER.
+check("the spinner is braille", all(0x2800 <= ord(c) <= 0x28FF
+                                    for c in eval('"' + CODE.split('KT_SPIN = "')[1].split('"')[0] + '"')))
+_frames = eval('"' + CODE.split('KT_SPIN = "')[1].split('"')[0] + '"')
+check("it has ten frames", len(_frames) == 10, len(_frames))
+check("every frame is ONE cell, so the text beside it cannot jitter",
+      len(set(len(f) for f in _frames)) == 1)
+check("the status shows the NAME being tested", '(row["label"] or' in _run)
+check("...and a count, so 'how far through' is answerable",
+      '%d / %d' in _run)
+check("...and the counter cannot run past the total",
+      "done, total" in _run)
+
+# WHAT MAY BE DELETED, AND WHAT MAY NOT. This is the one that protects
+# live accounts, so it is asserted on the RULE and not on the button.
+_drop = CODE.split("def _kt_drop")[1].split("st.button")[0]
+check("the drop region was found (%d chars)" % len(_drop),
+      40 < len(_drop) < 600, len(_drop))
+
+from ttt.providers import google as _G           # noqa: E402
+check("refused is the only deletable verdict", _G.deletable(_G.REFUSED))
+for keep in (_G.WORKING, _G.BUSY, _G.NO_CREDIT, _G.UNKNOWN):
+    check("%r is NOT deletable" % keep, not _G.deletable(keep))
+# SCOPED TO THE DROP FUNCTION. The first version greped the whole file,
+# and deletable() also appears in the list that COUNTS the refused keys
+# just above — so rewriting the drop filter to "everything not working"
+# left this green while the button deleted live no-credit accounts. The
+# most dangerous mutation in this set was the one my check could not see.
+check("the DROP ITSELF asks deletable(), not its own opinion",
+      "GOOGLE_P.deletable(" in _drop, _drop)
+check("...and it keeps everything deletable() says no to",
+      "if not GOOGLE_P.deletable(" in _drop, _drop)
+check("the drop never compares against WORKING, which would bin "
+      "no-credit and unknown accounts alike",
+      "WORKING" not in _drop, _drop)
+check("UNKNOWN is offered a RETRY before any bin",
+      't("kt_retry")' in CODE and 'GOOGLE_P.UNKNOWN' in CODE)
+check("...and the note says a 503 is the service, not the key",
+      "503" in RAW.split('"kt_unknown_note"')[1][:400])
+check("the remove help says out-of-credit accounts are alive",
+      "alive" in RAW.split('"kt_drop_help"')[1][:400])
+
+# DELETING TOUCHES ONLY THE LIST THAT BUILDS THE BLOCK. Nothing is
+# revoked at the provider and no ring is written.
+check("dropping only rewrites the parsed list",
+      "st.session_state[KT_STATE] = keep" in _drop)
+check("...and calls nothing that could revoke anything",
+      "delete" not in _drop.lower() and "revoke" not in _drop.lower())
+
+# =====================================================================
+print()
 print("5 THE STALE-MODULE GUARD — the outage of 6.9.2026")
 # =====================================================================
 #

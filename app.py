@@ -682,6 +682,12 @@ STRINGS = {
     "kt_cloud":           {"en": "On Streamlit Cloud an app cannot write its own Secrets. Copy the block into Settings → Secrets.",
                            "hr": "Na Streamlit Cloudu aplikacija ne može pisati vlastite Secrets. Kopiraj blok u Settings → Secrets."},
     "kt_clear":           {"en": "Forget these keys", "hr": "Zaboravi ove ključeve"},
+    "kt_drop":            {"en": "Remove the %d refused key(s)", "hr": "Ukloni %d odbijen(ih) ključ(eva)"},
+    "kt_drop_help":       {"en": "Only keys Google or the provider actually rejected — 401 or 403. Out of credit and busy are never removed: those accounts are alive.",
+                           "hr": "Samo ključevi koje je pružatelj stvarno odbio — 401 ili 403. Bez kredita i zauzeti se nikada ne uklanjaju: ti su računi živi."},
+    "kt_unknown_note":    {"en": "%d key(s) did not answer. That is the service, not the key — a 503 says nothing about the account. Test them again before removing anything.",
+                           "hr": "%d ključ(eva) nije odgovorilo. To je usluga, ne ključ — 503 ne govori ništa o računu. Testiraj ih ponovno prije uklanjanja."},
+    "kt_retry":           {"en": "Test the %d that did not answer", "hr": "Testiraj %d koji nisu odgovorili"},
     "keys_from_secrets":  {"en": "Keys come from Streamlit Secrets: %s",
                            "hr": "Ključevi dolaze iz Streamlit Secrets: %s"},
     "test_keys_btn":      {"en": "Test keys",           "hr": "Testiraj ključeve"},
@@ -4526,6 +4532,63 @@ def kt_verdict(provider_id: str, key: str, secret: str = ""):
     if kind == "dead":
         return GOOGLE_P.REFUSED, str(err)[:160]
     return GOOGLE_P.UNKNOWN, str(err)[:160]
+
+
+# THE BRAILLE SPINNER. Eight dots in one cell, so the whole animation
+# happens inside a single character and nothing on the line moves. A
+# spinner made of slashes or blocks changes width between frames and
+# makes the text beside it jitter, which on a phone reads as the page
+# redrawing rather than as work happening.
+KT_SPIN = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
+
+# Eight at a time. Every one of these is waiting on a network rather
+# than on a processor, and they are separate ACCOUNTS, so no per-key
+# limit is shared between them. Eight rather than twenty-one because a
+# burst of twenty-one connections from one address is the shape that
+# gets a client blocked, and the gain from there on is small.
+KT_WORKERS = 8
+
+
+def _kt_run_tests(rows):
+    """Test these rows in parallel, drawing progress as answers land.
+
+    THE MAIN THREAD DOES ALL THE DRAWING. Streamlit's script context
+    belongs to one thread; a worker calling st.* either raises or writes
+    into nothing. So the workers only make HTTP calls and return, and
+    this loop — on the main thread — paints each result as it arrives.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    todo = [r for r in rows if r["provider"] in KP.KNOWN_HERE]
+    if not todo:
+        return
+    slot = st.empty()
+    done = 0
+    total = len(todo)
+    with ThreadPoolExecutor(max_workers=KT_WORKERS) as pool:
+        futures = {}
+        for r in todo:
+            futures[pool.submit(kt_verdict, r["provider"], r["key"],
+                                r.get("secret", ""))] = r
+        # as_completed, NOT the submission order: the point of showing a
+        # name is that it is the name of something that just finished,
+        # and a fixed order would show a name that answered ten seconds
+        # ago while the spinner turns for a different key.
+        for fut in as_completed(futures):
+            row = futures[fut]
+            try:
+                v, d = fut.result()
+            except Exception as e:                           # noqa: BLE001
+                v, d = GOOGLE_P.UNKNOWN, str(e)[:160]
+            row["verdict"], row["detail"] = v, d
+            done += 1
+            # THE NAME, THE COUNT, AND A MOVING CHARACTER. All three,
+            # because each answers a different question: what is it
+            # doing, how far through is it, and is it alive at all.
+            slot.text("%s  %s  %d / %d" % (
+                KT_SPIN[done % len(KT_SPIN)], (row["label"] or row["provider"])[:24],
+                done, total))
+    slot.text("%d / %d" % (total, total))
 
 
 def kt_secrets_block(found, reveal: bool = False) -> str:
@@ -11227,16 +11290,52 @@ elif active == "settings":
                 mine = [f for f in found if f["provider"] in KP.KNOWN_HERE]
                 other = len(found) - len(mine)
 
-                def _kt_test_all():
-                    for row in st.session_state.get(KT_STATE) or []:
-                        if row["provider"] not in KP.KNOWN_HERE:
-                            continue
-                        v, d = kt_verdict(row["provider"], row["key"],
-                                          row.get("secret", ""))
-                        row["verdict"], row["detail"] = v, d
+                # TESTING, IN PARALLEL, WITH SOMETHING TO WATCH.
+                #
+                # Baba, 6.9.2026: "Testing of key is very slow... put
+                # braille spinner there. And next to the braille spinner
+                # give me status which keys you are testing, so I know
+                # where you are. You are not stuck, you are doing
+                # something."
+                #
+                # Twenty-one keys one after another is twenty-one round
+                # trips end to end, and every one of them is waiting on
+                # a network rather than on a processor. They are also
+                # TWENTY-ONE DIFFERENT ACCOUNTS, so no per-key rate limit
+                # can be hit by running them together — the thing that
+                # would make parallel wrong here does not apply.
+                #
+                # NOT on_click. A callback cannot draw, so the spinner
+                # would appear only after the last key answered, which is
+                # precisely the wait he is describing. Run inline, and
+                # let the main thread paint each result as it lands.
+                if st.button(t("kt_test_all"), key="kt_test"):
+                    _kt_run_tests(st.session_state.get(KT_STATE) or [])
+                    st.rerun()
 
-                st.button(t("kt_test_all"), key="kt_test",
-                          on_click=_kt_test_all)
+                _un = [r for r in found
+                       if r["verdict"] == GOOGLE_P.UNKNOWN]
+                _bad = [r for r in found
+                        if GOOGLE_P.deletable(r["verdict"])]
+
+                # UNKNOWN IS NOT A VERDICT ABOUT THE KEY, so the first
+                # thing offered for it is another go, not a bin. Both of
+                # the unknowns in Baba's run were 503 — Google's own
+                # server having a bad minute, on accounts that had said
+                # nothing wrong.
+                if _un:
+                    st.caption(t("kt_unknown_note") % len(_un))
+                    if st.button(t("kt_retry") % len(_un), key="kt_retry"):
+                        _kt_run_tests(_un)
+                        st.rerun()
+
+                if _bad:
+                    def _kt_drop():
+                        keep = [r for r in (st.session_state.get(KT_STATE) or [])
+                                if not GOOGLE_P.deletable(r["verdict"])]
+                        st.session_state[KT_STATE] = keep
+                    st.button(t("kt_drop") % len(_bad), key="kt_drop",
+                              on_click=_kt_drop, help=t("kt_drop_help"))
 
                 # ONE ROW PER KEY, MASKED, WITH ITS ACCOUNT NAME. Never
                 # the middle of a key, and never a bare position — a
