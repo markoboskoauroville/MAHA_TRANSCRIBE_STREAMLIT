@@ -94,6 +94,12 @@ if getattr(sys, "_ttt_build", None) != _BUILD_STAMP:
     sys._ttt_build = _BUILD_STAMP
 
 import talk_engine as tk
+from ttt import keyparse as KP
+# THE FIVE WORDS LIVE IN ONE PLACE. providers/google.py owns them because
+# that is where they were measured; every other provider's three-word
+# kind is translated INTO them here rather than each panel inventing its
+# own vocabulary. keyring.md §2d.
+from ttt.providers import google as GOOGLE_P
 from ttt import keyring as kr
 from ttt.providers import assemblyai as AAI
 from ttt import providers as PROVIDERS
@@ -649,6 +655,31 @@ STRINGS = {
     "method_gap":         {"en": "Note: one or more parts could not be transcribed (marked […] in the text).",
                             "hr": "Napomena: jedan ili više dijelova nije transkribiran (označeno […] u tekstu)."},
     "speechify_title":    {"en": "Speechify (premium voices)", "hr": "Speechify (premium glasovi)"},
+    "kt_title":           {"en": "Key tester", "hr": "Tester ključeva"},
+    "kt_intro":           {"en": "Paste anything with keys in it — a note, a dashboard export, an old secrets block. Nothing is saved until you copy the result into Secrets.",
+                           "hr": "Zalijepi bilo što s ključevima — bilješku, izvoz s nadzorne ploče, stari secrets blok. Ništa se ne sprema dok rezultat ne kopiraš u Secrets."},
+    "kt_paste":           {"en": "Paste keys", "hr": "Zalijepi ključeve"},
+    "kt_ph":              {"en": "Any messy text is fine. Account names above keys are kept.",
+                           "hr": "Neuredan tekst je u redu. Imena računa iznad ključeva se čuvaju."},
+    "kt_parse":           {"en": "Read keys", "hr": "Pročitaj ključeve"},
+    "kt_found":           {"en": "%d key(s) found", "hr": "Pronađeno ključeva: %d"},
+    "kt_none":            {"en": "No keys found in that.", "hr": "Nema ključeva u tome."},
+    "kt_test_all":        {"en": "Test all", "hr": "Testiraj sve"},
+    "kt_untested":        {"en": "not tested", "hr": "nije testirano"},
+    "kt_other":           {"en": "%d key(s) for providers this app does not use — recognised, not written.",
+                           "hr": "%d ključ(eva) za pružatelje koje ova aplikacija ne koristi — prepoznati, nisu upisani."},
+    "kt_block":           {"en": "The secrets block", "hr": "Secrets blok"},
+    "kt_reveal":          {"en": "Show the real keys", "hr": "Prikaži prave ključeve"},
+    "kt_masked_note":     {"en": "Masked. Tick above to show the real keys before copying.",
+                           "hr": "Maskirano. Označi iznad za prikaz pravih ključeva prije kopiranja."},
+    "kt_real_note":       {"en": "These are real keys. Copy into Settings → Secrets, then untick.",
+                           "hr": "Ovo su pravi ključevi. Kopiraj u Settings → Secrets, pa odznači."},
+    "kt_download":        {"en": "Download secrets.toml", "hr": "Preuzmi secrets.toml"},
+    "kt_write":           {"en": "Write it to this machine", "hr": "Zapiši na ovo računalo"},
+    "kt_wrote":           {"en": "Written to %s — restart to load it.", "hr": "Zapisano u %s — ponovno pokreni za učitavanje."},
+    "kt_cloud":           {"en": "On Streamlit Cloud an app cannot write its own Secrets. Copy the block into Settings → Secrets.",
+                           "hr": "Na Streamlit Cloudu aplikacija ne može pisati vlastite Secrets. Kopiraj blok u Settings → Secrets."},
+    "kt_clear":           {"en": "Forget these keys", "hr": "Zaboravi ove ključeve"},
     "keys_from_secrets":  {"en": "Keys come from Streamlit Secrets: %s",
                            "hr": "Ključevi dolaze iz Streamlit Secrets: %s"},
     "test_keys_btn":      {"en": "Test keys",           "hr": "Testiraj ključeve"},
@@ -4407,6 +4438,145 @@ def all_keys_from_secrets() -> dict:
     """
     return {p.id: keys_from_secrets(p.id)
             for p in PROVIDERS.keyed_providers()}
+
+
+# =====================================================================
+#  THE KEY TESTER, AND THE SECRETS BLOCK IT WRITES
+# =====================================================================
+#
+# Baba: "Just make one entry for administrator, a key tester... look in
+# repository, it's called Key Tester Android app. Everything that that
+# Android app does, this key tester supposed to do here... there should
+# be option fill secrets, and then it will take all these keys and make
+# new secret. There should be also a form to put all the keys needed,
+# and then the secret file will be generated in front of my eyes."
+#
+# THIS IS NOT THE PASTE BOX THAT WAS JUST REMOVED, and the difference is
+# the whole reason both can be true at once. That box wrote keys into a
+# person's RING, which is why every provider then had two sources of
+# truth and localStorage held credentials. This writes NOTHING. It reads
+# a messy note, says which provider each key belongs to, asks each
+# provider whether the key works, and produces a TOML block for somebody
+# to paste into Settings → Secrets. The keys go in one side and come out
+# the other formatted; they never touch a ring, a file or localStorage
+# unless the person deliberately presses the write button on a machine
+# where that is possible at all.
+
+KT_STATE = "_kt_found"          # [{provider,key,secret,label,verdict,detail}]
+
+
+def kt_verdict(provider_id: str, key: str, secret: str = ""):
+    """Ask the provider to do the smallest real thing it sells.
+
+    keyring.md §2c, measured across six providers: a LIST call answers
+    200 for an account with zero credit, so it proves the key is real and
+    nothing else. The spent account then gets handed out, the real call
+    fails, and the account is condemned as broken when it was merely
+    empty. So every probe here is work, not a listing.
+
+    FIVE WORDS, NOT TWO. keyring.md §2d. `busy` and `no credit` are both
+    HEALTHY accounts and must never read as failures — calling no-credit
+    `refused` has somebody delete a live account they only needed to top
+    up, and calling it `working` sends the ring at a wall.
+    """
+    prov = PROVIDERS.get(provider_id)
+    if prov is None:
+        return GOOGLE_P.UNKNOWN, "this app has no provider for that"
+    try:
+        if provider_id == "hume":
+            err, kind = hume_test_one(key, secret)
+        else:
+            err, kind = prov.test_key(key)
+    except Exception as e:                                   # noqa: BLE001
+        return GOOGLE_P.UNKNOWN, str(e)[:160]
+    if not err:
+        return GOOGLE_P.WORKING, ""
+    low = str(err).lower()
+    # THE MONEY WORDS FIRST, and only unambiguous ones. Every provider
+    # here spells "out of credit" differently and picks a different
+    # status for it — Hume 400, Speechify 402, Google 429 — so the WORDS
+    # are matched and the code is not. keyring.md §2e.
+    if any(m in low for m in GOOGLE_P.MONEY_MARKS):
+        return GOOGLE_P.NO_CREDIT, str(err)[:160]
+    if kind == "cool":
+        return GOOGLE_P.BUSY, str(err)[:160]
+    if kind == "dead":
+        return GOOGLE_P.REFUSED, str(err)[:160]
+    return GOOGLE_P.UNKNOWN, str(err)[:160]
+
+
+def kt_secrets_block(found, reveal: bool = False) -> str:
+    """The finished TOML, with the real keys in it.
+
+    BUILT FROM SECRET_NAMES, like secrets_template() and
+    keys_from_secrets(), so all three agree by construction. A name that
+    exists in one and not the others is exactly the drift that ends in
+    somebody pasting a block the app does not read.
+
+    MASKED UNLESS ASKED. keyring.md §6 says a key is shown masked; Baba
+    asked to see the block "in front of my eyes", and both are satisfied
+    by a tick-box that is off until he presses it. The default being
+    masked is not caution for its own sake — this panel is most likely to
+    be open on a phone, and a screenshot of it is a screenshot of every
+    key he owns.
+    """
+    def show(k):
+        return k if reveal else kr.mask(k)
+
+    groups = KP.by_provider([f for f in found if f.known_here])
+    out = []
+    for pid in KP.KNOWN_HERE:
+        items = groups.get(pid) or []
+        if not items:
+            continue
+        names = SECRET_NAMES.get(pid) or ()
+        if not names:
+            continue
+        name = names[0]
+        for line in SECRET_NOTES.get(name, ()):
+            out.append("# %s" % line if line else "#")
+        if name in SECRET_PAIRS:
+            for f in items:
+                out.append("[[%s]]" % name)
+                out.append('name = "%s"' % (f.label or "account"))
+                out.append('key = "%s"' % show(f.key))
+                out.append('secret = "%s"' % show(f.secret or ""))
+                out.append("")
+            continue
+        if name in SECRET_SINGLE:
+            out.append('%s = "%s"' % (name, show(items[0].key)))
+            if len(items) > 1:
+                out.append("# %d more key(s) found; this name takes only one."
+                           % (len(items) - 1))
+        else:
+            out.append("%s = [" % name)
+            for f in items:
+                # THE ACCOUNT NAME RIDES ALONG AS A COMMENT. "key 7 of 21
+                # is unpaid" is useless and "kalabhumi is unpaid" is
+                # something a person can act on — and a TOML list cannot
+                # carry a label any other way.
+                tail = "    # %s" % f.label if f.label else ""
+                out.append('    "%s",%s' % (show(f.key), tail))
+            out.append("]")
+        out.append("")
+    return "\n".join(out).rstrip() + "\n" if out else ""
+
+
+def kt_can_write_locally() -> bool:
+    """Can this process actually write .streamlit/secrets.toml?
+
+    On Streamlit Community Cloud it cannot — Secrets live in the
+    dashboard, the checkout is not writable, and an app that could
+    rewrite its own credentials would be a way in rather than a feature.
+    So the button is only offered where the write would really happen,
+    and the honest sentence is shown everywhere else.
+    """
+    try:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         ".streamlit")
+        return os.path.isdir(d) and os.access(d, os.W_OK)
+    except Exception:                                        # noqa: BLE001
+        return False
 
 
 def hume_error_kind(status: int, body: str = "") -> str:
@@ -10928,6 +11098,107 @@ elif active == "settings":
         if any(filled.values()):
             st.session_state["_key_msg"] = "%s: %d" % (
                 t("keys_added"), sum(filled.values()))
+
+        # ---- THE KEY TESTER ---------------------------------------
+        #
+        # ONE ENTRY, FOR THE ADMINISTRATOR. It sits inside the
+        # is_admin() branch with everything else on this screen, so a
+        # free user never meets it — a tool that prints real keys is not
+        # something to leave where somebody else's thumb can reach.
+        with st.expander(t("kt_title")):
+            st.caption(t("kt_intro"))
+            st.text_area(t("kt_paste"), key="kt_text", height=110,
+                         label_visibility="collapsed",
+                         placeholder=t("kt_ph"))
+            up = st.file_uploader(t("kt_paste"), key="kt_file",
+                                  label_visibility="collapsed")
+
+            def _kt_parse():
+                raw = str(st.session_state.get("kt_text") or "")
+                f = st.session_state.get("kt_file")
+                if f is not None:
+                    try:
+                        raw += "\n" + f.getvalue().decode("utf-8", "replace")
+                    except Exception:                        # noqa: BLE001
+                        pass
+                st.session_state[KT_STATE] = [
+                    {"provider": x.provider, "key": x.key,
+                     "secret": x.secret or "", "label": x.label,
+                     "verdict": "", "detail": ""}
+                    for x in KP.extract(raw)]
+
+            def _kt_forget():
+                # THE KEYS LEAVE WHEN HE SAYS SO. They live in
+                # session_state for as long as this panel is open and
+                # nowhere else — not localStorage, not a ring, not the
+                # server file. This is the button that ends that.
+                st.session_state.pop(KT_STATE, None)
+                st.session_state["kt_text"] = ""
+
+            c1, c2 = st.columns(2)
+            c1.button(t("kt_parse"), key="kt_go", on_click=_kt_parse)
+            c2.button(t("kt_clear"), key="kt_forget", on_click=_kt_forget)
+
+            found = st.session_state.get(KT_STATE) or []
+            if found:
+                st.caption(t("kt_found") % len(found))
+                mine = [f for f in found if f["provider"] in KP.KNOWN_HERE]
+                other = len(found) - len(mine)
+
+                def _kt_test_all():
+                    for row in st.session_state.get(KT_STATE) or []:
+                        if row["provider"] not in KP.KNOWN_HERE:
+                            continue
+                        v, d = kt_verdict(row["provider"], row["key"],
+                                          row.get("secret", ""))
+                        row["verdict"], row["detail"] = v, d
+
+                st.button(t("kt_test_all"), key="kt_test",
+                          on_click=_kt_test_all)
+
+                # ONE ROW PER KEY, MASKED, WITH ITS ACCOUNT NAME. Never
+                # the middle of a key, and never a bare position — a
+                # masked key plus the name it came in under is what lets
+                # somebody act on "this one is unpaid".
+                for row in found:
+                    known = row["provider"] in KP.KNOWN_HERE
+                    verdict = row["verdict"] or t("kt_untested")
+                    st.text("%-11s %-18s %-22s %s" % (
+                        row["provider"], (row["label"] or "-")[:18],
+                        kr.mask(row["key"]),
+                        verdict if known else "-"))
+                    if row["detail"]:
+                        st.caption(row["detail"])
+                if other:
+                    st.caption(t("kt_other") % other)
+
+                # ---- THE BLOCK, IN FRONT OF HIS EYES ------------
+                st.markdown("**%s**" % t("kt_block"))
+                reveal = st.checkbox(t("kt_reveal"), key="kt_reveal")
+                block = kt_secrets_block(
+                    [KP.Found(r["key"], r["provider"], r["label"],
+                              r["secret"] or None) for r in found],
+                    reveal=reveal)
+                st.code(block or "", language="toml")
+                st.caption(t("kt_real_note") if reveal
+                           else t("kt_masked_note"))
+
+                if reveal and block:
+                    st.download_button(t("kt_download"), block,
+                                       file_name="secrets.toml",
+                                       mime="text/plain", key="kt_dl")
+                    if kt_can_write_locally():
+                        def _kt_write(b=block):
+                            path = os.path.join(
+                                os.path.dirname(os.path.abspath(__file__)),
+                                ".streamlit", "secrets.toml")
+                            with open(path, "w", encoding="utf-8") as fh:
+                                fh.write(b)
+                            st.session_state["_key_msg"] = t("kt_wrote") % path
+                        st.button(t("kt_write"), key="kt_write",
+                                  on_click=_kt_write)
+                    else:
+                        st.caption(t("kt_cloud"))
 
         if st.session_state.get("_key_msg"):
             st.caption(st.session_state.pop("_key_msg"))
