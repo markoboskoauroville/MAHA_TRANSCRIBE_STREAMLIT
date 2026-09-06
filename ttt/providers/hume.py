@@ -66,14 +66,72 @@ class Hume(Provider):
                 {"Authorization": "Basic " + basic,
                  "Content-Type": "application/x-www-form-urlencoded",
                  "User-Agent": UA},
-                payload="grant_type=client_credentials", method="POST",
+                # data=, NOT payload=. http_json JSON-ENCODES payload,
+                # so the form body arrived as a quoted JSON string and
+                # Hume answered 400 "invalid grant type" for every pair.
+                # This path was broken and invisible: app.py had its own
+                # copy of the probe and never called this one, which is
+                # exactly what keyring.md §9 means by two copies with a
+                # rule about keeping them in step.
+                data=b"grant_type=client_credentials", method="POST",
                 timeout=30, classify=classify)
-            return err, kind
+            if err:
+                return err, kind
+            # THE TOKEN PROVED THE PAIR. IT DID NOT PROVE THE ACCOUNT.
+            #
+            # keyring.md §2c names this exact call: "Hume's
+            # /oauth2-cc/token is the same lie in a different shape: it
+            # proves the pair, and three of the twenty-one accounts on
+            # this ring pass it and refuse every synthesis." Stopping
+            # here reports working for an account that cannot make a
+            # sound, and the person finds out mid-sentence.
+            #
+            # AND THE TWO PROBES CHECK DIFFERENT HALVES, which is why
+            # both run rather than one replacing the other:
+            #     token  Basic base64(key:secret)  proves the PAIR
+            #     work   X-Hume-Api-Key alone      proves there is CREDIT
+            # apis/hume.md is right that only the token proves the
+            # secret; §2c is right that only work proves the account.
+            # Neither is sufficient.
+            #
+            # The docstring above used to say "never generating one", on
+            # the reasoning that synthesis spends a rate-limit slot. That
+            # is true and it is the smaller cost: one utterance is a
+            # fraction of a cent, and being told an empty account is fine
+            # costs a reading.
+            return self.work_probe(key)
+        # NO SECRET — an older ring that stored keys alone. The pair
+        # cannot be proved, so this proves what it can: that the key
+        # can do work. keyring.md 2c's warning still applies and the
+        # honest answer is a weaker test, not a refusal to test.
+        return self.work_probe(key)
+
+    def _voice_list_probe(self, key: str):
+        """Kept for reference: this is a LIST call and proves only that
+        the key is real. Not used by test_key any more — see 2c."""
         _, err, kind = http_json(
             API + "/tts/voices?provider=HUME_AI&page_size=1",
             {"X-Hume-Api-Key": key, "Accept": "application/json",
              "User-Agent": UA},
             timeout=30, classify=classify)
+        return err, kind
+
+    def work_probe(self, key: str):
+        """The smallest billable thing Hume sells. (error, kind).
+
+        keyring.md §2h: one utterance, NO VOICE ID — the probe must not
+        depend on a voice still existing, or a renamed voice reads as a
+        dead account.
+
+        MEASURED 6.9.2026 across five of Baba's seventeen pairs: four
+        answered 200 to both this and the token call; av.live.vmix
+        answered 401 to both, "Invalid ApiKey".
+        """
+        _, err, kind = http_json(
+            API + "/tts",
+            {"X-Hume-Api-Key": key, "User-Agent": UA},
+            payload={"utterances": [{"text": "Hi"}]}, method="POST",
+            timeout=90, classify=classify)
         return err, kind
 
     def voices(self, lang: str = ""):

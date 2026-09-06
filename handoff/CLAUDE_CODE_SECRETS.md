@@ -153,8 +153,56 @@ are optional, not dead.
 
 ---
 
+## 4e. THERE IS A SCRIPT. RUN IT RATHER THAN WRITING ONE.
+
+    python3 tools/keys_to_toml.py ~/that-folder --dry-run
+    python3 tools/keys_to_toml.py ~/that-folder -o secrets.toml
+
+It reads every text file in the folder, finds the keys by shape and by
+label, **tests every one against its provider**, and writes a
+`secrets.toml` holding only the ones that can do work. Run `--dry-run`
+first: it tests and reports and writes nothing.
+
+**Baba, 6.9.2026: "He needs to test all the keys in the folder and then
+not to write in secrets one which is not working."** That is what it
+does, and the interesting part is what "not working" turns out to mean:
+
+    working    -> written
+    busy       -> WRITTEN. A throttled key is a healthy key having a
+                  busy minute. Dropping it because the test caught it
+                  mid-limit throws away an account that would have
+                  worked a second later.
+    unknown    -> RETRIED three times, and written even if it stays
+                  unknown. This is not caution: on 6.9.2026 three of
+                  twenty-one Google keys answered 503 on the first pass
+                  and ALL THREE worked on the retry. One of them was
+                  kalabhumi, the account every live test that day ran
+                  through. A tool that dropped unknowns would have
+                  deleted three live accounts.
+    no credit  -> dropped, BY NAME, never silently. The account is alive
+                  and needs paying, not deleting. `--keep-empty` puts
+                  them back.
+    refused    -> never written. 401/403 is the provider rejecting the
+                  credential.
+
+**MEASURED against Marko's two real files, 6.9.2026:** 38 credentials
+found, 34 written, 4 left out — `community` refused, `caffeteria` and
+`marko croatia` out of credit, `av.live.vmix`'s Hume pair refused. The
+written file parsed as TOML with 18 Google keys and 16 Hume pairs.
+
+It writes mode 0600 and **proves the file parses before you hand it
+over**. It never prints a key.
+
+**It does not invent the access lines** — `ADMIN_USER1`, `FREE_USER1`,
+`APP_PASSWORDS`. No tool can know those. It writes them as commented
+placeholders at the top and you fill them in with him.
+
+---
+
 ## 5. THE ORDER TO WORK IN
 
+0. **Run the script first** (§4e) and read its report. Everything below
+   is what to do around it, and what to do if it finds nothing.
 1. **Read the folder without printing it.** Count lines, lengths and
    prefixes. Say how many keys of each provider you believe are there.
 2. **Extract with `KP.extract`.** Report counts and ACCOUNT NAMES only —
