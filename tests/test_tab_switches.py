@@ -133,20 +133,40 @@ from ttt.providers import google as G  # noqa: E402
 # there and the crash beat it to the answer, which in a sweep reads as
 # nothing wrong at all.
 _shape = {len(v) for v in G.VOICES}
-check("5d0 every voice is a NAME AND AN ADJECTIVE, nothing else — the "
-      "doc: 'do not synthesise those facets... a blank is a fact and a "
-      "guess is not'", _shape == {2}, _shape)
+check("5d0 every voice is NAME, ADJECTIVE, GENDER — nothing else",
+      _shape == {3}, _shape)
 check("5a thirty of them", len(G.VOICES) == 30, len(G.VOICES))
-check("5b no duplicates", _shape == {2} and len(set(G.voice_names())) == 30)
+check("5b no duplicates", _shape == {3} and len(set(G.voice_names())) == 30)
 check("5c every one carries Google's own adjective",
-      all(tone for _, tone in G.VOICES))
-check("5d and NOTHING ELSE — checked as 5d0 above, before anything "
-      "unpacks the table", _shape == {2}, _shape)
+      all(tone for _, tone, _g in G.VOICES))
+# THE THIRD FIELD ARRIVED, AND THIS CHECK WAS RIGHT TO GUARD AGAINST IT.
+#
+# It read "a NAME AND AN ADJECTIVE, nothing else", quoting the rule "do
+# not synthesise those facets... a blank is a fact and a guess is not".
+# The RULE has not changed and is not being bent. What changed is the
+# FACT: gender is published, in Google Cloud's own Gemini-TTS table,
+# with a name, a gender and an audio demo for each of the thirty. The
+# old claim came from the AI Studio page, which lists an adjective only.
+#
+# So a third field is allowed when Google publishes it and forbidden
+# when it does not. AGE AND ACCENT ARE STILL NOT PUBLISHED and must not
+# appear — which is what a fourth field would mean, and why the shape is
+# still pinned rather than loosened.
+check("5d gender is one of Google's two values, never blank, never a "
+      "guess", {g for _n, _t, g in G.VOICES} == {"F", "M"},
+      {g for _n, _t, g in G.VOICES})
+check("5d1 fourteen female, sixteen male, as Google's table lists them",
+      (sum(1 for _n, _t, g in G.VOICES if g == "F"),
+       sum(1 for _n, _t, g in G.VOICES if g == "M")) == (14, 16))
+check("5d2 NO FOURTH FIELD — age and accent are still unpublished and "
+      "must not be invented", _shape == {3}, _shape)
 check("5e an unknown name gives an empty adjective, never a guess",
       G.tone_of("Nobody") == "")
+check("5e1 and an empty gender, never a guess",
+      G.gender_of("Nobody") == "")
 check("5f the filter values are built FROM the table, so a voice added "
       "with a new adjective cannot end up unfilterable",
-      set(G.tones()) == {t for _, t in G.VOICES if t})
+      set(G.tones()) == {t for _n, t, _g in G.VOICES if t})
 check("5g the default is one of them", G.DEFAULT_VOICE in G.voice_names())
 
 print("\n5b THE NAMES ARE MEASURED, NOT RETYPED")

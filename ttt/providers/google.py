@@ -252,10 +252,23 @@ def retry_after(raw):
 
 # ---- THE THIRTY VOICES ----------------------------------------------
 #
-# docs/GOOGLE_ENGINE.md §5: "Thirty prebuilt, and Google publishes ONE
-# ADJECTIVE EACH — no gender, no age, no accent. Do not synthesise those
-# facets from how a name sounds. The VR tab's filters should show what
-# exists and no more; A BLANK IS A FACT AND A GUESS IS NOT."
+# GENDER IS PUBLISHED AFTER ALL, AND THIS FILE SAID IT WAS NOT.
+#
+# The claim came from the AI Studio page, which lists an adjective and
+# nothing else. Google Cloud's OWN Gemini-TTS documentation carries a
+# full table — name, gender, and an audio demo for each of the thirty:
+#
+#     https://docs.cloud.google.com/text-to-speech/docs/gemini-tts
+#
+# So the gender below is DATA, read off Google's table on 6.9.2026, and
+# not a guess made from how a name sounds. The old rule — "do not
+# synthesise those facets" — stands unchanged and is the reason this
+# was checked against Google rather than filled in by ear: fourteen
+# female, sixteen male, and every one of them theirs.
+#
+# The ADJECTIVES are still docs-only and there is still no /voices
+# endpoint (404, measured). Where Google gives nothing, the entry stays
+# empty: a blank is a fact and a guess is not.
 #
 # That rule is the whole of this table. Hume's cast carries an accent and
 # an age because Hume publishes them; Google publishes an adjective and
@@ -272,43 +285,84 @@ def retry_after(raw):
 # data here, and where Google gives none the entry is EMPTY rather than
 # filled with something plausible.
 VOICES = (
-    ("Zephyr", "Bright"),
-    ("Puck", "Upbeat"),
-    ("Charon", "Informative"),
-    ("Kore", "Firm"),
-    ("Fenrir", "Excitable"),
-    ("Leda", "Youthful"),
-    ("Orus", "Firm"),
-    ("Aoede", "Breezy"),
-    ("Callirrhoe", "Easy-going"),
-    ("Autonoe", "Bright"),
-    ("Enceladus", "Breathy"),
-    ("Iapetus", "Clear"),
-    ("Umbriel", "Easy-going"),
-    ("Algieba", "Smooth"),
-    ("Despina", "Smooth"),
-    ("Erinome", "Clear"),
-    ("Algenib", "Gravelly"),
-    ("Rasalgethi", "Informative"),
-    ("Laomedeia", "Upbeat"),
-    ("Achernar", "Soft"),
-    ("Alnilam", "Firm"),
-    ("Schedar", "Even"),
-    ("Gacrux", "Mature"),
-    ("Pulcherrima", "Forward"),
-    ("Achird", "Friendly"),
-    ("Zubenelgenubi", "Casual"),
-    ("Vindemiatrix", "Gentle"),
-    ("Sadachbia", "Lively"),
-    ("Sadaltager", "Knowledgeable"),
-    ("Sulafat", "Warm"),
+    ("Zephyr", "Bright", "F"),
+    ("Puck", "Upbeat", "M"),
+    ("Charon", "Informative", "M"),
+    ("Kore", "Firm", "F"),
+    ("Fenrir", "Excitable", "M"),
+    ("Leda", "Youthful", "F"),
+    ("Orus", "Firm", "M"),
+    ("Aoede", "Breezy", "F"),
+    ("Callirrhoe", "Easy-going", "F"),
+    ("Autonoe", "Bright", "F"),
+    ("Enceladus", "Breathy", "M"),
+    ("Iapetus", "Clear", "M"),
+    ("Umbriel", "Easy-going", "M"),
+    ("Algieba", "Smooth", "M"),
+    ("Despina", "Smooth", "F"),
+    ("Erinome", "Clear", "F"),
+    ("Algenib", "Gravelly", "M"),
+    ("Rasalgethi", "Informative", "M"),
+    ("Laomedeia", "Upbeat", "F"),
+    ("Achernar", "Soft", "F"),
+    ("Alnilam", "Firm", "M"),
+    ("Schedar", "Even", "M"),
+    ("Gacrux", "Mature", "F"),
+    ("Pulcherrima", "Forward", "F"),
+    ("Achird", "Friendly", "M"),
+    ("Zubenelgenubi", "Casual", "M"),
+    ("Vindemiatrix", "Gentle", "F"),
+    ("Sadachbia", "Lively", "M"),
+    ("Sadaltager", "Knowledgeable", "M"),
+    ("Sulafat", "Warm", "F"),
 )
 
 DEFAULT_VOICE = "Kore"
 
 
 def voice_names() -> tuple:
-    return tuple(n for n, _ in VOICES)
+    return tuple(n for n, _t, _g in VOICES)
+
+
+# HOW OFTEN GOOGLE ITSELF REACHES FOR A VOICE.
+#
+# Baba asked for the voices ordered by popularity with the best at the
+# top. Google publishes no popularity and no premium tier — all thirty
+# cost the same — so inventing a ranking would be exactly the guess this
+# module refuses to make elsewhere.
+#
+# What IS observable: which voices Google uses in its own documentation
+# examples. Counted from the Gemini-TTS page on 6.9.2026 — Kore appears
+# in nearly every sample, then Charon and Puck, then Callirrhoe, Aoede,
+# Leda, Algieba, Achernar. That is a real signal about which voices
+# their own writers consider representative, and it is stated as what it
+# is rather than dressed up as popularity.
+#
+# Everything not in this list keeps Google's own table order behind it.
+DOC_FAVOURITES = ("Kore", "Charon", "Puck", "Callirrhoe", "Aoede", "Leda",
+                  "Algieba", "Achernar")
+
+
+def gender_of(name: str) -> str:
+    """"F", "M", or "" — from Google's table, never from the name."""
+    for n, _tone, g in VOICES:
+        if n == name:
+            return g
+    return ""
+
+
+def top_voices(gender: str, limit: int = 10):
+    """The best `limit` voices of one gender, best first.
+
+    TEN IS THE CAP, and it is his: "I want just ten voices, none more
+    than ten." Thirty names in a dropdown is a list nobody reads to the
+    end of, and the ones past ten were never going to be chosen.
+    """
+    want = (gender or "").upper()[:1]
+    pool = [(n, t) for n, t, g in VOICES if not want or g == want]
+    order = {n: i for i, n in enumerate(DOC_FAVOURITES)}
+    pool.sort(key=lambda nt: (order.get(nt[0], len(DOC_FAVOURITES)),))
+    return pool[:max(0, int(limit))]
 
 
 def tone_of(name: str) -> str:
@@ -317,7 +371,7 @@ def tone_of(name: str) -> str:
     An empty answer is the honest one for a voice Google says nothing
     about. The caller shows a blank; it does not fill one in.
     """
-    for n, tone in VOICES:
+    for n, tone, _g in VOICES:
         if n == name:
             return tone
     return ""
@@ -329,7 +383,7 @@ def tones() -> tuple:
     Built from the table rather than written beside it, so a voice added
     with a new adjective cannot end up unfilterable.
     """
-    return tuple(sorted({tone for _, tone in VOICES if tone}))
+    return tuple(sorted({t for _n, t, _g in VOICES if t}))
 
 
 # =====================================================================
@@ -608,7 +662,7 @@ class Google(Provider):
         do not declare would hide twenty-nine of thirty on a guess.
         `gender` stays empty for the same reason — a blank is a fact.
         """
-        return [Voice(n, n, "", "", "gemini") for n, _tone in VOICES]
+        return [Voice(n, n, "", g, "gemini") for n, _tone, g in VOICES]
 
     def default_for(self, lang: str = ""):
         return Voice(DEFAULT_VOICE, DEFAULT_VOICE, "", "", "gemini")

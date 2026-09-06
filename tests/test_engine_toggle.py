@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from streamlit.testing.v1 import AppTest        # noqa: E402
 
 from ttt import engines as EN                   # noqa: E402
-from ttt import providers as P                  # noqa: E402
+from ttt import providers as P
+from ttt.providers import google as GP                  # noqa: E402
 
 passed = failed = 0
 
@@ -390,6 +391,94 @@ check("the log-out region was found (%d chars)" % len(_lo),
 check("logging out also drops the remembered login, or the next run "
       "walks straight back in",
       "queue_ls(removes=[AUTH_LS_KEY])" in _lo, _lo)
+
+
+print()
+print("8 THE VOICE DROPDOWNS — two lists, ten each")
+# =====================================================================
+#
+# Baba, 6.9.2026: "when I change engine there are different voices. You
+# need to give me a drop-down menu for the voices now. Two drop-down
+# menus: male and female... I want just ten voices, none more than ten.
+# In the Gemini Google, in the Edge we already defined what it is."
+
+import shutil                                     # noqa: E402
+SEC = os.path.join(ROOT, ".streamlit", "secrets.toml")
+BAK = SEC + ".voicebak"
+shutil.copy(SEC, BAK)
+try:
+    # A KEY THAT IS NOT A PLACEHOLDER, or google is never USABLE and the
+    # route quietly falls back to Edge — which is what made the first
+    # version of this test look like the dropdowns had not been built.
+    # FACE 5: a .replace() whose pattern misses changes NOTHING and the
+    # test then passes for the wrong reason — here it would silently
+    # leave the placeholder in place, google would not be usable, and
+    # every check below would be testing the Edge picker while claiming
+    # to test Google's. So the target is asserted first.
+    _raw = open(SEC).read()
+    _target = '"AQ.paste_your_first_key_here"'
+    assert _target in _raw, "the placeholder key moved — this edit would miss"
+    _s = _raw.replace(_target, '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"')
+    assert _s != _raw, "the file was not changed"
+    open(SEC, "w").write(_s)
+
+    def gapp():
+        a = app("talk")
+        a.session_state["route_stt"] = "google"
+        a.session_state["route_tts"] = "google"
+        a.session_state["route_llm"] = "google"
+        return a
+
+    g = gapp()
+    g.run()
+    check("the google reader renders", not g.exception, g.exception)
+    boxes = {x.key: x for x in g.selectbox}
+    check("there are TWO dropdowns", len(boxes) == 2, sorted(boxes))
+    check("one female, one male",
+          "talkvoice_f" in boxes and "talkvoice_m" in boxes, sorted(boxes))
+    for key, gender in (("talkvoice_f", "F"), ("talkvoice_m", "M")):
+        opts = boxes[key].options
+        check("%s offers TEN, no more" % key, len(opts) == 10, len(opts))
+        names = [o.split(" — ")[0] for o in opts]
+        check("%s: every name is Google's" % key,
+              all(n in GP.voice_names() for n in names), names[:3])
+        check("%s: every name is that gender, from Google's table" % key,
+              all(GP.gender_of(n) == gender for n in names),
+              [(n, GP.gender_of(n)) for n in names[:3]])
+        check("%s: the adjective is shown beside the name" % key,
+              all(" — " in o for o in opts), opts[:2])
+    check("the two lists share no voice",
+          not (set(boxes["talkvoice_f"].options)
+               & set(boxes["talkvoice_m"].options)))
+    check("the female list leads with the voice Google's own docs use",
+          boxes["talkvoice_f"].options[0].startswith("Kore"),
+          boxes["talkvoice_f"].options[0])
+    check("the labels say Female and Male",
+          {"Female", "Male"} <= {c.value for c in g.caption},
+          [c.value for c in g.caption][:6])
+
+    # PICKING ONE STICKS. A dropdown that resets on every render loses
+    # the choice a person just made — and Streamlit reruns constantly.
+    boxes["talkvoice_m"].select("Puck — Upbeat").run()
+    check("choosing a voice is remembered",
+          sget(g, "google_voice") == "Puck", sget(g, "google_voice"))
+    g.run()
+    check("...and survives a rerun", sget(g, "google_voice") == "Puck",
+          sget(g, "google_voice"))
+
+    # EDGE IS UNTOUCHED. "In the Edge we already defined what it is."
+    e = app("talk")
+    e.run()
+    check("EDGE STILL SHOWS ITS FOUR BUTTONS, not dropdowns",
+          len(e.selectbox) == 0
+          and len([b for b in e.button
+                   if b.key and b.key.startswith("talkvoice_")]) == 4,
+          (len(e.selectbox),
+           [b.key for b in e.button if b.key
+            and b.key.startswith("talkvoice_")]))
+finally:
+    shutil.move(BAK, SEC)
+check("the secrets file was put back", "paste_your" in open(SEC).read())
 
 print()
 print("%d passed, %d failed" % (passed, failed))

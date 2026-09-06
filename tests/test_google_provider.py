@@ -198,13 +198,59 @@ check("the default is one of them", G.DEFAULT_VOICE in G.voice_names())
 gp = G.Google()
 vs = gp.voices()
 check("the provider hands back all thirty", len(vs) == 30, len(vs))
-check("NOTHING is invented: no gender on any voice",
-      all(v.gender == "" for v in vs))
-check("and no language on any voice", all(v.lang == "" for v in vs))
+# GENDER IS PUBLISHED AFTER ALL, and this check used to assert the
+# opposite. The old claim came from the AI Studio page, which lists an
+# adjective and nothing else; Google Cloud's own Gemini-TTS
+# documentation carries a full table of name, gender and an audio demo.
+# So the rule did not change — do not synthesise a facet from how a
+# name sounds — the FACT did: it is now read off Google's table.
+check("every voice carries Google's published gender",
+      all(v.gender in ("F", "M") for v in vs),
+      sorted({v.gender for v in vs}))
+check("fourteen female and sixteen male, as Google lists them",
+      (sum(1 for v in vs if v.gender == "F"),
+       sum(1 for v in vs if v.gender == "M")) == (14, 16),
+      (sum(1 for v in vs if v.gender == "F"),
+       sum(1 for v in vs if v.gender == "M")))
+check("a name Google does not list has no gender invented for it",
+      G.gender_of("Nobody") == "")
+# SPOT-CHECKED AGAINST THE TABLE, both directions, including the two
+# most easily got wrong: Pulcherrima reads male by ear to some and
+# Google lists it Female; Gacrux likewise.
+for _n, _g in (("Kore", "F"), ("Zephyr", "F"), ("Pulcherrima", "F"),
+               ("Gacrux", "F"), ("Charon", "M"), ("Puck", "M"),
+               ("Algieba", "M"), ("Zubenelgenubi", "M")):
+    check("Google lists %s as %s" % (_n, _g), G.gender_of(_n) == _g,
+          G.gender_of(_n))
+
+# TEN, AND NO MORE. Baba: "I want just ten voices, none more than ten."
+for _g in ("F", "M"):
+    _top = G.top_voices(_g, 10)
+    check("%s gives exactly ten" % _g, len(_top) == 10, len(_top))
+    check("...all of that gender",
+          all(G.gender_of(n) == _g for n, _t in _top))
+    check("...none repeated", len({n for n, _t in _top}) == 10)
+    check("...each carrying Google's adjective",
+          all(tone for _n, tone in _top))
+check("the two lists never overlap",
+      not ({n for n, _ in G.top_voices("F", 10)}
+           & {n for n, _ in G.top_voices("M", 10)}))
+check("asking for fewer gives fewer", len(G.top_voices("F", 3)) == 3)
+check("asking for zero gives none", G.top_voices("F", 0) == [])
+check("a nonsense gender gives none", G.top_voices("Z", 10) == [])
+# THE ORDER IS GOOGLE'S OWN DOCUMENTATION USAGE, not an invented
+# popularity — there is no published popularity and no premium tier.
+check("the voices Google itself uses come first",
+      G.top_voices("F", 1)[0][0] == "Kore"
+      and G.top_voices("M", 1)[0][0] == "Charon",
+      (G.top_voices("F", 1), G.top_voices("M", 1)))
+check("and no language on any voice — Gemini voices are not published "
+      "per-language, and filtering by one would hide 29 of 30 on a guess",
+      all(v.lang == "" for v in vs))
 check("an unknown voice's adjective is blank, not a guess",
       G.tone_of("Nobody") == "")
 check("a filter built from the data covers every adjective present",
-      set(G.tones()) == {t for _n, t in G.VOICES if t})
+      set(G.tones()) == {t for _n, t, _g in G.VOICES if t})
 
 # ---- the model chains ------------------------------------------------
 check("the TTS chain has a fallback", len(G.TTS_MODELS) >= 2, G.TTS_MODELS)

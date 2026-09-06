@@ -643,6 +643,8 @@ STRINGS = {
     "stale_modules":      {"en": "This app is running a new app.py against an older copy of its own modules, still held in memory. Nothing is broken in the code. Open **Manage app** at the lower right and press **Reboot app**.",
                            "hr": "Aplikacija koristi novi app.py sa starijom kopijom vlastitih modula koja je ostala u memoriji. Kod nije pokvaren. Otvori **Manage app** dolje desno i pritisni **Reboot app**."},
     "where_am_i":         {"en": "Where am I?", "hr": "Gdje sam?"},
+    "voice_female":       {"en": "Female", "hr": "Ženski"},
+    "voice_male":         {"en": "Male", "hr": "Muški"},
     "log_out_link":       {"en": "log out", "hr": "odjava"},
     "kt_title":           {"en": "Key tester", "hr": "Tester ključeva"},
     "kt_intro":           {"en": "Paste anything with keys in it — a note, a dashboard export, an old secrets block. Nothing is saved until you copy the result into Secrets.",
@@ -5445,7 +5447,7 @@ def change_own_password():
     st.session_state["_pw_msg"] = ("bad", t("pw_secrets_now"))
 
 
-def voice_picker(prefix: str, on_pick=None):
+def voice_picker(prefix: str, on_pick=None, engine: str = ""):
     """Every voice on ONE row, grouped by language.
 
     A REVERSAL, AND A DELIBERATE ONE. The headings were removed once, on
@@ -5459,6 +5461,13 @@ def voice_picker(prefix: str, on_pick=None):
     dim and small, not as headings on lines of their own. The row still
     costs one line, which is what the removal was protecting.
     """
+    # GOOGLE HAS ITS OWN CAST AND ITS OWN SHAPE. Four Edge names fit on
+    # one line as buttons; thirty Gemini names do not, so they are two
+    # dropdowns. Passed in, never read off a global — see the signature.
+    if engine == "google":
+        google_voice_row(prefix, on_pick)
+        return
+
     current = st.session_state.get("voice", "Gabrijela")
     with st.container(key="voicerow"):
         # A narrow cell for each tag, a wider one for each voice.
@@ -5488,6 +5497,72 @@ def voice_picker(prefix: str, on_pick=None):
                 on_click=(lambda n=val: (pick_voice(n), on_pick and on_pick()))
                 if on_pick else pick_voice,
                 args=() if on_pick else (val,))
+
+
+def google_voice_row(prefix="talkg", on_pick=None):
+    """Two dropdowns, female and male, ten voices each.
+
+    Baba, 6.9.2026: "when I change engine there are different voices.
+    You need to give me a drop-down menu for the voices now. Two
+    drop-down menus: male and female... And I want just ten voices, none
+    more than ten."
+
+    WHY DROPDOWNS HERE AND BUTTONS FOR EDGE. Edge has four voices and
+    they fit on one line, so a row of buttons shows every choice at
+    once and costs one press. Google has thirty. A row of thirty is
+    unreadable and a row of ten is still four lines on a phone, so the
+    shape that fits is a list that opens.
+
+    TWO, NOT ONE WITH A FILTER. He asked for two and two is right: the
+    question a person actually has is "a woman or a man", and answering
+    it by opening one list and reading past the wrong half is work.
+
+    THE GENDER IS GOOGLE'S OWN, from their Gemini-TTS table. It is not
+    inferred from how a name sounds — that is the guess this project
+    refuses to make, and it is why the table was checked against Google
+    rather than filled in by ear.
+
+    TEN IS THE CAP. Thirty names is a list nobody reads to the end of.
+    """
+    current = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
+
+    # WHICH BOX DID HE TOUCH? Both always hold a value, so comparing
+    # them against the current voice cannot tell a choice from a
+    # leftover — my first version did exactly that and picked the wrong
+    # box. on_change fires only for the one that actually changed, which
+    # is the question, answered by Streamlit instead of guessed at.
+    def _take(key):
+        picked = st.session_state.get(key)
+        if picked:
+            st.session_state["google_voice"] = picked
+            if on_pick:
+                on_pick()
+
+    def _row(col, gender, label, key):
+        pairs = GOOGLE_P.top_voices(gender, 10)
+        names = [n for n, _tone in pairs]
+        # THE ADJECTIVE RIDES WITH THE NAME. "Kore" says nothing; "Kore
+        # — Firm" is the only thing Google publishes about it, and it is
+        # what makes a list of star names choosable.
+        shown = {n: ("%s — %s" % (n, tone) if tone else n)
+                 for n, tone in pairs}
+        # THE LIST HOLDING THE CURRENT VOICE OPENS ON IT; the other opens
+        # on its own first entry. A dropdown that resets to the top on
+        # every render loses the choice just made, and Streamlit reruns
+        # constantly.
+        idx = names.index(current) if current in names else 0
+        with col:
+            st.caption(label)
+            st.selectbox(label, names, index=idx, key=key,
+                         format_func=lambda n: shown.get(n, n),
+                         label_visibility="collapsed",
+                         on_change=_take, args=(key,))
+
+    with st.container(key="voicerow_google"):
+        c1, c2 = st.columns(2)
+        _row(c1, "F", t("voice_female"), "%s_f" % prefix)
+        _row(c2, "M", t("voice_male"), "%s_m" % prefix)
+    return st.session_state.get("google_voice", current)
 
 
 def do_correct():
@@ -6013,6 +6088,18 @@ def _voice_row_synth_only(engine, sp_ring_talk):
             return sp_synthesize(sp_ring_talk, text, current_sp, current_model)
         return synth_fn
 
+    if engine == "google":
+        # THE VOICE COMES FROM THE GOOGLE PICKER, not from the Edge one.
+        # They are different casts entirely — four Edge names against
+        # thirty Gemini ones — so a shared key would hand Gemini the
+        # string "Gabrijela" and get a 400 that reads like a bad key.
+        prov = PROVIDERS.get("google")
+        gvoice = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
+
+        def synth_fn(text):
+            return prov.synth(text, gvoice)
+        return synth_fn
+
     vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
 
     def synth_fn(text):
@@ -6060,7 +6147,14 @@ def _voice_row(engine, sp_ring_talk):
             return sp_synthesize(sp_ring_talk, text, current_sp, current_model)
         return synth_fn
 
-    voice_picker("talkvoice", on_pick=_revoice)
+    voice_picker("talkvoice", on_pick=_revoice, engine=engine)
+    if engine == "google":
+        prov = PROVIDERS.get("google")
+        gvoice = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
+
+        def synth_fn(text):
+            return prov.synth(text, gvoice)
+        return synth_fn
     vkey = VOICE_TO_VKEY[st.session_state.get("voice", "Gabrijela")]
 
     def synth_fn(text):
