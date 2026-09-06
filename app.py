@@ -1034,6 +1034,7 @@ STRINGS = {
                            "hr": "ovaj preglednik ne može snimiti zvuk računala"},
     "sys_refused":        {"en": "sharing was cancelled",
                            "hr": "dijeljenje je otkazano"},
+    "wave_stop":          {"en": "stop", "hr": "stop"},
     "wave_save":          {"en": "save",               "hr": "spremi"},
     "eng_global_word":    {"en": "global",              "hr": "globalno"},
     # ---- THE PEOPLE PANEL (step 9) --------------------------------
@@ -8414,7 +8415,8 @@ def tr_deck():
             cues=[], words=[], wtimes=[],
             labels={"play": t("wave_play"), "pause": t("wave_pause"),
                     "back": t("wave_back"), "next": t("wave_next"),
-                    "save": t("wave_save")},
+                    "save": t("wave_save"),
+                        "stop": t("wave_stop")},
             part=1 if loaded else 0, parts=1 if loaded else 0,
             startable=bool(loaded), scale=scale,
             autoplay=bool(st.session_state.pop("_tr_autoplay", False)),
@@ -9623,7 +9625,8 @@ elif active == "talk":
                 cues=wave_cues(cached["marks"]), words=[], wtimes=[],
                 labels={"play": t("wave_play"), "pause": t("wave_pause"),
                         "back": t("wave_back"), "next": t("wave_next"),
-                        "save": t("wave_save")},
+                        "save": t("wave_save"),
+                        "stop": t("wave_stop")},
                 part=idx + 1, parts=len(parts),
                 scale=scale, autoplay=True, key="talk_player", default=None)
 
@@ -9646,7 +9649,16 @@ elif active == "talk":
                           on_click=_talk_stop, use_container_width=True)
             # The part finished: move to the next one and let the spinner
             # above make it. Guarded by a stamp so one finish is one move.
-            if isinstance(ev, dict) and ev.get("at"):
+            # STOP FIRST, and it is not a hand-off. A deck's stop ENDS
+            # the thing; the finish signal below MOVES to the next part.
+            # Reading them in one branch would make the last sentence's
+            # natural end look like a press of stop.
+            if isinstance(ev, dict) and ev.get("stop"):
+                if st.session_state.get("_talk_stop_seen") != ev.get("at"):
+                    st.session_state["_talk_stop_seen"] = ev.get("at")
+                    _talk_stop()
+                    st.rerun()
+            if isinstance(ev, dict) and ev.get("at") and not ev.get("stop"):
                 seen = st.session_state.get("_talk_player_seen")
                 if seen != ev["at"] and idx + 1 < len(parts):
                     st.session_state["_talk_player_seen"] = ev["at"]
@@ -9767,7 +9779,8 @@ elif active == "talk":
                 src="", cues=[], words=[], wtimes=[],
                 labels={"play": t("wave_play"), "pause": t("wave_pause"),
                         "back": t("wave_back"), "next": t("wave_next"),
-                        "save": t("wave_save")},
+                        "save": t("wave_save"),
+                        "stop": t("wave_stop")},
                 part=0, parts=0, startable=_has_text,
                 scale=a11y.clamp(st.session_state.get(
                     "text_scale", a11y.DEFAULT_SCALE)),
@@ -10398,7 +10411,8 @@ elif active == "vr":
             cues=[], words=[], wtimes=[],
             labels={"play": t("wave_play"), "pause": t("wave_pause"),
                     "back": t("wave_back"), "next": t("wave_next"),
-                    "save": t("wave_save")},
+                    "save": t("wave_save"),
+                        "stop": t("wave_stop")},
             part=(_vr_job["index"] + 1) if _vr_job else (1 if _vr_audio else 0),
             parts=len(_vr_job["parts"]) if _vr_job else (1 if _vr_audio else 0),
             # STARTABLE MEANS "THERE IS SOMETHING TO WORK FROM", NOT

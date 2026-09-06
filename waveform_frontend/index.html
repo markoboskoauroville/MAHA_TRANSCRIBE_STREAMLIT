@@ -108,6 +108,12 @@
      hidden: the row must keep its four cells (§57), and a control that
      appears and disappears moves everything under it. */
   body.idle #bSave{pointer-events:none}
+  /* NOTHING TO STOP BEFORE A READING STARTS. Dead while idle, like
+     back and next — a live control that does nothing is what teaches
+     somebody the app is broken. */
+  body.idle #bStop{pointer-events:none}
+  .sq{display:inline-block;width:9px;height:9px;background:currentColor;
+      margin-right:6px;vertical-align:middle}
   body.idle #sub{opacity:.5}
 
   /* NOTHING EMPTY RESERVES SPACE. Idle, the subtitle and the message
@@ -132,6 +138,15 @@
        is two shapes. Baba: everything is already there, only greyed. -->
   <div id="row">
     <button class="key" id="bPlay" aria-label="play"><span class="tri" id="gPlay"></span><span id="lPlay">play</span></button>
+    <!-- STOP, BESIDE PLAY. Baba, 6.9.2026: "on the R tab there should
+         be a stop button so the user can stop without clicking on the
+         link. So we can also play and stop. Like a real cassette deck
+         from the 1980s."
+         A deck's stop is not a pause: it ENDS the thing and comes back
+         to the top. So this pauses the audio AND tells Python the
+         reading is over — the same end the action link reached, in the
+         place a hand already is. -->
+    <button class="key" id="bStop" aria-label="stop"><span class="sq"></span><span id="lStop">stop</span></button>
     <button class="key" id="bBack" aria-label="previous sentence"><span class="bk"></span><span id="lBack">back</span></button>
     <button class="key" id="bFwd" aria-label="next sentence"><span class="fw"></span><span id="lFwd">next</span></button>
     <button class="key" id="bSave" aria-label="download this audio"><span class="dl"></span><span id="lSave">save</span></button>
@@ -154,6 +169,7 @@ var wave=document.getElementById('wave'), ctx=wave.getContext('2d'),
     sub=document.getElementById('sub'), msg=document.getElementById('msg'),
     bPlay=document.getElementById('bPlay'), bBack=document.getElementById('bBack'),
     bSave=document.getElementById('bSave'),
+    bStop=document.getElementById('bStop'),
     bFwd=document.getElementById('bFwd'), gPlay=document.getElementById('gPlay'),
     lPlay=document.getElementById('lPlay');
 
@@ -388,6 +404,12 @@ function jump(dir){
   else audio.currentTime=cues[i>0?i-1:0].start;
   draw(); paint();
 }
+bStop.onclick=function(){
+  /* PAUSE FIRST, so the sound stops on the press rather than on the
+     rerun — Streamlit's round trip is long enough to be heard. */
+  try{ audio.pause(); }catch(e){}
+  setValue({at: Date.now(), stop: true});
+};
 bBack.onclick=function(){ jump(-1); };
 bFwd.onclick=function(){ jump(1); };
 
@@ -455,6 +477,7 @@ window.addEventListener("message", function(ev){
     deliver(a.dl, a.dl_name);
   }
   if(a.labels && a.labels.save) document.getElementById('lSave').textContent=a.labels.save;
+  if(a.labels && a.labels.stop) document.getElementById('lStop').textContent=a.labels.stop;
   document.body.classList.toggle('idle', !a.src);
   // STARTABLE = there is text waiting and no audio yet, so play means
   // "make it" rather than "resume". Python decides; the component only

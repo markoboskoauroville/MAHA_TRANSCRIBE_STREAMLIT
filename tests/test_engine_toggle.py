@@ -946,6 +946,57 @@ _p = SP.plan_sentences(["A.", "B.", "C."])
 check("three sentences are three parts", len(_p) == 3, len(_p))
 check("...one sentence each", all(len(ss) == 1 for ss, _o in _p))
 
+
+print()
+print("16 THE STOP CELL — play and stop, like a deck")
+# =====================================================================
+#
+# Baba, 6.9.2026: "on the R tab there should be a stop button so the
+# user can stop without clicking on the link. So we can also play and
+# stop. Like a real cassette deck from the 1980s."
+
+_deck2 = open(os.path.join(ROOT, "waveform_frontend", "index.html")).read()
+check("the deck has a stop cell", 'id="bStop"' in _deck2)
+check("...beside play, before back",
+      _deck2.index('id="bStop"') > _deck2.index('id="bPlay"')
+      and _deck2.index('id="bStop"') < _deck2.index('id="bBack"'))
+check("...with a handler", "bStop.onclick" in _deck2)
+# A DECK'S STOP ENDS THE THING. It pauses the sound on the press —
+# Streamlit's round trip is long enough to be heard — and then tells
+# Python the reading is over.
+check("it pauses the sound on the press, not on the rerun",
+      "audio.pause()" in _deck2.split("bStop.onclick")[1][:300])
+check("...and reports it", "stop: true" in _deck2)
+check("nothing to stop before a reading starts",
+      "body.idle #bStop" in _deck2)
+
+# PYTHON ENDS THE READING, and stop is read BEFORE the hand-off — the
+# finish signal MOVES to the next part, and reading them in one branch
+# would make the last sentence's natural end look like a press of stop.
+# SCOPED TO THE BRANCH. The first version greped for ev.get("stop")
+# anywhere, and the HAND-OFF line contains it too — `ev.get("at") and
+# not ev.get("stop")` — so deleting the whole stop branch left the check
+# green. A substring that appears in the thing it is meant to exclude
+# proves nothing.
+_stopbranch = CODE.split('if isinstance(ev, dict) and ev.get("stop"):')
+check("the reader has a stop branch", len(_stopbranch) == 2, len(_stopbranch))
+_sb = _stopbranch[1][:400] if len(_stopbranch) == 2 else ""
+check("...which ends the reading by the same path as the link",
+      "_talk_stop()" in _sb, _sb[:120])
+check("...and reruns so the writing state comes back",
+      "st.rerun()" in _sb)
+check("...guarded by its own stamp, so one press is one stop",
+      "_talk_stop_seen" in CODE)
+check("...and the hand-off ignores a stop event",
+      'ev.get("at") and not ev.get("stop")' in CODE)
+
+# ITS OWN SHORT WORD. rd_stop is "stop reading", which is right for a
+# link on its own line and WRONG in a 68px cell — seen in a browser, it
+# wrapped to two lines and made the whole transport taller.
+check("stop has its own short label", 't("wave_stop")' in CODE)
+check("...and it is not the long one", "rd_stop" not in
+      CODE.split('"stop": t(')[1][:40] if '"stop": t(' in CODE else True)
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
