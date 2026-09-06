@@ -42,8 +42,16 @@ def keyed_providers():
     """Providers a person supplies their own keys for — exactly what the
     Settings screen should render a key section for, in order. Groq is
     excluded: its keys are the app's own, in Streamlit secrets."""
+    # GOOGLE JOINS GROQ IN THE EXCLUSION, and it is not a style choice.
+    # Both providers' keys are the APP's, held in Streamlit secrets and
+    # shared by everybody. Listing them here would put a key panel in
+    # front of a person for keys they do not own and cannot change, and
+    # the ring behind it would always read 0/0 however many keys were
+    # actually working. Added when Google became a provider and turned up
+    # in that list uninvited.
+    APP_OWNED = (Groq.id, Google.id)
     return [p for p in REGISTRY.values()
-            if p.needs_key and p.id != Groq.id]
+            if p.needs_key and p.id not in APP_OWNED]
 
 
 def set_groq_keys(keys) -> None:

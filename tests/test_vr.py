@@ -257,9 +257,26 @@ ck("53 re-importing the same file adds nothing",
    _kr.import_pairs(_r, _sample) == 0)
 ck("54 every imported key starts unused, so none is falsely resting",
    all(k.get("last_used") == 0.0 for k in _r["keys"]))
-ck("55 the admin panel uses the PAIR importer for hume and the plain "
-   "one for everyone else",
-   'if pid == "hume":' in SRC and "kr.import_pairs(get_ring(pid), raw)" in SRC)
+# 55 CHANGED WHEN THE PASTE BOX WENT. It asserted that the ADMIN PANEL
+# called import_pairs for hume and import_keys for everyone else. There
+# is no importer in the admin panel any more: keys arrive from Streamlit
+# Secrets, and HUME_ACCOUNTS is already a table with key and secret in
+# separate fields, so nothing has to be parsed out of messy text.
+#
+# The PARSER is not gone and must not be — keyring.md §9 names it as the
+# reference implementation other apps port from, and checks 49 to 54
+# above still exercise it directly. What is gone is one caller.
+ck("55 the pair parser survives the paste box it was written for, "
+   "because keyring.md names it as the reference implementation",
+   callable(getattr(_kr, "import_pairs", None))
+   and callable(getattr(_kr, "import_keys", None)))
+ck("56 and the admin panel no longer parses keys out of pasted text",
+   "kr.import_pairs(get_ring(pid), raw)" not in SRC
+   and "_key_paste" not in SRC)
+ck("57 hume's pairs now arrive from Secrets, key and secret already "
+   "in separate fields",
+   '"hume": ("HUME_ACCOUNTS", "HUME_API_KEYS")' in SRC
+   and "def keys_from_secrets(" in SRC)
 
 # --- THE SHEET -------------------------------------------------------
 # THE PULL WAS FROM THE SPREADSHEET, once per session, and the

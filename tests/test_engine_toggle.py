@@ -116,7 +116,12 @@ def app(tab="talk"):
     at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=90)
     at.session_state["_authed"] = True
     at.session_state["_user"] = "stub"
-    at.session_state["active"] = tab
+    # "active_tab", NOT "active". app.py reads
+    #     active = st.session_state.get("active_tab") or "transcribe"
+    # so setting "active" set a key nothing reads, every tab fell
+    # through to the default, and this loop tested ONE tab six times
+    # while reporting six passes. It was committed that way.
+    at.session_state["active_tab"] = tab
     return at
 
 

@@ -192,6 +192,34 @@ def main(argv):
     # Name the real cause once, up front, and count it like everything
     # else. This is not a blocker: the file is not needed to LINT, and a
     # placeholder copy is enough to run, so the fix is one command.
+    # A SUITE GIT CANNOT SEE RUNS HERE AND EXISTS FOR NOBODY ELSE.
+    #
+    # .gitignore carries deliberately wide secret patterns — `*_secrets*`
+    # among them — because a key file at the repo root once came one
+    # `git add -A` from being public forever. That width is correct and
+    # stays. What it also does is silently swallow a TEST whose name
+    # happens to match: tests/test_keys_from_secrets.py was written, run,
+    # passing, and untracked, and `git add -A` reported nothing wrong
+    # because ignoring a file is not an error.
+    #
+    # The sweep would have gone on printing its number for a file that
+    # was not in the repository, which is the worst shape of green: true
+    # here, absent everywhere else.
+    ignored = []
+    try:
+        names = sorted(f for f in os.listdir(TESTS)
+                       if f.startswith("test") and f.endswith(".py"))
+        if names:
+            p = subprocess.run(["git", "check-ignore"]
+                               + [os.path.join("tests", n) for n in names],
+                               cwd=ROOT, capture_output=True, text=True)
+            ignored = [l for l in p.stdout.splitlines() if l.strip()]
+    except Exception:                                        # noqa: BLE001
+        pass
+    print("  suites git ignores: %d" % len(ignored))
+    for line in ignored:
+        print("      INVISIBLE TO GIT: %s" % line)
+
     have_secrets = os.path.exists(os.path.join(ROOT, ".streamlit", "secrets.toml"))
     print("  local secrets : %d" % (1 if have_secrets else 0))
     if not have_secrets:

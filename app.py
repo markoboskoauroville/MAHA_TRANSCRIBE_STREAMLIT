@@ -649,11 +649,8 @@ STRINGS = {
     "method_gap":         {"en": "Note: one or more parts could not be transcribed (marked […] in the text).",
                             "hr": "Napomena: jedan ili više dijelova nije transkribiran (označeno […] u tekstu)."},
     "speechify_title":    {"en": "Speechify (premium voices)", "hr": "Speechify (premium glasovi)"},
-    "key_file_label":     {"en": "Or pick a key file",  "hr": "Ili odaberi datoteku s ključem"},
-    "key_paste_label":    {"en": "Paste key(s)",        "hr": "Zalijepi ključ(eve)"},
-    "key_paste_ph":       {"en": "Paste one or more keys, any messy text is fine",
-                            "hr": "Zalijepi jedan ili više ključeva, može i neuredan tekst"},
-    "import_keys_btn":    {"en": "Import keys",         "hr": "Uvezi ključeve"},
+    "keys_from_secrets":  {"en": "Keys come from Streamlit Secrets: %s",
+                           "hr": "Ključevi dolaze iz Streamlit Secrets: %s"},
     "test_keys_btn":      {"en": "Test keys",           "hr": "Testiraj ključeve"},
     "no_keys_found":      {"en": "No key found in that.", "hr": "Nije pronađen nijedan ključ."},
     "keys_added":         {"en": "New keys added",      "hr": "Novih ključeva dodano"},
@@ -4316,6 +4313,100 @@ def hume_keys_from_secrets() -> int:
     if added:
         save_rings()
     return added
+
+
+def keys_from_secrets(provider_id: str) -> int:
+    """Fill one provider's ring from Streamlit Secrets. Returns how many
+    were added.
+
+    WHY THIS HAD TO EXIST BEFORE THE PASTE BOX COULD GO.
+
+    Baba: "instead of all this manual entering, the API keys we are going
+    to keep only inside the secret." Hume already worked that way. Nobody
+    else did — load_keys() reads session_state, then localStorage, and
+    NEVER Secrets — so Speechify, AssemblyAI and Anthropic reached their
+    rings through the uploader and the paste box and through nothing
+    else. Removing those first would have left three providers with no
+    way in at all, and the symptom would have been the studio tier
+    quietly falling back to free voices with no error anywhere.
+
+    That is the same shape as the v237 fault where deleting ttt/sheet.py
+    took the app down at import: the thing being removed was still load
+    bearing, and the grep that would have said so was for IMPORTERS
+    rather than callers. Here the question was "what else fills this
+    ring", and the answer was nothing.
+
+    DRIVEN BY SECRET_NAMES, the same tuple the template is generated
+    from, so the block the admin panel tells somebody to paste and the
+    block this reads cannot drift apart. A provider added to that table
+    is loaded here without this function changing.
+
+    THREE SHAPES, because the table already describes three:
+        SECRET_PAIRS   a list of tables, {name, key, secret}
+        SECRET_SINGLE  one string, not a list
+        otherwise      a list of strings
+
+    SILENT ON A MALFORMED ENTRY, loud about nothing. This runs on the
+    settings screen, which is the only place somebody would find out
+    something was wrong, so it must not be what takes that screen down.
+
+    PLACEHOLDERS ARE NOT KEYS. A pasted-but-unfilled template would
+    otherwise arrive as real keys and every one of them would fail.
+    """
+    ring = get_ring(provider_id)
+    have = {k.get("key") for k in ring.setdefault("keys", [])}
+    added = 0
+
+    def _add(key, secret="", label=""):
+        nonlocal added
+        key = str(key or "").strip()
+        if not key or key in have or is_placeholder(key):
+            return
+        ring["keys"].append({
+            "key": key, "secret": str(secret or "").strip(),
+            "fp": kr.fingerprint(key), "state": "new",
+            "label": str(label or ("%s key" % provider_id)),
+            "last_error": "", "calls": 0, "chars": 0,
+            "cool_until": 0, "added": int(time.time()), "last_used": 0.0,
+        })
+        have.add(key)
+        added += 1
+
+    for name in SECRET_NAMES.get(provider_id, ()):
+        try:
+            raw = st.secrets.get(name)
+        except Exception:                                    # noqa: BLE001
+            continue
+        if raw is None:
+            continue
+        try:
+            if name in SECRET_PAIRS:
+                for row in (raw or []):
+                    try:
+                        _add(row.get("key"), row.get("secret"), row.get("name"))
+                    except AttributeError:
+                        continue      # not a table: skip it, do not crash
+            elif name in SECRET_SINGLE:
+                _add(raw)
+            else:
+                for k in (raw or []):
+                    _add(k)
+        except Exception:                                    # noqa: BLE001
+            continue
+    if added:
+        save_rings()
+    return added
+
+
+def all_keys_from_secrets() -> dict:
+    """Every keyed provider filled from Secrets. provider id -> count.
+
+    Called where the rings are first needed rather than at module top, so
+    a person who never opens settings never pays for it, and so nothing
+    here can delay the login screen.
+    """
+    return {p.id: keys_from_secrets(p.id)
+            for p in PROVIDERS.keyed_providers()}
 
 
 def hume_error_kind(status: int, body: str = "") -> str:
@@ -10696,6 +10787,19 @@ elif active == "help":
                        level=st.session_state.get("help_level", "adult")),
         height=620, scrolling=True)
 
+    # HELP HAD NO SIGNATURE, so it had no engine name and no engine
+    # switch — the one tab a confused person is most likely to be on was
+    # the one tab that could not answer "which engine am I using" or let
+    # them try the other. sig_help existed in the strings table and was
+    # never called; every other tab a free user can reach has had this
+    # line for versions.
+    #
+    # FOUND BY A TEST THAT WAS ITSELF WRONG. The toggle suite set
+    # session_state["active"], and app.py reads "active_tab" — so all six
+    # tabs fell through to the default and one tab was tested six times
+    # while reporting six passes.
+    tab_signature(t("sig_help"))
+
 
 elif active == "log":
     # ADMIN ONLY. Errors in this app are caught in many places on purpose,
@@ -10766,43 +10870,45 @@ elif active == "settings":
                     if _u["enabled"] else t("usage_off"))
 
         # ---- who the app talks to ---------------------------------
+        #
+        # NO UPLOADER AND NO PASTE BOX. Baba: "instead of all this manual
+        # entering, the API keys we are going to keep only inside the
+        # secret."
+        #
+        # WHAT WENT, AND WHAT REPLACED IT. The file_uploader, the paste
+        # box and the Import button wrote into the ring and then into
+        # localStorage. Every one of those keys now arrives from
+        # Streamlit Secrets through keys_from_secrets(), which is driven
+        # by the same SECRET_NAMES tuple the template above is generated
+        # from — so the block the panel tells somebody to paste is
+        # exactly the block that gets read.
+        #
+        # THE ORDER MATTERED MORE THAN THE DELETION. Before this, only
+        # Hume had a Secrets path; load_keys() reads session_state then
+        # localStorage and never Secrets. Taking the paste box out first
+        # would have left Speechify, AssemblyAI and Anthropic with no way
+        # in, and the symptom would have been the studio tier silently
+        # falling back to free voices with no error anywhere.
+        #
+        # THE LIST STAYS. keyring.md §6: a person must be able to SEE
+        # every key masked, see its state, test one deliberately, and
+        # revive one they know is good again. None of that is key ENTRY,
+        # and removing it would take away the only honest answer to "why
+        # is this one not being used".
         rings = load_keys()
+        filled = all_keys_from_secrets()
         for prov in PROVIDERS.keyed_providers():
             ring = get_ring(prov.id)
             n = len(ring["keys"])
             live = sum(1 for k in ring["keys"] if k["state"] != "dead")
             with st.expander(f"{prov.label}  ·  {live}/{n}" if n else prov.label):
-                st.file_uploader(t("key_file_label"), key=f"{prov.id}_key_file",
-                                 label_visibility="collapsed")
-                st.text_area(t("key_paste_label"), key=f"{prov.id}_key_paste",
-                             height=68, label_visibility="collapsed",
-                             placeholder=t("key_paste_ph"))
-
-                def _import(pid=prov.id, pr=prov):
-                    raw = ""
-                    f = st.session_state.get(f"{pid}_key_file")
-                    if f is not None:
-                        raw += f.getvalue().decode("utf-8", "replace")
-                    raw += " " + (st.session_state.get(f"{pid}_key_paste") or "")
-                    # HUME COMES IN PAIRS. Its two tokens carry no
-                    # prefix, so the generic importer would take 21
-                    # accounts as 42 keys — half of them secrets that
-                    # authenticate nothing, in a ring where every second
-                    # key fails for no visible reason.
-                    if pid == "hume":
-                        added = kr.import_pairs(get_ring(pid), raw)
-                    else:
-                        added = kr.import_keys(get_ring(pid), raw,
-                                               prefixes=pr.key_prefixes)
-                    save_rings()
-                    if pid == "hume" and added:
-                        # STRAIGHT TO THE SHEET, so the next redeploy
-                        # does not ask for 21 accounts again.
-                        st.session_state["_hume_saved"] =                    st.session_state["_key_msg"] = (
-                        f"{t('keys_added')}: {added}" if added else t("no_keys_found"))
-
-                st.button(t("import_keys_btn"), key=f"{prov.id}_import",
-                          on_click=_import)
+                # WHERE THEY COME FROM, SAID AT THE MOMENT SOMEBODY LOOKS
+                # FOR THE BOX THAT USED TO BE HERE. A panel that simply
+                # lost its uploader reads as a broken panel.
+                st.caption(t("keys_from_secrets") %
+                           ", ".join(SECRET_NAMES.get(prov.id, ())))
+                if not ring["keys"]:
+                    st.code(secrets_template(prov.id), language="toml")
 
                 if ring["keys"]:
                     # HUME TESTS THE PAIR. Its test_key takes the
@@ -10818,6 +10924,10 @@ elif active == "settings":
                     else:
                         render_key_list(ring, rings, prov.id,
                                         (lambda pr: (lambda key: pr.test_key(key)))(prov))
+
+        if any(filled.values()):
+            st.session_state["_key_msg"] = "%s: %d" % (
+                t("keys_added"), sum(filled.values()))
 
         if st.session_state.get("_key_msg"):
             st.caption(st.session_state.pop("_key_msg"))
