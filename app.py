@@ -4579,6 +4579,42 @@ def kt_can_write_locally() -> bool:
         return False
 
 
+def hume_work_probe(key: str):
+    """The smallest billable thing Hume sells. (error, kind).
+
+    keyring.md §2h: one utterance, NO voice id — the probe must not
+    depend on a voice still existing, or a renamed voice reads as a dead
+    account. One word of speech is a fraction of a cent when the account
+    is alive and costs NOTHING when it is not.
+
+    MEASURED 6.9.2026 across five of Baba's seventeen pairs: four
+    answered 200 to both this and the token call, and av.live.vmix
+    answered 401 to both. The divergence keyring.md records — a pair that
+    passes the token and refuses synthesis — was NOT reproduced in that
+    sample, which is a sample of five and not a refutation.
+    """
+    req = _ureq.Request(
+        "https://api.hume.ai/v0/tts",
+        data=json.dumps({"utterances": [{"text": "Hi"}]}).encode("utf-8"),
+        headers={"X-Hume-Api-Key": key, "Content-Type": "application/json",
+                 "User-Agent": HUME_UA}, method="POST")
+    try:
+        with _ureq.urlopen(req, timeout=90) as r:
+            r.read(1)
+        return None, None
+    except _uerr.HTTPError as e:
+        try:
+            raw = e.read().decode("utf-8", "replace")[:200]
+        except Exception:                                    # noqa: BLE001
+            raw = ""
+        return hume_error_message(e.code, raw), hume_error_kind(e.code, raw)
+    except Exception as e:                                   # noqa: BLE001
+        # NEVER DEAD ON A TRANSPORT FAILURE. The network being down is
+        # not the account's fault, and burying a ring for it is how a
+        # whole ring is lost to one bad minute.
+        return "Could not reach Hume: %s" % e, "soft"
+
+
 def hume_error_kind(status: int, body: str = "") -> str:
     """MANTRA_MANIFEST/apis/hume.md, "Status mapping": 200 good, 401
     dead, 403 dead UNLESS the body says `error code: 1010`, 429 valid
@@ -4785,7 +4821,30 @@ def hume_test_one(key: str, secret: str = ""):
         if secret and "access_token" not in body:
             # 200 without a token is not a working pair, whatever it is.
             return "Hume answered without a token.", "dead"
-        return None, None
+        # THE TOKEN PROVED THE PAIR. IT DID NOT PROVE THE ACCOUNT.
+        #
+        # keyring.md §2c names this call specifically: "Hume's
+        # /oauth2-cc/token is the same lie in a different shape: it
+        # proves the pair, and three of the twenty-one accounts on this
+        # ring pass it and refuse every synthesis." A key tester that
+        # stops here reports working for an account that cannot make a
+        # sound, and the person finds out mid-sentence.
+        #
+        # AND THE TWO PROBES CHECK DIFFERENT HALVES, which is why this
+        # does both rather than swapping one for the other:
+        #
+        #     token   Basic base64(key:secret)  proves the PAIR,
+        #             costs nothing, says nothing about credit
+        #     work    X-Hume-Api-Key only       proves there is CREDIT,
+        #             says nothing about the secret
+        #
+        # apis/hume.md is right that only the token proves the secret;
+        # keyring.md §2c is right that only work proves the account.
+        # Neither section is wrong and neither is sufficient. So: token
+        # first, and only if it passes, one utterance — §2h's cheap work
+        # call, no voice id so the probe cannot fail because a voice was
+        # renamed.
+        return hume_work_probe(key)
     except _uerr.HTTPError as e:
         try:
             raw = e.read().decode("utf-8", "replace")[:200]

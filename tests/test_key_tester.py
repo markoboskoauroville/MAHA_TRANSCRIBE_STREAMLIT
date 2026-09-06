@@ -366,6 +366,63 @@ src = open(os.path.join(ROOT, "ttt", "keyparse.py")).read()
 check("...and imports no Streamlit, so the next app can lift it",
       "streamlit" not in src)
 
+# =====================================================================
+print()
+print("2b MEASURED AGAINST THE LIVE API, 6.9.2026 — recorded, not re-run")
+# =====================================================================
+#
+# These cost real calls and one account's Hume pair is genuinely dead.
+# The numbers are written down here so the next session does not spend
+# them again — four-tests.md: expectations come from what was MEASURED.
+#
+#   parser, on Baba's two real key files
+#     21 Google keys, every one AQ. and 53 characters, names preserved
+#     17 Hume pairs, every one with its secret, read from the labels
+#     0 false positives from either file
+#
+#   Google, key 12 of 21 (kalabhumi)
+#     test_key            200, working
+#     synth "Dobar dan."  96,570 bytes, 2.011s of audio, marks None
+#                         raw PCM with NO header, exactly as measured
+#                         24 kHz mono 16-bit; the 44 bytes we write make
+#                         it a file Python's own wave module opens and
+#                         agrees with, frame count matching the duration
+#     generation speed    22.9s wall for 2.0s of audio on this call
+#
+#   Hume, 5 of 17 pairs probed two ways
+#     kalabhumi, mantra.ishvara, auroville.community, Remini
+#                         token 200, work 200
+#     av.live.vmix        token 401, work 401 — Invalid ApiKey. DEAD.
+#
+# THE DIVERGENCE keyring.md §2c RECORDS — a pair that passes the token
+# and refuses synthesis — WAS NOT REPRODUCED in that sample. That is a
+# sample of five, not a refutation, and the code assumes §2c is right.
+
+check("the hume test proves the ACCOUNT, not just the pair",
+      "hume_work_probe(key)" in CODE)
+check("...and the work probe sends no voice id, so a renamed voice "
+      "cannot read as a dead account",
+      '"utterances": [{"text": "Hi"}]' in CODE and "voice" not in
+      CODE.split("def hume_work_probe")[1].split("def hume_error_kind")[0])
+# SCOPED TO THE PROBE, NOT THE WHOLE FILE. The first version greped for
+# "Could not reach Hume" anywhere in app.py — and the OLD hume_test_one
+# has that line too, so flipping the new probe's verdict to "dead" left
+# the check green. Face 4: it asserted that a string exists somewhere,
+# not that this function does the right thing.
+_probe = CODE.split("def hume_work_probe")[1].split("def hume_error_kind")[0]
+check("the probe region was found and is a sensible size (%d chars)"
+      % len(_probe), 200 < len(_probe) < 2000, len(_probe))
+check("a transport failure is soft IN THIS PROBE, never dead — the "
+      "network being down is not the account's fault",
+      'return "Could not reach Hume: %s" % e, "soft"' in _probe,
+      _probe[-140:])
+_wp = CODE.split("def hume_work_probe")[1].split("def hume_error_kind")[0]
+check("the work probe is a POST, because a GET would be a listing",
+      'method="POST"' in _wp)
+check("Google's measured facts are unchanged in the provider",
+      "gemini-2.5-flash-preview-tts" in
+      open(os.path.join(ROOT, "ttt", "providers", "google.py")).read())
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
