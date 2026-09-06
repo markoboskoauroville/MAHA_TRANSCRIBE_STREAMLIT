@@ -143,13 +143,23 @@ check("the toggle is ON THE PAGE, by key", "eng_flip" in keys, keys[:12])
 btn = [b for b in at.button if b.key == "eng_flip"]
 if btn:
     b = btn[0]
-    # IT IS A LINK NOW, NOT A GLYPH-ONLY BUTTON. Baba, 6.9.2026: "For
-    # switching engine, put also an action link." The glyph rides with
-    # the words: alone at the foot of a page it was a puzzle, and the
-    # words alone lose the mark he has already learned.
-    check("it wears the glyph", b.label.startswith(GLYPH), b.label)
-    check("...and says in words what it will do",
-          len(b.label) > len(GLYPH) + 3, b.label)
+    # A STATUS LINE. Baba, 6.9.2026: "I just want to be edge or Google.
+    # When it's edge, it's edge. When it's Google, it's Google. We don't
+    # write there what is not present."
+    #
+    # v250 read "switch to Gemini" — the OTHER engine — so the one word
+    # on screen was always the one word that was NOT true.
+    check("it names the engine that is RUNNING", b.label == "Edge", b.label)
+    check("...and NOT the one it would switch to",
+          "Gemini" not in b.label and "Google" not in b.label, b.label)
+    check("no glyph on it — a mark beside a status is a second thing to "
+          "read before the first one lands",
+          GLYPH not in b.label, b.label)
+    check("...and no instruction words either",
+          "switch" not in b.label.lower(), b.label)
+    check("it is ONE word", len(b.label.split()) == 1, b.label)
+    # WHERE IT WOULD GO IS IN THE TOOLTIP, which is not on the page.
+    check("the target is in the help, not on the line", bool(b.help), b.help)
     check("it carries help text saying what it will do", bool(b.help), b.help)
     # NOT READY, AND SAYING SO. This clone has placeholder Google keys in
     # secrets, so the target engine is offered and cannot work — and the
@@ -184,7 +194,11 @@ check("the glyph is not a letter or a digit", not GLYPH.isalnum())
 blk = re.search(r"^SYM = \{.*?^\}", CODE, re.S | re.M)
 check("the SYM table is found", blk is not None)
 glyphs = re.findall(r'"[a-z]+":\s*"(\\u[0-9a-f]{4})"', blk.group(0) if blk else "")
-check("SYM holds nine glyphs", len(glyphs) == 9, len(glyphs))
+# EIGHT NOW. The engine glyph went with the icon Baba did not want, and
+# a SYM entry no button wears is dead weight that the aria injector
+# still carries.
+check("SYM holds eight glyphs", len(glyphs) == 8, len(glyphs))
+check("the engine glyph is gone from SYM", "\\u21c4" not in glyphs, glyphs)
 # UNIQUENESS IS NOT COSMETIC. The aria injector matches BY GLYPH, so a
 # duplicate makes a screen reader announce two buttons with one name.
 # It already happened: translate borrowed the play triangle and was
@@ -192,9 +206,11 @@ check("SYM holds nine glyphs", len(glyphs) == 9, len(glyphs))
 check("EVERY SYM GLYPH IS UNIQUE — the aria injector matches on them",
       len(set(glyphs)) == len(glyphs),
       [g for g in glyphs if glyphs.count(g) > 1])
-check("the switch glyph is in SYM", "\\u21c4" in glyphs, glyphs)
-check("the switch is given a spoken name for assistive technology",
-      'SYM["engine"]: t("eng_switch")' in CODE)
+# THE ARIA MAPPING WENT WITH IT. A mapping for a glyph no button wears
+# is a lookup that can never match, and it would have gone stale
+# silently.
+check("no aria mapping is left for the removed glyph",
+      'SYM["engine"]' not in CODE)
 
 # NOTHING APPEARS, NOTHING DISAPPEARS. The failure this guards is a
 # button rendered only when it is usable, which moves the page.
@@ -213,8 +229,14 @@ check("both footer links are rendered UNCONDITIONALLY",
       sw.count("st.button(") == 2, sw.count("st.button("))
 check("it is greyed with disabled=, not hidden",
       "disabled=not ready" in sw, sw[-200:])
+# THE LABEL NO LONGER VARIES — it is always the running engine — so
+# only the REASON has three branches now. A check counting the old
+# two-value assignment would have been green about a line that no
+# longer exists.
 check("every path sets a reason, so a dead link always explains itself",
-      sw.count("why, label = ") == 3, sw.count("why, label = "))
+      sw.count("why = ") == 3, sw.count("why = "))
+check("...and the label is the running engine on every path",
+      sw.count("label = eng.short") == 1, sw.count("label = eng.short"))
 
 # §0 RULE 2 — the tab must not know a vendor.
 for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",

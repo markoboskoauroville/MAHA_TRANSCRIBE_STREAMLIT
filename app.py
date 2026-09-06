@@ -277,26 +277,12 @@ SYM = {
     # two identical glyphs apart. An arrow also reads better here: it is
     # "into", not "play".
     "go":     "\u2192",   # right arrow: translate INTO
-    # THE ENGINE SWITCH. ⇄ — rightwards arrow ABOVE leftwards arrow.
-    #
-    # design-language.md §14 says compose the mark rather than hunting
-    # for a picture, and warns that every near-miss is wrong in the same
-    # direction. Here the near-misses were real and each said the wrong
-    # thing: ↻ says redo, → says go and is already SYM["go"], ⚙ says
-    # settings and the tab bar's gear already owns that, and ⏻ says off.
-    #
-    # ⇄ is not a near-miss. It is drawn to mean EXCHANGE — two paths,
-    # both live, traffic moving each way — which is exactly what this
-    # button does: the same three jobs, routed the other way. It also
-    # sits in the arrow family the rest of this table already speaks
-    # (⇩ ↺ → ▸), so it reads as one of ours rather than as an import.
-    #
-    # AND IT IS UNIQUE IN THIS TABLE, which is not decoration: the aria
-    # injector matches buttons BY THEIR GLYPH, so a duplicate would make
-    # a screen reader announce two different buttons with one name. That
-    # already happened once, when translate borrowed ▶ and was announced
-    # as "Read". test_engine_toggle asserts the uniqueness.
-    "engine": "\u21c4",
+    # THE ENGINE SWITCH GLYPH IS GONE, and this note is why rather
+    # than a silence. v239 gave the engine control a ⇄ and v250 put it
+    # beside the word; v251 removed both, because the control now says
+    # WHICH ENGINE IS RUNNING and a mark beside a status is a second
+    # thing to read before the first one lands. Baba: "there is icon to
+    # switch. I don't want this."
 }
 
 # CROATIAN SPELLING FOR A CROATIAN VOICE. "Gabby" is an English
@@ -550,7 +536,6 @@ STRINGS = {
     "redo_word": {"en": "redo", "hr": "ponovi"},
     "tier_free": {"en": "free", "hr": "free"},
     "tier_studio": {"en": "studio", "hr": "studio"},
-    "eng_switch":  {"en": "Switch engine", "hr": "Promijeni motor"},
     "eng_switch_to": {"en": "Switch to %s", "hr": "Prebaci na %s"},
     "eng_only_one": {"en": "There is only one engine to use here.",
                      "hr": "Ovdje postoji samo jedan motor."},
@@ -659,8 +644,6 @@ STRINGS = {
                            "hr": "Aplikacija koristi novi app.py sa starijom kopijom vlastitih modula koja je ostala u memoriji. Kod nije pokvaren. Otvori **Manage app** dolje desno i pritisni **Reboot app**."},
     "where_am_i":         {"en": "Where am I?", "hr": "Gdje sam?"},
     "log_out_link":       {"en": "log out", "hr": "odjava"},
-    "eng_switch_link":    {"en": "switch to %s", "hr": "prebaci na %s"},
-    "eng_switch_dead":    {"en": "one engine", "hr": "jedan motor"},
     "kt_title":           {"en": "Key tester", "hr": "Tester ključeva"},
     "kt_intro":           {"en": "Paste anything with keys in it — a note, a dashboard export, an old secrets block. Nothing is saved until you copy the result into Secrets.",
                            "hr": "Zalijepi bilo što s ključevima — bilješku, izvoz s nadzorne ploče, stari secrets blok. Ništa se ne sprema dok rezultat ne kopiraš u Secrets."},
@@ -4154,25 +4137,39 @@ def _foot_links(eng):
     with st.container(key="boxlinks_foot"):
         c1, c2 = st.columns([1, 1])
         with c1:
+            # IT SAYS WHAT IS RUNNING, NOT WHAT IT WOULD SWITCH TO.
+            #
+            # Baba, 6.9.2026: "I just want to be edge or Google. When
+            # it's edge, it's edge. When it's Google, it's Google. We
+            # don't write there what is not present. I want to see what
+            # is present at the moment I click, and then it switch to
+            # another one... I want to have this like a status line."
+            #
+            # v250 read "⇄ switch to Gemini", which is the OTHER engine
+            # — so the one word on screen was always the one word that
+            # was NOT true. At a glance that is worse than saying
+            # nothing: it answers "which am I on" with the wrong name.
+            #
+            # NO GLYPH EITHER. A mark beside a status is a second thing
+            # to read before the first one lands, and the underline
+            # already says it can be pressed.
+            #
+            # Where it would go is in the HELP, which is a tooltip and
+            # not on the page — so the line stays one word.
+            label = eng.short if eng else t("eng_mixed")
             if nxt is None:
-                why, label = t("eng_only_one"), t("eng_switch_dead")
+                why = t("eng_only_one")
             elif not ready:
-                why, label = (t("eng_not_ready") % nxt.label,
-                              t("eng_switch_link") % nxt.label)
+                why = t("eng_not_ready") % nxt.label
             else:
-                why, label = (t("eng_switch_to") % nxt.label,
-                              t("eng_switch_link") % nxt.label)
+                why = t("eng_switch_to") % nxt.short
 
             def _flip():
                 st.session_state.update(EN.route_settings(nxt))
                 st.session_state[EN.SETTING_KEY] = nxt.id
                 st.session_state.pop("_engine_check", None)
 
-            # THE GLYPH RIDES WITH THE WORDS. ⇄ alone was a puzzle at
-            # the foot of a page; the words alone lose the mark he has
-            # already learned. Both, and the aria name still matches.
-            st.button("%s %s" % (SYM["engine"], label), key="eng_flip",
-                      help=why, disabled=not ready,
+            st.button(label, key="eng_flip", help=why, disabled=not ready,
                       on_click=_flip if ready else None)
         with c2:
             st.button(t("log_out_link"), key="foot_logout",
@@ -4202,10 +4199,6 @@ def name_the_symbols():
         SYM["save"]: t("read_save"), SYM["paste"]: t("paste_btn"),
         SYM["next"]: t("next_page"),
         SYM["go"]: t("translate_btn"),
-        # THE SWITCH TOO. A glyph-only button is announced as its own
-        # character otherwise — "rightwards arrow over leftwards arrow" —
-        # to the people this app was built for.
-        SYM["engine"]: t("eng_switch"),
     }
     components.html(
         "<script>(function(){"

@@ -48,11 +48,25 @@ class Engine:
     describe only part of the board.
     """
 
-    __slots__ = ("id", "label", "routes", "note", "tier")
+    __slots__ = ("id", "label", "short", "routes", "note", "tier")
 
-    def __init__(self, id, label, routes, note="", tier=""):
+    def __init__(self, id, label, routes, note="", tier="", short=""):
         self.id = id
         self.label = label
+        # THE ONE WORD FOR A STATUS LINE.
+        #
+        # Baba, 6.9.2026: "I just want to be edge or Google. When it's
+        # edge, it's edge. When it's Google, it's Google. We don't write
+        # there what is not present... Groq is confusing."
+        #
+        # `label` names the PARTS and stays that way, because in the
+        # owner's panel — where he is choosing what to buy — knowing
+        # that studio means Speechify and Claude is the whole point.
+        # `short` is what a person reads at the foot of a page to answer
+        # "which one am I on", and there the parts are noise: Groq does
+        # the transcribing, so naming it beside a control that switches
+        # the VOICE reads as a promise about the wrong thing.
+        self.short = short or label
         self.tier = tier or id
         self.routes = dict(routes)
         self.note = note
@@ -91,10 +105,10 @@ ENGINES = [
     # migration to say a word differently on screen.
     Engine("normal", "Edge / Groq",
            {"stt": "groq", "tts": "edge", "llm": "groq"},
-           note="the app's own keys", tier="free"),
+           note="the app's own keys", tier="free", short="Edge"),
     Engine("studio", "Speechify / AssemblyAI / Claude",
            {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
-           note="your own keys", tier="studio"),
+           note="your own keys", tier="studio", short="Studio"),
     # GOOGLE, AND IT IS A COMPLETE PAIR.
     #
     # Baba, 5.9.2026: "We have Edge/Groq or Google because the Google
@@ -121,7 +135,7 @@ ENGINES = [
     # this line names a vendor to do it. See ttt/speech.py:plan_for.
     Engine("google", "Gemini", {"stt": "google", "tts": "google",
                                 "llm": "google"},
-           note="one key, all three jobs", tier="free"),
+           note="one key, all three jobs", tier="free", short="Google"),
 ]
 
 BY_ID = {e.id: e for e in ENGINES}
