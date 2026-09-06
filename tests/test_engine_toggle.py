@@ -695,6 +695,94 @@ try:
 finally:
     shutil.move(BAK, SEC)
 
+
+print()
+print("12 THE READER'S OWN PATH MAKES A REAL MP3 FROM A WAV VOICE")
+# =====================================================================
+#
+# Baba, 6.9.2026: "Still Google is not generating any audio."
+#
+# THE v254 MIME FIX WAS REAL AND WAS NOT THIS. That one was about
+# PLAYING the bytes; this is about MAKING them, and it happened first.
+#
+# build_part wrote every segment as seg_NNNN.mp3 whatever the voice
+# returned, because for two years every voice returned MP3. Gemini
+# returns a WAV, and join_audio's single-part path stream-copies:
+#
+#     ffmpeg -i seg_0000.mp3 -c copy out.mp3
+#     [mp3] Invalid audio stream. Exactly one MP3 audio stream is required.
+#
+# ffmpeg refuses, build_part raises, and the reader swallows the error
+# "so one failed block cannot cancel the others" — so a Google reading
+# produced silence with nothing on screen to say why.
+
+from ttt.providers.google import to_wav as _to_wav   # noqa: E402
+
+_wav = _to_wav(b"\x00\x01" * 24000)
+check("a WAV is given a .wav extension, not .mp3",
+      SP.audio_ext(_wav) == ".wav", SP.audio_ext(_wav))
+check("an MP3 still gets .mp3",
+      SP.audio_ext(b"ID3\x04\x00" + b"\x00" * 40) == ".mp3")
+check("an unknown shape falls back to .mp3, as every voice used to be",
+      SP.audio_ext(b"\x00\x00\x00\x00") == ".mp3")
+
+# THE WHOLE PATH, with a WAV-returning voice. This is the check that
+# would have caught it: it needs no key and no network.
+def _wav_synth(text):
+    return _wav, 1.0, None
+
+
+_path, _marks, _total, _temps = SP.build_part(
+    ["Jedna recenica."], _wav_synth, 0, "Jedna recenica.")
+check("build_part SURVIVES a WAV voice", os.path.exists(_path), _path)
+_head = open(_path, "rb").read(3)
+check("...and produces a real MP3, not a renamed WAV",
+      _head in (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xfa"), _head)
+check("...of non-zero size", os.path.getsize(_path) > 500,
+      os.path.getsize(_path))
+
+# TWO BLOCKS, the concat path rather than the single-file path.
+_p2, _m2, _t2, _tmp2 = SP.build_part(
+    ["Jedna.", "Druga."], _wav_synth, 0, "Jedna. Druga.")
+check("two WAV blocks join into one MP3", os.path.getsize(_p2) > 500)
+check("...with a mark per sentence", len(_m2) == 2, len(_m2))
+
+# AND MP3 STILL TAKES THE FAST PATH. join_audio stream-copies a single
+# MP3 rather than re-encoding it, which is why that branch exists.
+check("join_audio still stream-copies a single mp3",
+      'paths[0].lower().endswith(".mp3")' in
+      open(os.path.join(ROOT, "ttt", "speech.py")).read())
+
+print()
+print("13 PLAY IS LIVE, NOT GREY, BEFORE THE FIRST PRESS")
+# =====================================================================
+#
+# Baba: "this play button is always grayed out until the user presses
+# it. Can it be activated so the user knows it can be pressed?"
+#
+# The cell was gated on a `startable` class built from the LAST render's
+# props — and a Streamlit text_area does not commit until it loses
+# focus, so after typing, the prop was still false. The first tap only
+# blurred the box; the second found the button live.
+
+_deck = open(os.path.join(ROOT, "waveform_frontend", "index.html")).read()
+check("the idle deck's play cell is pressable",
+      "body.idle #bPlay{pointer-events:auto" in _deck,
+      [l for l in _deck.splitlines() if "#bPlay{" in l][:3])
+check("...and at full opacity, so it LOOKS pressable",
+      "body.idle #bPlay{pointer-events:auto;opacity:1" in _deck)
+check("NO stale prop gates it any more",
+      ".startable #bPlay" not in _deck)
+# THE OTHER CELLS STAY DEAD. Stepping through sentences that do not
+# exist yet is meaningless, and a live control that does nothing is
+# what teaches somebody the app is broken.
+check("prev and next stay dead while idle",
+      "body.idle #row > *{pointer-events:none}" in _deck)
+# AND PYTHON ANSWERS WITH A SENTENCE when there is genuinely no text,
+# so an always-live play cannot mislead.
+check("pressing it with no text gets a sentence, not silence",
+      't("nothing_to_read")' in CODE)
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

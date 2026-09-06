@@ -83,7 +83,27 @@
      two cells stay dead, because stepping through sentences that do not
      exist yet is meaningless. */
   body.idle #row > *{pointer-events:none}
-  body.idle.startable #bPlay{pointer-events:auto;opacity:1;cursor:pointer}
+  /* PLAY IS LIVE WHENEVER THE DECK IS IDLE — no `startable` gate.
+     Baba, 6.9.2026: "this play button is always grayed out until the
+     user presses it. Can it be activated so the user knows it can be
+     pressed?"
+     THE GUARD WAS THE BUG, AND THIS FILE ALREADY KNEW IT. Thirty lines
+     down, `save` had exactly this gate removed for exactly this reason:
+     "the class comes from the LAST render's props — and on a phone the
+     text he just typed has not reached Python yet, because a Streamlit
+     text_area does not commit until it loses focus. Tapping a button
+     INSIDE this iframe is what blurs it, so at the instant of the click
+     the class is always one step behind reality."
+     So after typing, `startable` was still false and play was dim and
+     dead. The first tap only blurred the box; the SECOND found the
+     button live. That is the "grayed out until the user presses it" he
+     is describing, and the reasoning was written down for save and not
+     carried across to play.
+     A PROP THAT LAGS CANNOT GATE A PRESS. Play is always live and
+     always reported; Python decides, and by the time it runs the blur
+     has committed the text. With genuinely no text it answers with a
+     sentence, which is what a person can act on — not a dead cell. */
+  body.idle #bPlay{pointer-events:auto;opacity:1;cursor:pointer}
   /* Nothing to save until something has been made. Dead rather than
      hidden: the row must keep its four cells (§57), and a control that
      appears and disappears moves everything under it. */

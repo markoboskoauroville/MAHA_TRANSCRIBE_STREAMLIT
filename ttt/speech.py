@@ -94,6 +94,15 @@ def audio_mime(data) -> str:
     return "audio/mpeg"
 
 
+EXT_FOR_MIME = {"audio/mpeg": ".mp3", "audio/wav": ".wav",
+                "audio/ogg": ".ogg", "audio/flac": ".flac"}
+
+
+def audio_ext(data) -> str:
+    """".mp3", ".wav" ... from the bytes themselves."""
+    return EXT_FOR_MIME.get(audio_mime(data), ".mp3")
+
+
 def audio_src(data) -> str:
     """A data: URL carrying the right type. One place, four callers."""
     import base64 as _b
@@ -109,8 +118,18 @@ def join_audio(paths, out_path: str = None) -> str:
         raise ValueError("nothing to join")
     out_path = out_path or tempfile.mktemp(suffix=".mp3")
     if len(paths) == 1:
-        subprocess.run(["ffmpeg", "-y", "-i", paths[0], "-c", "copy", out_path],
-                       check=True, capture_output=True, timeout=300)
+        # -c copy ONLY WHEN IT IS ALREADY AN MP3. Copying a PCM stream
+        # into an MP3 container is not a conversion and ffmpeg says so —
+        # "Exactly one MP3 audio stream is required" — then exits
+        # non-zero and takes the whole reading with it.
+        if paths[0].lower().endswith(".mp3"):
+            subprocess.run(["ffmpeg", "-y", "-i", paths[0], "-c", "copy",
+                            out_path], check=True, capture_output=True,
+                           timeout=300)
+        else:
+            subprocess.run(["ffmpeg", "-y", "-i", paths[0], "-codec:a",
+                            "libmp3lame", "-q:a", "4", out_path],
+                           check=True, capture_output=True, timeout=300)
         return out_path
     listfile = tempfile.mktemp(suffix=".txt")
     with open(listfile, "w", encoding="utf-8") as f:
@@ -227,7 +246,23 @@ def build_part(part_sentences, synth, char_offset: int, full_text: str,
     paths, all_marks, elapsed = [], [], 0.0
     for i, (text, rel_off) in enumerate(chunks):
         audio, seconds, marks = synth(text)
-        p = os.path.join(tmpdir, f"seg_{i:04d}.mp3")
+        # THE SEGMENT IS NAMED FOR WHAT IT ACTUALLY IS.
+        #
+        # THIS IS WHY GOOGLE MADE NO SOUND AT ALL. Every segment was
+        # written as seg_NNNN.mp3 whatever the voice returned, because
+        # for two years every voice returned MP3. Gemini returns a WAV,
+        # and join_audio's single-part path stream-copies:
+        #
+        #     ffmpeg -i seg_0000.mp3 -c copy out.mp3
+        #     [mp3] Invalid audio stream. Exactly one MP3 audio stream
+        #           is required.
+        #
+        # ffmpeg refuses, build_part raises, and the reader swallows the
+        # error "so one failed block cannot cancel the others" — so the
+        # reading produced silence with nothing on screen to say why.
+        # The v254 mime fix was real and was not this: that one was about
+        # PLAYING the bytes, this one is about MAKING them.
+        p = os.path.join(tmpdir, "seg_%04d%s" % (i, audio_ext(audio)))
         with open(p, "wb") as f:
             f.write(audio)
         paths.append(p)
