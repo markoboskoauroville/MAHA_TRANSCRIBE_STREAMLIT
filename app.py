@@ -24,7 +24,22 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v237 (the spreadsheet is gone)"
+APP_VERSION = "v261"
+
+# IT HAD SAID v237 FOR TWENTY-THREE VERSIONS, AND THAT WAS NOT COSMETIC.
+#
+# _BUILD_STAMP below is APP_VERSION, and it is what drops the ttt modules
+# out of sys.modules so a deploy re-imports them. While this string sat
+# still, THE STAMP NEVER CHANGED AND THE MODULES WERE NEVER RELOADED —
+# which is precisely the outage of 6.9.2026: a new app.py calling
+# set_google_keys against an old ttt.providers still in memory. v243 put
+# a guard in front of that symptom and never asked why the reload had
+# not happened.
+#
+# So this line is load-bearing twice over, and it drifted silently
+# because nothing read it and nothing showed it. Baba asked for the
+# version in the corner, which is the cheapest possible fix for that:
+# a number nobody can see is a number nobody bumps.
 
 # How many blocks to keep ready ahead of the one playing. Three, so a
 # hand-off is never heard even if one block is slow or one request has to
@@ -4233,6 +4248,17 @@ def _foot_line(name, tier, who, eng):
                   disabled=not ready, on_click=_flip if ready else None)
         st.button(t("log_out_link"), key="foot_logout",
                   help=t("log_out_link"), on_click=log_out)
+        # THE VERSION, HARD RIGHT. Baba, 6.9.2026: "give me the version
+        # number in the lower right corner."
+        #
+        # NOT UNDERLINED, because it is not an action — his own rule
+        # from an hour ago: "what is underlined, that's action. What is
+        # not underlined is information." So it is the same orange as
+        # the rest of the line and carries no underline, and the CSS
+        # pushes it to the right with margin-left:auto rather than a
+        # spacer column, which would stack.
+        st.markdown('<div class="tabsig tabsig_v">%s</div>'
+                    % html.escape(APP_VERSION), unsafe_allow_html=True)
 
 
 def name_the_symbols():

@@ -1360,6 +1360,22 @@ def css(scheme: str = "amber", font: str = "mono",
     }}
     /* The dim words: left, orange, no margin of their own so they sit
        on the links' baseline. */
+    /* The version sits hard right on the same line. margin-left:auto
+       inside the flex row, NOT a spacer column — a column would stack
+       on a narrow screen and drop the version onto its own line, which
+       is the fault this whole row was rebuilt to escape. */
+    [class*="st-key-boxlinks_foot"] .tabsig_v {{
+      margin: 0 0 0 auto !important;
+      padding: 0 !important;
+      text-align: right !important;
+      white-space: nowrap;
+      color: var(--amber) !important;
+      opacity: 0.55;
+      text-decoration: none !important;
+    }}
+    [class*="st-key-boxlinks_foot"] div[data-testid="stElementContainer"]:last-child {{
+      margin-left: auto !important;
+    }}
     [class*="st-key-boxlinks_foot"] .tabsig_l {{
       text-align: left !important;
       margin: 0 !important;
