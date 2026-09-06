@@ -4027,14 +4027,21 @@ def engine_status(eng) -> str:
     """
     if eng is None:
         return t("eng_mixed")
-    prov = None
-    for task in ("tts", "stt", "llm"):
-        cand = PROVIDERS.get(eng.routes.get(task, ""))
-        if cand is not None and getattr(cand, "needs_key", False):
-            prov = cand
-            break
-    if prov is None:
-        return eng.short                     # keyless throughout
+    # THE VOICE'S OWN KEY, OR NO NUMBER AT ALL.
+    #
+    # Baba, 6.9.2026: "why edge said /5". He is right, and it was wrong
+    # rather than merely ugly: EDGE IS KEYLESS. It needs no key to
+    # speak, so "Edge –/5" reported GROQ's transcription keys beside the
+    # name of the VOICE — a number about the wrong thing, attached to
+    # the word that names the speaker.
+    #
+    # This used to walk stt and llm when tts had no key, which is how it
+    # got there. Now the line names the engine and the key THAT ENGINE'S
+    # VOICE is using, and when the voice needs none it says only the
+    # engine.
+    prov = PROVIDERS.get(eng.routes.get("tts", ""))
+    if prov is None or not getattr(prov, "needs_key", False):
+        return eng.short
     total = len(getattr(prov, "keys", None) or [])
     if not total:
         # A KEYED PROVIDER WITH NO KEYS is a real state and worth
@@ -4185,18 +4192,35 @@ def _foot_line(name, tier, who, eng):
     def _dim(text):
         return ('<div class="tabsig tabsig_l">%s</div>' % html.escape(text))
 
-    lead = "  ·  ".join(x for x in (name, tier) if x)
-    tail = "  ·  ".join([""] + ([who] if who else []) + [""])
+    # LEFT, ONE LINE, ONE BASELINE.
+    #
+    # Baba, 6.9.2026: "Text is not aligned and it also is not aligned to
+    # the left edge of the screen. I told you left edge and all text is
+    # not in one line."
+    #
+    # WHAT WAS WRONG. The cells were given PROPORTIONS — 0.30, 0.26,
+    # 0.16, 0.20 — so each was a wide box, and the dim text sat at the
+    # RIGHT end of its box because .tabsig is right-aligned everywhere
+    # else and this row inherited that. So the words began in the middle
+    # of the screen, with a gap before the links.
+    #
+    # Proportions are the wrong tool for a SENTENCE. Every cell is now
+    # the width of its own words — the CSS gives these columns
+    # `flex: 0 0 auto` — and ALL the dim text is in ONE cell, so there
+    # are no parts left to align against each other.
+    #
+    # The name of the person went with it. It was the fourth thing on a
+    # line he asked to be short, and "who am I" is answered by the fact
+    # that his own text is on the screen.
+    lead = "  ·  ".join(x for x in (name, tier) if x) + "  ·"
 
     with st.container(key="boxlinks_foot"):
-        cols = st.columns([0.001 + 0.30, 0.001 + 0.26,
-                           0.001 + 0.16, 0.001 + 0.20, 1.0])
-        cols[0].markdown(_dim(lead + "  ·"), unsafe_allow_html=True)
+        cols = st.columns(3)
+        cols[0].markdown(_dim(lead), unsafe_allow_html=True)
         with cols[1]:
             st.button(engine_status(eng), key="eng_flip", help=why,
                       disabled=not ready, on_click=_flip if ready else None)
-        cols[2].markdown(_dim(tail if who else "·"), unsafe_allow_html=True)
-        with cols[3]:
+        with cols[2]:
             st.button(t("log_out_link"), key="foot_logout",
                       help=t("log_out_link"), on_click=log_out)
 

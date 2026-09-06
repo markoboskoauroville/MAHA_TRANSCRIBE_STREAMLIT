@@ -156,7 +156,11 @@ if btn:
     # engine word is no longer printed twice on two lines.
     check("it names the engine that is RUNNING",
           b.label.split()[0] == "Edge", b.label)
-    check("...and carries its key position", "/" in b.label, b.label)
+    # NO KEY NUMBER ON A KEYLESS VOICE. Baba: "why edge said /5". Edge
+    # speaks without a key, so the /5 was GROQ's transcription keys
+    # printed beside the name of the VOICE — a number about the wrong
+    # thing. The engine alone is the whole truth here.
+    check("a keyless voice shows NO key number", "/" not in b.label, b.label)
     check("...and NOT the one it would switch to",
           "Gemini" not in b.label and "Google" not in b.label, b.label)
     check("no glyph on it — a mark beside a status is a second thing to "
@@ -164,8 +168,8 @@ if btn:
           GLYPH not in b.label, b.label)
     check("...and no instruction words either",
           "switch" not in b.label.lower(), b.label)
-    check("it is the engine and its key, nothing else",
-          len(b.label.split()) == 2, b.label)
+    check("it is just the engine on a keyless voice",
+          b.label == "Edge", b.label)
     # WHERE IT WOULD GO IS IN THE TOOLTIP, which is not on the page.
     check("the target is in the help, not on the line", bool(b.help), b.help)
     check("it carries help text saying what it will do", bool(b.help), b.help)
@@ -548,11 +552,24 @@ check("...on ONE line, in one cell", len(_lead) >= 1, len(_lead))
 
 check("the footer carries the engine name", "Edge" in _flip.label,
       _flip.label)
-check("...and a key position beside it", "/" in _flip.label, _flip.label)
+check("...and NO key number, because Edge's voice is keyless",
+      "/" not in _flip.label, _flip.label)
+# A KEYED VOICE STILL SHOWS ITS POSITION. The rule is about WHICH
+# PROVIDER SPEAKS, not about hiding the number — so it is asserted on
+# the engine whose voice really is keyed.
+#
+# The first draft of this check read `"/" in GP.__name__ or True`, which
+# cannot fail. A check that cannot fail is worse than no check: it reads
+# as cover. Deleted and replaced with one that can.
+check("google's voice is keyed and edge's is not",
+      P.get("google").needs_key is True
+      and P.get("edge").needs_key is False)
 # A DASH UNTIL SOMETHING HAS BEEN ASKED. Showing 1/2 before any call
 # would be a claim about a key that has never been tried.
-check("nothing used yet reads as a dash, not as key 1",
-      "\u2013/" in _flip.label, _flip.label)
+# THE DASH BELONGS TO A KEYED ENGINE THAT HAS NOT BEEN ASKED YET, and
+# Edge is never asked. Google's line is where the dash lives now.
+check("a keyless engine shows neither a dash nor a count",
+      "\u2013" not in _flip.label, _flip.label)
 
 # THE NUMBER IS A POSITION AND NEVER A FRAGMENT OF A KEY. keyring.md
 # §10d: on Gemini the first six characters are identical on every key,
