@@ -1326,6 +1326,70 @@ def css(scheme: str = "amber", font: str = "mono",
        each tab. Above and right is one corner to learn.
        GLUED DOWNWARD now rather than upward: the row is the top edge of
        the writing surface, so the gap it closes is the one BELOW it. */
+    /* ===== THE FOOTER LINE =================================
+       Baba, 6.9.2026: "aligning to the left side of the screen... all
+       text is not in one line... make everything orange. What is
+       underlined, that's action."
+
+       THREE ATTEMPTS FAILED BEFORE THIS ONE BECAUSE THEY WERE NEVER
+       APPLIED. This block is inside an f-string, so every brace must be
+       doubled; my earlier edits used single braces, matched nothing,
+       and the footer went on inheriting the generic boxlinks rules —
+       right-aligned, dim, and stacking. I reported the fix three times
+       and shipped no CSS at all.
+
+       NO COLUMNS EITHER. st.columns stacks below a breakpoint, which is
+       what put the links on one line and the words on the next. The
+       footer is a plain container whose VERTICAL block is turned into a
+       row; a vertical block has no breakpoint to come apart at. */
+    [class*="st-key-boxlinks_foot"] div[data-testid="stVerticalBlock"] {{
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      justify-content: flex-start !important;
+      align-items: baseline !important;
+      gap: 0.6rem !important;
+    }}
+    [class*="st-key-boxlinks_foot"] div[data-testid="stElementContainer"] {{
+      width: auto !important;
+      flex: 0 0 auto !important;
+      margin: 0 !important;
+    }}
+    [class*="st-key-boxlinks_foot"] {{
+      margin-top: 0.35rem !important;
+      margin-bottom: 0 !important;
+    }}
+    /* The dim words: left, orange, no margin of their own so they sit
+       on the links' baseline. */
+    [class*="st-key-boxlinks_foot"] .tabsig_l {{
+      text-align: left !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      white-space: nowrap;
+      color: var(--amber) !important;
+      opacity: 0.75;
+    }}
+    /* The two actions: orange, UNDERLINED, no vertical padding. Colour
+       no longer carries the difference — the underline does, alone. */
+    [class*="st-key-boxlinks_foot"] .stButton button,
+    [class*="st-key-boxlinks_foot"] .stButton button p {{
+      color: var(--amber) !important;
+      opacity: 1 !important;
+      padding: 0 !important;
+      min-height: 0 !important;
+      font-size: 0.76rem !important;
+      letter-spacing: 0.10em !important;
+      font-weight: 400 !important;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }}
+    /* A dead action stays orange and loses its underline — his rule,
+       applied rather than excepted. */
+    [class*="st-key-boxlinks_foot"] .stButton button:disabled,
+    [class*="st-key-boxlinks_foot"] .stButton button:disabled p {{
+      opacity: 0.45 !important;
+      text-decoration: none !important;
+    }}
+
     [class*="st-key-boxlinks_"] {{
       margin-top: 0.1rem !important;
       margin-bottom: -0.65rem !important;

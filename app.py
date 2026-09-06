@@ -4214,15 +4214,25 @@ def _foot_line(name, tier, who, eng):
     # that his own text is on the screen.
     lead = "  ·  ".join(x for x in (name, tier) if x) + "  ·"
 
+    # NO COLUMNS. This is the third attempt at this row and the first
+    # two failed the same way, which is the tell.
+    #
+    # st.columns STACKS. Below a breakpoint Streamlit turns the row into
+    # a column, which is why his screenshot showed the two links on one
+    # line and the words on the NEXT one, indented — not a styling near
+    # miss, a different layout entirely. No amount of justify-content
+    # reaches a row that is no longer a row.
+    #
+    # So the three elements go into a plain container, one after
+    # another, and the CSS turns THAT container's vertical block into a
+    # flex row. A vertical block has no breakpoint to stack at, so it
+    # cannot come apart on a narrow screen.
     with st.container(key="boxlinks_foot"):
-        cols = st.columns(3)
-        cols[0].markdown(_dim(lead), unsafe_allow_html=True)
-        with cols[1]:
-            st.button(engine_status(eng), key="eng_flip", help=why,
-                      disabled=not ready, on_click=_flip if ready else None)
-        with cols[2]:
-            st.button(t("log_out_link"), key="foot_logout",
-                      help=t("log_out_link"), on_click=log_out)
+        st.markdown(_dim(lead), unsafe_allow_html=True)
+        st.button(engine_status(eng), key="eng_flip", help=why,
+                  disabled=not ready, on_click=_flip if ready else None)
+        st.button(t("log_out_link"), key="foot_logout",
+                  help=t("log_out_link"), on_click=log_out)
 
 
 def name_the_symbols():

@@ -441,6 +441,13 @@ LLM_MODELS = ("gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash")
 # decides how the reader plans a reading. See `metered_by_call`.
 TTS_PER_DAY = 10
 
+# HOW MANY SLOW FAILURES BEFORE GIVING UP ON A SENTENCE, and how long
+# one call may hang. Both measured 6.9.2026: a working call is 17s, a
+# 503 is 67s. A 120-second timeout across 21 keys is 42 minutes of
+# "Making part 1 of 3…", which is what a person reads as a freeze.
+SOFT_TRIES = 4
+TTS_TIMEOUT = 45
+
 # Raw PCM, 24 kHz, mono, 16-bit — and NO RIFF HEADER, which nothing warns
 # you about. Measured: audio/L16;codec=pcm;rate=24000.
 PCM_RATE = 24000
@@ -617,6 +624,22 @@ class Google(Provider):
             _START[0] = (_START[0] + 1) % max(1, len(self.keys))
             begin = _START[0]
         order = self.keys[begin:] + self.keys[:begin]
+        # A CAP, OR THE RING BECOMES THE HANG.
+        #
+        # v257 made an unknown rotate instead of stopping, which was
+        # right: one 503 used to kill a sentence with twenty untried
+        # keys behind it. What I did not do is bound it — and the
+        # measured numbers make that fatal. A 503 costs up to 67s and
+        # the timeout was 120s, so one sentence could walk 21 keys and
+        # sit there for the better part of an hour, showing "Making part
+        # 1 of 3…" and never finishing. Baba: "Just in loop and nothing
+        # is happening."
+        #
+        # FOUR IS ENOUGH TO SURVIVE A BAD KEY AND SHORT ENOUGH TO FAIL
+        # LOUDLY. Spent accounts answer in 0.1s and do not count against
+        # it — only calls that actually cost TIME do, so a ring full of
+        # empty accounts still walks straight past them to a working one.
+        tried_slow = 0
         last = "no keys"
         for n, key in enumerate(order, 1):
             i = ((begin + n - 1) % len(self.keys)) + 1
@@ -644,6 +667,14 @@ class Google(Provider):
             # returning soft.
             if kind is None:
                 return None, err
+            # ONLY A SLOW FAILURE COUNTS. A dead or spent key answers
+            # instantly, so walking a hundred of them is free; what must
+            # be bounded is waiting.
+            if kind == "soft":
+                tried_slow += 1
+                if tried_slow >= SOFT_TRIES:
+                    return None, ("Google did not answer after %d tries. "
+                                  "%s" % (tried_slow, err))
         return None, "All Google keys failed. Last: %s" % last
 
     # ---- key testing -------------------------------------------------
@@ -740,7 +771,8 @@ class Google(Provider):
                      "generationConfig": {
                          "responseModalities": ["AUDIO"],
                          "speechConfig": {"voiceConfig": {
-                             "prebuiltVoiceConfig": {"voiceName": voice}}}}})
+                             "prebuiltVoiceConfig": {"voiceName": voice}}}}},
+                    timeout=TTS_TIMEOUT)
                 return data, err, kind
             data, err = self._rotate(attempt)
             if err:
