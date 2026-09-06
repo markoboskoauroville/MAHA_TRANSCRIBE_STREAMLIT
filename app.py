@@ -655,6 +655,8 @@ STRINGS = {
     "method_gap":         {"en": "Note: one or more parts could not be transcribed (marked […] in the text).",
                             "hr": "Napomena: jedan ili više dijelova nije transkribiran (označeno […] u tekstu)."},
     "speechify_title":    {"en": "Speechify (premium voices)", "hr": "Speechify (premium glasovi)"},
+    "stale_modules":      {"en": "This app is running a new app.py against an older copy of its own modules, still held in memory. Nothing is broken in the code. Open **Manage app** at the lower right and press **Reboot app**.",
+                           "hr": "Aplikacija koristi novi app.py sa starijom kopijom vlastitih modula koja je ostala u memoriji. Kod nije pokvaren. Otvori **Manage app** dolje desno i pritisni **Reboot app**."},
     "kt_title":           {"en": "Key tester", "hr": "Tester ključeva"},
     "kt_intro":           {"en": "Paste anything with keys in it — a note, a dashboard export, an old secrets block. Nothing is saved until you copy the result into Secrets.",
                            "hr": "Zalijepi bilo što s ključevima — bilješku, izvoz s nadzorne ploče, stari secrets blok. Ništa se ne sprema dok rezultat ne kopiraš u Secrets."},
@@ -2462,6 +2464,27 @@ PROVIDERS.set_groq_keys(KEYS)
 # a person's. The engine would have been offered, chosen, and then
 # silently declined to be usable, which is the failure HOW_WE_WORK names:
 # the code is reachable, correct, and nothing leads to it.
+# THE MODULES MUST BE AS NEW AS THIS FILE.
+#
+# Streamlit re-reads app.py on every run and keeps imported packages in
+# sys.modules, so a deploy that reruns without restarting the process
+# runs a NEW app.py against the OLD ttt package. That is not a
+# hypothetical: on 6.9.2026 the live app died at import with a redacted
+# AttributeError on set_google_keys, on a commit where the function was
+# present — confirmed byte for byte against the remote and re-imported
+# from a clean clone, where it worked.
+#
+# The failure mode is the worst kind: the traceback names a line that is
+# correct, in a file that is correct, and Streamlit Cloud REDACTS the
+# message, so the person is told nothing except that something broke.
+#
+# So it is checked, once, before anything depends on it, and the answer
+# is a sentence somebody can act on rather than a stack trace.
+_needed = 2
+if getattr(PROVIDERS, "API_LEVEL", 0) < _needed:
+    st.error(t("stale_modules"))
+    st.stop()
+
 GOOGLE_KEYS = google_keys()
 PROVIDERS.set_google_keys(GOOGLE_KEYS)
 

@@ -18,6 +18,29 @@ from .groq import Groq
 from .hume import Hume
 from .speechify import Speechify
 
+# WHAT THIS MODULE PROMISES app.py, AS A NUMBER.
+#
+# RAISE IT whenever app.py starts depending on something new in here — a
+# new function, a new REGISTRY entry, a changed signature. app.py checks
+# it at startup and refuses with a sentence a person can act on.
+#
+# WHY A NUMBER AND NOT A hasattr CHECK. On 6.9.2026 the live app died at
+# import with a redacted AttributeError on set_google_keys, on a commit
+# where that function was provably present — verified byte for byte
+# against the remote and re-imported from a clean clone.
+#
+# Streamlit RE-READS app.py on every run but keeps imported packages in
+# sys.modules. A deploy that reruns without restarting the process
+# therefore executes a NEW app.py against the OLD copy of this module,
+# still in memory. Every symptom follows: the new line is there, the
+# function it calls is not, and the traceback names a function that
+# exists in the file on disk.
+#
+# hasattr would have caught only the one missing name. The mismatch is
+# the whole module being old, so the whole module states its level and
+# app.py compares it.
+API_LEVEL = 2          # 2: google is a provider, set_google_keys exists
+
 REGISTRY = {
     Edge.id: Edge(),
     Speechify.id: Speechify(),

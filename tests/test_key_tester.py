@@ -43,6 +43,11 @@ def code_only(src):
 
 CODE = code_only(RAW)
 
+_m = re.search(r'"stale_modules":\s*\{"en": "(.*?)",\n\s*"hr": "(.*?)"\}',
+               RAW, re.S)
+STRINGS_EN = {"stale_modules": _m.group(1) if _m else ""}
+STRINGS_HR = {"stale_modules": _m.group(2) if _m else ""}
+
 # Shapes only. Not one of these is a real credential.
 G1 = "AQ.Ab8RN6" + "a" * 40
 G2 = "AQ.Ab8RN6" + "b" * 40
@@ -422,6 +427,42 @@ check("the work probe is a POST, because a GET would be a listing",
 check("Google's measured facts are unchanged in the provider",
       "gemini-2.5-flash-preview-tts" in
       open(os.path.join(ROOT, "ttt", "providers", "google.py")).read())
+
+# =====================================================================
+print()
+print("5 THE STALE-MODULE GUARD — the outage of 6.9.2026")
+# =====================================================================
+#
+# The live app died at import with a REDACTED AttributeError on
+# set_google_keys, on a commit where the function was provably present:
+# the remote file matched local byte for byte, and a clean clone of that
+# exact commit imported it fine. Streamlit re-reads app.py every run and
+# keeps packages in sys.modules, so a rerun without a process restart
+# runs a NEW app.py against the OLD ttt package.
+#
+# The code was right and the person was told nothing. That is the part
+# this guard fixes.
+
+from ttt import providers as _P                   # noqa: E402
+check("the providers module states an API level",
+      isinstance(getattr(_P, "API_LEVEL", None), int), 
+      getattr(_P, "API_LEVEL", None))
+check("...and it is at least the level app.py asks for",
+      _P.API_LEVEL >= 2, _P.API_LEVEL)
+check("app.py checks it BEFORE it uses anything from that level",
+      CODE.find("API_LEVEL") < CODE.find("PROVIDERS.set_google_keys"),
+      (CODE.find("API_LEVEL"), CODE.find("PROVIDERS.set_google_keys")))
+check("it stops rather than carrying on into the crash",
+      "st.stop()" in CODE.split("API_LEVEL")[1][:400])
+check("getattr with a default, so an OLD module without the name is "
+      "caught rather than raising the same AttributeError again",
+      'getattr(PROVIDERS, "API_LEVEL", 0)' in CODE)
+
+_msg = STRINGS_EN.get("stale_modules", "")
+check("the message names the button to press", "Reboot app" in _msg, _msg[:70])
+check("...and says the code is not broken, because it is not",
+      "Nothing is broken" in _msg, _msg[:70])
+check("...and exists in Croatian too", bool(STRINGS_HR.get("stale_modules")))
 
 print()
 print("%d passed, %d failed" % (passed, failed))
