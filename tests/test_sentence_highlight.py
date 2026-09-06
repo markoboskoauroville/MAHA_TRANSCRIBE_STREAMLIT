@@ -85,7 +85,17 @@ check("2c which is deeper than the block-shaped default, because a "
       S.BUFFER_AHEAD > 2)
 
 print("\n3 THE READER PLANS BY SENTENCE")
-check("3a it calls plan_sentences", "SPEECH.plan_sentences(sentences)" in code)
+# 3a WAS "SPEECH.plan_sentences(sentences)" in code — pinned to the
+# spelling of a call, which is face 8: it broke on an honest refactor
+# while nothing about the rule changed. What the RULE says is that an
+# ordinary reading gets one sentence per file; the reader now reaches
+# that through plan_for, which picks by whether the voice is metered.
+check("3a it asks the planner that can give one sentence per file",
+      "SPEECH.plan_for(" in code)
+check("3a2 and an unmetered voice — every voice that was here before "
+      "Google — still gets exactly that",
+      S.plan_for(["A.", "B.", "C."], metered=False)
+      == S.plan_sentences(["A.", "B.", "C."]))
 check("3b and no longer plan_even, which lit four sentences at once",
       "SPEECH.plan_even(sentences" not in code,
       "plan_even is still the reader's planner")

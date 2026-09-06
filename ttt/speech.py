@@ -430,6 +430,65 @@ def plan_even(sentences, per_block: int = BLOCK_SENTENCES,
     return out
 
 
+# WHICH PLANNER, AND THE COLLISION THAT MAKES IT NECESSARY
+#
+# v236 made the reader generate ONE FILE PER SENTENCE. Baba, 5.9.2026:
+# "we want absolute precision or nothing, otherwise it's confusing.
+# Generate each sentence in a separate file... then you highlight the
+# sentence you are playing." With the word highlight gone, the file IS
+# the highlight, so one sentence per file is exact by construction.
+#
+# That is the right shape for a voice that is free and local, and it is
+# the wrong shape for a voice metered by the REQUEST. A hundred
+# sentences is a hundred calls. Against an allowance of ten requests per
+# account per day, ONE PARAGRAPH SPENDS AN ACCOUNT — and it spends it on
+# a reading that a person may abandon after two sentences.
+#
+# So the reader asks which world it is in, and the answer decides the
+# planner:
+#
+#     not metered   plan_sentences   one sentence, one file, one
+#                                    highlight. Exact.
+#     metered       plan_even        blocks. The block is still the
+#                                    file, so the highlight is still
+#                                    EXACT — it is merely COARSER.
+#
+# THE COARSER HIGHLIGHT DOES NOT BREAK HIS RULE. What he refused was a
+# highlight that could be WRONG — a word lit that is not the word
+# sounding. Four sentences lit while those four sentences play is a
+# bigger box around a true statement, not a false one. "Absolute
+# precision or nothing" is about correctness, and this stays correct.
+#
+# AND IT IS NOT A VENDOR TEST. `metered` is a fact the provider reports
+# about itself (providers/base.py, metered_by_call). Nothing here and
+# nothing in the reader names a company — §0 rule 2 — so a provider
+# added next year gets the right planner without either file changing.
+
+
+def plan_for(sentences, metered: bool = False,
+             per_block: int = BLOCK_SENTENCES, max_chars: int = 1500):
+    """The planner this voice can afford. Returns [(sentences, offset)].
+
+    Both planners return the same shape, so the deck that plays blocks
+    does not learn a second vocabulary and the caller does not branch.
+    """
+    if metered:
+        return plan_even(sentences, per_block=per_block, max_chars=max_chars)
+    return plan_sentences(sentences, max_chars=max_chars)
+
+
+def requests_for(sentences, metered: bool = False,
+                 per_block: int = BLOCK_SENTENCES, max_chars: int = 1500) -> int:
+    """How many requests this reading will cost.
+
+    Separate from plan_for so the cost can be shown BEFORE anything is
+    spent. gemini-speech.md §5e: "a preview that quietly spends a request
+    looks free, and the person finds out at the daily wall with no idea
+    what took it."
+    """
+    return len(plan_for(sentences, metered, per_block, max_chars))
+
+
 def plan_parts(sentences, part_chars: int = 1500):
     """Group sentences into PARTS. Returns [(sentences, char_offset)].
 

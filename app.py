@@ -3110,6 +3110,24 @@ def talking_engine() -> str:
     return str(st.session_state.get("voice_engine") or "edge")
 
 
+def talking_is_metered() -> bool:
+    """Is every speech request counted against a small daily allowance?
+
+    Asked of the provider, never of a vendor name. §0 rule 2: "if a tab
+    knows a vendor's name, that is a bug." The reader needs this to
+    choose how to cut a reading into requests — see
+    ttt/speech.py:plan_for — and a provider added later answers it
+    without this function changing.
+
+    Defaults to False, which is the SAFE direction to be wrong in: a
+    metered provider wrongly planned as unmetered spends an allowance,
+    while an unmetered one wrongly planned as metered only reads in
+    slightly coarser blocks.
+    """
+    prov = current_routes().get("tts")
+    return bool(getattr(prov, "metered_by_call", False))
+
+
 def llm_bridge():
     """The AI engine to use right now, or None if none is usable."""
     prov = current_routes().get("llm")
@@ -9099,7 +9117,18 @@ elif active == "talk":
                     #
                     # See ttt/speech.py:plan_sentences for why this is
                     # exact rather than merely finer.
-                    "parts": SPEECH.plan_sentences(sentences),
+                    #
+                    # AND WHY IT IS NOT plan_sentences UNCONDITIONALLY.
+                    # One file per sentence is a hundred requests for a
+                    # hundred sentences. That is free on a local voice
+                    # and it is a whole account on a voice allowed ten
+                    # requests a day — one paragraph would spend one.
+                    # So the planner is chosen by whether this voice is
+                    # metered by the call, which the provider reports
+                    # about itself. The block is still the file, so the
+                    # highlight stays exact; it is only coarser.
+                    "parts": SPEECH.plan_for(
+                        sentences, metered=talking_is_metered()),
                     "full_text": " ".join(sentences),
                     "index": 0, "cache": {}, "synth": synth_fn,
                 }

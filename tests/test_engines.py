@@ -50,10 +50,20 @@ check("1c the default is still the free tier — adding an engine must "
 _g = EN.get("google")
 check("1d google routes stt and llm to Gemini", _g.routes["stt"] == "google"
       and _g.routes["llm"] == "google", _g.routes)
-check("1e and leaves tts on Edge, because Gemini has no word timings",
-      _g.routes["tts"] == "edge", _g.routes)
-check("1f and SAYS so, rather than leaving somebody to notice",
-      "word timings" in (_g.note or ""), _g.note)
+# 1e CHANGED IN v238, AND THE OLD ASSERTION WAS CORRECT WHEN WRITTEN.
+# It read: "and leaves tts on Edge, because Gemini has no word timings".
+# The reason was true and it expired — v236 removed the word highlight
+# entirely, so there are no timings to lose. A test kept past its rule
+# is the test_undo failure: perfectly correct about the wrong thing, and
+# green for thirty-four versions.
+check("1e google routes tts to Gemini too — one key, all three jobs",
+      _g.routes["tts"] == "google", _g.routes)
+check("1f so it is ONE VENDOR across the board, which is the pair Baba "
+      "asked for",
+      len(set(_g.routes.values())) == 1, _g.routes)
+# THE SCARCITY THAT REPLACED THE TIMINGS PROBLEM is handled in the
+# reader, not here: ten requests per account per day against one file
+# per sentence. See tests/test_planner_meter.py.
 check("1g it is a free-tier engine", _g.tier == "free", _g.tier)
 check("2 Edge/Groq is the free one",
       free.routes == {"stt": "groq", "tts": "edge", "llm": "groq"}, free.routes)
