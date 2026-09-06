@@ -121,7 +121,7 @@ check("4c R's builder does the same",
       'if i in job["cache"]' in mk and 'job["cache"][i] =' in mk)
 check("4d the stitcher uses those very builders, not a private path",
       "stitch_reading(len(job.get" in app
-      and "stitch_reading(len(parts), _make)" in app)
+      and "stitch_reading(len(parts), _make" in app)
 
 print("\n4b THE SAVED FILE BELONGS TO THE READING THAT MADE IT")
 # Paste a new line, press rehearse, press download: without this you get

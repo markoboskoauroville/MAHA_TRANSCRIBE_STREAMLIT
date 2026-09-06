@@ -201,7 +201,13 @@ for slot, tabname in (("talk_text", "R"), ("translate_src_text", "TR src"),
 print("\n6 ONE STITCHER, NOT ONE PER TAB")
 check("6a there is a shared stitcher", "def stitch_reading(" in app)
 check("6b VR uses it", "stitch_reading(len(job.get" in app)
-check("6c R uses it too", "stitch_reading(len(parts), _make)" in app)
+# PINNED TO A CALL'S SPELLING, and it broke on an honest change:
+# the reader now passes on_error so the failure can SAY WHY
+# instead of printing "it doesn't save". The rule is that R
+# stitches through the SHARED helper with its own builder.
+check("6c R uses it too", "stitch_reading(len(parts), _make" in app)
+check("6c2 and keeps the reason when it fails",
+      "on_error=_why" in app and '_rd_err' in app)
 check("6d neither tab grew its own join",
       app.count("SPEECH.join_audio(") == 1, app.count("SPEECH.join_audio("))
 check("6e it builds every block, so a half-played reading still saves whole",

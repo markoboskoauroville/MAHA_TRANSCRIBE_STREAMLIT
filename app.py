@@ -9669,7 +9669,13 @@ elif active == "talk":
         # the last six do not exist. The button says how many are left
         # rather than appearing to hang.
         def _rd_stitch():
-            return stitch_reading(len(parts), _make)
+            # THE REASON IS KEPT, not swallowed. "It doesn't save" was
+            # the only thing on screen; stitch_reading already reports
+            # WHY through on_error and nobody was listening.
+            def _why(msg):
+                st.session_state["_rd_err"] = str(msg or "")[:160]
+            st.session_state.pop("_rd_err", None)
+            return stitch_reading(len(parts), _make, on_error=_why)
 
         _rd_left = len([i for i in range(len(parts))
                         if i not in job["cache"]])
@@ -9680,7 +9686,12 @@ elif active == "talk":
             if _rd_whole:
                 st.session_state["_rd_whole"] = _rd_whole
             else:
-                st.error(t("read_failed"))
+                # THE REASON, or the sentence says nothing. stitch_reading
+                # reports through on_error; without it this printed the
+                # literal "%s" after v263 gave the string a placeholder.
+                st.error(t("read_failed")
+                         % (st.session_state.get("_rd_err")
+                            or t("nothing_to_read")))
         if st.session_state.get("_rd_whole"):
             st.download_button(t("vr_save_all"),
                                data=st.session_state["_rd_whole"],
