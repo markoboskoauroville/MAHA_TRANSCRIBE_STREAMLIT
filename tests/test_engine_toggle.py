@@ -239,8 +239,26 @@ check("the switch region was found and is a sensible size (%d chars)"
 # unconditionally — nothing appears, nothing disappears.
 check("both footer links are rendered UNCONDITIONALLY",
       sw.count("st.button(") == 2, sw.count("st.button("))
-check("the whole footer is ONE row", sw.count("st.columns(") == 1,
-      sw.count("st.columns("))
+# THE FOOTER NO LONGER USES st.columns AT ALL, and that is the fix
+# rather than a regression: columns STACK below a breakpoint, which is
+# what put the two links on one line and the words on the next. It is a
+# plain container turned into a flex row by CSS, and a vertical block
+# has no breakpoint to come apart at.
+check("the footer uses no columns, which is what made it stack",
+      sw.count("st.columns(") == 0, sw.count("st.columns("))
+check("...it is one container with the three elements in it",
+      sw.count('st.container(key="boxlinks_foot")') == 1, sw)
+# AND THE CSS IS ACTUALLY IN THE RENDERED STYLESHEET. theme.py is an
+# f-string; three commits' worth of edits used single braces, matched a
+# region that is not the CSS, and shipped nothing — while reporting
+# success. One line would have caught it.
+from ttt import theme as _theme                  # noqa: E402
+_css = _theme.css()
+check("the footer rules reach the rendered stylesheet",
+      "st-key-boxlinks_foot" in _css)
+check("...and the dim text rule with them", "tabsig_l" in _css)
+check("...with no unescaped braces left behind",
+      "{{" not in _css and "}}" not in _css)
 check("it is greyed with disabled=, not hidden",
       "disabled=not ready" in sw, sw[-200:])
 # THE LABEL NO LONGER VARIES — it is always the running engine — so
