@@ -181,6 +181,25 @@ def main(argv):
     print("THE SWEEP — %s" % time.strftime("%Y-%m-%d %H:%M"))
     print("  caches cleared: %d" % _clear_caches())
 
+    # A FRESH CLONE CANNOT IMPORT app.py, AND SAYS SO FOUR TIMES IN THE
+    # WRONG WORDS. The local secrets file is gitignored — correctly — so
+    # it is absent on any clone that is not the one it was written on.
+    # Streamlit then raises at import, every AppTest yields an empty
+    # element list, and four suites die with IndexError: list index out
+    # of range. Nothing in that sentence contains the word "secrets", so
+    # the reader goes looking for a bug in the notes tab.
+    #
+    # Name the real cause once, up front, and count it like everything
+    # else. This is not a blocker: the file is not needed to LINT, and a
+    # placeholder copy is enough to run, so the fix is one command.
+    have_secrets = os.path.exists(os.path.join(ROOT, ".streamlit", "secrets.toml"))
+    print("  local secrets : %d" % (1 if have_secrets else 0))
+    if not have_secrets:
+        print("      absent — it is gitignored, so a fresh clone never has one.")
+        print("      Suites that drive app.py through AppTest will crash with")
+        print("      IndexError rather than name this. Placeholders are enough:")
+        print("        cp .streamlit/secrets.toml.example .streamlit/secrets.toml")
+
     lint_now = _lint()
     base = 0
     if os.path.exists(BASELINE):

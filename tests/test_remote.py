@@ -1,7 +1,14 @@
 """THE RELAY, ALONE. No Streamlit, no network, no browser."""
-import sys, time
-sys.path.insert(0, "/home/claude/app")
-from ttt import remote as R
+import os, sys, time
+
+# WAS: sys.path.insert(0, "<an absolute path on the machine that wrote
+# this>"). It resolved on exactly one checkout and nowhere else, so the
+# suite reported ModuleNotFoundError on any other clone — and a crash
+# prints NO NUMBER, which the sweep is built to refuse. Every other suite
+# here already anchors on __file__; this one now does too.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from ttt import remote as R  # noqa: E402
 
 passed = failed = 0
 def check(n, c, d=""):
