@@ -52,9 +52,14 @@ MEASURED against Baba's own keys on 5.9.2026:
     LLM                200 on gemini-3.6-flash
     TTS                200, audio/L16;codec=pcm;rate=24000, NO RIFF header
 
-AND THE KEYS BEGIN "AQ.", not "AIza". An extraction that assumed the
-older prefix sliced three characters off every key and made all
-twenty-one look invalid. The loader must not assume a shape.
+AND THE KEYS BEGIN "AQ." — that is the only format Google issues now.
+An extraction written for the retired prefix sliced three characters off
+every key and made all twenty-one look invalid. The retired prefix is
+not written down anywhere in this file, deliberately: keyring.md says no
+detector in this project looks for it, "not as a fallback, not as a
+second guess, not in a comment as an example", because a comment holding
+it keeps the dead form alive in everybody's memory. The loader must not
+assume a shape.
 """
 
 import json
@@ -325,3 +330,407 @@ def tones() -> tuple:
     with a new adjective cannot end up unfilterable.
     """
     return tuple(sorted({tone for _, tone in VOICES if tone}))
+
+
+# =====================================================================
+#  THE PROVIDER
+# =====================================================================
+#
+# Everything above this line is verdicts and data, and it was written and
+# tested before any of it had a caller. This is the body around it.
+#
+# WHY THIS FILE DOES NOT USE base.http_json FOR THE WORK CALLS.
+#
+# `http_json` hands its `classify` hook the STATUS AND NOTHING ELSE:
+#
+#     kind = classify(e.code) if classify else "soft"
+#
+# For every other provider here that is enough. For Google it destroys
+# the one distinction this module exists to make. A spent account and an
+# impatient one BOTH answer 429, and only the body separates them —
+# keyring.md §2e: "match on WORDS rather than on the code, because the
+# code is the thing providers disagree about." Classified on 429 alone,
+# an empty balance is rested for sixty seconds, for ever, and a person is
+# never told the thing they need to know, which is that no amount of
+# waiting will help.
+#
+# So the work calls go through `_post` below, which keeps the raw body
+# and asks `verdict()`. `test_key` is the same call. Nothing here
+# re-implements the verdict logic; it only makes the body reach it.
+
+import base64
+import struct
+import urllib.error
+import urllib.request
+
+from .base import Model, Provider, USER_AGENT, Voice
+
+API = "https://generativelanguage.googleapis.com/v1beta"
+
+# THE MODEL CHAINS ARE MEASURED, NOT CHOSEN. gemini-speech.md §5a, from
+# calls made on 5.9.2026. Order matters: the first is the cheapest that
+# does the job, and the fallbacks exist because a model is retired
+# without notice — gemini-2.0-flash and the whole 2.5 family answer 404
+# today and were current in the spring.
+TTS_MODELS = ("gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview")
+STT_MODELS = ("gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash")
+LLM_MODELS = ("gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash")
+
+# TEN A DAY, PER ACCOUNT, PER MODEL. gemini-speech.md §1. This is not
+# trivia and it is not an optimisation target: it is the number that
+# decides how the reader plans a reading. See `metered_by_call`.
+TTS_PER_DAY = 10
+
+# Raw PCM, 24 kHz, mono, 16-bit — and NO RIFF HEADER, which nothing warns
+# you about. Measured: audio/L16;codec=pcm;rate=24000.
+PCM_RATE = 24000
+PCM_CHANNELS = 1
+PCM_BYTES_PER_SAMPLE = 2
+
+# Gemini takes wav, mp3, flac, ogg, aac and aiff as inlineData. It does
+# NOT take webm, which is exactly what a browser recorder produces, so
+# the refusal is stated here rather than discovered as a 400 that reads
+# like a bad key.
+AUDIO_MIME = {
+    ".wav": "audio/wav", ".mp3": "audio/mp3", ".flac": "audio/flac",
+    ".ogg": "audio/ogg", ".aac": "audio/aac", ".aiff": "audio/aiff",
+    ".aif": "audio/aiff", ".m4a": "audio/aac",
+}
+
+
+def wav_header(pcm_len: int, rate: int = PCM_RATE,
+               channels: int = PCM_CHANNELS,
+               width: int = PCM_BYTES_PER_SAMPLE) -> bytes:
+    """The 44 bytes Google does not send.
+
+    Without this the bytes are perfectly good audio that no browser and
+    no player will open, and the failure looks like a broken voice rather
+    than a missing header.
+    """
+    byte_rate = rate * channels * width
+    return (b"RIFF" + struct.pack("<I", 36 + pcm_len) + b"WAVE"
+            + b"fmt " + struct.pack("<IHHIIHH", 16, 1, channels, rate,
+                                    byte_rate, channels * width, width * 8)
+            + b"data" + struct.pack("<I", pcm_len))
+
+
+def to_wav(pcm: bytes) -> bytes:
+    return wav_header(len(pcm)) + pcm
+
+
+def pcm_seconds(pcm: bytes) -> float:
+    return len(pcm) / float(PCM_RATE * PCM_CHANNELS * PCM_BYTES_PER_SAMPLE)
+
+
+def _post(path: str, key: str, payload: dict, timeout: int = 120):
+    """One call. Returns (data, error_text, ring_kind, raw_body).
+
+    `raw_body` is kept because it is the only thing that separates an
+    empty account from a busy one, and the ring kind is derived from the
+    five words rather than from the status.
+    """
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        API + path, data=body, method="POST",
+        headers={"x-goog-api-key": key, "Content-Type": "application/json",
+                 "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            text = r.read().decode("utf-8", "replace")
+        return (json.loads(text) if text.strip() else {}), None, None, text
+    except urllib.error.HTTPError as e:
+        try:
+            text = e.read().decode("utf-8", "replace")
+        except Exception:                                    # noqa: BLE001
+            text = ""
+        v = verdict(e.code, text)
+        return None, _explain(v, e.code, text), ring_kind(v), text
+    except Exception as e:                                   # noqa: BLE001
+        # No network says nothing about the key. Never dead.
+        return None, "Could not reach Google: %s" % e, "soft", ""
+
+
+# THE FIVE WORDS, TRANSLATED FOR A RING THAT KNOWS THREE.
+#
+# The rest of the app's rings speak dead / cool / soft. Collapsing five
+# into three loses information, so the loss is made deliberate and
+# written down rather than left to each call site:
+#
+#     working    -> None   nothing to do
+#     busy       -> cool   rest it. NEVER dead.
+#     no credit  -> dead   condemned, because credit does not come back
+#                          in sixty seconds and resting it spins against
+#                          a wall all day. The WORD survives in the error
+#                          text so a person is told to top up rather than
+#                          told the key is broken.
+#     refused    -> dead   this is what delete removes
+#     unknown    -> soft   says nothing about the key
+_RING_KIND = {WORKING: None, BUSY: "cool", NO_CREDIT: "dead",
+              REFUSED: "dead", UNKNOWN: "soft"}
+
+
+def ring_kind(v: str):
+    return _RING_KIND.get(v, "soft")
+
+
+def _explain(v: str, status: int, raw) -> str:
+    """A sentence naming what a person should DO, not what HTTP said."""
+    if v == NO_CREDIT:
+        return ("This Google account has no credit left. Waiting will not "
+                "help — it needs topping up.")
+    if v == BUSY:
+        kind = limit_kind(raw)
+        if kind == "day":
+            got = limit_value(raw)
+            return ("This Google account has used its allowance for today"
+                    + (" (%d)." % got if got else ".")
+                    + " It resets at midnight Pacific, 09:00 in Zagreb.")
+        wait = retry_after(raw)
+        return ("This Google account is busy"
+                + (" — try again in %gs." % wait if wait else " this minute."))
+    if v == REFUSED:
+        return "Google rejected this key (%d)." % status
+    return "Google could not answer (%d)." % status
+
+
+class Google(Provider):
+    """Gemini: all three capabilities on one key.
+
+    Baba, 5.9.2026: *"We have Edge/Groq or Google because the Google
+    option second can do everything through API keys. We can do TTS, STT,
+    and we can do translations as well."*
+    """
+
+    id = "google"
+    label = "Google Gemini"
+    capabilities = ("stt", "tts", "llm")
+    needs_key = True
+
+    # "AQ." AND NOTHING ELSE. The retired prefix is not named here, and
+    # writing this comment is where I learned the rule has teeth: my
+    # first draft quoted the dead form as an example of the form not to
+    # quote. test_google_provider.py greps this file WITHOUT stripping
+    # comments, on purpose, and it went red.
+    key_prefixes = ("AQ.",)
+
+    # THE FACT THAT DECIDES HOW THE READER PLANS.
+    #
+    # Edge is free and local: a hundred sentences is a hundred calls and
+    # costs nothing. Google's free tier is TEN TTS REQUESTS PER ACCOUNT
+    # PER DAY, so a hundred sentences is ten accounts spent on one
+    # paragraph. Anything choosing how to cut a reading into requests
+    # must be able to ask which of those two worlds it is in — WITHOUT
+    # naming a vendor, per §0 rule 2.
+    metered_by_call = True
+    calls_per_day = TTS_PER_DAY
+
+    def __init__(self, keys=None, ring=None):
+        self.keys = list(keys or [])
+        self.ring = ring
+
+    def _rotate(self, attempt):
+        """Same contract as Groq._rotate: run `attempt(key)` down the ring
+        until one works, and stop early on an error no key can fix."""
+        if self.ring is not None:
+            from .. import keyring
+            return keyring.rotate(self.ring, attempt)
+        last = "no keys"
+        for key in self.keys:
+            result, err, kind = attempt(key)
+            if not err:
+                return result, None
+            last = err
+            if kind not in ("dead", "cool"):
+                return None, err
+        return None, "All Google keys failed. Last: %s" % last
+
+    # ---- key testing -------------------------------------------------
+    def test_key(self, key: str):
+        """A REAL PIECE OF WORK, never a listing.
+
+        keyring.md §2c, measured across six providers: a spent Gemini key
+        answers 200 to GET /models and 429 to anything real. Both answers
+        are honest; they answer different questions. Testing with a list
+        showed GREEN, the ring handed the key out, the real call failed,
+        and the account was condemned as broken when it was merely empty.
+
+        So: the smallest billable thing Google sells. One token.
+        """
+        model = LLM_MODELS[0]
+        _, err, kind, _ = _post(
+            "/models/%s:generateContent" % model, key,
+            {"contents": [{"parts": [{"text": "hi"}]}],
+             "generationConfig": {"maxOutputTokens": 1}}, timeout=30)
+        return err, kind
+
+    # ---- models ------------------------------------------------------
+    def models(self, task: str = "", fetch=None):
+        """Live from /models where a key allows it, else the measured
+        chains with live=False so the picker says which it is."""
+        want = {"stt": STT_MODELS, "tts": TTS_MODELS,
+                "llm": LLM_MODELS}.get(task)
+        for key in self.keys:
+            try:
+                req = urllib.request.Request(
+                    API + "/models", method="GET",
+                    headers={"x-goog-api-key": key, "User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read().decode("utf-8", "replace"))
+            except Exception:                                # noqa: BLE001
+                continue
+            out = []
+            for m in (data.get("models") or []):
+                mid = str(m.get("name") or "").split("/")[-1]
+                if not mid:
+                    continue
+                is_tts = "tts" in mid
+                kind = "tts" if is_tts else "llm"
+                if task == "stt" and is_tts:
+                    continue
+                if task and task != "stt" and kind != task:
+                    continue
+                out.append(Model(mid, m.get("displayName") or mid,
+                                 for_task=task or kind,
+                                 recommended=bool(want and mid == want[0])))
+            if out:
+                out.sort(key=lambda x: (not x.recommended, x.name.lower()))
+                return out, True, None
+        chain = want or (STT_MODELS + TTS_MODELS)
+        return ([Model(m, m, for_task=task, recommended=(i == 0))
+                 for i, m in enumerate(chain)], False, "no key answered")
+
+    # ---- speech out --------------------------------------------------
+    def voices(self, lang: str = ""):
+        """The thirty, with Google's own adjective and NOTHING ELSE.
+
+        `lang` is accepted and ignored on purpose: the Gemini voices are
+        not published per-language, and filtering them by a language they
+        do not declare would hide twenty-nine of thirty on a guess.
+        `gender` stays empty for the same reason — a blank is a fact.
+        """
+        return [Voice(n, n, "", "", "gemini") for n, _tone in VOICES]
+
+    def default_for(self, lang: str = ""):
+        return Voice(DEFAULT_VOICE, DEFAULT_VOICE, "", "", "gemini")
+
+    def synth(self, text: str, voice_id: str, direction: str = ""):
+        """(wav_bytes, seconds, None).
+
+        The None is the contract saying THERE ARE NO WORD TIMINGS — not a
+        failure. Edge streams word-boundary events; Gemini returns audio
+        and nothing else.
+
+        `direction` is prose, compiled into the prompt, because Gemini
+        has no per-utterance description field: one direction for the
+        whole call. Measured, and not subtle — and a word in it is taken
+        literally, which is why "Grateful" comes back 84% quieter than
+        neutral. The caller's words are passed through unchanged.
+        """
+        voice = voice_id or DEFAULT_VOICE
+        prompt = ("%s: %s" % (direction.strip().rstrip(":"), text)
+                  if direction and direction.strip() else text)
+        last = None
+        for model in TTS_MODELS:
+            def attempt(key, _m=model):
+                data, err, kind, _raw = _post(
+                    "/models/%s:generateContent" % _m, key,
+                    {"contents": [{"parts": [{"text": prompt}]}],
+                     "generationConfig": {
+                         "responseModalities": ["AUDIO"],
+                         "speechConfig": {"voiceConfig": {
+                             "prebuiltVoiceConfig": {"voiceName": voice}}}}})
+                return data, err, kind
+            data, err = self._rotate(attempt)
+            if err:
+                last = err
+                continue
+            pcm = _audio_of(data)
+            if pcm is None:
+                last = "Google answered without audio."
+                continue
+            return to_wav(pcm), pcm_seconds(pcm), None
+        raise RuntimeError(last or "Google produced no audio.")
+
+    # ---- speech in ---------------------------------------------------
+    def transcribe(self, path: str, language: str = "hr", model: str = None):
+        mime = _mime_of(path)
+        if not mime:
+            # SAID PLAINLY, NOT SENT AND REFUSED. A browser recorder
+            # makes webm and Gemini answers a 400 that reads exactly like
+            # a bad key, which would send the ring walking through every
+            # account condemning each one.
+            raise RuntimeError(
+                "Google cannot read this audio format. It takes wav, mp3, "
+                "flac, ogg, aac or aiff — a browser recording (webm) has "
+                "to be converted first.")
+        with open(path, "rb") as f:
+            blob = base64.b64encode(f.read()).decode("ascii")
+        ask = "Transcribe this audio. Return only the words spoken."
+        if language and language != "auto":
+            ask += " The language is %s." % language
+        last = None
+        for m in ([model] if model else list(STT_MODELS)):
+            def attempt(key, _m=m):
+                data, err, kind, _raw = _post(
+                    "/models/%s:generateContent" % _m, key,
+                    {"contents": [{"parts": [
+                        {"text": ask},
+                        {"inlineData": {"mimeType": mime, "data": blob}}]}]},
+                    timeout=300)
+                return data, err, kind
+            data, err = self._rotate(attempt)
+            if err:
+                last = err
+                continue
+            return _text_of(data).strip()
+        raise RuntimeError(last or "Google could not transcribe that.")
+
+    # ---- text --------------------------------------------------------
+    def complete(self, prompt: str, system: str = None, model: str = None,
+                 temperature: float = 0.2, max_tokens: int = 2048) -> str:
+        payload = {"contents": [{"parts": [{"text": prompt}]}],
+                   "generationConfig": {"temperature": temperature,
+                                        "maxOutputTokens": max_tokens}}
+        if system:
+            payload["systemInstruction"] = {"parts": [{"text": system}]}
+        last = None
+        for m in ([model] if model else list(LLM_MODELS)):
+            def attempt(key, _m=m):
+                data, err, kind, _raw = _post(
+                    "/models/%s:generateContent" % _m, key, payload)
+                return data, err, kind
+            data, err = self._rotate(attempt)
+            if err:
+                last = err
+                continue
+            return _text_of(data).strip()
+        raise RuntimeError(last or "Google could not answer that.")
+
+
+def _parts(data):
+    try:
+        return (data["candidates"][0]["content"]["parts"]) or []
+    except Exception:                                        # noqa: BLE001
+        return []
+
+
+def _audio_of(data):
+    """The PCM bytes, or None. Never raises on a shape it did not expect."""
+    for p in _parts(data):
+        blob = (p.get("inlineData") or p.get("inline_data") or {})
+        raw = blob.get("data")
+        if raw:
+            try:
+                return base64.b64decode(raw)
+            except Exception:                                # noqa: BLE001
+                return None
+    return None
+
+
+def _text_of(data) -> str:
+    return "".join(str(p.get("text") or "") for p in _parts(data))
+
+
+def _mime_of(path: str) -> str:
+    import os
+    return AUDIO_MIME.get(os.path.splitext(str(path))[1].lower(), "")

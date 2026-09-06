@@ -88,6 +88,24 @@ class Provider:
     needs_key = True
     key_prefixes = ()
 
+    # IS EVERY CALL COUNTED AGAINST A SMALL DAILY ALLOWANCE?
+    #
+    # False for anything free, local or billed by the character: cutting
+    # a reading into a hundred small requests costs nothing there, and
+    # small requests give the finest possible highlight.
+    #
+    # True for a provider metered by the REQUEST rather than by the work
+    # in it. Then the same hundred sentences is a hundred of a very small
+    # number, and a reading has to be planned in blocks instead.
+    #
+    # THIS EXISTS SO NOTHING HAS TO NAME A VENDOR. §0 rule 2: "if a tab
+    # knows a vendor's name, that is a bug." The reader asks whether its
+    # voice is metered by the call; it never asks whether its voice is
+    # Google. A provider added next year answers the same question
+    # without the reader changing.
+    metered_by_call = False
+    calls_per_day = 0
+
     def test_key(self, key: str):
         """Return (error, kind) — (None, None) when the key is good.
         kind is "dead" | "cool" | "soft" so the ring knows what to do."""
