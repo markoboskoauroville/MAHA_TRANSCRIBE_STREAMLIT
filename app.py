@@ -271,6 +271,26 @@ SYM = {
     # two identical glyphs apart. An arrow also reads better here: it is
     # "into", not "play".
     "go":     "\u2192",   # right arrow: translate INTO
+    # THE ENGINE SWITCH. ⇄ — rightwards arrow ABOVE leftwards arrow.
+    #
+    # design-language.md §14 says compose the mark rather than hunting
+    # for a picture, and warns that every near-miss is wrong in the same
+    # direction. Here the near-misses were real and each said the wrong
+    # thing: ↻ says redo, → says go and is already SYM["go"], ⚙ says
+    # settings and the tab bar's gear already owns that, and ⏻ says off.
+    #
+    # ⇄ is not a near-miss. It is drawn to mean EXCHANGE — two paths,
+    # both live, traffic moving each way — which is exactly what this
+    # button does: the same three jobs, routed the other way. It also
+    # sits in the arrow family the rest of this table already speaks
+    # (⇩ ↺ → ▸), so it reads as one of ours rather than as an import.
+    #
+    # AND IT IS UNIQUE IN THIS TABLE, which is not decoration: the aria
+    # injector matches buttons BY THEIR GLYPH, so a duplicate would make
+    # a screen reader announce two different buttons with one name. That
+    # already happened once, when translate borrowed ▶ and was announced
+    # as "Read". test_engine_toggle asserts the uniqueness.
+    "engine": "\u21c4",
 }
 
 # CROATIAN SPELLING FOR A CROATIAN VOICE. "Gabby" is an English
@@ -524,6 +544,12 @@ STRINGS = {
     "redo_word": {"en": "redo", "hr": "ponovi"},
     "tier_free": {"en": "free", "hr": "free"},
     "tier_studio": {"en": "studio", "hr": "studio"},
+    "eng_switch":  {"en": "Switch engine", "hr": "Promijeni motor"},
+    "eng_switch_to": {"en": "Switch to %s", "hr": "Prebaci na %s"},
+    "eng_only_one": {"en": "There is only one engine to use here.",
+                     "hr": "Ovdje postoji samo jedan motor."},
+    "eng_not_ready": {"en": "%s has no keys set up yet.",
+                      "hr": "%s još nema postavljene ključeve."},
     "tier_admin": {"en": "admin", "hr": "admin"},
     "no_password_secret": {"en": "Nobody is named in Secrets. Add ADMIN_USER1, STUDIO_USER1 or FREE_USER1 in Streamlit Cloud → Settings → Secrets.",
                             "hr": "Nitko nije naveden u Secrets. Dodaj ADMIN_USER1, STUDIO_USER1 ili FREE_USER1 u Streamlit Cloud → Settings → Secrets."},
@@ -1324,10 +1350,10 @@ def secrets_template(provider: str) -> str:
         if name in SECRET_PAIRS:
             out.append("[[%s]]" % name)
             out.append('name = "an account name you will recognise"')
-            out.append('key = "paste_the_api_key_here"')
-            out.append('secret = "paste_the_secret_here"')
+            out.append('key = "%sapi_key_here"' % PLACEHOLDER_MARKS[1])
+            out.append('secret = "%ssecret_here"' % PLACEHOLDER_MARKS[1])
         elif name in SECRET_SINGLE:
-            out.append('%s = "paste_your_key_here"' % name)
+            out.append('%s = "%skey_here"' % (name, PLACEHOLDER_MARKS[0]))
         else:
             # THE PLACEHOLDER CARRIES THE PREFIX where a provider has
             # one. Baba's Google keys begin "AQ." and an extraction that
@@ -1337,8 +1363,8 @@ def secrets_template(provider: str) -> str:
             # way for the same reason.
             stub = SECRET_PREFIX.get(name, "")
             out.append("%s = [" % name)
-            out.append('    "%spaste_your_first_key_here",' % stub)
-            out.append('    "%spaste_your_second_key_here",' % stub)
+            out.append('    "%s%sfirst_key_here",' % (stub, PLACEHOLDER_MARKS[0]))
+            out.append('    "%s%ssecond_key_here",' % (stub, PLACEHOLDER_MARKS[0]))
             out.append("]")
         out.append("")
     return "\n".join(out).rstrip() + "\n"
@@ -1373,6 +1399,33 @@ def secrets_loaded(provider: str) -> int:
         return 0
 
 
+# A PASTED TEMPLATE IS NOT A SET-UP ENGINE.
+#
+# secrets_template() writes "AQ.paste_your_first_key_here" and the admin
+# panel invites somebody to copy that block into Secrets and fill in
+# their keys. Between the copy and the filling in, the secret EXISTS and
+# holds two entries — so `bool(keys)` is True and the engine reports
+# itself ready. It is then offered, chosen, and fails on the first real
+# request, which reads to the person as a broken app rather than as an
+# unfinished setup.
+#
+# THE MARKS ARE THE ONES THE TEMPLATE ITSELF WRITES, and they are used by
+# the generator above rather than typed out twice, so the writer and the
+# reader cannot drift apart. This is not guessing at what a key looks
+# like — it is recognising this app's own output coming back.
+PLACEHOLDER_MARKS = ("paste_your_", "paste_the_")
+
+
+def is_placeholder(value) -> bool:
+    return any(m in str(value or "") for m in PLACEHOLDER_MARKS)
+
+
+# GROQ IS DELIBERATELY NOT FILTERED HERE, and it is worth saying why
+# rather than leaving an inconsistency to look like an oversight. Groq's
+# keys are checked at startup and a missing set calls st.stop() — so
+# filtering placeholders there turns "half-finished setup" into "the app
+# will not start", which is a bigger change than this one and belongs
+# with somebody watching it. Same rule, different blast radius.
 def google_keys() -> list:
     """Every Google key in Secrets.
 
@@ -1391,7 +1444,8 @@ def google_keys() -> list:
     takes whatever is in the list.
     """
     keys = list(st.secrets.get("GOOGLE_API_KEYS", []))
-    return [str(k).strip() for k in keys if str(k).strip()]
+    return [str(k).strip() for k in keys
+            if str(k).strip() and not is_placeholder(k)]
 
 
 def groq_keys() -> list:
@@ -2373,6 +2427,16 @@ if not KEYS:
 # or "stt" capability depends on this line having run.
 PROVIDERS.set_groq_keys(KEYS)
 
+# THE SAME FOR GOOGLE, and without this line the Google engine is a pill
+# that can never light. google_keys() existed and read the secret; NOTHING
+# CALLED IT into the provider, so provider_usable fell through to the
+# per-user ring — which is empty, because these keys are the app's and not
+# a person's. The engine would have been offered, chosen, and then
+# silently declined to be usable, which is the failure HOW_WE_WORK names:
+# the code is reachable, correct, and nothing leads to it.
+GOOGLE_KEYS = google_keys()
+PROVIDERS.set_google_keys(GOOGLE_KEYS)
+
 # Groq's keys also get a ring, so a rate limit hands off to the next key
 # and the tired one rests instead of failing the job. This is what lets a
 # long transcription keep going instead of dying at the first 429.
@@ -2878,8 +2942,13 @@ def provider_usable(provider) -> bool:
     'usable' is decided, so ttt/routing.py stays free of storage."""
     if not getattr(provider, "needs_key", True):
         return True
+    # THE APP'S OWN KEYS, not a person's. Both of these live in Secrets
+    # and are shared by everybody, so their usability is "did the owner
+    # put keys in Secrets", never "has this person pasted one".
     if provider.id == "groq":
         return bool(KEYS)
+    if provider.id == "google":
+        return bool(GOOGLE_KEYS)
     return kr.usable(get_ring(provider.id))
 
 
@@ -3920,8 +3989,83 @@ def tab_signature(name: str):
 
     bits = [x for x in (html.escape(name), html.escape(label) + mark,
                         html.escape(who)) if x]
-    st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
-                unsafe_allow_html=True)
+
+    # THE ENGINE SWITCH SITS BESIDE THE ENGINE NAME.
+    #
+    # Baba, 6.9.2026: "I want to be able to give free users ability to
+    # change engines. So on all the tabs they have access to, put one
+    # toggle, engine 1 or engine 2, so they can try both and see what
+    # works better."
+    #
+    # IT GOES HERE AND NOWHERE ELSE. Every tab already ends by calling
+    # tab_signature, and this corner already answers "which engine am I
+    # on" — so the control that CHANGES that answer belongs next to it.
+    # design-language.md §2: a repeated element is built once and placed,
+    # never built per tab. Putting a copy in each tab body would be six
+    # copies to drift apart, and the drift always shows up as the same
+    # control behaving differently depending on where you found it.
+    #
+    # NOTHING APPEARS AND NOTHING DISAPPEARS. §1. The button is rendered
+    # on every tab, every render, for every tier. When there is nowhere
+    # to switch to it is DISABLED, not hidden — a studio user sees the
+    # same furniture in the same place, greyed, and the help text says
+    # why. A control that vanishes moves the page under somebody's thumb.
+    ecol1, ecol2 = st.columns([1, 0.001 + 0.14])
+    with ecol1:
+        st.markdown('<div class="tabsig">' + "  ·  ".join(bits) + '</div>',
+                    unsafe_allow_html=True)
+    with ecol2:
+        _engine_switch(eng)
+
+
+def _engine_switch(eng):
+    """One press, the whole engine. Free users included.
+
+    THE CHOICES ARE DERIVED, NEVER LISTED. The engines offered are the
+    ones sharing a tier with the engine now running — see
+    engines.for_tier. A written-down ("normal", "google") would be right
+    today and silently wrong the day a third free engine lands, because a
+    toggle offering two of three looks exactly like one offering two of
+    two.
+
+    A MIXED BOARD OFFERS THE FREE SET, so somebody who patched one
+    crosspoint by hand has a way back to a whole engine.
+
+    THIS TAB DOES NOT KNOW A VENDOR'S NAME. §0 rule 2. It reads
+    `engine.label` off the object; the words "Gemini" and "Edge" appear
+    in ttt/engines.py and not here.
+    """
+    here = eng.id if eng else ""
+    family = EN.for_tier(eng.tier) if eng else EN.for_tier("free")
+    nxt = EN.next_in(family, here)
+
+    # WHY IT MIGHT BE DEAD, IN THE ORDER A PERSON WOULD ASK.
+    if nxt is None:
+        why, ok = t("eng_only_one"), False
+    elif not all(provider_usable(PROVIDERS.get(pid))
+                 for pid in nxt.provider_ids
+                 if PROVIDERS.get(pid) is not None):
+        # OFFERED BUT NOT READY is a real state and it must say so. An
+        # engine whose keys are not in Secrets would otherwise be chosen,
+        # fall back route by route, and leave somebody believing they
+        # were hearing a voice they were not.
+        why, ok = t("eng_not_ready") % nxt.label, False
+    else:
+        why, ok = t("eng_switch_to") % nxt.label, True
+
+    def _flip():
+        # WRITTEN AS ROUTES, NOT AS A NAME. engines.route_settings is the
+        # same thing the patch bay writes, so the two views of the board
+        # cannot disagree — and tab_signature derives the corner label
+        # back out of the routes, so what it says is what is running.
+        st.session_state.update(EN.route_settings(nxt))
+        st.session_state[EN.SETTING_KEY] = nxt.id
+        # A VERDICT BELONGS TO THE ENGINE THAT EARNED IT. Leaving the old
+        # check behind would put a tick beside an engine nobody tested.
+        st.session_state.pop("_engine_check", None)
+
+    st.button(SYM["engine"], key="eng_flip", help=why, disabled=not ok,
+              on_click=_flip if ok else None)
 
 
 def name_the_symbols():
@@ -3947,6 +4091,10 @@ def name_the_symbols():
         SYM["save"]: t("read_save"), SYM["paste"]: t("paste_btn"),
         SYM["next"]: t("next_page"),
         SYM["go"]: t("translate_btn"),
+        # THE SWITCH TOO. A glyph-only button is announced as its own
+        # character otherwise — "rightwards arrow over leftwards arrow" —
+        # to the people this app was built for.
+        SYM["engine"]: t("eng_switch"),
     }
     components.html(
         "<script>(function(){"

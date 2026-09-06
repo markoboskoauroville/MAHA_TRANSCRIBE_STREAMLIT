@@ -127,6 +127,39 @@ ENGINES = [
 BY_ID = {e.id: e for e in ENGINES}
 DEFAULT = "normal"
 
+
+def for_tier(tier: str):
+    """Every engine a person on this tier may choose, in declared order.
+
+    DERIVED FROM THE DATA, never a written-down pair. Baba, 6.9.2026:
+    "I want to be able to give free users ability to change engines...
+    one toggle, engine 1 or engine 2, so they can try both and see what
+    works better."
+
+    Two engines are free today and a hardcoded ("normal", "google") would
+    be correct today and wrong the moment a third arrives — and wrong
+    SILENTLY, because a toggle showing two of three looks exactly like a
+    toggle showing two of two. Reading `tier` off the engines means a new
+    free engine appears in the toggle by existing.
+    """
+    return [e for e in ENGINES if e.tier == tier]
+
+
+def next_in(engines, current_id: str):
+    """The engine after this one, wrapping. None if there is nothing to
+    move to — which is what a toggle needs to know to grey itself.
+
+    A CYCLE RATHER THAN A PAIR, for the same reason as for_tier: with two
+    engines this is a flip, and with three it keeps working instead of
+    becoming a bug about the third being unreachable.
+    """
+    if len(engines) < 2:
+        return None
+    ids = [e.id for e in engines]
+    if current_id not in ids:
+        return engines[0]
+    return engines[(ids.index(current_id) + 1) % len(ids)]
+
 # WHAT "free" USED TO BE CALLED, and it has to keep resolving.
 #
 # The id was `free` until 22.8.2026. Every users row written before that

@@ -48,3 +48,11 @@ def keyed_providers():
 
 def set_groq_keys(keys) -> None:
     REGISTRY[Groq.id].keys = list(keys or [])
+
+
+def set_google_keys(keys) -> None:
+    """Google's keys are the APP's, exactly like Groq's — they live in
+    Streamlit secrets, not in a person's key file. So the provider is
+    constructed empty and handed them at startup, and anything asking the
+    registry for a Google capability depends on that call having run."""
+    REGISTRY[Google.id].keys = list(keys or [])
