@@ -1355,6 +1355,18 @@ def css(scheme: str = "amber", font: str = "mono",
       margin: 0 !important;
     }}
     [class*="st-key-boxlinks_foot"] {{
+      /* THE CONTAINER ITSELF IS THE FLEX PARENT. MEASURED in Chromium
+         after three rounds of guessing: st.container(key=...) renders
+         ONE div carrying that class and there is NO stVerticalBlock
+         inside it, so every rule aimed at a descendant matched nothing
+         and the cells stayed stacked — y=668, 680, 715, 749 on a 390px
+         screen. This is the rule that was missing. */
+      display: flex !important;
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      justify-content: flex-start !important;
+      align-items: baseline !important;
+      gap: 0.6rem !important;
       margin-top: 0.35rem !important;
       margin-bottom: 0 !important;
     }}

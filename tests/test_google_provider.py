@@ -383,8 +383,19 @@ got, err = G.Google(keys=["AQ.a", "AQ.b", "AQ.c"])._rotate(_soft)
 # try again". Only a refusal of the REQUEST — a bad model, a malformed
 # body — is worth stopping for, and that arrives as 400 and is read as
 # refused, not soft.
-check("a soft error tries the other keys rather than killing the job",
-      len(seen2) == 3, seen2)
+# BOUNDED, NOT UNLIMITED. It must try more than one key — a single 503
+# used to kill the sentence — and it must STOP, because 4 x 45s is
+# three minutes of "Making part 1 of 3…" which reads as a freeze.
+# SOFT_TRIES is the number, and the check reads it rather than
+# hardcoding one, so tightening the cap does not make this red.
+check("a soft error tries another key rather than killing the job",
+      len(seen2) == G.SOFT_TRIES and G.SOFT_TRIES >= 2,
+      (len(seen2), G.SOFT_TRIES))
+check("...and stops rather than walking all twenty-one",
+      G.SOFT_TRIES < 5, G.SOFT_TRIES)
+check("the worst case is under a minute at this timeout",
+      G.SOFT_TRIES * G.TTS_TIMEOUT <= 60,
+      G.SOFT_TRIES * G.TTS_TIMEOUT)
 
 # A key that works after two dead ones.
 seen3 = []

@@ -445,8 +445,13 @@ TTS_PER_DAY = 10
 # one call may hang. Both measured 6.9.2026: a working call is 17s, a
 # 503 is 67s. A 120-second timeout across 21 keys is 42 minutes of
 # "Making part 1 of 3…", which is what a person reads as a freeze.
-SOFT_TRIES = 4
-TTS_TIMEOUT = 45
+# TIGHTENED AGAIN AFTER HE SAW IT STILL SPINNING. 4 x 45s is three
+# minutes on one sentence, and three minutes of "Making part 1 of 3…"
+# is indistinguishable from a freeze. 2 x 25s is fifty seconds worst
+# case, and a working call measured 17s — so a healthy key still fits
+# comfortably inside one try.
+SOFT_TRIES = 2
+TTS_TIMEOUT = 25
 
 # Raw PCM, 24 kHz, mono, 16-bit — and NO RIFF HEADER, which nothing warns
 # you about. Measured: audio/L16;codec=pcm;rate=24000.
