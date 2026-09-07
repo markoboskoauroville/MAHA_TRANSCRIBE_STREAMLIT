@@ -1,6 +1,8 @@
 # TTT-LLL — HANDOVER
 
-Live: https://ttt-lll.streamlit.app
+Live, two places since 7.9.2026:
+  https://ttt-lll.streamlit.app      Streamlit Community Cloud (as before)
+  https://ttt-lll.pages.dev          Marko's own free Oracle machine, behind the pages.dev door
 Repo: https://github.com/markoboskoauroville/MAHA_TRANSCRIBE_STREAMLIT
 Entrypoint: `app.py` · Version: see `APP_VERSION` in `app.py`
 
@@ -8,6 +10,60 @@ Entrypoint: `app.py` · Version: see `APP_VERSION` in `app.py`
 (text → speech, seen and heard at once).
 
 ---
+
+## 0a. TWO PLATFORMS, ONE CODE — what was done on 7.9.2026, and how to continue in any chat
+
+The same `app.py` now runs in two places. Everything below is true of both unless it says which.
+
+**The machine.** A free Oracle Cloud ARM instance (`teacher-vm`, 4 OCPU, 24 GB, Frankfurt,
+Ubuntu 24.04 aarch64, ip 130.61.181.83). Built with the Universal Teacher on 7.9.2026; the full
+record is `ABLETON_TEACHER/lessons/oracle-vm.md`, the reusable rules are the manifest module
+`MANTRA_MANIFEST/modules/free-machine.md`. The code sits in `~/apps/maha` and **pulls itself from
+GitHub every minute** (`maha-update.timer`): a push to `main` is live there within a minute. The
+cloud redeploys on the same push. So: **push once, both update; never edit on the machine.**
+
+**The door.** People reach the machine only through https://ttt-lll.pages.dev (a Cloudflare Pages
+Function, repo `TTT_PORTAL`): the portal's login, then a proxy to the machine's own name
+`https://130-61-181-83.sslip.io` (Caddy, a Let's Encrypt certificate, `X-Door-Key` required).
+The portal (`TTT_PORTAL/portal.py`, :8600 on the machine) holds users, Marko's admin panel
+(`/portal/admin`: users, logins, a secrets editor, API keys, the API documentation), and the API
+(`/api/v1/transcribe`, `/speech`, `/speech/stream`, `/voices`) with word marks. No domain of
+Marko's is in the path; ples-duse.org (a tunnel still points at it) may expire and nothing breaks.
+
+**What differs between the two, and where it lives in the code:**
+
+| | Streamlit Cloud | the machine |
+|---|---|---|
+| secrets | Settings > Secrets | `~/apps/maha/.streamlit/secrets.toml` (copied once by ssh; edited in the admin panel, which restarts the app). TOML: a new top-level key goes at the TOP, above the first `[[HUME_ACCOUNTS]]`, or it lands inside that table |
+| login | the app's own door (APP_PASSWORDS, the accounts script) | the portal's; Caddy stamps `X-Trusted-Door: 1`, the door adds `X-Portal-User`/`X-Portal-Role`, and `app.py` (search "THE DOOR") logs that person in without asking again |
+| engines at the foot | Edge, Google, Marko API (grey until MARKO_API_KEY is in secrets) | the same three, plus `offline` (Whisper small + Piper on the machine, `ttt/providers/local.py`, present only where `faster_whisper` and `piper` are installed); the service starts with `TTT_DEFAULT_ENGINE=offline` |
+| Marko API | calls https://ttt-lll.pages.dev/api/v1 with the key | calls `http://127.0.0.1:8600` (MARKO_API_URL in its secrets), no round trip through Cloudflare |
+| websockets | Streamlit Cloud's own | Streamlit runs with `--browser.serverAddress ttt-lll.pages.dev --server.enableCORS false --server.enableXsrfProtection false` (systemd drop-in `/etc/systemd/system/maha.service.d/offline.conf`), or the page stays a skeleton |
+| the remote link | the app's Host | `X-Forwarded-Host` from the door (`remote_base()`), so it says pages.dev |
+| Croatian voices | Edge (online) | Edge (online); Piper has no Croatian |
+
+**Changed in `app.py` and `ttt/` today (all pushed):** the offline provider and tier; the Marko
+API provider and engine (`ttt/providers/markoapi.py`); the door's trust; three engine buttons, the
+engine in force as a marked word, the admin link, the top bar (page name left, admin panel right),
+log out and the version bottom right, no tier word; a voice change starts a whole new reading
+(`_revoice` sets `_auto_read`), the Google radio side counts as a pick; the stitched reading is one
+AAC mono file (`join_audio(fmt="m4a")`, `reading.m4a`); `remote_base()` honours X-Forwarded-Host.
+`tests/test_engine_toggle.py` now describes the buttons. Two suites need the local environment
+(`test_accounts`, `test_admin_users`, and the Google-voice part of the toggle test wants the
+placeholder key in a local secrets file); they are not about today's changes.
+
+**To continue in any chat:** clone this repo and `TTT_PORTAL`; read this section, then
+`ABLETON_TEACHER/lessons/oracle-vm.md` for the machine's state and the scripts that made it
+(`oracle/net.py`, `vm.py`, `base.sh`, `caddy.sh`, `remote.py`), and `TTT_PORTAL/README.md` for the
+door and the API. To run a command on the machine where Marko can watch it live:
+`python3 ~/Developer/teacher/oracle/remote.py run "..."` (ssh key `~/.ssh/oracle_vm`). To
+redeploy the door: `TTT_PORTAL/deploy.sh`. Nothing is copied from the Mac to the machine except
+voice samples; everything else comes from GitHub, pip, apt and Hugging Face.
+
+**Not done yet:** per-user notes kept on the machine (SQLite; notes are still the browser's and
+Drive's); the cloned voices on the machine (samples from the Mac, a CPU cloning engine, slow); a
+websocket for live transcription (`/api/v1/transcribe/chunk` in pieces today); Croatian offline
+speech.
 
 ## 0. HARD RULES — read before touching anything
 
