@@ -5335,3 +5335,9 @@ THE TEST SUITE after the triage: 74 files, 73 pass, 1 fails (test_layout, the tw
 above; it needs a live app on 8811). Five suites superseded (accounts, users, engine sheet, admin
 users, must-change), eleven brought up to the current design; tests/README_SUPERSEDED.md says
 what replaced each.
+
+FOUND BY THE BROWSER WALK THROUGH THE DOOR (7.9.2026, 15:40): a new person on the machine read
+"● Edge" at the foot although the service names TTT_DEFAULT_ENGINE=offline — the tasks' fallbacks
+in routing.TASKS (groq, edge, groq) were written once and nothing rewrote them, so recordings went
+to Groq. engines.py now rewrites them from the default engine's routes, and the offline engine is on
+the free tier (a fourth button beside Edge, Google, Marko API). tests/test_default_engine.py (11).
