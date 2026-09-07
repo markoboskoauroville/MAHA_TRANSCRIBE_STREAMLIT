@@ -138,8 +138,26 @@ ENGINES = [
            note="one key, all three jobs", tier="free", short="Google"),
 ]
 
+# THE OFFLINE TIER exists only where its engines are installed (the Oracle
+# machine, 7.9.2026): Whisper and Piper on the machine itself, no key and no
+# network for the ears and the mouth; the text work still goes to Groq.
+try:
+    from .providers.local import INSTALLED as _LOCAL_INSTALLED
+except Exception:                                   # noqa: BLE001
+    _LOCAL_INSTALLED = False
+if _LOCAL_INSTALLED:
+    ENGINES.append(Engine("offline", "Whisper / Piper, on this machine",
+                          {"stt": "local", "tts": "local", "llm": "groq"},
+                          note="offline ears and mouth", tier="offline"))
+
 BY_ID = {e.id: e for e in ENGINES}
-DEFAULT = "normal"
+# The default engine can be named by the machine (TTT_DEFAULT_ENGINE=offline
+# in the service), so the Oracle machine starts offline and the cloud stays as
+# it was.
+import os as _os
+DEFAULT = _os.environ.get("TTT_DEFAULT_ENGINE", "normal")
+if DEFAULT not in BY_ID:
+    DEFAULT = "normal"
 
 
 def for_tier(tier: str):

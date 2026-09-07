@@ -16,6 +16,7 @@ from .edge import Edge
 from .google import Google
 from .groq import Groq
 from .hume import Hume
+from .local import Local
 from .speechify import Speechify
 
 # WHAT THIS MODULE PROMISES app.py, AS A NUMBER.
@@ -43,6 +44,7 @@ API_LEVEL = 2          # 2: google is a provider, set_google_keys exists
 
 REGISTRY = {
     Edge.id: Edge(),
+    Local.id: Local(),          # offline Whisper + Piper; usable only where installed (the machine)
     Speechify.id: Speechify(),
     AssemblyAI.id: AssemblyAI(),
     Groq.id: Groq(),            # keys injected at startup by the entrypoint

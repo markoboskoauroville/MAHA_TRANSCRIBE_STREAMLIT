@@ -3016,6 +3016,8 @@ def provider_usable(provider) -> bool:
     """Keyless providers are always usable; keyed ones only once a key
     that has not been buried exists. This is the one place that knows how
     'usable' is decided, so ttt/routing.py stays free of storage."""
+    if getattr(provider, "installed", True) is False:
+        return False                      # the offline engine, on a machine without it
     if not getattr(provider, "needs_key", True):
         return True
     # THE APP'S OWN KEYS, not a person's. Both of these live in Secrets
