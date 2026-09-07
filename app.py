@@ -1602,9 +1602,16 @@ def remote_base() -> str:
     """
     try:
         h = st.context.headers or {}
-        host = h.get("Host") or h.get("host") or ""
+        # BEHIND THE DOOR the Host is the machine's own name
+        # (130-61-181-83.sslip.io), which nobody can open without the door
+        # key; the door says the public name in X-Forwarded-Host
+        # (ttt-lll.pages.dev). Marko, 7.9.2026: "the remote address is
+        # wrongly formatted, with dashes; the remote user doesn't get in."
+        host = (h.get("X-Forwarded-Host") or h.get("x-forwarded-host")
+                or h.get("Host") or h.get("host") or "")
         proto = h.get("X-Forwarded-Proto") or (
-            "https" if ".streamlit.app" in host else "http")
+            "https" if (".streamlit.app" in host or ".pages.dev" in host
+                        or ".sslip.io" in host) else "http")
         if host:
             return "%s://%s" % (proto, host)
     except Exception:                                        # noqa: BLE001
