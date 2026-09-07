@@ -5239,3 +5239,45 @@ no placeholder URL ever goes into a message he forwards.
     auth GAS 66 (was 46) · admin users 47 (was 39) · must change 12 (new)
     accounts 51 · engine UI 18 · engine sheet 28 · pytest 20 files
     every new behaviour mutation-tested: 8 in the script, 5 in the app
+
+## 7.9.2026, 15:30 — WHERE WE STOPPED (Marko: "pause everything; we continue in the next session")
+
+DONE AND LIVE since the last note: notes on the machine, per person (`ttt/notestore.py`, SQLite at
+`TTT_NOTES_DB=/home/ubuntu/.maha/notes.db`, set in the maha drop-in; read before the browser copy,
+written with it; commit 96b1d70, running on the machine).
+
+DIAGNOSED, NOT YET FIXED — the 502 while generating audio. Caddy's log on the machine has 147 lines
+of 502 today, every one `dial tcp 127.0.0.1:8501: connection refused`, and Maha restarted 15 times
+today: the updater restarts Maha within a minute of every push, in the middle of whatever anyone is
+doing. Load average 0.04: it is not the generation. The fix, in this order:
+  1. Caddy: `lb_try_duration 45s` + `lb_try_interval 500ms` on the 8501 and 8600 proxies (Caddy keeps
+     redialling while the service comes back; the browser waits instead of seeing 502). Change both
+     `/etc/caddy/Caddyfile` on the machine (`sudo systemctl reload caddy`) and the record
+     `ABLETON_TEACHER/oracle/caddy.sh`.
+  2. `/usr/local/bin/maha-update` (source in `oracle/base.sh`): after pull + pip, restart only when
+     nobody is connected — wait while `ss -Htn state established '( sport = :8501 )'` is non-empty,
+     at most 20 minutes, log the waiting in `~/apps/update.log`. Same for `portal-update`.
+
+ASKED, NOT STARTED (Marko's message of 15:20, in his order):
+  a. Google Female/Male: switching the side must pick the first voice of that side AND start the
+     reading again at once. Cause found: `google_voice_row` (app.py ~5765) does the side change in the
+     render body and calls `on_pick` (= `_revoice`, which sets `_auto_read`) but nothing reruns, so the
+     reading stops until the next press. Fix: `st.rerun()` right after `st.session_state[vkey] = current`
+     in that block (the guard `current not in names` makes it a single rerun).
+  b. The play key must never be grey when there is something to play: the idle deck (app.py ~9891)
+     passes `startable=_has_text`; make it always startable and let an empty press flash a hint.
+  c. Audio kept on the machine, per person, played from the server: new `ttt/audiocache.py`
+     (`TTT_AUDIO_CACHE=/home/ubuntu/.maha/audio/<user>/<sha>.bin + .json` of marks; key = user +
+     engine + voice signature + sentence text), used inside `_make(i)` of the playing branch (app.py
+     ~9680: look up before `SPEECH.build_part`, store after); a "your audio on the machine: N MB,
+     delete" line in the looks tab (app.py ~11127); in the portal admin page a section AUDIO CACHE
+     with MB per user and delete (routes `GET /portal/api/cache`, `DELETE /portal/api/cache/<user>`;
+     env `TTT_AUDIO_CACHE` in both the maha and portal service drop-ins).
+  d. The top right of the page holds everything technical: admin panel, then the version, then log
+     out, one under the other (`_foot_line`, app.py ~4310, and `.mahatop` in `ttt/theme.py` ~1382).
+     Behind the door log out can be the door's own `<a href="/logout">`; on Streamlit Cloud the log
+     out stays a button (it must call `log_out()`), the version moves up in both.
+
+Also still open from earlier: cloned voices on the machine (samples only, first run through clone),
+live websocket transcription, Croatian offline speech; Marko to change the first admin password and
+rotate the AssemblyAI key that was in the teacher repo's history.
