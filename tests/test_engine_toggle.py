@@ -141,9 +141,13 @@ at = app()
 at.run()
 keys = [b.key for b in at.button]
 check("the app renders without raising", not at.exception, at.exception)
-check("the toggle is ON THE PAGE, by key", "eng_flip" in keys, keys[:12])
+check("the engine buttons are ON THE PAGE, by key (two: the third is the word in force)",
+      len([k for k in keys if k.startswith("eng_pick_")]) == 2, keys[:12])
 
-btn = [b for b in at.button if b.key == "eng_flip"]
+btn = [b for b in at.button if b.key == "eng_pick_google"]
+# THE ENGINE IN FORCE IS THE MARKED WORD (7.9.2026), read off the markdown;
+# the buttons are the OTHER engines.
+word = " ".join(m.value for m in at.markdown if "tabsig_on" in m.value)
 if btn:
     b = btn[0]
     # A STATUS LINE. Baba, 6.9.2026: "I just want to be edge or Google.
@@ -157,21 +161,21 @@ if btn:
     # are... Translate free Google key." One cell, one press, and the
     # engine word is no longer printed twice on two lines.
     check("it names the engine that is RUNNING",
-          b.label.split()[0] == "Edge", b.label)
+          "Edge" in word, word)
     # NO KEY NUMBER ON A KEYLESS VOICE. Baba: "why edge said /5". Edge
     # speaks without a key, so the /5 was GROQ's transcription keys
     # printed beside the name of the VOICE — a number about the wrong
     # thing. The engine alone is the whole truth here.
-    check("a keyless voice shows NO key number", "/" not in b.label, b.label)
+    check("a keyless voice shows NO key number", "/" not in word, word)
     check("...and NOT the one it would switch to",
-          "Gemini" not in b.label and "Google" not in b.label, b.label)
+          "Gemini" not in word and "Google" not in word, word)
     check("no glyph on it — a mark beside a status is a second thing to "
           "read before the first one lands",
           GLYPH not in b.label, b.label)
     check("...and no instruction words either",
           "switch" not in b.label.lower(), b.label)
     check("it is just the engine on a keyless voice",
-          b.label == "Edge", b.label)
+          word.replace("\u25cf", "").strip().endswith("Edge") or "Edge" in word, word)
     # WHERE IT WOULD GO IS IN THE TOOLTIP, which is not on the page.
     check("the target is in the help, not on the line", bool(b.help), b.help)
     check("it carries help text saying what it will do", bool(b.help), b.help)
@@ -184,7 +188,7 @@ if btn:
     check("...and the help names WHICH engine is not ready",
           "Gemini" in (b.help or ""), b.help)
 else:
-    check("it wears the glyph", False, "no eng_flip button")
+    check("the Google button is there", False, "no eng_pick_google button")
 
 # "ON ALL THE TABS THEY HAVE ACCESS TO" — his words, so every tab is
 # rendered and asked, not just one. This is the check that would catch a
@@ -192,10 +196,10 @@ else:
 for tab in ("transcribe", "talk", "translate", "vr", "looks", "help"):
     a = app(tab)
     a.run()
-    found = [b for b in a.button if b.key == "eng_flip"]
+    found = [b for b in a.button if b.key.startswith("eng_pick_")]
     check("tab %-10s renders without raising" % tab, not a.exception,
           a.exception)
-    check("tab %-10s carries the toggle" % tab, len(found) == 1,
+    check("tab %-10s carries the engine buttons" % tab, len(found) == 2,
           [b.key for b in a.button][:10])
 
 # =====================================================================
@@ -329,13 +333,14 @@ check("a mixed board reads as mixed", EN.current(mixed) is None)
 check("...and is offered the free set as the way back",
       EN.next_in(EN.for_tier("free"), "") is not None)
 
-check("three engines, no more and no fewer", len(EN.ENGINES) == 3,
+check("four engines, no more and no fewer (Marko API since 7.9.2026)", len(EN.ENGINES) == 4,
       [e.id for e in EN.ENGINES])
-check("adding the toggle did not change any engine's routes",
+check("adding the buttons did not change any engine's routes",
       [e.routes for e in EN.ENGINES] ==
       [{"stt": "groq", "tts": "edge", "llm": "groq"},
        {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
-       {"stt": "google", "tts": "google", "llm": "google"}])
+       {"stt": "google", "tts": "google", "llm": "google"},
+       {"stt": "markoapi", "tts": "markoapi", "llm": "groq"}])
 
 
 
@@ -360,15 +365,15 @@ for tab in ("transcribe", "talk", "translate", "vr", "looks", "help",
                                 "looks", "help")), md[-80:])
     check("tab %-10s offers the way out" % tab, "foot_logout" in keys,
           keys[:8])
-    check("tab %-10s offers the engine link" % tab, "eng_flip" in keys)
+    check("tab %-10s offers the engine buttons" % tab, any(k.startswith("eng_pick_") for k in keys))
     check("tab %-10s renders without raising" % tab, not a.exception,
           a.exception)
 
 # ONE CONTROL, NOT TWO. The glyph-only button it replaced is gone; two
 # implementations of one control are two places to drift.
 check("the old glyph-only switch is gone", "def _engine_switch" not in CODE)
-check("there is exactly one engine control", CODE.count('key="eng_flip"') == 1,
-      CODE.count('key="eng_flip"'))
+check("there is exactly one engine control (one button call, one per engine)",
+      CODE.count('key="eng_pick_" + cand.id') == 1, CODE.count('key="eng_pick_" + cand.id'))
 
 # THE LINK LOOK IS THE EXISTING ONE. The container key begins
 # "boxlinks_", which the stylesheet already turns into right-aligned
@@ -558,16 +563,19 @@ sig = sigtext(a)
 # THE ENGINE AND ITS KEY MOVED INTO THE PRESSABLE CELL. They used to
 # be printed in the dim text AND again as a link below it, so the word
 # appeared twice on two lines. One place now, and it is the switch.
-_flip = [b for b in a.button if b.key == "eng_flip"][0]
+# THE ENGINE IN FORCE IS A MARKED WORD NOW (7.9.2026), not a button: read it off the markdown.
+class _Word:
+    def __init__(self, v): self.label = v
+_flip = _Word(" ".join(m.value for m in a.markdown if "tabsig_on" in m.value))
 # THE TAB NAME AND THE TIER ARE ON THE LINE. This is the whole of what
 # he asked for — "you need to type the name of the tab... then after
 # that you need to write Google or Edge" — and nothing asserted it, so
 # emptying the lead cell left the suite green with a footer that said
 # only "Google –/2 · log out".
-_lead = [m.value for m in a.markdown if "tabsig_l" in m.value]
-check("the footer names the TAB", any("talk" in x or "read" in x
+_lead = [m.value for m in a.markdown if "mahatop" in m.value]   # the page name moved to the top bar
+check("the top bar names the TAB", any("talk" in x or "read" in x
                                       for x in _lead), _lead[:1])
-check("...and the tier beside it", any("free" in x for x in _lead), _lead[:1])
+check("...and NOT the tier: Marko, 7.9.2026, 'free removed'", not any(">free" in x for x in _lead), _lead[:1])
 check("...on ONE line, in one cell", len(_lead) >= 1, len(_lead))
 
 check("the footer carries the engine name", "Edge" in _flip.label,
@@ -910,7 +918,7 @@ _before = sget(_sw, "_talk_job") or {}
 check("the reading has cached audio before the switch",
       len(_before.get("cache", {})) == 2, len(_before.get("cache", {})))
 
-_btn = [b for b in _sw.button if b.key == "eng_flip"]
+_btn = [b for b in _sw.button if b.key == "eng_pick_google"]
 if _btn and not _btn[0].disabled:
     _btn[0].click().run()
     _after = sget(_sw, "_talk_job") or {}
