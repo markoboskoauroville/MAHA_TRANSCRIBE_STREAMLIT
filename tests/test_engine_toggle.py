@@ -62,9 +62,10 @@ print("1 THE MECHANISM, ALONE")
 free = EN.for_tier("free")
 # THREE FREE ENGINES since 7.9.2026: Edge, Google, and Marko API (his own
 # machine through its API). Marko: "three buttons, not a toggle."
-check("three free engines today", len(free) == 3, [e.id for e in free])
+from ttt.providers.local import INSTALLED as _OFFLINE_HERE  # noqa: E402
+check("three free engines today, four where the offline engine is installed", len(free) == 3 + (1 if _OFFLINE_HERE else 0), [e.id for e in free])
 check("they are the free-tier ones, read off the data",
-      {e.id for e in free} == {"normal", "google", "marko"}, [e.id for e in free])
+      {e.id for e in free} == ({"normal", "google", "marko"} | ({"offline"} if _OFFLINE_HERE else set())), [e.id for e in free])
 check("every one of them really declares tier free",
       all(e.tier == "free" for e in free))
 check("studio is not in the free set",
