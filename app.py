@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v261"
+APP_VERSION = "v268"
 
 # IT HAD SAID v237 FOR TWENTY-THREE VERSIONS, AND THAT WAS NOT COSMETIC.
 #
@@ -126,6 +126,7 @@ from ttt import vr as VR
 from ttt import vision
 from ttt import notes as NOTES
 from ttt import notestore as NOTESTORE          # the machine's per-person store (7.9.2026)
+from ttt import audiocache as AUDIOCACHE        # the machine's per-person audio (7.9.2026)
 from ttt.providers.groq import FAST_STT as GROQ_FAST_STT
 from ttt import routing as RO
 from ttt import engines as EN
@@ -1172,6 +1173,10 @@ STRINGS = {
                             "hr": "Gojazni đačić s ljutim che pjeva u fioci. 0123456789"},
     "sig_help":           {"en": "help",              "hr": "pomoć"},
     "sig_looks":          {"en": "looks",             "hr": "izgled"},
+    "looks_audio":        {"en": "your audio on the machine: %s in %d files",
+                           "hr": "tvoj zvuk na stroju: %s u %d datoteka"},
+    "looks_audio_delete": {"en": "delete my audio",   "hr": "obriši moj zvuk"},
+    "looks_audio_gone":   {"en": "deleted: %s",       "hr": "obrisano: %s"},
     "sig_transcribe":     {"en": "transcribe",        "hr": "transkripcija"},
     "sig_read":           {"en": "read",              "hr": "čitanje"},
     "sig_translate":      {"en": "translate",         "hr": "prijevod"},
@@ -1614,7 +1619,11 @@ def remote_base() -> str:
             "https" if (".streamlit.app" in host or ".pages.dev" in host
                         or ".sslip.io" in host) else "http")
         if host:
-            return "%s://%s" % (proto, host)
+            # UNDER A PREFIX (7.9.2026: the app lives at /streamlit behind
+            # the door), the address carries it, or the remote window
+            # opens the blank main page.
+            base = str(st.get_option("server.baseUrlPath") or "").strip("/")
+            return "%s://%s%s" % (proto, host, ("/" + base) if base else "")
     except Exception:                                        # noqa: BLE001
         pass
     return ""
@@ -4311,12 +4320,23 @@ def _foot_line(name, tier, who, eng):
     # Google, Marko API aligned with the bottom edge; the page name at the
     # top left; free removed." Fixed to the viewport, so the DOM place of
     # this markdown does not matter and nothing stacks on a phone.
-    is_admin = (st.session_state.get("_via_portal")
-                and st.session_state.get("_view_tier") == "admin")
-    st.markdown('<div class="mahatop"><span class="mahatop_l">%s</span>%s</div>' % (
-        html.escape(name or ""),
-        ('<a class="mahatop_r" href="/portal/admin" target="_blank">admin panel</a>' if is_admin else "")),
-        unsafe_allow_html=True)
+    # EVERYTHING TECHNICAL IN THE TOP RIGHT, ONE UNDER THE OTHER (Marko,
+    # 7.9.2026): the admin panel, then the version, then log out. Behind
+    # the door log out is the door's own /logout, a plain link; on
+    # Streamlit Cloud it stays a button in the foot (it must call
+    # log_out()), and only the version moves up.
+    via_door = bool(st.session_state.get("_via_portal"))
+    is_admin = via_door and st.session_state.get("_view_tier") == "admin"
+    right = []
+    if is_admin:
+        right.append('<a class="mahatop_r" href="/portal/admin" target="_blank">admin panel</a>')
+    right.append('<span class="mahatop_v">%s</span>' % html.escape(APP_VERSION))
+    if via_door:
+        right.append('<a class="mahatop_r" href="/logout">%s</a>' % html.escape(t("log_out_link")))
+    st.markdown('<div class="mahatop"><span class="mahatop_l">%s</span>'
+                '<span class="mahatop_col">%s</span></div>' % (
+                    html.escape(name or ""), "".join(right)),
+                unsafe_allow_html=True)
 
     with st.container(key="boxlinks_foot"):
         for cand in family:
@@ -4337,19 +4357,14 @@ def _foot_line(name, tier, who, eng):
                       help=(cand.short if cand_ready else (t("eng_not_ready") % cand.label)),
                       disabled=not cand_ready,
                       on_click=_pick(cand) if cand_ready else None)
-        st.button(t("log_out_link"), key="foot_logout",
-                  help=t("log_out_link"), on_click=log_out)
-        # THE VERSION, HARD RIGHT. Baba, 6.9.2026: "give me the version
-        # number in the lower right corner."
-        #
-        # NOT UNDERLINED, because it is not an action — his own rule
-        # from an hour ago: "what is underlined, that's action. What is
-        # not underlined is information." So it is the same orange as
-        # the rest of the line and carries no underline, and the CSS
-        # pushes it to the right with margin-left:auto rather than a
-        # spacer column, which would stack.
-        st.markdown('<div class="tabsig tabsig_v">%s</div>'
-                    % html.escape(APP_VERSION), unsafe_allow_html=True)
+        # LOG OUT STAYS HERE ONLY WHERE THERE IS NO DOOR: on Streamlit
+        # Cloud the app is its own door and log_out() is what ends the
+        # session. Behind pages.dev the link at the top right is the
+        # door's /logout. THE VERSION LEFT THIS ROW on 7.9.2026 for the
+        # top right, under the admin panel (Marko).
+        if not via_door:
+            st.button(t("log_out_link"), key="foot_logout",
+                      help=t("log_out_link"), on_click=log_out)
 
 
 def name_the_symbols():
@@ -5771,6 +5786,13 @@ def google_voice_row(prefix="talkg", on_pick=None):
             # not among its options is a widget Streamlit has to guess
             # about.
             st.session_state[vkey] = current
+            # AND THE PAGE RUNS AGAIN NOW (Marko, 7.9.2026: "switching
+            # Female/Male must start the reading again at once"). on_pick
+            # set _auto_read, but nothing reran: the radio's own rerun
+            # was THIS render, and the reading branch above had already
+            # drawn the old job. The guard `current not in names` makes
+            # this a single rerun, not a loop.
+            st.rerun()
         # WRITTEN EVERY RENDER, NOT ONLY WHEN IT CHANGES. Until this
         # line, google_voice was unset on the first render and synth()
         # fell back to DEFAULT_VOICE — which happened to be the same
@@ -6302,6 +6324,20 @@ def _revoice():
         # branch drops this job, the writing branch makes a fresh one from
         # the same text with the voice now chosen, and plays from the top.
         st.session_state["_auto_read"] = True
+
+
+def _voice_signature(engine) -> str:
+    """WHICH VOICE, AS ONE STRING — the audio cache's second key.
+
+    The engine and every setting that changes the sound: the Edge voice,
+    the Google voice, the Speechify voice and model. A reading made by
+    one of these is a different file from a reading made by another, so
+    all of them are in the name and none of them can collide.
+    """
+    ss = st.session_state
+    return "|".join(str(x) for x in (
+        engine, ss.get("voice", ""), ss.get("google_voice", ""),
+        ss.get("sp_voice", ""), ss.get("sp_model", "")))
 
 
 def _voice_row_synth_only(engine, sp_ring_talk):
@@ -9681,12 +9717,23 @@ elif active == "talk":
             if i in job["cache"] or i >= len(parts):
                 return job["cache"].get(i)
             ss, char_off = parts[i]
+            # THE MACHINE'S COPY FIRST (Marko, 7.9.2026): the same words
+            # in the same voice for the same person were made once; on
+            # the Oracle machine they are kept and play at once. Elsewhere
+            # AUDIOCACHE is switched off and this is two cheap misses.
+            _who = str(st.session_state.get("_user") or "")
+            _ck = AUDIOCACHE.key(_who, _voice_signature(engine), " ".join(ss))
+            _hit = AUDIOCACHE.get(_who, _ck)
+            if _hit:
+                job["cache"][i] = _hit
+                return _hit
             path, marks, total, temps = SPEECH.build_part(
                 ss, job["synth"], char_off, job["full_text"])
             with open(path, "rb") as f:
                 audio = f.read()
             ttt_audio.cleanup(*temps)
             job["cache"][i] = {"audio": audio, "marks": marks}
+            AUDIOCACHE.put(_who, _ck, audio, marks)
             return job["cache"][i]
 
         if cached is None:
@@ -11396,6 +11443,26 @@ elif active == "looks":
         _msg = st.session_state.get("_pw_msg")
         if _msg:
             (st.success if _msg[0] == "good" else st.error)(_msg[1])
+
+    # THE AUDIO KEPT ON THE MACHINE, and the way to be rid of it (Marko,
+    # 7.9.2026). Only where there is a machine store and a person; on
+    # Streamlit Cloud the block is not drawn at all — there is nothing
+    # it could say.
+    _ac_user = str(st.session_state.get("_user") or "")
+    if AUDIOCACHE.enabled() and _ac_user:
+        with st.container(key="looks_audio_box"):
+            _ac_gone = st.session_state.pop("_audio_cache_gone", None)
+            if _ac_gone is not None:
+                st.caption(t("looks_audio_gone") % _human_bytes(_ac_gone))
+            st.caption(t("looks_audio") % (_human_bytes(AUDIOCACHE.usage(_ac_user)),
+                                           AUDIOCACHE.count(_ac_user)))
+
+            def _audio_cache_clear(u=_ac_user):
+                st.session_state["_audio_cache_gone"] = AUDIOCACHE.clear(u)
+
+            st.button(t("looks_audio_delete"), key="looks_audio_delete",
+                      on_click=_audio_cache_clear,
+                      disabled=AUDIOCACHE.count(_ac_user) == 0)
 
     tab_signature(t("sig_looks"))
 

@@ -1387,8 +1387,14 @@ def css(scheme: str = "amber", font: str = "mono",
       color: var(--amber);
     }}
     .mahatop_l {{ opacity: 0.9; }}
+    /* THE RIGHT COLUMN: admin panel, version, log out, one under the other,
+       ending at the right edge (Marko, 7.9.2026). */
+    .mahatop_col {{ display: flex; flex-direction: column; align-items: flex-end;
+      gap: 3px; pointer-events: auto; }}
     .mahatop_r {{ pointer-events: auto; color: var(--amber) !important;
       text-decoration: underline; text-underline-offset: 3px; }}
+    /* The version is information, not an action: no underline, dimmer. */
+    .mahatop_v {{ opacity: 0.55; text-decoration: none; }}
     /* The engine in force: a marked word, orange, no underline. */
     [class*="st-key-boxlinks_foot"] .tabsig_on {{
       text-align: left !important; margin: 0 !important; padding: 0 !important;
