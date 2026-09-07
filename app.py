@@ -2221,6 +2221,27 @@ def _auth_sig(user: str) -> str:
                     hashlib.sha256).hexdigest()
 
 
+# THE DOOR (7.9.2026). On the Oracle machine the app sits behind
+# https://ttt-lll.pages.dev, whose login is the portal's (TTT_PORTAL). Caddy on
+# the machine sets X-Trusted-Door on every request it proxies to this app,
+# overriding anything a caller sent, and the door adds X-Portal-User and
+# X-Portal-Role after checking the session cookie. So a request that carries
+# both came through the door with a checked login, and the person is not asked
+# twice. Streamlit Cloud never sees these headers and is unchanged.
+if not st.session_state.get("_authed"):
+    try:
+        _dh = st.context.headers or {}
+        _door_user = (_dh.get("X-Portal-User") or _dh.get("x-portal-user") or "").strip()
+        _door_ok = (_dh.get("X-Trusted-Door") or _dh.get("x-trusted-door") or "") == "1"
+        if _door_ok and _door_user:
+            st.session_state["_authed"] = True
+            st.session_state["_user"] = _door_user
+            st.session_state["_via_portal"] = True
+            _door_role = (_dh.get("X-Portal-Role") or _dh.get("x-portal-role") or "user").lower()
+            st.session_state["_view_tier"] = "admin" if _door_role == "admin" else "free"
+    except Exception:                                        # noqa: BLE001
+        pass
+
 if not st.session_state.get("_authed"):
     # BACK ON, AND LOCAL. No network, no Apps Script, no wake-up: the
     # signature is checked in this process against a name that is already
