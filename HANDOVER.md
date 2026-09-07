@@ -5281,3 +5281,57 @@ ASKED, NOT STARTED (Marko's message of 15:20, in his order):
 Also still open from earlier: cloned voices on the machine (samples only, first run through clone),
 live websocket transcription, Croatian offline speech; Marko to change the first admin password and
 rotate the AssemblyAI key that was in the teacher repo's history.
+
+## 7.9.2026, evening — THE SECOND ARCHITECTURE IS LIVE; where this app stands in it
+
+Everything of the 15:30 list is done and on the machine (v268, commits 10a8f5e, e3b075b, 037b4ce):
+  a. the Google side switch reruns and the reading starts again (google_voice_row; test_google_side, 15)
+  b. the play key was already live when idle (waveform_frontend since 6.9); an empty press answers
+     with a sentence (nothing_to_read)
+  c. ttt/audiocache.py: audio per person on the machine, TTT_AUDIO_CACHE=/home/ubuntu/.maha/audio,
+     77 MB a person (TTT_AUDIO_CACHE_MB), looked up before SPEECH.build_part in _make(i), stored
+     after; the looks tab says "your audio on the machine: N MB in N files" and deletes; the admin
+     sees MB per person and deletes in the portal's Streamlit tab (test_audiocache, 40)
+  d. the top right: admin panel, version, log out, one under the other (mahatop_col); behind the
+     door log out is the door's /logout, on Streamlit Cloud the button stays in the foot; the
+     version left the foot (test_top_right, 21)
+  The 502s: Caddy on the machine now redials for 45 s while a service restarts (lb_try), and the
+  updaters wait until nobody is connected to the port (20 min at most) before restarting.
+
+THE APP NOW LIVES AT https://ttt-lll.pages.dev/streamlit/ (the machine runs it with
+--server.baseUrlPath streamlit; remote_base() carries the prefix, so the remote window is
+/streamlit/?remote=CODE). The root of the domain is a blank grey page, noindex. Login at /login,
+the admin panel at /admin (tabs: Users with quotas, Streamlit = the audio cache and the secrets,
+Flask, Claude Talkie, API keys, Logins). The Flask successor is MAHA_TRANSCRIBE_FLASK at /flask/;
+Claude Talkie (Claude_Toki) at /claude/. One login for all: the portal's cookie.
+
+THE GATE OF 7.9.2026 ON THIS APP (delivery-gate.md):
+  G1 provenance   commit 037b4ce on the machine within a minute (update.log); the machine runs
+                  what GitHub holds, nothing copied
+  G2 secrets      174 tracked files, 36 hits, 0 real keys (placeholders and test stubs); the two
+                  untracked script folders that still held a filled Apps Script with secrets were
+                  moved OUT of the repo to ~/Developer/STREAMLIT_SECRETS/removed_from_maha_7sep/
+  G3 analysis     pyflakes app.py + ttt/ + tests: 0 findings (was 5)
+  G4 dead code    gone: the accounts-era log_out (shadowed), engine_status, _dim, the flip's
+                  planning (next_in/why/_flip), the foot's lead line, keyline
+  G5 dead loops   26 while-loops read: all bounded (the AssemblyAI poll 7200 s, Speechify pages
+                  20, the rest over lists); every subprocess and requests call has a timeout
+  G6 stress       test_soak 40 runs: no run raised, 0.75 s a run first and last quarter, RSS
+                  43 -> 246 MB under AppTest (the harness keeps the runs; cause not separated);
+                  the live door: 30 health calls at once, 30 roots, 20 pages, 10 wrong logins,
+                  a 200 KB login body, a body-less login — the right code every time, no 5xx
+  G7 budgets      0.75 s a full render under AppTest; the machine's load 0.00 at rest
+  G8 upgrade      notes on the machine unchanged (TTT_NOTES_DB); an old browser copy still reads;
+                  the audio cache starts empty and says 0 MB
+  G9 the record   this section, and DELIVERY_RECORD.md
+  NOT TESTED      a real reading through the door after the switch (no admin session in the
+                  chat; Marko to press play once at /streamlit/); Streamlit Cloud after v268
+                  (only AppTest ran the Cloud path)
+  OPEN            test_layout at 360 px: the links row above the transcribe box leaves the left
+                  edge (st-key-tx_grammar at x = -40, "grammar" reads "mmar") and the gaps above
+                  the box are uneven (8.8 / 10.4 / 13.0 px); present before v268 too
+
+THE TEST SUITE after the triage: 74 files, 73 pass, 1 fails (test_layout, the two findings
+above; it needs a live app on 8811). Five suites superseded (accounts, users, engine sheet, admin
+users, must-change), eleven brought up to the current design; tests/README_SUPERSEDED.md says
+what replaced each.
