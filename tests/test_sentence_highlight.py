@@ -128,7 +128,7 @@ print("\n5 IT LOOKS THE SAME ON EVERY ENGINE")
 check("5a nothing in the renderer asks which engine is playing",
       not any(w in code[code.find("def _render_page"):
                         code.find("def read_picture")]
-              for w in ("edge", "speechify", "google", "engine")),
+              for w in ("edge", "google", "engine")),
       "the renderer knows a vendor's name")
 
 print("\n{} passed, {} failed".format(passed, failed))

@@ -161,8 +161,8 @@ def region(src, start, end, label, least=50, most=6000):
 
 seam = region(APP, "def talking_is_metered", "def llm_bridge",
               "the metering seam")
-for vendor in ("google", "gemini", "edge", "speechify", "hume",
-               "assemblyai", "anthropic", "groq"):
+for vendor in ("google", "gemini", "edge", "hume",
+               "groq"):
     check("the metering seam does not name %r" % vendor,
           vendor not in seam.lower(), seam.strip()[:80])
 
@@ -254,12 +254,12 @@ check("...and an Edge reading still gets one sentence per file",
 studio = EN.get("studio")
 check("studio is still an engine", studio is not None)
 check("studio is unchanged",
-      studio.routes == {"stt": "assemblyai", "tts": "speechify",
+      studio.routes == {"stt": "tts": "speechify",
                         "llm": "anthropic"}, studio.routes)
-for pid in ("speechify", "assemblyai", "hume"):
+for pid in ("hume"):
     check("%s is still a provider in the registry" % pid, get(pid) is not None)
 check("none of the studio providers became an engine",
-      not any(e.id in ("speechify", "assemblyai", "hume") for e in EN.ENGINES))
+      not any(e.id in ("hume") for e in EN.ENGINES))
 
 # THE CHANGE ITSELF.
 g = EN.get("google")

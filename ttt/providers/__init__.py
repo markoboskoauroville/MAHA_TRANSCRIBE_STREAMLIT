@@ -10,13 +10,9 @@ the engine pickers list whatever offers the capability, and the reader
 takes whatever function it is handed.
 """
 
-from .anthropic import Anthropic
-from .assemblyai import AssemblyAI
 from .edge import Edge
 from .google import Google
 from .groq import Groq
-from .hume import Hume
-from .speechify import Speechify
 
 # WHAT THIS MODULE PROMISES app.py, AS A NUMBER.
 #
@@ -43,12 +39,8 @@ API_LEVEL = 2          # 2: google is a provider, set_google_keys exists
 
 REGISTRY = {
     Edge.id: Edge(),
-    Speechify.id: Speechify(),
-    AssemblyAI.id: AssemblyAI(),
     Groq.id: Groq(),            # keys injected at startup by the entrypoint
     Google.id: Google(),        # keys injected at startup, same as Groq
-    Hume.id: Hume(),            # VR's voice — paced, see ttt/vr.py
-    Anthropic.id: Anthropic(),
 }
 
 

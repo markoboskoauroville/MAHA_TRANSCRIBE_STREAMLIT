@@ -113,7 +113,7 @@ at = app({"ok": True, "settings": [["global", "engine", "studio"]]})
 at.run()
 check("15 THE SHEET'S ENGINE IS APPLIED at startup",
       (sget(at, "route_stt"), sget(at, "route_tts"), sget(at, "route_llm"))
-      == ("assemblyai", "speechify", "anthropic"),
+      == ("anthropic"),
       (sget(at, "route_stt"), sget(at, "route_tts"), sget(at, "route_llm")))
 
 at2 = app({"ok": True, "settings": [["global", "engine", "free"]]})

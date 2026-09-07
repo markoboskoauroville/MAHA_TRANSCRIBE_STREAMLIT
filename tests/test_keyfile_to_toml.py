@@ -112,7 +112,7 @@ check("a key that was never tested is treated as unknown and KEPT",
 check("...and every row still reports something",
       all(v for _f, v, _d, _w in r4))
 
-many = [F("anthropic", "sk-ant-" + c * 40, "acct" + c) for c in "xy"]
+many = [F("sk-ant-" + c * 40, "acct" + c) for c in "xy"]
 t5, _ = B.build(many, {("sk-ant-" + c * 40): (G.WORKING, "") for c in "xy"})
 check("a single-valued name takes one key and SAYS the rest were dropped",
       t5.count("ANTHROPIC_API_KEY =") == 1 and "1 more working" in t5, t5)
@@ -157,7 +157,7 @@ rows_for_report = [
     (F("google", G2, "empty"), G.NO_CREDIT, "no credit left", False),
     (F("google", G3, "rejected"), G.REFUSED, "401", False),
     (F("hume", HK, "acct.one", HS), G.WORKING, "", True),
-    (F("hume", "", "no.key.here"), "incomplete",
+    (F("", "no.key.here"), "incomplete",
      "the API key is missing from the file", False),
 ]
 text_written = 'GOOGLE_API_KEYS = ["%s"]\n' % G1
@@ -253,7 +253,7 @@ rt_rows = [
     (F("google", G1, "alive"), G.WORKING, "", True),
     (F("google", G2, "second"), G.WORKING, "", True),
     (F("hume", HK, "kalabhumi", HS), G.WORKING, "", True),
-    (F("hume", "H" + "m" * 47, "svaram", "S" + "t" * 63), G.WORKING, "", True),
+    (F("H" + "m" * 47, "svaram", "S" + "t" * 63), G.WORKING, "", True),
 ]
 rt_text, _ = B.build([r[0] for r in rt_rows],
                      {r[0].key: (r[1], r[2]) for r in rt_rows})

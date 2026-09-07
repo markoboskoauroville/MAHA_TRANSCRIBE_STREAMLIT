@@ -104,7 +104,7 @@ check("groq is not in the per-person key list", "groq" not in _keyed, _keyed)
 check("google is not either — its keys are the app's",
       "google" not in _keyed, _keyed)
 check("the studio providers ARE, because those keys are a person's",
-      set(_keyed) == {"speechify", "assemblyai", "hume", "anthropic"}, _keyed)
+      set(_keyed) == {"anthropic"}, _keyed)
 
 check("the loader is driven by SECRET_NAMES, not a second list",
       "SECRET_NAMES.get(provider_id, ())" in CODE)
@@ -207,7 +207,7 @@ try:
         return [k.get("key") for k in (rings.get(pid) or {}).get("keys", [])]
 
     # THE POINT OF THE WHOLE CHANGE: keys reach the ring, no paste box.
-    for pid in ("speechify", "assemblyai", "anthropic", "hume"):
+    for pid in ("hume"):
         check("%s got its keys from Secrets, with no paste box" % pid,
               len(ring_keys(pid)) >= 1, ring_keys(pid))
 
@@ -235,10 +235,10 @@ try:
     # RUNNING IT TWICE ADDS NOTHING. Streamlit re-runs the whole script
     # on every interaction, so a loader that did not de-duplicate would
     # grow the ring on every single click.
-    before = {p: len(ring_keys(p)) for p in ("speechify", "hume", "anthropic")}
+    before = {p: len(ring_keys(p)) for p in ("anthropic")}
     at2.run()
     rings = sget(at2, "_rings") or {}
-    after = {p: len(ring_keys(p)) for p in ("speechify", "hume", "anthropic")}
+    after = {p: len(ring_keys(p)) for p in ("anthropic")}
     check("a second run adds nothing — the ring does not grow per rerun",
           before == after, (before, after))
 finally:

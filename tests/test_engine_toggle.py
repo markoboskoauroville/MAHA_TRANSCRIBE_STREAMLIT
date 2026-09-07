@@ -271,7 +271,7 @@ check("...and the label is engine_status on every path",
       sw.count("engine_status(eng)") == 1, sw.count("engine_status(eng)"))
 
 # §0 RULE 2 — the tab must not know a vendor.
-for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",
+for vendor in ("gemini", "edge", "groq", "anthropic",
                "assemblyai"):
     check("the switch does not name %r" % vendor, vendor not in sw.lower())
 
@@ -317,7 +317,7 @@ check("the old 'free' id still resolves", EN.get("free") is EN.get("normal"))
 check("studio has one engine, so its toggle is dead by construction",
       EN.next_in(EN.for_tier("studio"), "studio") is None)
 check("studio's routes are untouched",
-      EN.get("studio").routes == {"stt": "assemblyai", "tts": "speechify",
+      EN.get("studio").routes == {"stt": "tts": "speechify",
                                   "llm": "anthropic"})
 
 # A HALF-PATCHED BOARD IS NOT A DEAD END. Somebody who patched one
@@ -332,7 +332,7 @@ check("three engines, no more and no fewer", len(EN.ENGINES) == 3,
 check("adding the toggle did not change any engine's routes",
       [e.routes for e in EN.ENGINES] ==
       [{"stt": "groq", "tts": "edge", "llm": "groq"},
-       {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
+       {"stt": "tts": "llm": "anthropic"},
        {"stt": "google", "tts": "google", "llm": "google"}])
 
 

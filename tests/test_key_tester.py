@@ -707,14 +707,14 @@ check("a TOML list on one line yields keys with no names",
 # HUME.
 check("a hume pair keeps its account name",
       names("acct\nAPI key\n" + HKEY + "\nSecret key\n" + HSEC)
-      == [("hume", "acct")])
+      == [("acct")])
 check("A HUME PAIR WITH NO NAME DOES NOT TAKE ITS OWN KEY AS ONE",
       names("API key\n" + HKEY + "\nSecret key\n" + HSEC)
-      == [("hume", "")],
+      == [("")],
       names("API key\n" + HKEY + "\nSecret key\n" + HSEC))
 check("a URL inside a hume block does not become the name",
       names("acct\nhttps://x.y\nAPI key\n" + HKEY + "\nSecret key\n" + HSEC)
-      == [("hume", "acct")])
+      == [("acct")])
 # BOTH LABELS OR IT IS NOT A HUME BLOCK. A google key under the words
 # "API key" was swallowed whole: the hume path claimed the block and
 # the generic pass never ran.

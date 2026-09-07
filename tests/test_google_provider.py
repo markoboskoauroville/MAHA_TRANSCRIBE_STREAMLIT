@@ -436,14 +436,14 @@ check("...as a Provider", isinstance(get("google"), Provider))
 # NOTHING ELSE MOVED. Adding a provider must not disturb the six that
 # were already there — the failure this closes is a registry edit that
 # quietly drops one.
-for pid in ("edge", "groq", "speechify", "assemblyai", "hume", "anthropic"):
+for pid in ("edge", "groq", "anthropic"):
     check("%s still resolves" % pid, get(pid) is not None)
 check("the registry holds seven providers now", len(REGISTRY) == 7, len(REGISTRY))
 
 # EVERY PROVIDER THAT WAS THERE BEFORE IS STILL NOT METERED BY THE CALL.
 # A new attribute with a wrong default would silently re-plan every
 # reading in the app.
-for pid in ("edge", "groq", "speechify", "assemblyai", "hume", "anthropic"):
+for pid in ("edge", "groq", "anthropic"):
     check("%s is not metered by the call" % pid,
           get(pid).metered_by_call is False)
 

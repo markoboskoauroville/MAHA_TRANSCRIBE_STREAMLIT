@@ -69,7 +69,10 @@ SK_SPEECHIFY_MIN = 44
 # RECOGNISED — so a pasted note does not silently lose it — but it is
 # reported rather than written into a secrets block for a provider that
 # does not exist here.
-KNOWN_HERE = ("google", "groq", "assemblyai", "speechify", "anthropic", "hume")
+# THREE PROVIDERS NOW. Anything else is still RECOGNISED — so a pasted
+# note does not silently lose it — but reported rather than written
+# into a secrets block for a provider this app no longer has.
+KNOWN_HERE = ("google", "groq")
 
 
 # WHAT A LABELLED VALUE MUST LOOK LIKE TO BE A KEY AT ALL.
