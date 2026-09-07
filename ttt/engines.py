@@ -138,49 +138,8 @@ ENGINES = [
            note="one key, all three jobs", tier="free", short="Google"),
 ]
 
-# MARKO API (7.9.2026): his own machine's engines, through the API any app can
-# call (ttt/providers/markoapi.py). In the free family, so the foot of the page
-# offers Edge, Google and Marko API side by side; the button is grey until the
-# key (MARKO_API_KEY in secrets) is there.
-ENGINES.append(Engine("marko", "Marko API (Whisper / Piper on my machine)",
-                      {"stt": "markoapi", "tts": "markoapi", "llm": "groq"},
-                      note="my own machine, through its API", tier="free", short="Marko API"))
-
-# THE OFFLINE TIER exists only where its engines are installed (the Oracle
-# machine, 7.9.2026): Whisper and Piper on the machine itself, no key and no
-# network for the ears and the mouth; the text work still goes to Groq.
-try:
-    from .providers.local import INSTALLED as _LOCAL_INSTALLED
-except Exception:                                   # noqa: BLE001
-    _LOCAL_INSTALLED = False
-if _LOCAL_INSTALLED:
-    # tier "free", not a tier of its own (7.9.2026): on the machine the
-    # offline engine is the default and a person through the door is on
-    # the free tier — a tier of its own hid the three other buttons when
-    # offline was in force, and hid offline when Edge was.
-    ENGINES.append(Engine("offline", "Whisper / Piper, on this machine",
-                          {"stt": "local", "tts": "local", "llm": "groq"},
-                          note="offline ears and mouth", tier="free", short="Machine"))
-
 BY_ID = {e.id: e for e in ENGINES}
-# The default engine can be named by the machine (TTT_DEFAULT_ENGINE=offline
-# in the service), so the Oracle machine starts offline and the cloud stays as
-# it was.
-import os as _os
-DEFAULT = _os.environ.get("TTT_DEFAULT_ENGINE", "normal")
-if DEFAULT not in BY_ID:
-    DEFAULT = "normal"
-# AND THE UNSET ROUTES ARE THE DEFAULT ENGINE'S. Until 7.9.2026 a task's
-# fallback was written in routing.TASKS (groq, edge, groq) whatever the
-# machine named as its default, so a new person on the Oracle machine
-# read "Edge" at the foot and sent recordings to Groq while the service
-# said TTT_DEFAULT_ENGINE=offline. Naming the default must MAKE it the
-# default: the tasks' fallbacks are rewritten from its routes here, once,
-# before anything reads them.
-for _task in _routing.TASKS:
-    if _task.id in BY_ID[DEFAULT].routes:
-        _task.default = BY_ID[DEFAULT].routes[_task.id]
-TASK_DEFAULTS = {t.id: t.default for t in _routing.TASKS}
+DEFAULT = "normal"
 
 
 def for_tier(tier: str):

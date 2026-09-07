@@ -16,8 +16,6 @@ from .edge import Edge
 from .google import Google
 from .groq import Groq
 from .hume import Hume
-from .local import Local
-from .markoapi import MarkoAPI
 from .speechify import Speechify
 
 # WHAT THIS MODULE PROMISES app.py, AS A NUMBER.
@@ -45,8 +43,6 @@ API_LEVEL = 2          # 2: google is a provider, set_google_keys exists
 
 REGISTRY = {
     Edge.id: Edge(),
-    Local.id: Local(),          # offline Whisper + Piper; usable only where installed (the machine)
-    MarkoAPI.id: MarkoAPI(),    # the same engines through Marko's API; key injected at startup
     Speechify.id: Speechify(),
     AssemblyAI.id: AssemblyAI(),
     Groq.id: Groq(),            # keys injected at startup by the entrypoint
@@ -91,13 +87,3 @@ def set_google_keys(keys) -> None:
     constructed empty and handed them at startup, and anything asking the
     registry for a Google capability depends on that call having run."""
     REGISTRY[Google.id].keys = list(keys or [])
-
-
-def set_marko(key, url=None) -> None:
-    """The app's own key for Marko's API (MARKO_API_KEY in secrets) and, if
-    given, where it lives (MARKO_API_URL); without a key the provider is not
-    usable and the Marko API button stays grey."""
-    p = REGISTRY[MarkoAPI.id]
-    p.key = (key or "").strip()
-    if url:
-        p.url = str(url).rstrip("/")

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v268"
+APP_VERSION = "v261"
 
 # IT HAD SAID v237 FOR TWENTY-THREE VERSIONS, AND THAT WAS NOT COSMETIC.
 #
@@ -125,8 +125,6 @@ from ttt import eta as ETA
 from ttt import vr as VR
 from ttt import vision
 from ttt import notes as NOTES
-from ttt import notestore as NOTESTORE          # the machine's per-person store (7.9.2026)
-from ttt import audiocache as AUDIOCACHE        # the machine's per-person audio (7.9.2026)
 from ttt.providers.groq import FAST_STT as GROQ_FAST_STT
 from ttt import routing as RO
 from ttt import engines as EN
@@ -1173,10 +1171,6 @@ STRINGS = {
                             "hr": "Gojazni đačić s ljutim che pjeva u fioci. 0123456789"},
     "sig_help":           {"en": "help",              "hr": "pomoć"},
     "sig_looks":          {"en": "looks",             "hr": "izgled"},
-    "looks_audio":        {"en": "your audio on the machine: %s in %d files",
-                           "hr": "tvoj zvuk na stroju: %s u %d datoteka"},
-    "looks_audio_delete": {"en": "delete my audio",   "hr": "obriši moj zvuk"},
-    "looks_audio_gone":   {"en": "deleted: %s",       "hr": "obrisano: %s"},
     "sig_transcribe":     {"en": "transcribe",        "hr": "transkripcija"},
     "sig_read":           {"en": "read",              "hr": "čitanje"},
     "sig_translate":      {"en": "translate",         "hr": "prijevod"},
@@ -1608,22 +1602,11 @@ def remote_base() -> str:
     """
     try:
         h = st.context.headers or {}
-        # BEHIND THE DOOR the Host is the machine's own name
-        # (130-61-181-83.sslip.io), which nobody can open without the door
-        # key; the door says the public name in X-Forwarded-Host
-        # (ttt-lll.pages.dev). Marko, 7.9.2026: "the remote address is
-        # wrongly formatted, with dashes; the remote user doesn't get in."
-        host = (h.get("X-Forwarded-Host") or h.get("x-forwarded-host")
-                or h.get("Host") or h.get("host") or "")
+        host = h.get("Host") or h.get("host") or ""
         proto = h.get("X-Forwarded-Proto") or (
-            "https" if (".streamlit.app" in host or ".pages.dev" in host
-                        or ".sslip.io" in host) else "http")
+            "https" if ".streamlit.app" in host else "http")
         if host:
-            # UNDER A PREFIX (7.9.2026: the app lives at /streamlit behind
-            # the door), the address carries it, or the remote window
-            # opens the blank main page.
-            base = str(st.get_option("server.baseUrlPath") or "").strip("/")
-            return "%s://%s%s" % (proto, host, ("/" + base) if base else "")
+            return "%s://%s" % (proto, host)
     except Exception:                                        # noqa: BLE001
         pass
     return ""
@@ -2238,27 +2221,6 @@ def _auth_sig(user: str) -> str:
                     hashlib.sha256).hexdigest()
 
 
-# THE DOOR (7.9.2026). On the Oracle machine the app sits behind
-# https://ttt-lll.pages.dev, whose login is the portal's (TTT_PORTAL). Caddy on
-# the machine sets X-Trusted-Door on every request it proxies to this app,
-# overriding anything a caller sent, and the door adds X-Portal-User and
-# X-Portal-Role after checking the session cookie. So a request that carries
-# both came through the door with a checked login, and the person is not asked
-# twice. Streamlit Cloud never sees these headers and is unchanged.
-if not st.session_state.get("_authed"):
-    try:
-        _dh = st.context.headers or {}
-        _door_user = (_dh.get("X-Portal-User") or _dh.get("x-portal-user") or "").strip()
-        _door_ok = (_dh.get("X-Trusted-Door") or _dh.get("x-trusted-door") or "") == "1"
-        if _door_ok and _door_user:
-            st.session_state["_authed"] = True
-            st.session_state["_user"] = _door_user
-            st.session_state["_via_portal"] = True
-            _door_role = (_dh.get("X-Portal-Role") or _dh.get("x-portal-role") or "user").lower()
-            st.session_state["_view_tier"] = "admin" if _door_role == "admin" else "free"
-    except Exception:                                        # noqa: BLE001
-        pass
-
 if not st.session_state.get("_authed"):
     # BACK ON, AND LOCAL. No network, no Apps Script, no wake-up: the
     # signature is checked in this process against a name that is already
@@ -2401,8 +2363,30 @@ if not check_password():
 USER = st.session_state.get("_user") or "shared"
 
 
-# (the accounts-era log_out — "hand the phone over", the remember token — stood here
-# and was shadowed by the one below since v186; gone at the gate of 7.9.2026, G4)
+def log_out():
+    """Hand the phone over.
+
+    Three things, and the ORDER matters. The script is told first, while
+    the session still knows which token to revoke; then the session is
+    emptied; then the browser's copy is queued for removal — queued
+    AFTER the clear, or the clear would throw the queue away with
+    everything else.
+
+    Telling the script is best effort. If it cannot be reached the
+    browser's copy still goes, so the person is out on this phone either
+    way — the revocation is merely delayed, not cancelled.
+    """
+    who = st.session_state.get("_user", "")
+    tok = st.session_state.get("_remember_token", "")
+    if who and tok:
+        # Nothing to tell: the token lives in this browser and logging
+        # out already removes it.
+        pass
+
+    st.session_state.clear()
+    queue_ls(removes=[AUTH_LS_KEY])
+    st.session_state["_authed"] = False
+    st.session_state["_logged_out"] = True
 
 
 def must_change_notice():
@@ -2497,11 +2481,6 @@ if not KEYS:
 # them, so hand them over now. Anything asking the registry for the "llm"
 # or "stt" capability depends on this line having run.
 PROVIDERS.set_groq_keys(KEYS)
-# MARKO API: the key made in the admin panel of his machine's portal, in secrets.
-try:
-    PROVIDERS.set_marko(st.secrets.get("MARKO_API_KEY", ""), st.secrets.get("MARKO_API_URL", ""))
-except Exception:                                            # noqa: BLE001
-    pass
 
 # THE SAME FOR GOOGLE, and without this line the Google engine is a pill
 # that can never light. google_keys() existed and read the secret; NOTHING
@@ -3037,8 +3016,6 @@ def provider_usable(provider) -> bool:
     """Keyless providers are always usable; keyed ones only once a key
     that has not been buried exists. This is the one place that knows how
     'usable' is decided, so ttt/routing.py stays free of storage."""
-    if getattr(provider, "installed", True) is False:
-        return False                      # the offline engine, on a machine without it
     if not getattr(provider, "needs_key", True):
         return True
     # THE APP'S OWN KEYS, not a person's. Both of these live in Secrets
@@ -4034,11 +4011,7 @@ def stitch_reading(count: int, get_block, on_error=None):
             tmp.append(fh.name)
         if not paths:
             return None
-        # ONE AAC FILE, MONO. Marko, 7.9.2026: "stitch all the pieces and
-        # download it as one audio file in AAC format, mono." Every piece
-        # is decoded first (Edge sends MP3, Gemini WAV, Piper WAV), so the
-        # seams are clean whatever the voice was.
-        out = SPEECH.join_audio(paths, fmt="m4a")
+        out = SPEECH.join_audio(paths)
         tmp.append(out)
         with open(out, "rb") as f:
             return f.read()
@@ -4053,8 +4026,57 @@ def stitch_reading(count: int, get_block, on_error=None):
         ttt_audio.cleanup(*tmp)
 
 
-# (engine_status — "which key is running right now" — had no caller left after the
-# foot was rebuilt on 6.9.2026; gone at the gate of 7.9.2026, G4)
+def engine_status(eng) -> str:
+    """"Google 2/21" — which engine, and which of its keys is in use.
+
+    Baba, 6.9.2026: "in status line always specifies which engine is
+    used, what API key by number. So if I have five API keys, you can
+    write Google API two/five, so I see what's going on in status."
+
+    A POSITION, NEVER A FRAGMENT OF A KEY. keyring.md §10d: on Gemini
+    the first six characters are identical on every key, so a masked
+    prefix identifies nothing and leaks something. "2/21" identifies
+    everything and is safe in a screenshot.
+
+    WHICH PROVIDER'S KEY. The one doing the SPEECH if it needs a key,
+    because that is what the engine name beside it refers to; otherwise
+    the first of its providers that does. On the free engine that means
+    Edge is keyless and the number belongs to the transcriber — so the
+    line reads "Edge 2/5" and the 5 is the app's own Groq keys. The
+    vendor is not named, per §0 rule 2; the ENGINE is, which is what he
+    reads it as.
+
+    A DASH UNTIL SOMETHING HAS ACTUALLY BEEN ASKED. Showing 1/21 before
+    any call would be a claim about a key that has never been tried, and
+    the whole point of this line is to say what is going on rather than
+    what probably will.
+    """
+    if eng is None:
+        return t("eng_mixed")
+    # THE VOICE'S OWN KEY, OR NO NUMBER AT ALL.
+    #
+    # Baba, 6.9.2026: "why edge said /5". He is right, and it was wrong
+    # rather than merely ugly: EDGE IS KEYLESS. It needs no key to
+    # speak, so "Edge –/5" reported GROQ's transcription keys beside the
+    # name of the VOICE — a number about the wrong thing, attached to
+    # the word that names the speaker.
+    #
+    # This used to walk stt and llm when tts had no key, which is how it
+    # got there. Now the line names the engine and the key THAT ENGINE'S
+    # VOICE is using, and when the voice needs none it says only the
+    # engine.
+    prov = PROVIDERS.get(eng.routes.get("tts", ""))
+    if prov is None or not getattr(prov, "needs_key", False):
+        return eng.short
+    total = len(getattr(prov, "keys", None) or [])
+    if not total:
+        # A KEYED PROVIDER WITH NO KEYS is a real state and worth
+        # showing: it is why the engine will not work.
+        total = len((get_ring(prov.id) or {}).get("keys", []) or [])
+    used = int(getattr(prov, "active_key", 0) or 0)
+    if not total:
+        return "%s 0/0" % eng.short
+    return "%s %s/%d" % (eng.short, used if used else "\u2013", total)
 
 
 def tab_signature(name: str):
@@ -4092,9 +4114,10 @@ def tab_signature(name: str):
     # page went on saying "Edge / Groq" for nine versions while the
     # commit message said otherwise.
     label = (eng.tier if eng else t("eng_mixed"))
-    # (the key line, "which key is running right now", was computed here
-    # and drawn nowhere since the foot was rebuilt on 6.9.2026; gone at
-    # the gate of 7.9.2026, G4)
+    # AND WHICH KEY. Its own segment rather than folded into the tier,
+    # because the tier answers "what am I paying for" and this answers
+    # "what is running right now".
+    keyline = engine_status(eng)
     res = st.session_state.get("_engine_check") or {}
     mark = ""
     # THROUGH EN.get, NOT BY STRING. A verdict recorded before the engine
@@ -4155,11 +4178,45 @@ def _foot_line(name, tier, who, eng):
     the buttons read as links — dim, underlined, following the reader's
     text size. One visual language, no second stylesheet.
     """
+    here = eng.id if eng else ""
     family = EN.for_tier(eng.tier) if eng else EN.for_tier("free")
-    # (the one-press flip — next_in, "why" the next is grey, _flip — lived
-    # here until 7.9.2026, when Marko asked for three buttons; the buttons
-    # are below, the flip is gone at the gate, G4. _revoice is what a
-    # press does after the route changes.)
+    nxt = EN.next_in(family, here)
+    ready = bool(nxt) and all(
+        provider_usable(PROVIDERS.get(pid))
+        for pid in (nxt.provider_ids if nxt else ())
+        if PROVIDERS.get(pid) is not None)
+
+    if nxt is None:
+        why = t("eng_only_one")
+    elif not ready:
+        why = t("eng_not_ready") % nxt.label
+    else:
+        why = t("eng_switch_to") % nxt.short
+
+    def _flip():
+        st.session_state.update(EN.route_settings(nxt))
+        st.session_state[EN.SETTING_KEY] = nxt.id
+        st.session_state.pop("_engine_check", None)
+        # AND THE READING STARTS AGAIN, IN THE NEW ENGINE.
+        #
+        # Baba, 6.9.2026: "If I'm generating audio in the read tab in
+        # Edge, and I press Google in that moment, all my ex work is
+        # deleted of audio files and I'm in the new mode. Then I can
+        # press play again and generation comes immediately."
+        #
+        # _revoice has done exactly this for a VOICE change since
+        # 25.8.2026 — cache dropped, index to zero, stamps cleared —
+        # and the engine switch did NONE of it. So the cached Edge
+        # audio stayed in the job and the new engine carried on from
+        # the middle of it: half a reading in one voice, half in
+        # another, and a save that stitched the two together.
+        #
+        # An engine change is a bigger change than a voice change, so
+        # it cannot do less. Same function, so the two cannot drift.
+        _revoice()
+
+    def _dim(text):
+        return ('<div class="tabsig tabsig_l">%s</div>' % html.escape(text))
 
     # LEFT, ONE LINE, ONE BASELINE.
     #
@@ -4180,9 +4237,8 @@ def _foot_line(name, tier, who, eng):
     #
     # The name of the person went with it. It was the fourth thing on a
     # line he asked to be short, and "who am I" is answered by the fact
-    # that his own text is on the screen. (The lead sentence itself moved
-    # to the top bar on 7.9.2026 — the page name top left — and its line
-    # here is gone at the gate, G4.)
+    # that his own text is on the screen.
+    lead = "  ·  ".join(x for x in (name, tier) if x) + "  ·"
 
     # NO COLUMNS. This is the third attempt at this row and the first
     # two failed the same way, which is the tell.
@@ -4197,69 +4253,23 @@ def _foot_line(name, tier, who, eng):
     # another, and the CSS turns THAT container's vertical block into a
     # flex row. A vertical block has no breakpoint to stack at, so it
     # cannot come apart on a narrow screen.
-    # THREE BUTTONS, NOT A TOGGLE. Marko, 7.9.2026: "at the bottom of the
-    # page, don't make a toggle button, just make three buttons to switch
-    # between engines: Edge, Google, and Marko API." One button per engine
-    # in the family, the one he is on marked, the ones whose providers are
-    # not ready grey. A press does exactly what the flip did.
-    def _pick(engine):
-        def go():
-            st.session_state.update(EN.route_settings(engine))
-            st.session_state[EN.SETTING_KEY] = engine.id
-            st.session_state.pop("_engine_check", None)
-            _revoice()
-        return go
-
-    # THE TOP BAR AND THE FOOT (Marko, 7.9.2026): "admin panel at the top of
-    # the page, upper right corner; log out at the bottom right; Edge,
-    # Google, Marko API aligned with the bottom edge; the page name at the
-    # top left; free removed." Fixed to the viewport, so the DOM place of
-    # this markdown does not matter and nothing stacks on a phone.
-    # EVERYTHING TECHNICAL IN THE TOP RIGHT, ONE UNDER THE OTHER (Marko,
-    # 7.9.2026): the admin panel, then the version, then log out. Behind
-    # the door log out is the door's own /logout, a plain link; on
-    # Streamlit Cloud it stays a button in the foot (it must call
-    # log_out()), and only the version moves up.
-    via_door = bool(st.session_state.get("_via_portal"))
-    is_admin = via_door and st.session_state.get("_view_tier") == "admin"
-    right = []
-    if is_admin:
-        right.append('<a class="mahatop_r" href="/portal/admin" target="_blank">admin panel</a>')
-    right.append('<span class="mahatop_v">%s</span>' % html.escape(APP_VERSION))
-    if via_door:
-        right.append('<a class="mahatop_r" href="/logout">%s</a>' % html.escape(t("log_out_link")))
-    st.markdown('<div class="mahatop"><span class="mahatop_l">%s</span>'
-                '<span class="mahatop_col">%s</span></div>' % (
-                    html.escape(name or ""), "".join(right)),
-                unsafe_allow_html=True)
-
     with st.container(key="boxlinks_foot"):
-        for cand in family:
-            cand_ready = all(
-                provider_usable(PROVIDERS.get(pid))
-                for pid in cand.provider_ids if PROVIDERS.get(pid) is not None)
-            on = bool(eng) and cand.id == eng.id
-            if on:
-                # THE ONE IN FORCE IS A WORD, NOT A DEAD BUTTON. A greyed
-                # button read as "not this one" and the underlined
-                # neighbour as "this one": his screenshot said Google while
-                # Edge was speaking. Orange, marked, no underline: the
-                # answer; underlined: the actions.
-                st.markdown('<div class="tabsig tabsig_on">● %s</div>' % html.escape(cand.short),
-                            unsafe_allow_html=True)
-                continue
-            st.button(cand.short, key="eng_pick_" + cand.id,
-                      help=(cand.short if cand_ready else (t("eng_not_ready") % cand.label)),
-                      disabled=not cand_ready,
-                      on_click=_pick(cand) if cand_ready else None)
-        # LOG OUT STAYS HERE ONLY WHERE THERE IS NO DOOR: on Streamlit
-        # Cloud the app is its own door and log_out() is what ends the
-        # session. Behind pages.dev the link at the top right is the
-        # door's /logout. THE VERSION LEFT THIS ROW on 7.9.2026 for the
-        # top right, under the admin panel (Marko).
-        if not via_door:
-            st.button(t("log_out_link"), key="foot_logout",
-                      help=t("log_out_link"), on_click=log_out)
+        st.markdown(_dim(lead), unsafe_allow_html=True)
+        st.button(engine_status(eng), key="eng_flip", help=why,
+                  disabled=not ready, on_click=_flip if ready else None)
+        st.button(t("log_out_link"), key="foot_logout",
+                  help=t("log_out_link"), on_click=log_out)
+        # THE VERSION, HARD RIGHT. Baba, 6.9.2026: "give me the version
+        # number in the lower right corner."
+        #
+        # NOT UNDERLINED, because it is not an action — his own rule
+        # from an hour ago: "what is underlined, that's action. What is
+        # not underlined is information." So it is the same orange as
+        # the rest of the line and carries no underline, and the CSS
+        # pushes it to the right with margin-left:auto rather than a
+        # spacer column, which would stack.
+        st.markdown('<div class="tabsig tabsig_v">%s</div>'
+                    % html.escape(APP_VERSION), unsafe_allow_html=True)
 
 
 def name_the_symbols():
@@ -5395,12 +5405,6 @@ def persist_notes():
         return
     st.session_state["_notes_saved"] = now
     queue_ls(writes={NOTES_LS_KEY: now})
-    # AND ON THE MACHINE, FOR THIS PERSON (Marko, 7.9.2026: "per-user note
-    # saving, any transcription saved for later, text only"). Only where a
-    # TTT_NOTES_DB is configured (the Oracle machine); elsewhere this is a
-    # no-op and the browser copy is what it was.
-    NOTESTORE.save(str(st.session_state.get("_user") or ""),
-                   st.session_state.get(NOTES.KEY, []))
 
     # AND TO DRIVE, beside the recordings. Baba: "notes should be saved
     # in the same location where audio files are saved, and a simple
@@ -5444,18 +5448,6 @@ def restore_notes():
     """
     if st.session_state.get("_notes_restored"):
         return
-
-    # THE MACHINE FIRST, where there is one. The person's notebook on the
-    # Oracle machine follows them to any browser and any device, which is
-    # what the browser copy could never do; it needs no bridge, so it is
-    # read before the bridge is even waited for.
-    _who = str(st.session_state.get("_user") or "")
-    if _who and NOTESTORE.enabled() and not st.session_state.get(NOTES.KEY):
-        _kept = NOTESTORE.load(_who)
-        if _kept is not None:
-            st.session_state[NOTES.KEY] = _kept
-            st.session_state["_notes_restored"] = True
-            return
 
     # WAIT FOR THE BRIDGE. LS_DATA is filled by a COMPONENT, and a
     # component reports nothing on the run that creates it — so on the
@@ -5670,24 +5662,11 @@ def google_voice_row(prefix="talkg", on_pick=None):
         current = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
         if current not in names and names:
             current = names[0]
-            # THE SIDE CHANGED, SO THE VOICE CHANGED: a pick like any other
-            # (Marko, 7.9.2026). Without this the radio moved the voice in
-            # silence and a running reading went on in the old one.
-            st.session_state["google_voice"] = current
-            if on_pick:
-                on_pick()
             # AND THE WIDGET'S OWN KEY, before the box is created —
             # legal, and necessary: a selectbox whose stored value is
             # not among its options is a widget Streamlit has to guess
             # about.
             st.session_state[vkey] = current
-            # AND THE PAGE RUNS AGAIN NOW (Marko, 7.9.2026: "switching
-            # Female/Male must start the reading again at once"). on_pick
-            # set _auto_read, but nothing reran: the radio's own rerun
-            # was THIS render, and the reading branch above had already
-            # drawn the old job. The guard `current not in names` makes
-            # this a single rerun, not a loop.
-            st.rerun()
         # WRITTEN EVERY RENDER, NOT ONLY WHEN IT CHANGES. Until this
         # line, google_voice was unset on the first render and synth()
         # fell back to DEFAULT_VOICE — which happened to be the same
@@ -6209,30 +6188,6 @@ def _revoice():
         st.session_state.pop("_talk_player_seen", None)
         st.session_state.pop("_talk_start_seen", None)
         st.session_state["_talk_revoice"] = True
-        # AND A WHOLE NEW READING, NOT A PATCHED ONE (Marko, 7.9.2026: "in
-        # Google mode, when I change voices and press play, it's not
-        # happening; it should delete the old audio and start producing
-        # the new"). Patching the job in place rebuilt the synth closure
-        # but left everything else of the old reading: a player that had
-        # ended, stamps, a plan made for another voice. The road that is
-        # known to work for "the new one wins" is _auto_read: the playing
-        # branch drops this job, the writing branch makes a fresh one from
-        # the same text with the voice now chosen, and plays from the top.
-        st.session_state["_auto_read"] = True
-
-
-def _voice_signature(engine) -> str:
-    """WHICH VOICE, AS ONE STRING — the audio cache's second key.
-
-    The engine and every setting that changes the sound: the Edge voice,
-    the Google voice, the Speechify voice and model. A reading made by
-    one of these is a different file from a reading made by another, so
-    all of them are in the name and none of them can collide.
-    """
-    ss = st.session_state
-    return "|".join(str(x) for x in (
-        engine, ss.get("voice", ""), ss.get("google_voice", ""),
-        ss.get("sp_voice", ""), ss.get("sp_model", "")))
 
 
 def _voice_row_synth_only(engine, sp_ring_talk):
@@ -9612,23 +9567,12 @@ elif active == "talk":
             if i in job["cache"] or i >= len(parts):
                 return job["cache"].get(i)
             ss, char_off = parts[i]
-            # THE MACHINE'S COPY FIRST (Marko, 7.9.2026): the same words
-            # in the same voice for the same person were made once; on
-            # the Oracle machine they are kept and play at once. Elsewhere
-            # AUDIOCACHE is switched off and this is two cheap misses.
-            _who = str(st.session_state.get("_user") or "")
-            _ck = AUDIOCACHE.key(_who, _voice_signature(engine), " ".join(ss))
-            _hit = AUDIOCACHE.get(_who, _ck)
-            if _hit:
-                job["cache"][i] = _hit
-                return _hit
             path, marks, total, temps = SPEECH.build_part(
                 ss, job["synth"], char_off, job["full_text"])
             with open(path, "rb") as f:
                 audio = f.read()
             ttt_audio.cleanup(*temps)
             job["cache"][i] = {"audio": audio, "marks": marks}
-            AUDIOCACHE.put(_who, _ck, audio, marks)
             return job["cache"][i]
 
         if cached is None:
@@ -9763,7 +9707,7 @@ elif active == "talk":
         if st.session_state.get("_rd_whole"):
             st.download_button(t("vr_save_all"),
                                data=st.session_state["_rd_whole"],
-                               file_name="reading.m4a", mime="audio/mp4",
+                               file_name="reading.mp3", mime="audio/mpeg",
                                key="rd_dl_all", use_container_width=True)
 
         # "New text" is gone. Baba: "we do not need new text — there is
@@ -11338,26 +11282,6 @@ elif active == "looks":
         _msg = st.session_state.get("_pw_msg")
         if _msg:
             (st.success if _msg[0] == "good" else st.error)(_msg[1])
-
-    # THE AUDIO KEPT ON THE MACHINE, and the way to be rid of it (Marko,
-    # 7.9.2026). Only where there is a machine store and a person; on
-    # Streamlit Cloud the block is not drawn at all — there is nothing
-    # it could say.
-    _ac_user = str(st.session_state.get("_user") or "")
-    if AUDIOCACHE.enabled() and _ac_user:
-        with st.container(key="looks_audio_box"):
-            _ac_gone = st.session_state.pop("_audio_cache_gone", None)
-            if _ac_gone is not None:
-                st.caption(t("looks_audio_gone") % _human_bytes(_ac_gone))
-            st.caption(t("looks_audio") % (_human_bytes(AUDIOCACHE.usage(_ac_user)),
-                                           AUDIOCACHE.count(_ac_user)))
-
-            def _audio_cache_clear(u=_ac_user):
-                st.session_state["_audio_cache_gone"] = AUDIOCACHE.clear(u)
-
-            st.button(t("looks_audio_delete"), key="looks_audio_delete",
-                      on_click=_audio_cache_clear,
-                      disabled=AUDIOCACHE.count(_ac_user) == 0)
 
     tab_signature(t("sig_looks"))
 

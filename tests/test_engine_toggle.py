@@ -60,12 +60,9 @@ print("1 THE MECHANISM, ALONE")
 # =====================================================================
 
 free = EN.for_tier("free")
-# THREE FREE ENGINES since 7.9.2026: Edge, Google, and Marko API (his own
-# machine through its API). Marko: "three buttons, not a toggle."
-from ttt.providers.local import INSTALLED as _OFFLINE_HERE  # noqa: E402
-check("three free engines today, four where the offline engine is installed", len(free) == 3 + (1 if _OFFLINE_HERE else 0), [e.id for e in free])
+check("two free engines today", len(free) == 2, [e.id for e in free])
 check("they are the free-tier ones, read off the data",
-      {e.id for e in free} == ({"normal", "google", "marko"} | ({"offline"} if _OFFLINE_HERE else set())), [e.id for e in free])
+      {e.id for e in free} == {"normal", "google"}, [e.id for e in free])
 check("every one of them really declares tier free",
       all(e.tier == "free" for e in free))
 check("studio is not in the free set",
@@ -76,9 +73,9 @@ check("an unknown tier gives nothing, rather than everything",
       EN.for_tier("nonsense") == [])
 
 check("normal flips to google", EN.next_in(free, "normal").id == "google")
-check("google flips on to marko", EN.next_in(free, "google").id == "marko")
-check("it is a CYCLE, so three presses return to the start",
-      EN.next_in(free, EN.next_in(free, EN.next_in(free, "normal").id).id).id == "normal")
+check("google flips back to normal", EN.next_in(free, "google").id == "normal")
+check("it is a CYCLE, so two presses return to the start",
+      EN.next_in(free, EN.next_in(free, "normal").id).id == "normal")
 check("a board on no known engine goes to the first",
       EN.next_in(free, "").id == free[0].id)
 check("an unknown id goes to the first rather than raising",
@@ -92,8 +89,8 @@ check("no engines has nowhere to go either", EN.next_in([], "x") is None)
 third = EN.Engine("pretend", "Pretend", {"stt": "groq", "tts": "edge",
                                          "llm": "groq"}, tier="free")
 trio = free + [third]
-check("a fourth free engine joins the cycle by existing",
-      EN.next_in(trio, "marko").id == "pretend"
+check("a third free engine joins the cycle by existing",
+      EN.next_in(trio, "google").id == "pretend"
       and EN.next_in(trio, "pretend").id == "normal",
       [e.id for e in trio])
 check("...and every engine in a trio is reachable",
@@ -142,14 +139,9 @@ at = app()
 at.run()
 keys = [b.key for b in at.button]
 check("the app renders without raising", not at.exception, at.exception)
-check("the engine buttons are ON THE PAGE, by key (two: the third is the word in force)",
-      len([k for k in keys if k.startswith("eng_pick_")]) == 2, keys[:12])
+check("the toggle is ON THE PAGE, by key", "eng_flip" in keys, keys[:12])
 
-btn = [b for b in at.button if b.key == "eng_pick_google"]
-# THE ENGINE IN FORCE IS THE MARKED WORD (7.9.2026), read off the markdown;
-# the buttons are the OTHER engines.
-import re as _wre                                                  # noqa: E402
-word = _wre.sub(r"<[^>]+>", "", " ".join(m.value for m in at.markdown if 'class="tabsig tabsig_on"' in m.value))
+btn = [b for b in at.button if b.key == "eng_flip"]
 if btn:
     b = btn[0]
     # A STATUS LINE. Baba, 6.9.2026: "I just want to be edge or Google.
@@ -163,21 +155,21 @@ if btn:
     # are... Translate free Google key." One cell, one press, and the
     # engine word is no longer printed twice on two lines.
     check("it names the engine that is RUNNING",
-          "Edge" in word, word)
+          b.label.split()[0] == "Edge", b.label)
     # NO KEY NUMBER ON A KEYLESS VOICE. Baba: "why edge said /5". Edge
     # speaks without a key, so the /5 was GROQ's transcription keys
     # printed beside the name of the VOICE — a number about the wrong
     # thing. The engine alone is the whole truth here.
-    check("a keyless voice shows NO key number", "/" not in word, word)
+    check("a keyless voice shows NO key number", "/" not in b.label, b.label)
     check("...and NOT the one it would switch to",
-          "Gemini" not in word and "Google" not in word, word)
+          "Gemini" not in b.label and "Google" not in b.label, b.label)
     check("no glyph on it — a mark beside a status is a second thing to "
           "read before the first one lands",
           GLYPH not in b.label, b.label)
     check("...and no instruction words either",
           "switch" not in b.label.lower(), b.label)
     check("it is just the engine on a keyless voice",
-          word.replace("\u25cf", "").strip().endswith("Edge") or "Edge" in word, word)
+          b.label == "Edge", b.label)
     # WHERE IT WOULD GO IS IN THE TOOLTIP, which is not on the page.
     check("the target is in the help, not on the line", bool(b.help), b.help)
     check("it carries help text saying what it will do", bool(b.help), b.help)
@@ -190,7 +182,7 @@ if btn:
     check("...and the help names WHICH engine is not ready",
           "Gemini" in (b.help or ""), b.help)
 else:
-    check("the Google button is there", False, "no eng_pick_google button")
+    check("it wears the glyph", False, "no eng_flip button")
 
 # "ON ALL THE TABS THEY HAVE ACCESS TO" — his words, so every tab is
 # rendered and asked, not just one. This is the check that would catch a
@@ -198,10 +190,10 @@ else:
 for tab in ("transcribe", "talk", "translate", "vr", "looks", "help"):
     a = app(tab)
     a.run()
-    found = [b for b in a.button if b.key.startswith("eng_pick_")]
+    found = [b for b in a.button if b.key == "eng_flip"]
     check("tab %-10s renders without raising" % tab, not a.exception,
           a.exception)
-    check("tab %-10s carries the engine buttons" % tab, len(found) == 2,
+    check("tab %-10s carries the toggle" % tab, len(found) == 1,
           [b.key for b in a.button][:10])
 
 # =====================================================================
@@ -268,20 +260,15 @@ check("...and the dim text rule with them", "tabsig_l" in _css)
 check("...with no unescaped braces left behind",
       "{{" not in _css and "}}" not in _css)
 check("it is greyed with disabled=, not hidden",
-      "disabled=not cand_ready" in sw, sw[-200:])
+      "disabled=not ready" in sw, sw[-200:])
 # THE LABEL NO LONGER VARIES — it is always the running engine — so
 # only the REASON has three branches now. A check counting the old
 # two-value assignment would have been green about a line that no
 # longer exists.
-# THE REASON RIDES ON THE BUTTON since the flip went (G4, e3b075b): a
-# grey engine button carries "not ready" and the engine's name in its
-# help, from the same line that greys it. The three "why = " branches
-# belonged to the one-press flip and went with it.
 check("every path sets a reason, so a dead link always explains itself",
-      't("eng_not_ready") % cand.label' in sw and "disabled=not cand_ready" in sw,
-      [l.strip() for l in sw.splitlines() if "eng_not_ready" in l][:2])
-check("...and the buttons are named by the engine's own short word",
-      sw.count("cand.short") >= 2, sw.count("cand.short"))
+      sw.count("why = ") == 3, sw.count("why = "))
+check("...and the label is engine_status on every path",
+      sw.count("engine_status(eng)") == 1, sw.count("engine_status(eng)"))
 
 # §0 RULE 2 — the tab must not know a vendor.
 for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",
@@ -292,11 +279,10 @@ for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",
 # earned it; carried over, it puts a ✓ beside something never tested.
 check("flipping forgets the previous engine check",
       '_engine_check' in sw and 'pop("_engine_check"' in sw)
-# _pick(engine), not _flip's nxt: the press writes the routes AND the name.
-check("the pick writes ROUTES, not just a name",
-      "EN.route_settings(engine)" in sw)
+check("the flip writes ROUTES, not just a name",
+      "EN.route_settings(nxt)" in sw)
 check("...and the name too, so both views agree",
-      "EN.SETTING_KEY] = engine.id" in sw)
+      "EN.SETTING_KEY] = nxt.id" in sw)
 
 # GOOGLE'S KEYS ACTUALLY REACH THE PROVIDER. Without this the toggle is
 # a pill that can never light: google_keys() read the secret and nothing
@@ -341,14 +327,13 @@ check("a mixed board reads as mixed", EN.current(mixed) is None)
 check("...and is offered the free set as the way back",
       EN.next_in(EN.for_tier("free"), "") is not None)
 
-check("four engines, no more and no fewer (Marko API since 7.9.2026)", len(EN.ENGINES) == 4,
+check("three engines, no more and no fewer", len(EN.ENGINES) == 3,
       [e.id for e in EN.ENGINES])
-check("adding the buttons did not change any engine's routes",
+check("adding the toggle did not change any engine's routes",
       [e.routes for e in EN.ENGINES] ==
       [{"stt": "groq", "tts": "edge", "llm": "groq"},
        {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
-       {"stt": "google", "tts": "google", "llm": "google"},
-       {"stt": "markoapi", "tts": "markoapi", "llm": "groq"}])
+       {"stt": "google", "tts": "google", "llm": "google"}])
 
 
 
@@ -373,15 +358,15 @@ for tab in ("transcribe", "talk", "translate", "vr", "looks", "help",
                                 "looks", "help")), md[-80:])
     check("tab %-10s offers the way out" % tab, "foot_logout" in keys,
           keys[:8])
-    check("tab %-10s offers the engine buttons" % tab, any(k.startswith("eng_pick_") for k in keys))
+    check("tab %-10s offers the engine link" % tab, "eng_flip" in keys)
     check("tab %-10s renders without raising" % tab, not a.exception,
           a.exception)
 
 # ONE CONTROL, NOT TWO. The glyph-only button it replaced is gone; two
 # implementations of one control are two places to drift.
 check("the old glyph-only switch is gone", "def _engine_switch" not in CODE)
-check("there is exactly one engine control (one button call, one per engine)",
-      CODE.count('key="eng_pick_" + cand.id') == 1, CODE.count('key="eng_pick_" + cand.id'))
+check("there is exactly one engine control", CODE.count('key="eng_flip"') == 1,
+      CODE.count('key="eng_flip"'))
 
 # THE LINK LOOK IS THE EXISTING ONE. The container key begins
 # "boxlinks_", which the stylesheet already turns into right-aligned
@@ -459,68 +444,22 @@ print("8 THE VOICE DROPDOWNS — two lists, ten each")
 import shutil                                     # noqa: E402
 SEC = os.path.join(ROOT, ".streamlit", "secrets.toml")
 BAK = SEC + ".voicebak"
-# WHAT WAS THERE, byte for byte, for the put-back checks. The old check
-# looked for "paste_your" — true of the template, false of a machine whose
-# secrets.toml holds real entries, where it went red over a perfect restore.
-ORIG = open(SEC, "rb").read()
-STUB = '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"'
-
-
-def google_usable(raw):
-    """The secrets text with a google key that is NOT a placeholder.
-
-    A KEY THAT IS NOT A PLACEHOLDER, or google is never USABLE and the
-    route quietly falls back to Edge — which is what made the first
-    version of this test look like the dropdowns had not been built.
-
-    THREE SHAPES OF FILE, one answer each. The template holds the
-    placeholder: swap it for the stub. A real file with no google entry
-    at all (this machine): add one, the stub. A real file that already
-    holds google keys: leave it — it is usable as it stands, and no line
-    here is allowed to rewrite a person's real keys.
-
-    FACE 5: a .replace() whose pattern misses changes NOTHING and the
-    test then passes for the wrong reason — so the caller asserts that
-    the result is usable, not merely that a replace ran.
-    """
-    placeholder = '"AQ.paste_your_first_key_here"'
-    if placeholder in raw:
-        return raw.replace(placeholder, STUB)
-    if not re.search(r"^\s*GOOGLE_API_KEYS\s*=", raw, re.M):
-        return raw.rstrip("\n") + "\nGOOGLE_API_KEYS = [%s]\n" % STUB
-    return raw
-
-
-import streamlit as st                            # noqa: E402
-
-
-def _reset_secrets():
-    """Make st.secrets read the file again on its next use."""
-    st.secrets._reset()
-
-
-def gender_radio(at):
-    """THE VOICE RADIO, BY KEY. Counting radios found the admin's tier
-    switch (free / studio / admin) on a machine whose secrets name the
-    stub user as admin, and called it the voice radio."""
-    found = [r for r in at.radio if r.key == "talkvoice_gender"]
-    return found[0] if found else None
-
-
 shutil.copy(SEC, BAK)
 try:
+    # A KEY THAT IS NOT A PLACEHOLDER, or google is never USABLE and the
+    # route quietly falls back to Edge — which is what made the first
+    # version of this test look like the dropdowns had not been built.
+    # FACE 5: a .replace() whose pattern misses changes NOTHING and the
+    # test then passes for the wrong reason — here it would silently
+    # leave the placeholder in place, google would not be usable, and
+    # every check below would be testing the Edge picker while claiming
+    # to test Google's. So the target is asserted first.
     _raw = open(SEC).read()
-    _s = google_usable(_raw)
-    assert re.search(r"^\s*GOOGLE_API_KEYS\s*=", _s, re.M), "no google key to make usable"
-    assert "paste_your" not in _s.split("GOOGLE_API_KEYS", 1)[1].split("]", 1)[0], \
-        "the google entry is still a placeholder — google would not be usable"
+    _target = '"AQ.paste_your_first_key_here"'
+    assert _target in _raw, "the placeholder key moved — this edit would miss"
+    _s = _raw.replace(_target, '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"')
+    assert _s != _raw, "the file was not changed"
     open(SEC, "w").write(_s)
-    # THE SINGLETON DOES NOT WATCH THE FILE. AppTest sets no file watcher,
-    # and st.secrets parses secrets.toml ONCE per process — so a file
-    # rewritten here was never read, google stayed unusable, and every
-    # check below described the Edge picker. Reset, then prove the reload.
-    _reset_secrets()
-    assert "GOOGLE_API_KEYS" in st.secrets, "the rewritten secrets were not reloaded"
 
     def gapp():
         a = app("talk")
@@ -539,9 +478,8 @@ try:
     boxes = {x.key: x for x in g.selectbox}
     check("there is ONE list, not two", len(boxes) == 1, sorted(boxes))
     check("...and a radio saying which side it holds",
-          gender_radio(g) is not None
-          and list(gender_radio(g).options) == ["Female", "Male"],
-          [(r.key, r.options) for r in g.radio])
+          len(g.radio) == 1 and list(g.radio[0].options) == ["Female", "Male"],
+          [r.options for r in g.radio])
     for side, gender in (("Female", "F"), ("Male", "M")):
         # SET THE STATE, NOT THE WIDGET. radio.set_value() proved
         # unreliable once the key already held a value from an earlier
@@ -598,9 +536,7 @@ try:
             and b.key.startswith("talkvoice_")]))
 finally:
     shutil.move(BAK, SEC)
-    _reset_secrets()
-check("the secrets file was put back exactly as it was",
-      open(SEC, "rb").read() == ORIG and not os.path.exists(BAK))
+check("the secrets file was put back", "paste_your" in open(SEC).read())
 
 
 print()
@@ -620,19 +556,16 @@ sig = sigtext(a)
 # THE ENGINE AND ITS KEY MOVED INTO THE PRESSABLE CELL. They used to
 # be printed in the dim text AND again as a link below it, so the word
 # appeared twice on two lines. One place now, and it is the switch.
-# THE ENGINE IN FORCE IS A MARKED WORD NOW (7.9.2026), not a button: read it off the markdown.
-class _Word:
-    def __init__(self, v): self.label = v
-_flip = _Word(_wre.sub(r"<[^>]+>", "", " ".join(m.value for m in a.markdown if 'class="tabsig tabsig_on"' in m.value)))
+_flip = [b for b in a.button if b.key == "eng_flip"][0]
 # THE TAB NAME AND THE TIER ARE ON THE LINE. This is the whole of what
 # he asked for — "you need to type the name of the tab... then after
 # that you need to write Google or Edge" — and nothing asserted it, so
 # emptying the lead cell left the suite green with a footer that said
 # only "Google –/2 · log out".
-_lead = [m.value for m in a.markdown if "mahatop" in m.value]   # the page name moved to the top bar
-check("the top bar names the TAB", any("talk" in x or "read" in x
+_lead = [m.value for m in a.markdown if "tabsig_l" in m.value]
+check("the footer names the TAB", any("talk" in x or "read" in x
                                       for x in _lead), _lead[:1])
-check("...and NOT the tier: Marko, 7.9.2026, 'free removed'", not any(">free" in x for x in _lead), _lead[:1])
+check("...and the tier beside it", any("free" in x for x in _lead), _lead[:1])
 check("...on ONE line, in one cell", len(_lead) >= 1, len(_lead))
 
 check("the footer carries the engine name", "Edge" in _flip.label,
@@ -772,11 +705,10 @@ print("11 A RADIO SAYS WHICH VOICE IS SPEAKING")
 shutil.copy(SEC, BAK)
 try:
     _raw2 = open(SEC).read()
-    _s2 = google_usable(_raw2)
-    assert re.search(r"^\s*GOOGLE_API_KEYS\s*=", _s2, re.M), "no google key to make usable"
-    open(SEC, "w").write(_s2)
-    _reset_secrets()
-    assert "GOOGLE_API_KEYS" in st.secrets, "the rewritten secrets were not reloaded"
+    _t2 = '"AQ.paste_your_first_key_here"'
+    assert _t2 in _raw2, "the placeholder key moved"
+    open(SEC, "w").write(
+        _raw2.replace(_t2, '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"'))
 
     def gapp2():
         a = app("talk")
@@ -788,13 +720,9 @@ try:
     r = gapp2()
     r.run()
     check("the reader renders on google", not r.exception, r.exception)
-    check("there is ONE voice radio, keyed talkvoice_gender",
-          len([x for x in r.radio if x.key == "talkvoice_gender"]) == 1,
-          [x.key for x in r.radio])
+    check("there is ONE radio", len(r.radio) == 1, len(r.radio))
     check("...with exactly two options",
-          gender_radio(r) is not None
-          and list(gender_radio(r).options) == ["Female", "Male"],
-          [(x.key, x.options) for x in r.radio])
+          list(r.radio[0].options) == ["Female", "Male"], r.radio[0].options)
     check("there is ONE list, not two", len(r.selectbox) == 1,
           [x.key for x in r.selectbox])
     check("...holding ten voices", len(r.selectbox[0].options) == 10,
@@ -821,7 +749,7 @@ try:
     # from format_func is SILENTLY IGNORED: no error, no change, and the
     # next assertion then describes a press that never happened. That
     # cost two false failures here before it was measured.
-    gender_radio(r).set_value("M").run()
+    r.radio[0].set_value("M").run()
     check("switching to Male changes the voice being used",
           GP.gender_of(sget(r, "google_voice")) == "M",
           sget(r, "google_voice"))
@@ -839,7 +767,7 @@ try:
 
     # AND BACK, through the widget again: the guard must move the voice
     # in BOTH directions, or the radio says Female while Puck speaks.
-    gender_radio(r).set_value("F").run()
+    r.radio[0].set_value("F").run()
     check("switching back to Female moves the voice with it",
           GP.gender_of(sget(r, "google_voice")) == "F",
           sget(r, "google_voice"))
@@ -848,9 +776,6 @@ try:
           sget(r, "google_voice"))
 finally:
     shutil.move(BAK, SEC)
-    _reset_secrets()
-check("the secrets file was put back exactly as it was, again",
-      open(SEC, "rb").read() == ORIG and not os.path.exists(BAK))
 
 
 print()
@@ -956,17 +881,8 @@ print("14 SWITCHING ENGINE MID-READING THROWS THE OLD AUDIO AWAY")
 # carried on from the middle: half a reading in one voice, half in
 # another, and a save that stitched the two together.
 
-# THE FLIP IS A PICK NOW. The toggle (_flip) became three buttons on
-# 7.9.2026 and its dead body was removed in the G4 cleanup (e3b075b); the
-# press that switches engine is _pick(engine) inside _foot_line. find(),
-# not split()[1]: a name that has gone must be a red line, not a crash.
-_pi = CODE.find("    def _pick(engine)")
-check("the pick region was found", _pi > 0, _pi)
-_fl = CODE[_pi:]
-_end = _fl.find("        return go")
-check("...and it ends where _pick hands back its callback", _end > 0, _end)
-_fl = _fl[:_end if _end > 0 else 0]
-check("the pick region is one function (%d chars)" % len(_fl),
+_fl = CODE.split("def _flip")[1].split("\n    def ")[0]
+check("the flip region was found (%d chars)" % len(_fl),
       60 < len(_fl) < 1200, len(_fl))
 check("switching engine restarts the reading", "_revoice()" in _fl, _fl)
 check("...through the SAME function a voice change uses, so the two "
@@ -992,7 +908,7 @@ _before = sget(_sw, "_talk_job") or {}
 check("the reading has cached audio before the switch",
       len(_before.get("cache", {})) == 2, len(_before.get("cache", {})))
 
-_btn = [b for b in _sw.button if b.key == "eng_pick_google"]
+_btn = [b for b in _sw.button if b.key == "eng_flip"]
 if _btn and not _btn[0].disabled:
     _btn[0].click().run()
     _after = sget(_sw, "_talk_job") or {}

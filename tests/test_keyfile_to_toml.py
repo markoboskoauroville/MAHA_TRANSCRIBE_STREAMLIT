@@ -15,15 +15,7 @@ import keys_to_toml as B                       # noqa: E402
 from ttt import keyparse as KP                   # noqa: E402
 from ttt.providers import google as G            # noqa: E402
 
-# tomllib is 3.11+. On an older interpreter tomli is the same parser under
-# another name, and registering it as tomllib lets tools/keys_to_toml.py's
-# own `import tomllib` (inside its functions) find it too. Machines running
-# this for real are on 3.12, where the fallback is never taken.
-try:
-    import tomllib                              # noqa: E402
-except ModuleNotFoundError:                     # Python < 3.11
-    import tomli as tomllib                     # noqa: E402
-    sys.modules["tomllib"] = tomllib
+import tomllib                                  # noqa: E402
 
 passed = failed = 0
 

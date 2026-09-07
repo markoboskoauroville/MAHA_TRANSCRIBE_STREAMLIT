@@ -217,10 +217,8 @@ check("6f a failing block stops it rather than saving a hole",
 check("6g temporary files go on every path",
       "finally:" in app[app.index("def stitch_reading"):
                         app.index("def tab_signature")])
-# ONE AAC MONO FILE since 7.9.2026 (reading.m4a): join_audio(fmt=m4a)
-# stitches an mp3 and a wav voice alike into one file.
 check("6h R offers the whole reading as its own file",
-      'file_name="reading.m4a"' in app)
+      'file_name="reading.mp3"' in app)
 check("6i and VR its own", 'dl_name="rehearsal.mp3"' in app)
 check("6j both say how many parts are left rather than hanging",
       app.count("vr_stitch_wait") >= 2, app.count("vr_stitch_wait"))

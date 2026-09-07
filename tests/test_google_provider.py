@@ -438,13 +438,7 @@ check("...as a Provider", isinstance(get("google"), Provider))
 # quietly drops one.
 for pid in ("edge", "groq", "speechify", "assemblyai", "hume", "anthropic"):
     check("%s still resolves" % pid, get(pid) is not None)
-# SEVEN WITH GOOGLE; NINE SINCE 7.9.2026, when the offline engine
-# (providers/local.py, Whisper and Piper on the machine) and Marko API
-# (providers/markoapi.py, the machine's engines through its own API) were
-# registered. A tenth without a line here is a registry edit nobody described.
-check("the registry holds nine providers now", len(REGISTRY) == 9, len(REGISTRY))
-check("...the two of 7.9.2026 among them",
-      get("local") is not None and get("markoapi") is not None)
+check("the registry holds seven providers now", len(REGISTRY) == 7, len(REGISTRY))
 
 # EVERY PROVIDER THAT WAS THERE BEFORE IS STILL NOT METERED BY THE CALL.
 # A new attribute with a wrong default would silently re-plan every

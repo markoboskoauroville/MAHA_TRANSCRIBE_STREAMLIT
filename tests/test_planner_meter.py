@@ -271,13 +271,8 @@ check("it is one vendor now, so it is a PAIR in Baba's sense",
 check("and it is a Google reading that gets blocks",
       S.plan_for(SENT, get("google").metered_by_call) == S.plan_even(SENT))
 
-# FOUR IN THE CLOUD since 7.9.2026 (normal, studio, google, marko), and the
-# offline one ONLY where Whisper and Piper are installed — so the count is
-# taken from the same switch the engine list reads, not guessed.
-from ttt.providers.local import INSTALLED as _LOCAL   # noqa: E402
-check("four engines, and the offline one only where it is installed",
-      len(EN.ENGINES) == 4 + (1 if _LOCAL else 0),
-      ([e.id for e in EN.ENGINES], "local installed:", _LOCAL))
+check("three engines, no more and no fewer", len(EN.ENGINES) == 3,
+      [e.id for e in EN.ENGINES])
 check("the default engine did not move", EN.DEFAULT == "normal")
 check("the old 'free' id still resolves — rows written before 22.8 say it",
       EN.get("free") is EN.get("normal"))

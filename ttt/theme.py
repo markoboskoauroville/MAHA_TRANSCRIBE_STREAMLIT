@@ -1376,38 +1376,8 @@ def css(scheme: str = "amber", font: str = "mono",
        inside the flex row, NOT a spacer column — a column would stack
        on a narrow screen and drop the version onto its own line, which
        is the fault this whole row was rebuilt to escape. */
-    /* THE TOP BAR: the page name top left, the admin panel top right
-       (Marko, 7.9.2026). Fixed to the viewport; the bar itself lets
-       clicks through, its two words do not. */
-    .mahatop {{
-      position: fixed; top: 8px; left: 12px; right: 12px; z-index: 1000;
-      display: flex; justify-content: space-between; align-items: baseline;
-      pointer-events: none;
-      font-family: var(--mono); font-size: 0.76rem; letter-spacing: 0.10em;
-      color: var(--amber);
-    }}
-    .mahatop_l {{ opacity: 0.9; }}
-    /* THE RIGHT COLUMN: admin panel, version, log out, one under the other,
-       ending at the right edge (Marko, 7.9.2026). */
-    .mahatop_col {{ display: flex; flex-direction: column; align-items: flex-end;
-      gap: 3px; pointer-events: auto; }}
-    .mahatop_r {{ pointer-events: auto; color: var(--amber) !important;
-      text-decoration: underline; text-underline-offset: 3px; }}
-    /* The version is information, not an action: no underline, dimmer. */
-    .mahatop_v {{ opacity: 0.55; text-decoration: none; }}
-    /* The engine in force: a marked word, orange, no underline. */
-    [class*="st-key-boxlinks_foot"] .tabsig_on {{
-      text-align: left !important; margin: 0 !important; padding: 0 !important;
-      white-space: nowrap; color: var(--amber) !important; opacity: 1 !important;
-      text-decoration: none !important;
-    }}
-    /* LOG OUT HARD RIGHT, the version after it (Marko, 7.9.2026: "log out at
-       the bottom right"). margin-left:auto on the log out's own container. */
-    [class*="st-key-boxlinks_foot"] [class*="st-key-foot_logout"] {{
-      margin-left: auto !important;
-    }}
     [class*="st-key-boxlinks_foot"] .tabsig_v {{
-      margin: 0 0 0 0.6rem !important;
+      margin: 0 0 0 auto !important;
       padding: 0 !important;
       text-align: right !important;
       white-space: nowrap;
@@ -1416,7 +1386,7 @@ def css(scheme: str = "amber", font: str = "mono",
       text-decoration: none !important;
     }}
     [class*="st-key-boxlinks_foot"] div[data-testid="stElementContainer"]:last-child {{
-      margin-left: 0 !important;
+      margin-left: auto !important;
     }}
     [class*="st-key-boxlinks_foot"] .tabsig_l {{
       text-align: left !important;
@@ -1449,18 +1419,14 @@ def css(scheme: str = "amber", font: str = "mono",
     }}
 
     [class*="st-key-boxlinks_"] {{
-      /* measured at 360 px on 7.9.2026: deck->langrow 8.8, langrow->links 10.4,
-         links->textarea 13.0; the two margins below bring the last two to the first */
-      margin-top: 0 !important;
-      margin-bottom: -0.9rem !important;
+      margin-top: 0.1rem !important;
+      margin-bottom: -0.65rem !important;
     }}
     /* An empty box needs the gap back, or the single link sits on the
        border and reads as part of it — the same fault as before, in the
        other direction. AFTER the rule above so it wins. */
     [class*="_empty"][class*="st-key-boxlinks_"] {{
-      /* measured 7.9.2026: 0.2rem gave 13.0 px under an empty box against 8.8
-         above it; -0.06rem makes the three gaps one gap */
-      margin-bottom: -0.06rem !important;
+      margin-bottom: 0.2rem !important;
     }}
     [class*="st-key-boxlinks_"] div[data-testid="stHorizontalBlock"] {{
       justify-content: flex-end !important;
@@ -1478,22 +1444,6 @@ def css(scheme: str = "amber", font: str = "mono",
       flex: 0 0 auto !important;
       width: auto !important;
       min-width: 0 !important;
-    }}
-    /* WHEN THE ROW RUNS OUT OF WIDTH, IT WRAPS — it does not leave the
-       screen. At 360 px five links with their padding are wider than the
-       phone, and a nowrap row justified to the end overflows to the LEFT,
-       where nothing scrolls: "grammar" read "mmar" (test_layout, 7.9.2026).
-       Design language: stack, never hide. The links stay at the right,
-       on two lines when they must. */
-    @media (max-width: 480px) {{
-      [class*="st-key-boxlinks_"] div[data-testid="stHorizontalBlock"] {{
-        flex-wrap: wrap !important;
-        row-gap: 0.1rem !important;
-      }}
-      [class*="st-key-boxlinks_"] .stButton button {{
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-      }}
     }}
     [class*="st-key-boxlinks_"] .stButton button {{
       background: transparent !important;

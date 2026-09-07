@@ -116,19 +116,23 @@ NEEDS = {
 #
 # They do not block, and they must not be deleted.
 MISSING = {
-    # test_engine_ui.py LEFT THIS LIST on 7.9.2026: the engine board is
-    # back (eng_normal / eng_studio / eng_check are on the Settings tab)
-    # and the suite runs green, describing the foot and the top bar as
-    # Marko asked for them that day.
-    #
-    # THE FIVE SPREADSHEET SUITES were renamed superseded_*.py on
-    # 7.9.2026 and are described in tests/README_SUPERSEDED.md — the
-    # engine board and the sheet it read (test_engine_sheet), the owner's
-    # PEOPLE screen (test_admin_users), the forced password change
-    # (test_must_change), login against the sheet's user list
-    # (test_users), the accounts screen (test_accounts). All removed with
-    # the Apps Script in v237; the door reads Secrets now and test_door
-    # covers it. They no longer match test*.py, so nothing here runs them.
+    "test_engine_ui.py": "THE ENGINE BOARD, which Baba wants back for "
+                         "studio users — eng_normal / eng_studio / "
+                         "eng_check, and routing that reads route_*",
+    "test_engine_sheet.py": "the engine board AND the spreadsheet it read "
+                            "from — the sheet was removed in v237",
+    "test_admin_users.py": "the owner's PEOPLE SCREEN — listing, adding "
+                           "and deleting users by writing spreadsheet "
+                           "rows. Removed with the Apps Script in v237",
+    "test_must_change.py": "the forced password change, which rewrote a "
+                           "spreadsheet row through the Apps Script. "
+                           "Passwords are Secrets entries since v237",
+    "test_users.py": "logging in against the spreadsheet's user list, "
+                     "removed in v237. The door reads Secrets now and "
+                     "test_door covers it",
+    "test_accounts.py": "the accounts screen — log_out_btn and the "
+                        "password section. Ask before deleting: this may "
+                        "be wanted for studio users too",
 }
 REMOVED = MISSING
 

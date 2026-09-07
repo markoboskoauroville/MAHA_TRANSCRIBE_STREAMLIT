@@ -213,37 +213,3 @@ were cleared.
 
 §14's rule held every time: **a zero is a failure of the check until proven otherwise — and so is
 a red.**
-
----
-
-# Delivery record — Maha Streamlit v268 — 7.9.2026
-
-**The nine gates, run on the tree the machine serves at https://ttt-lll.pages.dev/streamlit/
-(commit 037b4ce and after). Verdict: PASS, with one cosmetic finding fixed the same evening and
-two things not tested, listed.**
-
-    G1 PROVENANCE  the machine pulled 037b4ce within a minute (apps/update.log); it runs the
-                   GitHub tree and nothing else; working tree clean at the time of the record
-    G2 SECRETS     174 tracked files, 36 hits, 0 real keys; two untracked gitignored folders with
-                   a filled Apps Script (real secrets) moved out of the repo to
-                   ~/Developer/STREAMLIT_SECRETS/removed_from_maha_7sep/
-    G3 ANALYSIS    pyflakes app.py, ttt/, tests/: 0 findings (5 before the gate)
-    G4 DEAD CODE   six removed: the shadowed accounts-era log_out, engine_status, _dim, the
-                   flip's planning (next_in/why/_flip), the foot's lead line, keyline
-    G5 DEAD LOOPS  26 while-loops read, all bounded; every subprocess and requests call carries
-                   a timeout (0 findings)
-    G6 STRESS      test_soak: 40 runs, 0 raised, 0.75 s a run first and last quarter, RSS 43 ->
-                   246 MB under AppTest; the live door: 30 health at once, 30 roots, 20 pages,
-                   10 wrong logins, 200 KB body, no body — right codes, no 5xx, medians < 1 s
-    G7 BUDGETS     0.75 s a render (AppTest); the machine's load 0.00 at rest; no previous figure
-                   to compare, so this is the baseline
-    G8 UPGRADE     the notes on the machine and in the browser unchanged; the audio cache starts
-                   empty; the old address / now shows the blank page and /streamlit/ is the app
-                   (the door keeps ?remote=CODE through the login)
-    G9 THE RECORD  this, and HANDOVER.md's evening section
-
-    FOUND AND FIXED the links row above the transcribe box left the left edge at 360 px (a nowrap
-                   row justified to the end overflows leftwards): it wraps under 480 px now
-    NOT TESTED     a real reading and a real recording through the door by a person after the
-                   switch; Streamlit Cloud with v268 (AppTest only)
-    SUITE          74 files, 73 pass; test_layout needs a live app on 8811

@@ -169,11 +169,6 @@ import shutil                                    # noqa: E402
 
 SEC = os.path.join(ROOT, ".streamlit", "secrets.toml")
 BACKUP = SEC + ".testbak"
-# WHAT WAS THERE BEFORE, byte for byte. The put-back check compares against
-# this rather than looking for the placeholder text: on a machine whose
-# secrets.toml holds real entries (no "paste_your" anywhere) the old check
-# went red while the file had been restored perfectly.
-ORIG = open(SEC, "rb").read()
 REAL = "\n".join([
     'SHEETS_URL = "https://example.invalid/exec"',
     'SHEETS_TOKEN = "x"',
@@ -249,8 +244,8 @@ try:
 finally:
     shutil.move(BACKUP, SEC)
 
-check("the secrets file was put back exactly as it was",
-      open(SEC, "rb").read() == ORIG and not os.path.exists(BACKUP))
+check("the placeholder secrets file was put back",
+      "paste_your" in open(SEC).read())
 
 # =====================================================================
 print()

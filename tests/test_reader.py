@@ -151,19 +151,9 @@ check("8 changing voice DROPS the cache, so nothing plays in the old voice",
       {"synth_rebuilt": job3.get("synth") is not old_synth,
        "old_voice_spoke": old_synth.calls,
        "cache_keys": sorted(cache3)})
-# A WHOLE NEW READING, NOT A PATCHED ONE (7.9.2026, app.py _revoice):
-# the voice change sets _auto_read; the playing branch DROPS the old job
-# ("the new one wins") and the writing branch makes a fresh one from the
-# text box, from the top. Nothing of the old reading may survive the
-# press — least of all its place. Here the box is empty (the job was
-# seeded directly), so the fresh reading is not made and the job is gone;
-# an old job still standing on block 1 is the failure this closes.
 check("9 and STARTS AGAIN FROM THE TOP, so the two voices can be "
-      "compared on the same words — the old reading is dropped whole",
-      job3.get("index", 0) == 0
-      and OLD_AUDIO not in [v.get("audio") for v in cache3.values()],
-      {"job": bool(job3), "index": job3.get("index"),
-       "cache_keys": sorted(cache3)})
+      "compared on the same words",
+      job3.get("index") == 0, job3.get("index"))
 
 # --- a new text clears the reading ------------------------------------
 at4 = app()
