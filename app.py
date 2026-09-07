@@ -4039,7 +4039,11 @@ def stitch_reading(count: int, get_block, on_error=None):
             tmp.append(fh.name)
         if not paths:
             return None
-        out = SPEECH.join_audio(paths)
+        # ONE AAC FILE, MONO. Marko, 7.9.2026: "stitch all the pieces and
+        # download it as one audio file in AAC format, mono." Every piece
+        # is decoded first (Edge sends MP3, Gemini WAV, Piper WAV), so the
+        # seams are clean whatever the voice was.
+        out = SPEECH.join_audio(paths, fmt="m4a")
         tmp.append(out)
         with open(out, "rb") as f:
             return f.read()
@@ -5716,6 +5720,12 @@ def google_voice_row(prefix="talkg", on_pick=None):
         current = st.session_state.get("google_voice", GOOGLE_P.DEFAULT_VOICE)
         if current not in names and names:
             current = names[0]
+            # THE SIDE CHANGED, SO THE VOICE CHANGED: a pick like any other
+            # (Marko, 7.9.2026). Without this the radio moved the voice in
+            # silence and a running reading went on in the old one.
+            st.session_state["google_voice"] = current
+            if on_pick:
+                on_pick()
             # AND THE WIDGET'S OWN KEY, before the box is created —
             # legal, and necessary: a selectbox whose stored value is
             # not among its options is a widget Streamlit has to guess
@@ -6242,6 +6252,16 @@ def _revoice():
         st.session_state.pop("_talk_player_seen", None)
         st.session_state.pop("_talk_start_seen", None)
         st.session_state["_talk_revoice"] = True
+        # AND A WHOLE NEW READING, NOT A PATCHED ONE (Marko, 7.9.2026: "in
+        # Google mode, when I change voices and press play, it's not
+        # happening; it should delete the old audio and start producing
+        # the new"). Patching the job in place rebuilt the synth closure
+        # but left everything else of the old reading: a player that had
+        # ended, stamps, a plan made for another voice. The road that is
+        # known to work for "the new one wins" is _auto_read: the playing
+        # branch drops this job, the writing branch makes a fresh one from
+        # the same text with the voice now chosen, and plays from the top.
+        st.session_state["_auto_read"] = True
 
 
 def _voice_row_synth_only(engine, sp_ring_talk):
@@ -9761,7 +9781,7 @@ elif active == "talk":
         if st.session_state.get("_rd_whole"):
             st.download_button(t("vr_save_all"),
                                data=st.session_state["_rd_whole"],
-                               file_name="reading.mp3", mime="audio/mpeg",
+                               file_name="reading.m4a", mime="audio/mp4",
                                key="rd_dl_all", use_container_width=True)
 
         # "New text" is gone. Baba: "we do not need new text — there is

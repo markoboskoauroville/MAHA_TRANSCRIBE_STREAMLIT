@@ -110,12 +110,42 @@ def audio_src(data) -> str:
                                   _b.b64encode(bytes(data or b"")).decode())
 
 
-def join_audio(paths, out_path: str = None) -> str:
+def join_audio(paths, out_path: str = None, fmt: str = "mp3") -> str:
     """One file out of many. Re-encodes rather than stream-copying:
     concatenating MP3 frames directly leaves gaps and confuses seeking in
-    some browsers, which would defeat the whole point."""
+    some browsers, which would defeat the whole point.
+
+    fmt="m4a": ONE AAC FILE, MONO, 96 kb/s (Marko, 7.9.2026). Every input
+    is decoded to PCM first, whatever it was (MP3 from Edge, WAV from Gemini
+    or Piper), so the concat demuxer never sees two codecs, then the whole
+    is encoded once with ffmpeg's own aac.
+    """
     if not paths:
         raise ValueError("nothing to join")
+    if fmt == "m4a":
+        out_path = out_path or tempfile.mktemp(suffix=".m4a")
+        wavs = []
+        try:
+            for p in paths:
+                w = tempfile.mktemp(suffix=".wav")
+                subprocess.run(["ffmpeg", "-y", "-i", p, "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", w],
+                               check=True, capture_output=True, timeout=300)
+                wavs.append(w)
+            listfile = tempfile.mktemp(suffix=".txt")
+            with open(listfile, "w", encoding="utf-8") as f:
+                for w in wavs:
+                    f.write("file '%s'\n" % w.replace("'", "'\\''"))
+            wavs.append(listfile)
+            subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listfile,
+                            "-c:a", "aac", "-b:a", "96k", "-ac", "1", "-movflags", "+faststart", out_path],
+                           check=True, capture_output=True, timeout=1800)
+        finally:
+            for w in wavs:
+                try:
+                    os.remove(w)
+                except Exception:                                # noqa: BLE001
+                    pass
+        return out_path
     out_path = out_path or tempfile.mktemp(suffix=".mp3")
     if len(paths) == 1:
         # -c copy ONLY WHEN IT IS ALREADY AN MP3. Copying a PCM stream
