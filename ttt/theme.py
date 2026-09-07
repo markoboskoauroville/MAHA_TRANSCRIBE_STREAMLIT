@@ -1449,14 +1449,18 @@ def css(scheme: str = "amber", font: str = "mono",
     }}
 
     [class*="st-key-boxlinks_"] {{
-      margin-top: 0.1rem !important;
-      margin-bottom: -0.65rem !important;
+      /* measured at 360 px on 7.9.2026: deck->langrow 8.8, langrow->links 10.4,
+         links->textarea 13.0; the two margins below bring the last two to the first */
+      margin-top: 0 !important;
+      margin-bottom: -0.9rem !important;
     }}
     /* An empty box needs the gap back, or the single link sits on the
        border and reads as part of it — the same fault as before, in the
        other direction. AFTER the rule above so it wins. */
     [class*="_empty"][class*="st-key-boxlinks_"] {{
-      margin-bottom: 0.2rem !important;
+      /* measured 7.9.2026: 0.2rem gave 13.0 px under an empty box against 8.8
+         above it; -0.06rem makes the three gaps one gap */
+      margin-bottom: -0.06rem !important;
     }}
     [class*="st-key-boxlinks_"] div[data-testid="stHorizontalBlock"] {{
       justify-content: flex-end !important;
@@ -1474,6 +1478,22 @@ def css(scheme: str = "amber", font: str = "mono",
       flex: 0 0 auto !important;
       width: auto !important;
       min-width: 0 !important;
+    }}
+    /* WHEN THE ROW RUNS OUT OF WIDTH, IT WRAPS — it does not leave the
+       screen. At 360 px five links with their padding are wider than the
+       phone, and a nowrap row justified to the end overflows to the LEFT,
+       where nothing scrolls: "grammar" read "mmar" (test_layout, 7.9.2026).
+       Design language: stack, never hide. The links stay at the right,
+       on two lines when they must. */
+    @media (max-width: 480px) {{
+      [class*="st-key-boxlinks_"] div[data-testid="stHorizontalBlock"] {{
+        flex-wrap: wrap !important;
+        row-gap: 0.1rem !important;
+      }}
+      [class*="st-key-boxlinks_"] .stButton button {{
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+      }}
     }}
     [class*="st-key-boxlinks_"] .stButton button {{
       background: transparent !important;
