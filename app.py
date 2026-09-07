@@ -125,6 +125,7 @@ from ttt import eta as ETA
 from ttt import vr as VR
 from ttt import vision
 from ttt import notes as NOTES
+from ttt import notestore as NOTESTORE          # the machine's per-person store (7.9.2026)
 from ttt.providers.groq import FAST_STT as GROQ_FAST_STT
 from ttt import routing as RO
 from ttt import engines as EN
@@ -5484,6 +5485,12 @@ def persist_notes():
         return
     st.session_state["_notes_saved"] = now
     queue_ls(writes={NOTES_LS_KEY: now})
+    # AND ON THE MACHINE, FOR THIS PERSON (Marko, 7.9.2026: "per-user note
+    # saving, any transcription saved for later, text only"). Only where a
+    # TTT_NOTES_DB is configured (the Oracle machine); elsewhere this is a
+    # no-op and the browser copy is what it was.
+    NOTESTORE.save(str(st.session_state.get("_user") or ""),
+                   st.session_state.get(NOTES.KEY, []))
 
     # AND TO DRIVE, beside the recordings. Baba: "notes should be saved
     # in the same location where audio files are saved, and a simple
@@ -5527,6 +5534,18 @@ def restore_notes():
     """
     if st.session_state.get("_notes_restored"):
         return
+
+    # THE MACHINE FIRST, where there is one. The person's notebook on the
+    # Oracle machine follows them to any browser and any device, which is
+    # what the browser copy could never do; it needs no bridge, so it is
+    # read before the bridge is even waited for.
+    _who = str(st.session_state.get("_user") or "")
+    if _who and NOTESTORE.enabled() and not st.session_state.get(NOTES.KEY):
+        _kept = NOTESTORE.load(_who)
+        if _kept is not None:
+            st.session_state[NOTES.KEY] = _kept
+            st.session_state["_notes_restored"] = True
+            return
 
     # WAIT FOR THE BRIDGE. LS_DATA is filled by a COMPONENT, and a
     # component reports nothing on the run that creates it — so on the
