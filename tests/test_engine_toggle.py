@@ -272,8 +272,13 @@ check("it is greyed with disabled=, not hidden",
 # only the REASON has three branches now. A check counting the old
 # two-value assignment would have been green about a line that no
 # longer exists.
+# THE REASON RIDES ON THE BUTTON since the flip went (G4, e3b075b): a
+# grey engine button carries "not ready" and the engine's name in its
+# help, from the same line that greys it. The three "why = " branches
+# belonged to the one-press flip and went with it.
 check("every path sets a reason, so a dead link always explains itself",
-      sw.count("why = ") == 3, sw.count("why = "))
+      't("eng_not_ready") % cand.label' in sw and "disabled=not cand_ready" in sw,
+      [l.strip() for l in sw.splitlines() if "eng_not_ready" in l][:2])
 check("...and the buttons are named by the engine's own short word",
       sw.count("cand.short") >= 2, sw.count("cand.short"))
 
@@ -286,10 +291,11 @@ for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",
 # earned it; carried over, it puts a ✓ beside something never tested.
 check("flipping forgets the previous engine check",
       '_engine_check' in sw and 'pop("_engine_check"' in sw)
-check("the flip writes ROUTES, not just a name",
-      "EN.route_settings(nxt)" in sw)
+# _pick(engine), not _flip's nxt: the press writes the routes AND the name.
+check("the pick writes ROUTES, not just a name",
+      "EN.route_settings(engine)" in sw)
 check("...and the name too, so both views agree",
-      "EN.SETTING_KEY] = nxt.id" in sw)
+      "EN.SETTING_KEY] = engine.id" in sw)
 
 # GOOGLE'S KEYS ACTUALLY REACH THE PROVIDER. Without this the toggle is
 # a pill that can never light: google_keys() read the secret and nothing
@@ -452,22 +458,68 @@ print("8 THE VOICE DROPDOWNS — two lists, ten each")
 import shutil                                     # noqa: E402
 SEC = os.path.join(ROOT, ".streamlit", "secrets.toml")
 BAK = SEC + ".voicebak"
+# WHAT WAS THERE, byte for byte, for the put-back checks. The old check
+# looked for "paste_your" — true of the template, false of a machine whose
+# secrets.toml holds real entries, where it went red over a perfect restore.
+ORIG = open(SEC, "rb").read()
+STUB = '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"'
+
+
+def google_usable(raw):
+    """The secrets text with a google key that is NOT a placeholder.
+
+    A KEY THAT IS NOT A PLACEHOLDER, or google is never USABLE and the
+    route quietly falls back to Edge — which is what made the first
+    version of this test look like the dropdowns had not been built.
+
+    THREE SHAPES OF FILE, one answer each. The template holds the
+    placeholder: swap it for the stub. A real file with no google entry
+    at all (this machine): add one, the stub. A real file that already
+    holds google keys: leave it — it is usable as it stands, and no line
+    here is allowed to rewrite a person's real keys.
+
+    FACE 5: a .replace() whose pattern misses changes NOTHING and the
+    test then passes for the wrong reason — so the caller asserts that
+    the result is usable, not merely that a replace ran.
+    """
+    placeholder = '"AQ.paste_your_first_key_here"'
+    if placeholder in raw:
+        return raw.replace(placeholder, STUB)
+    if not re.search(r"^\s*GOOGLE_API_KEYS\s*=", raw, re.M):
+        return raw.rstrip("\n") + "\nGOOGLE_API_KEYS = [%s]\n" % STUB
+    return raw
+
+
+import streamlit as st                            # noqa: E402
+
+
+def _reset_secrets():
+    """Make st.secrets read the file again on its next use."""
+    st.secrets._reset()
+
+
+def gender_radio(at):
+    """THE VOICE RADIO, BY KEY. Counting radios found the admin's tier
+    switch (free / studio / admin) on a machine whose secrets name the
+    stub user as admin, and called it the voice radio."""
+    found = [r for r in at.radio if r.key == "talkvoice_gender"]
+    return found[0] if found else None
+
+
 shutil.copy(SEC, BAK)
 try:
-    # A KEY THAT IS NOT A PLACEHOLDER, or google is never USABLE and the
-    # route quietly falls back to Edge — which is what made the first
-    # version of this test look like the dropdowns had not been built.
-    # FACE 5: a .replace() whose pattern misses changes NOTHING and the
-    # test then passes for the wrong reason — here it would silently
-    # leave the placeholder in place, google would not be usable, and
-    # every check below would be testing the Edge picker while claiming
-    # to test Google's. So the target is asserted first.
     _raw = open(SEC).read()
-    _target = '"AQ.paste_your_first_key_here"'
-    assert _target in _raw, "the placeholder key moved — this edit would miss"
-    _s = _raw.replace(_target, '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"')
-    assert _s != _raw, "the file was not changed"
+    _s = google_usable(_raw)
+    assert re.search(r"^\s*GOOGLE_API_KEYS\s*=", _s, re.M), "no google key to make usable"
+    assert "paste_your" not in _s.split("GOOGLE_API_KEYS", 1)[1].split("]", 1)[0], \
+        "the google entry is still a placeholder — google would not be usable"
     open(SEC, "w").write(_s)
+    # THE SINGLETON DOES NOT WATCH THE FILE. AppTest sets no file watcher,
+    # and st.secrets parses secrets.toml ONCE per process — so a file
+    # rewritten here was never read, google stayed unusable, and every
+    # check below described the Edge picker. Reset, then prove the reload.
+    _reset_secrets()
+    assert "GOOGLE_API_KEYS" in st.secrets, "the rewritten secrets were not reloaded"
 
     def gapp():
         a = app("talk")
@@ -486,8 +538,9 @@ try:
     boxes = {x.key: x for x in g.selectbox}
     check("there is ONE list, not two", len(boxes) == 1, sorted(boxes))
     check("...and a radio saying which side it holds",
-          len(g.radio) == 1 and list(g.radio[0].options) == ["Female", "Male"],
-          [r.options for r in g.radio])
+          gender_radio(g) is not None
+          and list(gender_radio(g).options) == ["Female", "Male"],
+          [(r.key, r.options) for r in g.radio])
     for side, gender in (("Female", "F"), ("Male", "M")):
         # SET THE STATE, NOT THE WIDGET. radio.set_value() proved
         # unreliable once the key already held a value from an earlier
@@ -544,7 +597,9 @@ try:
             and b.key.startswith("talkvoice_")]))
 finally:
     shutil.move(BAK, SEC)
-check("the secrets file was put back", "paste_your" in open(SEC).read())
+    _reset_secrets()
+check("the secrets file was put back exactly as it was",
+      open(SEC, "rb").read() == ORIG and not os.path.exists(BAK))
 
 
 print()
@@ -716,10 +771,11 @@ print("11 A RADIO SAYS WHICH VOICE IS SPEAKING")
 shutil.copy(SEC, BAK)
 try:
     _raw2 = open(SEC).read()
-    _t2 = '"AQ.paste_your_first_key_here"'
-    assert _t2 in _raw2, "the placeholder key moved"
-    open(SEC, "w").write(
-        _raw2.replace(_t2, '"AQ.stubKeyNotRealAAAAAAAAAAAAAAAAAAAAAAAA"'))
+    _s2 = google_usable(_raw2)
+    assert re.search(r"^\s*GOOGLE_API_KEYS\s*=", _s2, re.M), "no google key to make usable"
+    open(SEC, "w").write(_s2)
+    _reset_secrets()
+    assert "GOOGLE_API_KEYS" in st.secrets, "the rewritten secrets were not reloaded"
 
     def gapp2():
         a = app("talk")
@@ -731,9 +787,13 @@ try:
     r = gapp2()
     r.run()
     check("the reader renders on google", not r.exception, r.exception)
-    check("there is ONE radio", len(r.radio) == 1, len(r.radio))
+    check("there is ONE voice radio, keyed talkvoice_gender",
+          len([x for x in r.radio if x.key == "talkvoice_gender"]) == 1,
+          [x.key for x in r.radio])
     check("...with exactly two options",
-          list(r.radio[0].options) == ["Female", "Male"], r.radio[0].options)
+          gender_radio(r) is not None
+          and list(gender_radio(r).options) == ["Female", "Male"],
+          [(x.key, x.options) for x in r.radio])
     check("there is ONE list, not two", len(r.selectbox) == 1,
           [x.key for x in r.selectbox])
     check("...holding ten voices", len(r.selectbox[0].options) == 10,
@@ -760,7 +820,7 @@ try:
     # from format_func is SILENTLY IGNORED: no error, no change, and the
     # next assertion then describes a press that never happened. That
     # cost two false failures here before it was measured.
-    r.radio[0].set_value("M").run()
+    gender_radio(r).set_value("M").run()
     check("switching to Male changes the voice being used",
           GP.gender_of(sget(r, "google_voice")) == "M",
           sget(r, "google_voice"))
@@ -778,7 +838,7 @@ try:
 
     # AND BACK, through the widget again: the guard must move the voice
     # in BOTH directions, or the radio says Female while Puck speaks.
-    r.radio[0].set_value("F").run()
+    gender_radio(r).set_value("F").run()
     check("switching back to Female moves the voice with it",
           GP.gender_of(sget(r, "google_voice")) == "F",
           sget(r, "google_voice"))
@@ -787,6 +847,9 @@ try:
           sget(r, "google_voice"))
 finally:
     shutil.move(BAK, SEC)
+    _reset_secrets()
+check("the secrets file was put back exactly as it was, again",
+      open(SEC, "rb").read() == ORIG and not os.path.exists(BAK))
 
 
 print()
@@ -892,8 +955,17 @@ print("14 SWITCHING ENGINE MID-READING THROWS THE OLD AUDIO AWAY")
 # carried on from the middle: half a reading in one voice, half in
 # another, and a save that stitched the two together.
 
-_fl = CODE.split("def _flip")[1].split("\n    def ")[0]
-check("the flip region was found (%d chars)" % len(_fl),
+# THE FLIP IS A PICK NOW. The toggle (_flip) became three buttons on
+# 7.9.2026 and its dead body was removed in the G4 cleanup (e3b075b); the
+# press that switches engine is _pick(engine) inside _foot_line. find(),
+# not split()[1]: a name that has gone must be a red line, not a crash.
+_pi = CODE.find("    def _pick(engine)")
+check("the pick region was found", _pi > 0, _pi)
+_fl = CODE[_pi:]
+_end = _fl.find("        return go")
+check("...and it ends where _pick hands back its callback", _end > 0, _end)
+_fl = _fl[:_end if _end > 0 else 0]
+check("the pick region is one function (%d chars)" % len(_fl),
       60 < len(_fl) < 1200, len(_fl))
 check("switching engine restarts the reading", "_revoice()" in _fl, _fl)
 check("...through the SAME function a voice change uses, so the two "

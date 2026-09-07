@@ -1,4 +1,4 @@
-"""THE ENGINE ROW in Settings, and the corner badge.
+"""THE ENGINE ROW in Settings, the marked engine at the foot, the top bar.
 
     python3 tests/test_engine_ui.py
 """
@@ -62,17 +62,6 @@ def app(tab="settings"):
     return at
 
 
-def corner(at):
-    """The signature DIV only.
-
-    Matching on the word "tabsig" also matched the stylesheet, which
-    defines .tabsig — so the helper returned CSS and the assertion
-    failed against a page that was perfectly correct.
-    """
-    return " ".join(m.value for m in at.markdown
-                    if 'class="tabsig"' in m.value)
-
-
 print("THE ENGINE ROW\n")
 
 at = app()
@@ -118,50 +107,84 @@ check("8 choosing free patches them back",
       == ("groq", "edge", "groq"),
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm")))
 
-# --- the corner says which engine -------------------------------------
+# --- the foot says which engine ---------------------------------------
+#
+# THE FOOT AND THE TOP BAR AS ASKED (Marko, 7.9.2026, app.py _foot_line):
+# the page name top left; the admin panel, the version and (behind the
+# door) log out top right; at the foot the engine IN FORCE as a marked
+# word and every other engine as an underlined button; NO tier word.
+# "free" was removed by name, and the person's name went earlier (v258,
+# 6.9.2026: "his own text is on the screen" answers who he is). The
+# verdict tick went with the tier word it was attached to. These checks
+# describe THAT design; the ones they replace asserted the corner of
+# v133-v257 — the tier, the tick, "mixed", the name, "shared".
+
+
+def marked(at):
+    """The ONE marked word at the foot — the engine in force.
+
+    Matched on the exact class attribute, never on the word "tabsig_on":
+    the stylesheet defines .tabsig_on, and a helper that matched it
+    returned the CSS and passed for ever."""
+    return " ".join(m.value for m in at.markdown
+                    if 'class="tabsig tabsig_on"' in m.value)
+
+
+def picks(at):
+    """The engines offered as buttons — the ones NOT in force."""
+    return sorted(b.key for b in at.get("button")
+                  if b.key and b.key.startswith("eng_pick_"))
+
+
+def topbar(at):
+    return " ".join(m.value for m in at.markdown
+                    if 'class="mahatop"' in m.value)
+
+
 at3 = app("transcribe")
 at3.run()
-sig = corner(at3)
-# THE TIER, NOT THE PARTS (v133). Baba: "their technical names are
-# going bye bye — it is free or it is studio." "Edge / Groq" answers a
-# question nobody asks at the foot of a page; "free" answers the one
-# they do. The parts are still named in the owner's panel, where he is
-# choosing between them.
-#
-# This check asserted the parts, so it went on passing for the nine
-# versions in which v123 CLAIMED to have made this change and had not.
-check("9 the corner names the TIER",
-      "free" in sig and "Edge" not in sig, sig[:160])
+sig = marked(at3)
+check("9 the foot marks the engine IN FORCE by its short name, no tier word",
+      "Edge" in sig and "free" not in sig.lower() and "Groq" not in sig,
+      sig[:160])
+check("9b and every OTHER engine of the family is a button, this one is not",
+      picks(at3) == ["eng_pick_google", "eng_pick_marko"], picks(at3))
 check("10 and carries NO tick before any check has run",
       "✓" not in sig and "✗" not in sig, sig[:160])
 
-# a passing check adds the tick
+# THE VERDICT DOES NOT LIVE AT THE FOOT ANY MORE. It was a tick after the
+# tier word, and the tier word is gone; the engine check reports in
+# Settings, on its own rows. A tick that reappeared here would be the old
+# corner coming back unasked.
 at3.session_state["_engine_check"] = {
     "engine": "free", "state": EN.OK, "rows": [], "at": "12:00"}
 at3.run()
-check("11 a PASSED check adds the tick", "✓" in corner(at3), corner(at3)[:160])
-
+check("11 a PASSED check does not change the marked word",
+      marked(at3) == sig, marked(at3)[:160])
 at3.session_state["_engine_check"] = {
     "engine": "free", "state": EN.FAIL, "rows": [], "at": "12:00"}
 at3.run()
-check("12 a FAILED check shows a cross, not a tick",
-      "✗" in corner(at3) and "✓" not in corner(at3), corner(at3)[:160])
-
-# a verdict about the OTHER engine must not be worn by this one
+check("12 nor does a FAILED one — no cross at the foot",
+      marked(at3) == sig and "✗" not in marked(at3), marked(at3)[:160])
 at3.session_state["_engine_check"] = {
     "engine": "studio", "state": EN.OK, "rows": [], "at": "12:00"}
 at3.run()
 check("13 a verdict for a DIFFERENT engine is not worn by this one",
-      "✓" not in corner(at3), corner(at3)[:160])
+      "✓" not in marked(at3), marked(at3)[:160])
 
-# --- a hand-patched crosspoint reads as mixed -------------------------
+# --- a hand-patched crosspoint marks NOTHING -----------------------------
+# The engine is DERIVED from the routes every render (EN.current), never
+# read back from a stored name. Routes that match no engine are "mixed":
+# no marked word, and every engine of the family offered as a button.
 at4 = app("transcribe")
 at4.session_state["route_stt"] = "groq"
 at4.session_state["route_tts"] = "speechify"
 at4.session_state["route_llm"] = "groq"
 at4.run()
-check("14 a mixed board says mixed, not a stale engine name",
-      "mixed" in corner(at4).lower(), corner(at4)[:160])
+check("14 a mixed board marks no engine and offers them all",
+      marked(at4) == "" and "eng_pick_normal" in picks(at4)
+      and "eng_pick_google" in picks(at4),
+      (marked(at4)[:80], picks(at4)))
 
 # --- switching engines drops a stale verdict --------------------------
 at5 = app()
@@ -177,32 +200,41 @@ if _ctl1:
 check("15 switching engine FORGETS the old verdict",
       sget(at5, "_engine_check") is None, sget(at5, "_engine_check"))
 
-# --- WHO YOU ARE, at the foot of the page -----------------------------
+# --- THE TOP BAR: the page, not the person ----------------------------
 #
-# Baba: "show me who I am." And the one thing this line must never say:
-# the APP_PASSWORDS fallback stores the PASSWORD THAT MATCHED in the same
-# session key that holds an account name, so a corner that simply printed
-# _user would print his password on every page.
+# And the one thing this line must never say: the APP_PASSWORDS fallback
+# stores the PASSWORD THAT MATCHED in the session key that once held an
+# account name, so anything that printed _user would print his password
+# on every page. Nothing prints it now; check 17 keeps it that way.
 
-at6 = app()
+at6 = app("transcribe")
 at6.session_state["_user"] = "marko"
 at6.session_state["_via_accounts"] = True
 at6.run()
-check("16 the corner says who is signed in", "marko" in corner(at6),
-      corner(at6))
+check("16 the top bar names the PAGE at the left, not the person",
+      'class="mahatop_l">transcribe<' in topbar(at6)
+      and "marko" not in topbar(at6), topbar(at6)[:200])
+check("16b and carries the version at the right",
+      'class="mahatop_v">' in topbar(at6), topbar(at6)[:200])
+check("16c without the door there is no admin link and log out stays a button",
+      "/portal/admin" not in topbar(at6)
+      and any(b.key == "foot_logout" for b in at6.get("button")),
+      topbar(at6)[:200])
 
-at7 = app()
+at7 = app("transcribe")
 at7.session_state["_user"] = "correct-horse-staple"   # a PASSWORD, not a name
 at7.run()
+_page7 = topbar(at7) + " " + marked(at7) + " " + " ".join(
+    m.value for m in at7.markdown if "<style>" not in m.value)
 check("17 A PASSWORD LOGIN NEVER PRINTS THE PASSWORD — _user holds the "
       "matched password, not a name, when nobody logged in by name",
-      "correct-horse-staple" not in corner(at7), corner(at7))
+      "correct-horse-staple" not in _page7, _page7[:200])
 
-at8 = app()
+at8 = app("transcribe")
 at8.session_state["_user"] = ""       # nobody logged in by name
 at8.run()
-check("18 and an unnamed session says shared rather than nothing",
-      "shared" in corner(at8), corner(at8))
+check("18 an unnamed session gets the same bar — the page and the version",
+      topbar(at8) == topbar(at6), (topbar(at8)[:120], topbar(at6)[:120]))
 
 print("\n{} passed, {} failed".format(passed, failed))
 

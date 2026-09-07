@@ -72,11 +72,26 @@ with sync_playwright() as p:
     time.sleep(3)
 
     # --- log in -------------------------------------------------------
-    boxes = pg.locator('input[type="password"]')
+    # THE DOOR SINCE v185 (test_door.py): one NAME box, one key marked L,
+    # names from Secrets. There is no password input any more — this
+    # looked for one, found none, never logged in, and waited thirty
+    # seconds for a deck behind a door it had not opened.
+    boxes = pg.locator('input[aria-label="name"]')
     if boxes.count():
         boxes.first.fill("stub")
         boxes.first.press("Enter")
-        time.sleep(6)
+        time.sleep(2)
+        # Enter commits the name and Streamlit reruns, which REPLACES the
+        # L key's element; a click that lands on the old one is lost and
+        # the door stays shut (seen once in three runs). Press, wait for
+        # the deck, and press again if it has not opened.
+        for _attempt in range(3):
+            pg.locator('[class*="st-key-login_L"] button').first.click()
+            try:
+                pg.wait_for_selector('[class*="st-key-deckbox"]', timeout=15000)
+                break
+            except Exception:                                # noqa: BLE001
+                time.sleep(2)
     pg.wait_for_selector('[class*="st-key-deckbox"]', timeout=30000)
     time.sleep(2)
 
@@ -104,16 +119,34 @@ with sync_playwright() as p:
     # HR / ENG / single / multi was sitting inside the number. Anything
     # added between the deck and the text box belongs here too, or this
     # test starts measuring the wrong distance again.
+    # THE COMMAND ROW (cmdrow_tx) WENT IN v87 and the links row above the
+    # text box took its place — grammar / reshape / custom / add to notes,
+    # drawn by box_links() in a container keyed boxlinks_tx_<state>. This
+    # list said cmdrow for a hundred and eighty versions and the suite
+    # could not run to find out, because its login looked for a password
+    # box the v185 door no longer has.
     frames = [
         ("deck", '[class*="st-key-deckbox"]'),
         ("langrow", '[class*="st-key-langrow"]'),
-        ("cmdrow", '[class*="st-key-cmdrow_tx"]'),
+        ("links", '[class*="st-key-boxlinks_tx"]'),
         ("textarea", 'textarea'),
     ]
     got = [(n, box(s)) for n, s in frames]
     got = [(n, b) for n, b in got if b]
     check("3 the frames are all on the page", len(got) == len(frames),
           [n for n, _ in got])
+    # AND NOTHING IN THEM STARTS LEFT OF THE SCREEN. A row that is wider
+    # than the phone is pushed off the left edge, and its first word is
+    # cut ("mmar" for grammar in the 7.9.2026 screenshot); the overflow
+    # check below cannot see it because nothing scrolls, it is simply gone.
+    lefts = pg.evaluate(
+        "() => [...document.querySelectorAll('[class*=\"st-key-\"]')]"
+        ".filter(e => e.getBoundingClientRect().height > 0)"
+        ".map(e => [[...e.classList].find(c => c.startsWith('st-key-')),"
+        " Math.round(e.getBoundingClientRect().x)])"
+        ".filter(p => p[1] < 0)")
+    check("3b no frame is pushed off the left edge of the screen",
+          not lefts, lefts)
 
     gaps = []
     for (n1, b1), (n2, b2) in zip(got, got[1:]):

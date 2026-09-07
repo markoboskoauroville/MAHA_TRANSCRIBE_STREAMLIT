@@ -176,7 +176,10 @@ print("2 THE REAL THING — the panel, driven")
 
 ADMIN = ""
 try:
-    import tomllib
+    try:
+        import tomllib
+    except ModuleNotFoundError:                 # Python < 3.11: same parser, other name
+        import tomli as tomllib
     with open(os.path.join(ROOT, ".streamlit", "secrets.toml"), "rb") as _f:
         _sec = tomllib.load(_f)
     ADMIN = str(_sec.get("ADMIN_USER")

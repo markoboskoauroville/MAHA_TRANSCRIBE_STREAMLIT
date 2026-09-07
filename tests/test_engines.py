@@ -38,8 +38,16 @@ check("1 the two original engines are still present and first",
       [e.id for e in EN.ENGINES][:2] == ["normal", "studio"],
       [e.id for e in EN.ENGINES])
 check("1b and google is added after them, never in front",
-      [e.id for e in EN.ENGINES][2:] == ["google"],
+      [e.id for e in EN.ENGINES][2] == "google",
       [e.id for e in EN.ENGINES])
+# MARKO API (7.9.2026) comes after google, in the free family; the OFFLINE
+# engine exists only where Whisper and Piper are installed, and then it is
+# last. Read from the same switch engines.py reads, so this does not guess.
+from ttt.providers.local import INSTALLED as _LOCAL   # noqa: E402
+check("1c marko follows google, and offline only where installed, last",
+      [e.id for e in EN.ENGINES][3:] == (["marko", "offline"] if _LOCAL
+                                         else ["marko"]),
+      ([e.id for e in EN.ENGINES], "local installed:", _LOCAL))
 check("1c the default is still the free tier — adding an engine must "
       "not move anybody", EN.DEFAULT == "normal", EN.DEFAULT)
 
