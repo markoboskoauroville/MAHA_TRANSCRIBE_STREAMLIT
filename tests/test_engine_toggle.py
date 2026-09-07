@@ -60,9 +60,11 @@ print("1 THE MECHANISM, ALONE")
 # =====================================================================
 
 free = EN.for_tier("free")
-check("two free engines today", len(free) == 2, [e.id for e in free])
+# THREE FREE ENGINES since 7.9.2026: Edge, Google, and Marko API (his own
+# machine through its API). Marko: "three buttons, not a toggle."
+check("three free engines today", len(free) == 3, [e.id for e in free])
 check("they are the free-tier ones, read off the data",
-      {e.id for e in free} == {"normal", "google"}, [e.id for e in free])
+      {e.id for e in free} == {"normal", "google", "marko"}, [e.id for e in free])
 check("every one of them really declares tier free",
       all(e.tier == "free" for e in free))
 check("studio is not in the free set",
@@ -73,9 +75,9 @@ check("an unknown tier gives nothing, rather than everything",
       EN.for_tier("nonsense") == [])
 
 check("normal flips to google", EN.next_in(free, "normal").id == "google")
-check("google flips back to normal", EN.next_in(free, "google").id == "normal")
-check("it is a CYCLE, so two presses return to the start",
-      EN.next_in(free, EN.next_in(free, "normal").id).id == "normal")
+check("google flips on to marko", EN.next_in(free, "google").id == "marko")
+check("it is a CYCLE, so three presses return to the start",
+      EN.next_in(free, EN.next_in(free, EN.next_in(free, "normal").id).id).id == "normal")
 check("a board on no known engine goes to the first",
       EN.next_in(free, "").id == free[0].id)
 check("an unknown id goes to the first rather than raising",
@@ -89,8 +91,8 @@ check("no engines has nowhere to go either", EN.next_in([], "x") is None)
 third = EN.Engine("pretend", "Pretend", {"stt": "groq", "tts": "edge",
                                          "llm": "groq"}, tier="free")
 trio = free + [third]
-check("a third free engine joins the cycle by existing",
-      EN.next_in(trio, "google").id == "pretend"
+check("a fourth free engine joins the cycle by existing",
+      EN.next_in(trio, "marko").id == "pretend"
       and EN.next_in(trio, "pretend").id == "normal",
       [e.id for e in trio])
 check("...and every engine in a trio is reachable",
@@ -260,15 +262,15 @@ check("...and the dim text rule with them", "tabsig_l" in _css)
 check("...with no unescaped braces left behind",
       "{{" not in _css and "}}" not in _css)
 check("it is greyed with disabled=, not hidden",
-      "disabled=not ready" in sw, sw[-200:])
+      "disabled=not cand_ready" in sw, sw[-200:])
 # THE LABEL NO LONGER VARIES — it is always the running engine — so
 # only the REASON has three branches now. A check counting the old
 # two-value assignment would have been green about a line that no
 # longer exists.
 check("every path sets a reason, so a dead link always explains itself",
       sw.count("why = ") == 3, sw.count("why = "))
-check("...and the label is engine_status on every path",
-      sw.count("engine_status(eng)") == 1, sw.count("engine_status(eng)"))
+check("...and the buttons are named by the engine's own short word",
+      sw.count("cand.short") >= 2, sw.count("cand.short"))
 
 # §0 RULE 2 — the tab must not know a vendor.
 for vendor in ("gemini", "edge", "speechify", "groq", "hume", "anthropic",

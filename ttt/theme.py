@@ -1376,8 +1376,32 @@ def css(scheme: str = "amber", font: str = "mono",
        inside the flex row, NOT a spacer column — a column would stack
        on a narrow screen and drop the version onto its own line, which
        is the fault this whole row was rebuilt to escape. */
+    /* THE TOP BAR: the page name top left, the admin panel top right
+       (Marko, 7.9.2026). Fixed to the viewport; the bar itself lets
+       clicks through, its two words do not. */
+    .mahatop {{
+      position: fixed; top: 8px; left: 12px; right: 12px; z-index: 1000;
+      display: flex; justify-content: space-between; align-items: baseline;
+      pointer-events: none;
+      font-family: var(--mono); font-size: 0.76rem; letter-spacing: 0.10em;
+      color: var(--amber);
+    }}
+    .mahatop_l {{ opacity: 0.9; }}
+    .mahatop_r {{ pointer-events: auto; color: var(--amber) !important;
+      text-decoration: underline; text-underline-offset: 3px; }}
+    /* The engine in force: a marked word, orange, no underline. */
+    [class*="st-key-boxlinks_foot"] .tabsig_on {{
+      text-align: left !important; margin: 0 !important; padding: 0 !important;
+      white-space: nowrap; color: var(--amber) !important; opacity: 1 !important;
+      text-decoration: none !important;
+    }}
+    /* LOG OUT HARD RIGHT, the version after it (Marko, 7.9.2026: "log out at
+       the bottom right"). margin-left:auto on the log out's own container. */
+    [class*="st-key-boxlinks_foot"] [class*="st-key-foot_logout"] {{
+      margin-left: auto !important;
+    }}
     [class*="st-key-boxlinks_foot"] .tabsig_v {{
-      margin: 0 0 0 auto !important;
+      margin: 0 0 0 0.6rem !important;
       padding: 0 !important;
       text-align: right !important;
       white-space: nowrap;
@@ -1386,7 +1410,7 @@ def css(scheme: str = "amber", font: str = "mono",
       text-decoration: none !important;
     }}
     [class*="st-key-boxlinks_foot"] div[data-testid="stElementContainer"]:last-child {{
-      margin-left: auto !important;
+      margin-left: 0 !important;
     }}
     [class*="st-key-boxlinks_foot"] .tabsig_l {{
       text-align: left !important;

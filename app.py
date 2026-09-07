@@ -4305,23 +4305,37 @@ def _foot_line(name, tier, who, eng):
             _revoice()
         return go
 
+    # THE TOP BAR AND THE FOOT (Marko, 7.9.2026): "admin panel at the top of
+    # the page, upper right corner; log out at the bottom right; Edge,
+    # Google, Marko API aligned with the bottom edge; the page name at the
+    # top left; free removed." Fixed to the viewport, so the DOM place of
+    # this markdown does not matter and nothing stacks on a phone.
+    is_admin = (st.session_state.get("_via_portal")
+                and st.session_state.get("_view_tier") == "admin")
+    st.markdown('<div class="mahatop"><span class="mahatop_l">%s</span>%s</div>' % (
+        html.escape(name or ""),
+        ('<a class="mahatop_r" href="/portal/admin" target="_blank">admin panel</a>' if is_admin else "")),
+        unsafe_allow_html=True)
+
     with st.container(key="boxlinks_foot"):
-        st.markdown(_dim(lead), unsafe_allow_html=True)
         for cand in family:
             cand_ready = all(
                 provider_usable(PROVIDERS.get(pid))
                 for pid in cand.provider_ids if PROVIDERS.get(pid) is not None)
             on = bool(eng) and cand.id == eng.id
-            st.button(("● " if on else "") + cand.short, key="eng_pick_" + cand.id,
+            if on:
+                # THE ONE IN FORCE IS A WORD, NOT A DEAD BUTTON. A greyed
+                # button read as "not this one" and the underlined
+                # neighbour as "this one": his screenshot said Google while
+                # Edge was speaking. Orange, marked, no underline: the
+                # answer; underlined: the actions.
+                st.markdown('<div class="tabsig tabsig_on">● %s</div>' % html.escape(cand.short),
+                            unsafe_allow_html=True)
+                continue
+            st.button(cand.short, key="eng_pick_" + cand.id,
                       help=(cand.short if cand_ready else (t("eng_not_ready") % cand.label)),
-                      disabled=(not cand_ready) or on,
-                      on_click=_pick(cand) if (cand_ready and not on) else None)
-        # THE ADMIN PANEL, for the admin who came through the door (Marko,
-        # 7.9.2026: "I need a link in the app"). /portal/admin is on the
-        # same host when the app is behind ttt-lll.pages.dev.
-        if st.session_state.get("_via_portal") and st.session_state.get("_view_tier") == "admin":
-            st.markdown('<a class="tabsig tabsig_l" href="/portal/admin" target="_blank">admin panel</a>',
-                        unsafe_allow_html=True)
+                      disabled=not cand_ready,
+                      on_click=_pick(cand) if cand_ready else None)
         st.button(t("log_out_link"), key="foot_logout",
                   help=t("log_out_link"), on_click=log_out)
         # THE VERSION, HARD RIGHT. Baba, 6.9.2026: "give me the version
