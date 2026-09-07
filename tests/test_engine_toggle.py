@@ -147,7 +147,7 @@ check("the engine buttons are ON THE PAGE, by key (two: the third is the word in
 btn = [b for b in at.button if b.key == "eng_pick_google"]
 # THE ENGINE IN FORCE IS THE MARKED WORD (7.9.2026), read off the markdown;
 # the buttons are the OTHER engines.
-word = " ".join(m.value for m in at.markdown if "tabsig_on" in m.value)
+word = " ".join(m.value for m in at.markdown if 'class="tabsig tabsig_on"' in m.value)
 if btn:
     b = btn[0]
     # A STATUS LINE. Baba, 6.9.2026: "I just want to be edge or Google.
@@ -566,7 +566,7 @@ sig = sigtext(a)
 # THE ENGINE IN FORCE IS A MARKED WORD NOW (7.9.2026), not a button: read it off the markdown.
 class _Word:
     def __init__(self, v): self.label = v
-_flip = _Word(" ".join(m.value for m in a.markdown if "tabsig_on" in m.value))
+_flip = _Word(" ".join(m.value for m in a.markdown if 'class="tabsig tabsig_on"' in m.value))
 # THE TAB NAME AND THE TIER ARE ON THE LINE. This is the whole of what
 # he asked for — "you need to type the name of the tab... then after
 # that you need to write Google or Edge" — and nothing asserted it, so
