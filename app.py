@@ -2502,6 +2502,11 @@ if not KEYS:
 # them, so hand them over now. Anything asking the registry for the "llm"
 # or "stt" capability depends on this line having run.
 PROVIDERS.set_groq_keys(KEYS)
+# MARKO API: the key made in the admin panel of his machine's portal, in secrets.
+try:
+    PROVIDERS.set_marko(st.secrets.get("MARKO_API_KEY", ""), st.secrets.get("MARKO_API_URL", ""))
+except Exception:                                            # noqa: BLE001
+    pass
 
 # THE SAME FOR GOOGLE, and without this line the Google engine is a pill
 # that can never light. google_keys() existed and read the secret; NOTHING
@@ -4276,10 +4281,36 @@ def _foot_line(name, tier, who, eng):
     # another, and the CSS turns THAT container's vertical block into a
     # flex row. A vertical block has no breakpoint to stack at, so it
     # cannot come apart on a narrow screen.
+    # THREE BUTTONS, NOT A TOGGLE. Marko, 7.9.2026: "at the bottom of the
+    # page, don't make a toggle button, just make three buttons to switch
+    # between engines: Edge, Google, and Marko API." One button per engine
+    # in the family, the one he is on marked, the ones whose providers are
+    # not ready grey. A press does exactly what the flip did.
+    def _pick(engine):
+        def go():
+            st.session_state.update(EN.route_settings(engine))
+            st.session_state[EN.SETTING_KEY] = engine.id
+            st.session_state.pop("_engine_check", None)
+            _revoice()
+        return go
+
     with st.container(key="boxlinks_foot"):
         st.markdown(_dim(lead), unsafe_allow_html=True)
-        st.button(engine_status(eng), key="eng_flip", help=why,
-                  disabled=not ready, on_click=_flip if ready else None)
+        for cand in family:
+            cand_ready = all(
+                provider_usable(PROVIDERS.get(pid))
+                for pid in cand.provider_ids if PROVIDERS.get(pid) is not None)
+            on = bool(eng) and cand.id == eng.id
+            st.button(("● " if on else "") + cand.short, key="eng_pick_" + cand.id,
+                      help=(cand.short if cand_ready else (t("eng_not_ready") % cand.label)),
+                      disabled=(not cand_ready) or on,
+                      on_click=_pick(cand) if (cand_ready and not on) else None)
+        # THE ADMIN PANEL, for the admin who came through the door (Marko,
+        # 7.9.2026: "I need a link in the app"). /portal/admin is on the
+        # same host when the app is behind ttt-lll.pages.dev.
+        if st.session_state.get("_via_portal") and st.session_state.get("_view_tier") == "admin":
+            st.markdown('<a class="tabsig tabsig_l" href="/portal/admin" target="_blank">admin panel</a>',
+                        unsafe_allow_html=True)
         st.button(t("log_out_link"), key="foot_logout",
                   help=t("log_out_link"), on_click=log_out)
         # THE VERSION, HARD RIGHT. Baba, 6.9.2026: "give me the version

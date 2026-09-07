@@ -138,6 +138,14 @@ ENGINES = [
            note="one key, all three jobs", tier="free", short="Google"),
 ]
 
+# MARKO API (7.9.2026): his own machine's engines, through the API any app can
+# call (ttt/providers/markoapi.py). In the free family, so the foot of the page
+# offers Edge, Google and Marko API side by side; the button is grey until the
+# key (MARKO_API_KEY in secrets) is there.
+ENGINES.append(Engine("marko", "Marko API (Whisper / Piper on my machine)",
+                      {"stt": "markoapi", "tts": "markoapi", "llm": "groq"},
+                      note="my own machine, through its API", tier="free", short="Marko API"))
+
 # THE OFFLINE TIER exists only where its engines are installed (the Oracle
 # machine, 7.9.2026): Whisper and Piper on the machine itself, no key and no
 # network for the ears and the mouth; the text work still goes to Groq.
