@@ -160,7 +160,7 @@ if _LOCAL_INSTALLED:
     # offline was in force, and hid offline when Edge was.
     ENGINES.append(Engine("offline", "Whisper / Piper, on this machine",
                           {"stt": "local", "tts": "local", "llm": "groq"},
-                          note="offline ears and mouth", tier="free"))
+                          note="offline ears and mouth", tier="free", short="Machine"))
 
 BY_ID = {e.id: e for e in ENGINES}
 # The default engine can be named by the machine (TTT_DEFAULT_ENGINE=offline
