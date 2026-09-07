@@ -2401,30 +2401,8 @@ if not check_password():
 USER = st.session_state.get("_user") or "shared"
 
 
-def log_out():
-    """Hand the phone over.
-
-    Three things, and the ORDER matters. The script is told first, while
-    the session still knows which token to revoke; then the session is
-    emptied; then the browser's copy is queued for removal — queued
-    AFTER the clear, or the clear would throw the queue away with
-    everything else.
-
-    Telling the script is best effort. If it cannot be reached the
-    browser's copy still goes, so the person is out on this phone either
-    way — the revocation is merely delayed, not cancelled.
-    """
-    who = st.session_state.get("_user", "")
-    tok = st.session_state.get("_remember_token", "")
-    if who and tok:
-        # Nothing to tell: the token lives in this browser and logging
-        # out already removes it.
-        pass
-
-    st.session_state.clear()
-    queue_ls(removes=[AUTH_LS_KEY])
-    st.session_state["_authed"] = False
-    st.session_state["_logged_out"] = True
+# (the accounts-era log_out — "hand the phone over", the remember token — stood here
+# and was shadowed by the one below since v186; gone at the gate of 7.9.2026, G4)
 
 
 def must_change_notice():
@@ -4075,57 +4053,8 @@ def stitch_reading(count: int, get_block, on_error=None):
         ttt_audio.cleanup(*tmp)
 
 
-def engine_status(eng) -> str:
-    """"Google 2/21" — which engine, and which of its keys is in use.
-
-    Baba, 6.9.2026: "in status line always specifies which engine is
-    used, what API key by number. So if I have five API keys, you can
-    write Google API two/five, so I see what's going on in status."
-
-    A POSITION, NEVER A FRAGMENT OF A KEY. keyring.md §10d: on Gemini
-    the first six characters are identical on every key, so a masked
-    prefix identifies nothing and leaks something. "2/21" identifies
-    everything and is safe in a screenshot.
-
-    WHICH PROVIDER'S KEY. The one doing the SPEECH if it needs a key,
-    because that is what the engine name beside it refers to; otherwise
-    the first of its providers that does. On the free engine that means
-    Edge is keyless and the number belongs to the transcriber — so the
-    line reads "Edge 2/5" and the 5 is the app's own Groq keys. The
-    vendor is not named, per §0 rule 2; the ENGINE is, which is what he
-    reads it as.
-
-    A DASH UNTIL SOMETHING HAS ACTUALLY BEEN ASKED. Showing 1/21 before
-    any call would be a claim about a key that has never been tried, and
-    the whole point of this line is to say what is going on rather than
-    what probably will.
-    """
-    if eng is None:
-        return t("eng_mixed")
-    # THE VOICE'S OWN KEY, OR NO NUMBER AT ALL.
-    #
-    # Baba, 6.9.2026: "why edge said /5". He is right, and it was wrong
-    # rather than merely ugly: EDGE IS KEYLESS. It needs no key to
-    # speak, so "Edge –/5" reported GROQ's transcription keys beside the
-    # name of the VOICE — a number about the wrong thing, attached to
-    # the word that names the speaker.
-    #
-    # This used to walk stt and llm when tts had no key, which is how it
-    # got there. Now the line names the engine and the key THAT ENGINE'S
-    # VOICE is using, and when the voice needs none it says only the
-    # engine.
-    prov = PROVIDERS.get(eng.routes.get("tts", ""))
-    if prov is None or not getattr(prov, "needs_key", False):
-        return eng.short
-    total = len(getattr(prov, "keys", None) or [])
-    if not total:
-        # A KEYED PROVIDER WITH NO KEYS is a real state and worth
-        # showing: it is why the engine will not work.
-        total = len((get_ring(prov.id) or {}).get("keys", []) or [])
-    used = int(getattr(prov, "active_key", 0) or 0)
-    if not total:
-        return "%s 0/0" % eng.short
-    return "%s %s/%d" % (eng.short, used if used else "\u2013", total)
+# (engine_status — "which key is running right now" — had no caller left after the
+# foot was rebuilt on 6.9.2026; gone at the gate of 7.9.2026, G4)
 
 
 def tab_signature(name: str):
@@ -4163,10 +4092,9 @@ def tab_signature(name: str):
     # page went on saying "Edge / Groq" for nine versions while the
     # commit message said otherwise.
     label = (eng.tier if eng else t("eng_mixed"))
-    # AND WHICH KEY. Its own segment rather than folded into the tier,
-    # because the tier answers "what am I paying for" and this answers
-    # "what is running right now".
-    keyline = engine_status(eng)
+    # (the key line, "which key is running right now", was computed here
+    # and drawn nowhere since the foot was rebuilt on 6.9.2026; gone at
+    # the gate of 7.9.2026, G4)
     res = st.session_state.get("_engine_check") or {}
     mark = ""
     # THROUGH EN.get, NOT BY STRING. A verdict recorded before the engine
@@ -4227,45 +4155,11 @@ def _foot_line(name, tier, who, eng):
     the buttons read as links — dim, underlined, following the reader's
     text size. One visual language, no second stylesheet.
     """
-    here = eng.id if eng else ""
     family = EN.for_tier(eng.tier) if eng else EN.for_tier("free")
-    nxt = EN.next_in(family, here)
-    ready = bool(nxt) and all(
-        provider_usable(PROVIDERS.get(pid))
-        for pid in (nxt.provider_ids if nxt else ())
-        if PROVIDERS.get(pid) is not None)
-
-    if nxt is None:
-        why = t("eng_only_one")
-    elif not ready:
-        why = t("eng_not_ready") % nxt.label
-    else:
-        why = t("eng_switch_to") % nxt.short
-
-    def _flip():
-        st.session_state.update(EN.route_settings(nxt))
-        st.session_state[EN.SETTING_KEY] = nxt.id
-        st.session_state.pop("_engine_check", None)
-        # AND THE READING STARTS AGAIN, IN THE NEW ENGINE.
-        #
-        # Baba, 6.9.2026: "If I'm generating audio in the read tab in
-        # Edge, and I press Google in that moment, all my ex work is
-        # deleted of audio files and I'm in the new mode. Then I can
-        # press play again and generation comes immediately."
-        #
-        # _revoice has done exactly this for a VOICE change since
-        # 25.8.2026 — cache dropped, index to zero, stamps cleared —
-        # and the engine switch did NONE of it. So the cached Edge
-        # audio stayed in the job and the new engine carried on from
-        # the middle of it: half a reading in one voice, half in
-        # another, and a save that stitched the two together.
-        #
-        # An engine change is a bigger change than a voice change, so
-        # it cannot do less. Same function, so the two cannot drift.
-        _revoice()
-
-    def _dim(text):
-        return ('<div class="tabsig tabsig_l">%s</div>' % html.escape(text))
+    # (the one-press flip — next_in, "why" the next is grey, _flip — lived
+    # here until 7.9.2026, when Marko asked for three buttons; the buttons
+    # are below, the flip is gone at the gate, G4. _revoice is what a
+    # press does after the route changes.)
 
     # LEFT, ONE LINE, ONE BASELINE.
     #
@@ -4286,8 +4180,9 @@ def _foot_line(name, tier, who, eng):
     #
     # The name of the person went with it. It was the fourth thing on a
     # line he asked to be short, and "who am I" is answered by the fact
-    # that his own text is on the screen.
-    lead = "  ·  ".join(x for x in (name, tier) if x) + "  ·"
+    # that his own text is on the screen. (The lead sentence itself moved
+    # to the top bar on 7.9.2026 — the page name top left — and its line
+    # here is gone at the gate, G4.)
 
     # NO COLUMNS. This is the third attempt at this row and the first
     # two failed the same way, which is the tell.
