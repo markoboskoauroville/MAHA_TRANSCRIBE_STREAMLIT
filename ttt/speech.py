@@ -114,6 +114,25 @@ def join_audio(paths, out_path: str = None) -> str:
     """One file out of many. Re-encodes rather than stream-copying:
     concatenating MP3 frames directly leaves gaps and confuses seeking in
     some browsers, which would defeat the whole point."""
+    # A MISSING PART MUST NOT BECOME A SHORTER FILE.
+    #
+    # FOUND BY A STRESS TEST, 7.9.2026: handed three real parts and one
+    # path that does not exist, ffmpeg's concat demuxer skipped the
+    # missing one and produced a perfectly valid MP3 — THREE SENTENCES
+    # WHERE FIVE WERE ASKED FOR, with no error anywhere. That is the
+    # worst shape a save can take: a file that opens, plays, and is
+    # quietly incomplete. Nobody would know which sentence was gone.
+    #
+    # So every part is checked before ffmpeg is asked, and a gap is a
+    # refusal with the position named. The caller already knows how to
+    # show a reason (v264); it just never had one to show.
+    missing = [i for i, p in enumerate(paths or [], 1)
+               if not p or not os.path.exists(p) or os.path.getsize(p) == 0]
+    if missing:
+        raise RuntimeError(
+            "part %s of %d is missing, so the whole file would be "
+            "incomplete" % (", ".join(str(i) for i in missing), len(paths)))
+
     if not paths:
         raise ValueError("nothing to join")
     out_path = out_path or tempfile.mktemp(suffix=".mp3")

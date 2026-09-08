@@ -63,6 +63,8 @@ assume a shape.
 """
 
 import json
+import time
+import time
 import re
 
 # ---- the five words --------------------------------------------------
@@ -493,6 +495,11 @@ TTS_PER_DAY = 10
 # with room to spare, and the timeout is generous again because a slow
 # key no longer blocks a fast one.
 RACE_WIDTH = 8
+# HOW LONG TO WAIT BEFORE ONE MORE FULL PASS when every key refused.
+# Gemini allows three TTS requests per minute per key, so a burst of
+# sentences can spend the fast accounts and leave the ring looking dead
+# when it is merely busy.
+RETRY_PAUSE = 20
 # HOW LONG A WHOLE BATCH MAY TAKE BEFORE IT IS ABANDONED. A working key
 # answers in about two seconds; twelve leaves room for a slow-but-real
 # one without waiting out the hung ones.
@@ -648,7 +655,7 @@ class Google(Provider):
         self.ring = ring
         self.active_key = 0
 
-    def _rotate(self, attempt):
+    def _rotate(self, attempt, retrying=False):
         """Same contract as Groq._rotate: run `attempt(key)` down the ring
         until one works, and stop early on an error no key can fix."""
         if self.ring is not None:
@@ -785,6 +792,26 @@ class Google(Provider):
                         % BATCH_DEADLINE)
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
+        # EVERY KEY REFUSED — BUT THAT IS OFTEN A MINUTE, NOT A DAY.
+        #
+        # FOUND BY A STRESS TEST, 7.9.2026: five sentences generated
+        # back to back. Four succeeded in about six seconds each; the
+        # fifth failed with "all keys failed" — because Gemini allows
+        # THREE TTS REQUESTS PER MINUTE PER KEY, so the handful of fast
+        # accounts had just spent theirs on parts one to four.
+        #
+        # A reading of five sentences that produces four is worse than
+        # one that is slow: the fifth part never exists, so the DOWNLOAD
+        # cannot be stitched at all. One missing sentence loses the whole
+        # file.
+        #
+        # So: one more full pass after a short wait. Per-minute limits
+        # clear in well under a minute, and the alternative is a reading
+        # with a hole in it. Bounded at one retry — if the ring is
+        # genuinely empty, this must still fail rather than spin.
+        if not retrying:
+            time.sleep(RETRY_PAUSE)
+            return self._rotate(attempt, retrying=True)
         return None, "All Google keys failed. Last: %s" % last
 
     # ---- key testing -------------------------------------------------
