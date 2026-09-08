@@ -8780,7 +8780,7 @@ elif active == "talk":
         if st.session_state.get("_rd_whole"):
             st.download_button(t("vr_save_all"),
                                data=st.session_state["_rd_whole"],
-                               file_name="reading.mp3", mime="audio/mpeg",
+                               file_name="reading.m4a", mime="audio/mp4",
                                key="rd_dl_all", use_container_width=True)
 
         # "New text" is gone. Baba: "we do not need new text — there is
