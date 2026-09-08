@@ -917,7 +917,18 @@ class Google(Provider):
                 continue
             pcm = _audio_of(data)
             if pcm is None:
-                last = "Google answered without audio."
+                # A 200 WITH NO AUDIO IS NOT A MYSTERY — Google says why,
+                # and this used to throw the reason away.
+                #
+                # Seen live on 8.9.2026: "That voice would not read this:
+                # Google answered without audio." That sentence names the
+                # symptom and nothing else, so there is no next step. The
+                # cause is in finishReason (SAFETY, MAX_TOKENS,
+                # RECITATION), in promptFeedback.blockReason, or in a
+                # TEXT part where audio was asked for — which is Gemini
+                # answering the prompt as a question instead of speaking
+                # it.
+                last = _no_audio_reason(data)
                 continue
             return to_wav(pcm), pcm_seconds(pcm), None
         raise RuntimeError(last or "Google produced no audio.")
@@ -976,6 +987,33 @@ class Google(Provider):
                 continue
             return _text_of(data).strip()
         raise RuntimeError(last or "Google could not answer that.")
+
+
+def _no_audio_reason(data) -> str:
+    """Why a 200 carried no audio, in words a person can act on."""
+    try:
+        cand = (data.get("candidates") or [{}])[0]
+    except Exception:                                        # noqa: BLE001
+        cand = {}
+    fin = str(cand.get("finishReason") or "")
+    block = ""
+    try:
+        block = str((data.get("promptFeedback") or {}).get("blockReason") or "")
+    except Exception:                                        # noqa: BLE001
+        pass
+    said = _text_of(data).strip()
+    if block:
+        return ("Google refused that text (%s). Try rewording it." % block)
+    if fin and fin.upper() not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+        return ("Google stopped before speaking (%s)." % fin
+                + (" It replied with words instead of audio."
+                   if said else ""))
+    if said:
+        # THE COMMONEST ONE, AND THE LEAST OBVIOUS. Ask Gemini to speak
+        # a line that reads like an instruction and it ANSWERS it.
+        return ("Google replied with text instead of audio: %.90s"
+                % said.replace("\n", " "))
+    return "Google answered with neither audio nor a reason."
 
 
 def _parts(data):
