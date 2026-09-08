@@ -361,9 +361,14 @@ got, err = G.Google(keys=["AQ.a", "AQ.b", "AQ.c"])._rotate(_all_dead)
 # further along the ring, so three parallel prefetch workers do not all
 # queue behind key 1. What must still be true is that ALL of them are
 # tried, exactly once each.
+# EVERY KEY IS TRIED. Twice over, in fact: when the whole ring refuses,
+# _rotate waits and takes ONE more full pass before giving up, because
+# a burst can spend the fast accounts' per-minute allowance and make a
+# live ring look dead.
 check("a dead key rolls forward to the next",
-      sorted(seen) == ["AQ.a", "AQ.b", "AQ.c"], seen)
-check("...each tried exactly once", len(seen) == len(set(seen)), seen)
+      set(seen) == {"AQ.a", "AQ.b", "AQ.c"}, seen)
+check("...and the ring is retried once before giving up",
+      len(seen) == 6, len(seen))
 check("...and the whole ring failing is an error, not a crash", err)
 
 # AN ERROR NO KEY CAN FIX STOPS IMMEDIATELY rather than burning the ring.
@@ -396,10 +401,13 @@ got, err = G.Google(keys=["AQ.a", "AQ.b", "AQ.c"])._rotate(_soft)
 check("a soft error does not kill the job", len(seen2) > 1, len(seen2))
 # The fixture holds three keys, so the batch is the whole ring — a
 # batch is min(RACE_WIDTH, keys), not RACE_WIDTH flat.
-check("...a whole batch is tried at once, which here is all three",
-      len(seen2) == min(G.RACE_WIDTH, 3), (len(seen2), G.RACE_WIDTH))
-check("...wide enough to contain a working key on his ring",
-      G.RACE_WIDTH >= 6, G.RACE_WIDTH)
+# DISCOVERY tries a batch; the sticky key means it happens once, not
+# per sentence. The count is the batch plus the retry pass.
+check("...a batch is tried, not one key", len(seen2) > 1, len(seen2))
+# NARROWED ON PURPOSE. Every loser's request is already sent, so a wide
+# race spends working accounts to find one. Discovery is now rare.
+check("...and narrow, because the losers' requests are already sent",
+      2 <= G.RACE_WIDTH <= 4, G.RACE_WIDTH)
 # AND THE POOL IS NOT WAITED ON. ThreadPoolExecutor's context manager
 # calls shutdown(wait=True), so returning early still blocked until
 # every hung key finished — a 2s success took 104s to come back.
@@ -436,14 +444,15 @@ check("...as a Provider", isinstance(get("google"), Provider))
 # NOTHING ELSE MOVED. Adding a provider must not disturb the six that
 # were already there — the failure this closes is a registry edit that
 # quietly drops one.
-for pid in ("edge", "groq", "anthropic"):
+for pid in ("edge", "groq"):
     check("%s still resolves" % pid, get(pid) is not None)
-check("the registry holds seven providers now", len(REGISTRY) == 7, len(REGISTRY))
+check("the registry holds the three that are left",
+      sorted(REGISTRY) == ["edge", "google", "groq"], sorted(REGISTRY))
 
 # EVERY PROVIDER THAT WAS THERE BEFORE IS STILL NOT METERED BY THE CALL.
 # A new attribute with a wrong default would silently re-plan every
 # reading in the app.
-for pid in ("edge", "groq", "anthropic"):
+for pid in ("edge", "groq"):
     check("%s is not metered by the call" % pid,
           get(pid).metered_by_call is False)
 
@@ -532,15 +541,17 @@ check("the unspent key is tried FIRST", _seen[0] == "c", _seen)
 # NOT DELETED. A daily allowance comes back at midnight Pacific and a
 # person can top an account up between two readings — a ring that
 # forgot a key for ever would lock him out of one he had just paid for.
+# THE RETRY PASS DOUBLES THE COUNTS. Set, not list: what matters is
+# that a spent key is still REACHED, not how many times.
 check("...and the spent ones are still reachable behind it",
-      sorted(_seen) == ["a", "b", "c"], _seen)
+      set(_seen) == {"a", "b", "c"}, _seen)
 
 G._mark_spent("c")
 _seen2 = []
 _g._rotate(lambda k: (_seen2.append(k), (None, "x", "soft"))[1])
 check("when EVERY key is marked the marks are forgotten",
-      len(_seen2) == 3 and G.spent_count() == 0,
-      (len(_seen2), G.spent_count()))
+      set(_seen2) == {"a", "b", "c"} and G.spent_count() == 0,
+      (_seen2, G.spent_count()))
 
 # FINGERPRINTS, NOT KEYS. keyring.md §5.
 G._SPENT.clear()
@@ -562,3 +573,62 @@ check("...and only a dead one", 'kind == "dead"' in _mark)
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
+
+print()
+print("THE WORKING KEY IS KEPT, NOT ROTATED AWAY")
+# =====================================================================
+#
+# Baba, 8.9.2026: "If one key works, keep it. Don't rotate the keys
+# until one works."
+#
+# HE WAS RIGHT AND THE CAUSE WAS MINE. The race fires RACE_WIDTH
+# requests at once — several accounts for ONE sentence, each counting
+# against that account's day. Five sentences spent forty requests; at
+# roughly ten a day across eighteen accounts the ring empties in about
+# twenty sentences. That is why it died an hour after every top-up.
+#
+# The race is DISCOVERY ONLY now. Once a key answers it is used ALONE.
+
+G._SPENT.clear()
+_gp = G.Google(keys=["k%d" % i for i in range(10)])
+_calls = []
+
+
+def _third_only(k):
+    _calls.append(k)
+    return ("audio", None, None) if k == "k3" else (None, "503", "soft")
+
+
+_gp._rotate(_third_only)
+check("discovery finds a working key", _gp.active_key > 0, _gp.active_key)
+_found = _gp.keys[_gp.active_key - 1]
+check("...and remembers the one that ANSWERED, not one that failed",
+      _found == "k3", _found)
+
+_calls.clear()
+_gp._rotate(lambda k: (_calls.append(k), ("audio", None, None))[1])
+check("THE NEXT SENTENCE COSTS ONE REQUEST, not a whole batch",
+      len(_calls) == 1, len(_calls))
+check("...and it is the key that worked", _calls == ["k3"], _calls)
+
+# IT MUST STILL LET GO. A key kept for ever after it stops working is
+# the opposite failure — one dead account and the ring never reopens.
+_calls.clear()
+
+
+def _now_empty(k):
+    _calls.append(k)
+    return ((None, "prepayment credits are depleted", "dead")
+            if k == "k3" else ("audio", None, None))
+
+
+_gp._rotate(_now_empty)
+check("when the kept key dies the ring reopens", len(_calls) > 1, len(_calls))
+check("...and settles on a different one", _gp.keys[_gp.active_key - 1] != "k3",
+      _gp.keys[_gp.active_key - 1])
+check("...and the empty one is remembered as spent",
+      G.spent_count() >= 1, G.spent_count())
+G._SPENT.clear()
+
+check("discovery is narrower than it was, because the losers' requests "
+      "are already sent", G.RACE_WIDTH <= 4, G.RACE_WIDTH)

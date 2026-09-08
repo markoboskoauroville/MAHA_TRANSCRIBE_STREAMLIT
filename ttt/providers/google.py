@@ -494,7 +494,12 @@ TTS_PER_DAY = 10
 # Four covers the measured pattern — two slow, one spent, two good —
 # with room to spare, and the timeout is generous again because a slow
 # key no longer blocks a fast one.
-RACE_WIDTH = 8
+# NARROWED FROM EIGHT. Discovery races several keys and the losers'
+# requests are ALREADY SENT — so a working account among them spends a
+# request it never got credit for. Now that discovery happens once and
+# not per sentence, four is enough to find a live key quickly and costs
+# half as much when it does.
+RACE_WIDTH = 4
 # HOW LONG TO WAIT BEFORE ONE MORE FULL PASS when every key refused.
 # Gemini allows three TTS requests per minute per key, so a burst of
 # sentences can spend the fast accounts and leave the ring looking dead
@@ -737,6 +742,38 @@ class Google(Provider):
         # never which key to pick, it was waiting for the wrong one.
         from concurrent.futures import ThreadPoolExecutor, as_completed
         last = "no keys"
+
+        # THE KEY THAT WORKED LAST TIME, ALONE, FIRST.
+        #
+        # Baba, 8.9.2026: "If one key works, keep it. Don't rotate the
+        # keys until one works."
+        #
+        # HE IS RIGHT, AND THE REASON IS WORSE THAN GOOGLE BEING CLEVER.
+        # The race below fires RACE_WIDTH requests at once — eight
+        # different accounts for ONE sentence. Every one of those counts
+        # against that account's day. Five sentences spent forty
+        # requests; at roughly ten a day across eighteen accounts, the
+        # whole ring empties in about twenty sentences. That is why it
+        # died an hour after every top-up, and it was my doing.
+        #
+        # So the race is now DISCOVERY ONLY. Once a key answers it is
+        # remembered and used ALONE — one request per sentence, the same
+        # as any ordinary client — and the ring is only reopened when
+        # that key stops working.
+        if not retrying and 0 < self.active_key <= len(self.keys):
+            stuck = self.keys[self.active_key - 1]
+            if _fp(stuck) not in _SPENT:
+                result, err, kind = attempt(stuck)
+                if not err:
+                    return result, None
+                # IT STOPPED WORKING. Say why it is being dropped, then
+                # fall through to find another — this is the only path
+                # that reopens the ring.
+                last = err
+                if kind == "dead" and any(m in str(err).lower()
+                                          for m in MONEY_MARKS):
+                    _mark_spent(stuck)
+                self.active_key = 0
         for start in range(0, len(order), RACE_WIDTH):
             batch = order[start:start + RACE_WIDTH]
             if not batch:
