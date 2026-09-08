@@ -1342,6 +1342,28 @@ def css(scheme: str = "amber", font: str = "mono",
        what put the links on one line and the words on the next. The
        footer is a plain container whose VERTICAL block is turned into a
        row; a vertical block has no breakpoint to come apart at. */
+    /* SAVE LOOKS READY ONLY WHEN IT IS.
+       Baba, 8.9.2026: "Save button should be active when file is ready
+       to download. Simple. They're always grayed out."
+       The reading's save is a download_button that is disabled until
+       every part exists and the file has been stitched. Streamlit's own
+       disabled styling is faint enough that the two states looked the
+       same, so the difference is made explicit: AMBER when there is a
+       file to take, dim and unmistakably dead when there is not. */
+    [class*="st-key-rd_dl_all"] button:not(:disabled) {{
+      color: var(--amber) !important;
+      border-color: var(--amber) !important;
+      opacity: 1 !important;
+    }}
+    [class*="st-key-rd_dl_all"] button:not(:disabled) p {{
+      color: var(--amber) !important;
+    }}
+    [class*="st-key-rd_dl_all"] button:disabled,
+    [class*="st-key-rd_dl_all"] button:disabled p {{
+      opacity: 0.38 !important;
+      border-color: var(--edge) !important;
+    }}
+
     [class*="st-key-boxlinks_foot"] div[data-testid="stVerticalBlock"] {{
       flex-direction: row !important;
       flex-wrap: nowrap !important;

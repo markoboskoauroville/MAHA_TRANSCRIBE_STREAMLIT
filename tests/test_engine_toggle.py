@@ -1092,6 +1092,63 @@ check("...and says how many parts are still missing",
 check("a failure still says WHY, not just that it failed",
       't("read_failed")' in _rd and "_rd_err" in _rd)
 
+
+print()
+print("A CONTROL LOOKS LIKE WHAT IT IS")
+# =====================================================================
+#
+# Baba, 8.9.2026: "Play button should be active when I'm able to press
+# it. Save button should be active when file is ready to download.
+# Simple. They're always grayed out."
+#
+# THE DECK'S ROW WAS DIMMED AS A WHOLE — `#row{opacity:.38}` — and A
+# CHILD'S OPACITY CANNOT UNDO A PARENT'S. So `#bPlay{opacity:1}`, which
+# had been sitting twenty lines below it since v255, NEVER DID ANYTHING.
+# The one live control was painted at 38% exactly like the four dead
+# ones beside it.
+#
+# Measured in Chromium, which is the only way this was ever going to be
+# found: every cell reported opacity 1 and the same pale grey, because
+# that is how a rule with no effect looks from the inside.
+#
+#     before   play 0.38 grey   stop/back/next/save 0.38 grey
+#     after    play 1.00 AMBER  stop/back/next/save 0.38 grey
+
+_dk = open(os.path.join(ROOT, "waveform_frontend", "index.html")).read()
+check("the row is no longer dimmed as a whole",
+      "body.idle #row{opacity" not in _dk,
+      [l for l in _dk.splitlines() if "#row{opacity" in l])
+check("each dead cell is dimmed on its own",
+      "body.idle #row > .key:not(#bPlay){opacity:.38}" in _dk)
+check("...and play is excluded, because a later rule cannot brighten "
+      "what this one dimmed", ":not(#bPlay)" in _dk)
+check("play is amber while idle, not merely brighter",
+      "color:var(--amber)" in _dk.split("body.idle #bPlay{")[1][:120])
+check("...and still the only cell that can be pressed",
+      "pointer-events:auto" in _dk.split("body.idle #bPlay{")[1][:120])
+for dead in ("bStop", "bBack", "bFwd", "bSave"):
+    check("%s stays dead while there is nothing to play" % dead,
+          "body.idle #%s{pointer-events:none}" % dead in _dk
+          or "body.idle #row > *{pointer-events:none}" in _dk)
+
+# THE SAVE BUTTON, WHICH IS STREAMLIT'S AND NOT THE DECK'S.
+from ttt import theme as _th                      # noqa: E402
+_css = _th.css()
+check("the reading's save has a style of its own", "st-key-rd_dl_all" in _css)
+# READ THE RENDERED CSS, and check the DECLARATION and not just the
+# selector. Renaming the selector left this green: it looked for a
+# string I had renamed in both places at once, which proves nothing.
+_ready_rule = _css.split('st-key-rd_dl_all"] button:not(:disabled)')
+check("...amber when there IS a file to take",
+      len(_ready_rule) > 1 and "var(--amber)" in _ready_rule[1][:200],
+      _ready_rule[1][:80] if len(_ready_rule) > 1 else "no rule")
+_dim_rule = _css.split('st-key-rd_dl_all"] button:disabled')
+check("...and unmistakably dim when there is not",
+      len(_dim_rule) > 1 and "0.38" in _dim_rule[-1][:200],
+      _dim_rule[-1][:80] if len(_dim_rule) > 1 else "no rule")
+check("the rules reach the RENDERED stylesheet, not just the source",
+      "{{" not in _css and "}}" not in _css)
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

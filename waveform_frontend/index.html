@@ -76,7 +76,21 @@
   #msg{margin-top:6px;min-height:15px;font-size:12px;color:var(--dim)}
 
   body.idle #wave{opacity:.38}
-  body.idle #row{opacity:.38}
+  /* DIM EACH DEAD CELL, NOT THE WHOLE ROW.
+     Baba, 8.9.2026: "Play button should be active when I'm able to
+     press it... They're always grayed out."
+     This said `#row{opacity:.38}` — and A CHILD'S opacity CANNOT UNDO
+     A PARENT'S. Everything inside was painted at 38%, so the
+     `#bPlay{opacity:1}` twenty lines down never did anything at all:
+     the one live control looked exactly as dead as the four beside it.
+     Measured in Chromium — every cell reported opacity 1 and the same
+     pale grey, which is how a rule that has no effect looks from the
+     inside.
+     Dimming the cells individually lets the live one stay bright. */
+  /* NOT #bPlay — it is the one cell that IS pressable while idle, and
+     a later rule cannot brighten it once this one has dimmed it. Naming
+     the exclusion here is the only place it works. */
+  body.idle #row > .key:not(#bPlay){opacity:.38}
   /* PLAY STAYS LIVE WHEN IDLE. Baba: "users should click play right on
      the deck itself, this button is redundant." So the separate go
      button is gone and this cell is what starts the reading. The other
@@ -103,7 +117,11 @@
      always reported; Python decides, and by the time it runs the blur
      has committed the text. With genuinely no text it answers with a
      sentence, which is what a person can act on — not a dead cell. */
-  body.idle #bPlay{pointer-events:auto;opacity:1;cursor:pointer}
+  /* AND THE LIVE ONE IS AMBER, not merely brighter. His rule from
+     6.9: colour says what is active. A control that is pressable and
+     one that is not must not be the same grey. */
+  body.idle #bPlay{pointer-events:auto;opacity:1;cursor:pointer;
+                   color:var(--amber);border-color:var(--amber)}
   /* Nothing to save until something has been made. Dead rather than
      hidden: the row must keep its four cells (§57), and a control that
      appears and disappears moves everything under it. */

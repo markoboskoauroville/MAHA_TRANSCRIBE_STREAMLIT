@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v269"
+APP_VERSION = "v270"
 
 # IT HAD SAID v237 FOR TWENTY-THREE VERSIONS, AND THAT WAS NOT COSMETIC.
 #
