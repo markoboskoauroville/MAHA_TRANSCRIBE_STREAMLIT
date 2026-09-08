@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v268"
+APP_VERSION = "v269"
 
 # IT HAD SAID v237 FOR TWENTY-THREE VERSIONS, AND THAT WAS NOT COSMETIC.
 #
@@ -5509,6 +5509,10 @@ def _revoice():
         # person is listening to any more, so it must not be what the
         # download button hands them.
         st.session_state.pop("_rd_whole", None)
+        # AND THE STAMP THAT SAYS WHICH READING IT BELONGED TO. Without
+        # this, the auto-stitch below sees a matching stamp and hands
+        # back the file made in the OLD voice.
+        st.session_state.pop("_rd_whole_for", None)
         st.session_state.pop("_talk_player_seen", None)
         st.session_state.pop("_talk_start_seen", None)
         st.session_state["_talk_revoice"] = True
@@ -8785,26 +8789,52 @@ elif active == "talk":
             st.session_state.pop("_rd_err", None)
             return stitch_reading(len(parts), _make, on_error=_why)
 
+        # THE STITCHED FILE IS MADE AS SOON AS THE PARTS EXIST.
+        #
+        # Baba, 8.9.2026: "Clicking on save button, nothing is happening.
+        # There is a bug in the button. You just need to do it
+        # automatically. After you create the files for reading, create
+        # file stitched at the same time, and then save button — there is
+        # no action, it just downloads."
+        #
+        # He is right about the shape. There were TWO controls: a button
+        # that did the work, and a download that only appeared after it.
+        # So the first press looked like nothing happening — it was
+        # stitching, with no spinner, and if any part failed it printed a
+        # sentence and left no file. Two presses for one idea, and the
+        # first one silent.
+        #
+        # Now: when every part is cached the file is built ONCE, without
+        # being asked, and save is only ever a download.
         _rd_left = len([i for i in range(len(parts))
                         if i not in job["cache"]])
-        if st.button(t("vr_stitch") if not _rd_left
-                     else t("vr_stitch_wait") % _rd_left,
-                     key="rd_stitch_go", use_container_width=True):
-            _rd_whole = _rd_stitch()
-            if _rd_whole:
-                st.session_state["_rd_whole"] = _rd_whole
+        # THE STAMP IS THE READING, not a flag. A different text, or the
+        # same text after a revoice, must not hand back the old file —
+        # which is exactly what a plain "already done" boolean would do.
+        _rd_stamp = (len(parts), job.get("full_text", "")[:200])
+        if not _rd_left and st.session_state.get("_rd_whole_for") != _rd_stamp:
+            with st.spinner(t("vr_stitch")):
+                _whole = _rd_stitch()
+            if _whole:
+                st.session_state["_rd_whole"] = _whole
+                st.session_state["_rd_whole_for"] = _rd_stamp
             else:
-                # THE REASON, or the sentence says nothing. stitch_reading
-                # reports through on_error; without it this printed the
-                # literal "%s" after v263 gave the string a placeholder.
+                st.session_state.pop("_rd_whole", None)
                 st.error(t("read_failed")
                          % (st.session_state.get("_rd_err")
                             or t("nothing_to_read")))
-        if st.session_state.get("_rd_whole"):
-            st.download_button(t("vr_save_all"),
-                               data=st.session_state["_rd_whole"],
-                               file_name="reading.m4a", mime="audio/mp4",
-                               key="rd_dl_all", use_container_width=True)
+
+        # ONE CONTROL, ALWAYS THERE, NEVER A SURPRISE. §1: nothing
+        # appears and nothing disappears — it is dim until there is a
+        # file, and it says what is still missing rather than going
+        # quiet.
+        _ready = bool(st.session_state.get("_rd_whole")) and not _rd_left
+        st.download_button(
+            t("vr_save_all") if _ready else t("vr_stitch_wait") % _rd_left,
+            data=st.session_state.get("_rd_whole") or b"",
+            file_name="reading.m4a", mime="audio/mp4",
+            key="rd_dl_all", use_container_width=True,
+            disabled=not _ready)
 
         # "New text" is gone. Baba: "we do not need new text — there is
         # text box." He is right: the box is always there and typing in

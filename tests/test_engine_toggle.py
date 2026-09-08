@@ -1038,6 +1038,60 @@ check("stop has its own short label", 't("wave_stop")' in CODE)
 check("...and it is not the long one", "rd_stop" not in
       CODE.split('"stop": t(')[1][:40] if '"stop": t(' in CODE else True)
 
+
+print()
+print("SAVE IS A DOWNLOAD, AND THE FILE IS MADE WITHOUT BEING ASKED")
+# =====================================================================
+#
+# Baba, 8.9.2026: "Clicking on save button, nothing is happening... You
+# just need to do it automatically. After you create the files for
+# reading, create file stitched at the same time, and then save button —
+# there is no action, it just downloads."
+#
+# There were TWO controls: a button that did the work and a download
+# that only appeared afterwards. The first press looked like nothing
+# happening — it was stitching, with no spinner — and if a part failed
+# it printed a sentence and left no file at all.
+
+# BOUNDED BY THE NEXT CONTROL, not by a comment thirty thousand
+# characters away. The first version sliced to a marker that only
+# appears much later, so the "region" was most of the tab and the
+# one-download check counted the T tab's too.
+_rd = CODE.split("_rd_left = len(")[1].split("rd_dl_all")[0] \
+      + CODE.split("rd_dl_all")[1][:200]
+check("the save region was found (%d chars)" % len(_rd),
+      300 < len(_rd) < 3000, len(_rd))
+
+# ONE CONTROL. The action button is gone; only a download remains.
+check("there is no stitch ACTION button any more",
+      'key="rd_stitch_go"' not in CODE)
+check("save is a download_button", "st.download_button(" in _rd)
+check("...and there is exactly one of them in the reader",
+      _rd.count("st.download_button(") == 1, _rd.count("st.download_button("))
+
+# IT IS BUILT WITHOUT BEING ASKED, once the parts exist.
+check("the file is stitched when no part is left",
+      "if not _rd_left and" in _rd)
+check("...and only once, guarded by which reading it is",
+      "_rd_whole_for" in _rd and "_rd_stamp" in _rd)
+# THE STAMP IS THE READING, not a boolean: a different text, or the same
+# text after a revoice, must not hand back the old file.
+check("the guard is the text and the part count, not a flag",
+      'job.get("full_text"' in _rd and "len(parts)" in _rd)
+check("...and a revoice drops it, or the old voice's file comes back",
+      'pop("_rd_whole_for"' in CODE)
+
+# NOTHING APPEARS AND NOTHING DISAPPEARS. §1 — dim until there is a
+# file, and it says what is missing rather than going quiet.
+check("the control is always rendered, never conditional",
+      'if st.session_state.get("_rd_whole"):' not in _rd)
+check("...and is disabled until the file exists",
+      "disabled=not _ready" in _rd)
+check("...and says how many parts are still missing",
+      't("vr_stitch_wait") % _rd_left' in _rd)
+check("a failure still says WHY, not just that it failed",
+      't("read_failed")' in _rd and "_rd_err" in _rd)
+
 print()
 print("%d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
