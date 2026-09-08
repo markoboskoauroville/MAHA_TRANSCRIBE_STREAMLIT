@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Bumped on every change. Also the stale-module stamp below, so the two
 # can never drift apart.
-APP_VERSION = "v261"
+APP_VERSION = "v268"
 
 # IT HAD SAID v237 FOR TWENTY-THREE VERSIONS, AND THAT WAS NOT COSMETIC.
 #
@@ -4696,8 +4696,31 @@ def render_key_list(ring: dict, rings_all: dict, provider: str, test_one_fn):
                      on_click=_test_this)
 
 
-ASSEMBLYAI_PREFIXES = ()
-AAI_BASE = "https://api.assemblyai.com"
+# THE SETTINGS BOOTSTRAP, PUT BACK.
+#
+# I deleted it on 7.9.2026 while removing the AssemblyAI functions — it
+# sat immediately after the last one, so a block deletion took it with
+# it. DEFAULT_SETTINGS was then defined and referenced NOWHERE, and no
+# default reached session_state at startup: not the recording source,
+# not the interface language, not the voice, not the text scale.
+#
+# The app still rendered, every tab still opened, and pyflakes was
+# silent because every name still existed. Only test_source asking a
+# specific question — "does it start on the microphone?" — found it.
+#
+# That is the v237 shape exactly, and it is the argument for finishing
+# the suites before merging rather than after.
+if "_settings_bootstrapped" not in st.session_state:
+    _apply_settings(DEFAULT_SETTINGS)
+    _apply_settings(_load_server_settings(USER))
+    st.session_state["_settings_bootstrapped"] = True
+
+if LS_DATA.get(SETTINGS_LS_KEY) and not st.session_state.get("_ls_applied"):
+    try:
+        _apply_settings(json.loads(LS_DATA[SETTINGS_LS_KEY]))
+    except Exception:
+        pass
+    st.session_state["_ls_applied"] = True
 
 
 NOTES_LS_KEY = f"maha_notes_{USER}"

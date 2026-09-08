@@ -88,17 +88,18 @@ check("10 and AUTO is one of them, stored as 'auto'",
       'args=("auto",)' in APP)
 
 # --- AssemblyAI spells it its own way ----------------------------------
-AAI = open(os.path.join(HERE, "..", "ttt", "providers", "assemblyai.py"),
-           encoding="utf-8").read()
-check("11 AssemblyAI turns 'auto' into its own language_detection flag, "
-      "rather than the app knowing how each engine spells it",
-      'language == "auto"' in AAI and "language_detection" in AAI)
+# ASSEMBLYAI IS GONE, 7.9.2026. This suite read its source to check the
+# language codes it sent. Groq is the only transcriber now and its own
+# checks are below.
+AAI = ""
+# 11 WENT WITH ASSEMBLYAI. The rule it protected — the app never learns
+# how an engine spells a language, each provider does its own — still
+# holds and is checked against Groq above.
 
-print("\n{} passed, {} failed".format(passed, failed))
-
-if __name__ == "__main__":
-    sys.exit(1 if failed else 0)
-
-
-def test_language():
-    assert failed == 0, "%d of %d checks failed" % (failed, passed + failed)
+# THE SUMMARY LINE, PUT BACK. Removing check 11 took the tail of the
+# file with it, so the suite exited 0 and printed NO NUMBER — which the
+# sweep refuses, and rightly: a crash and a pass look equally unlike a
+# failure without one.
+print()
+print("%d passed, %d failed" % (passed, failed))
+sys.exit(1 if failed else 0)

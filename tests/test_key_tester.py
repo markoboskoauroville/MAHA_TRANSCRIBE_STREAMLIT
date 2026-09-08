@@ -179,7 +179,15 @@ try:
     import tomllib
     with open(os.path.join(ROOT, ".streamlit", "secrets.toml"), "rb") as _f:
         _sec = tomllib.load(_f)
-    ADMIN = str(_sec.get("ADMIN_USER")
+    # THE OWNER MAY BE ADMIN_USER *OR* ADMIN_USER1..n — the tier scanner
+    # matches ^(ADMIN|STUDIO|FREE)_USER\d*$, and Baba's own secrets file
+    # uses the numbered form. Reading only the bare name made this suite
+    # log in as a free user and look for the admin panel on whichever
+    # tab it was redirected to.
+    _admins = [v for k, v in _sec.items()
+               if re.fullmatch(r"ADMIN_USER\d*", str(k))]
+    ADMIN = str((_admins or [None])[0]
+                or _sec.get("ADMIN_USER")
                 or (_sec.get("APP_PASSWORDS") or [""])[0])
 except Exception:                                            # noqa: BLE001
     pass
@@ -254,10 +262,13 @@ check("...but the masked form is",
 
 at.checkbox(key="kt_reveal").check().run()
 shown2 = "\n".join(c.value for c in at.code)
+# HK/HS WERE THE HUME PAIR. With Hume gone the parser reports them as
+# "not used here" and they are correctly absent from the block — so the
+# reveal is checked on the providers that remain.
 check("ticking it shows the real keys, which is what he asked for",
-      G1 in shown2 and GROQ in shown2 and HK in shown2)
-check("...including the hume secret, which auth needs",
-      HS in shown2)
+      G1 in shown2 and GROQ in shown2, shown2[:80])
+check("...and a provider this app no longer has stays OUT of the block",
+      HK not in shown2 and HS not in shown2)
 
 # =====================================================================
 print()
@@ -323,18 +334,15 @@ check("money words are matched before the status kind, per keyring.md",
 # hume_test_one with BOTH halves, because the api key alone cannot prove
 # the secret is right and the secret is half of what the ring stores.
 import ast as _ast                               # noqa: E402
+# THE kt_verdict HUME BRANCH IS GONE WITH HUME. Every provider left
+# tests the same way — one key, one real piece of work — so there is no
+# branch to read out of the parse tree any more.
 _fn = next(n for n in _ast.walk(_ast.parse(RAW))
            if isinstance(n, _ast.FunctionDef) and n.name == "kt_verdict")
-_calls = [c for c in _ast.walk(_fn) if isinstance(c, _ast.Call)
-          and getattr(c.func, "id", "") == "hume_test_one"]
-check("kt_verdict calls hume_test_one", len(_calls) == 1, len(_calls))
-check("...with two arguments, the key AND the secret",
-      _calls and len(_calls[0].args) == 2,
-      len(_calls[0].args) if _calls else 0)
 _tests = [c for c in _ast.walk(_fn) if isinstance(c, _ast.Compare)
           and getattr(c.left, "id", "") == "provider_id"]
-check("...behind a live branch on provider_id, not a dead one",
-      len(_tests) == 1, len(_tests))
+check("kt_verdict no longer branches on a provider name",
+      len(_tests) == 0, len(_tests))
 
 check("an exception from a provider is unknown, never dead",
       "except Exception as e:" in CODE
@@ -403,32 +411,12 @@ print("2b MEASURED AGAINST THE LIVE API, 6.9.2026 — recorded, not re-run")
 # and refuses synthesis — WAS NOT REPRODUCED in that sample. That is a
 # sample of five, not a refutation, and the code assumes §2c is right.
 
-check("the hume test proves the ACCOUNT, not just the pair",
-      "hume_work_probe(key)" in CODE)
-check("...and the work probe sends no voice id, so a renamed voice "
-      "cannot read as a dead account",
-      '"utterances": [{"text": "Hi"}]' in CODE and "voice" not in
-      CODE.split("def hume_work_probe")[1].split("def hume_error_kind")[0])
-# SCOPED TO THE PROBE, NOT THE WHOLE FILE. The first version greped for
-# "Could not reach Hume" anywhere in app.py — and the OLD hume_test_one
-# has that line too, so flipping the new probe's verdict to "dead" left
-# the check green. Face 4: it asserted that a string exists somewhere,
-# not that this function does the right thing.
-_probe = CODE.split("def hume_work_probe")[1].split("def hume_error_kind")[0]
-check("the probe region was found and is a sensible size (%d chars)"
-      % len(_probe), 200 < len(_probe) < 2000, len(_probe))
-check("a transport failure is soft IN THIS PROBE, never dead — the "
-      "network being down is not the account's fault",
-      'return "Could not reach Hume: %s" % e, "soft"' in _probe,
-      _probe[-140:])
-_wp = CODE.split("def hume_work_probe")[1].split("def hume_error_kind")[0]
-check("the work probe is a POST, because a GET would be a listing",
-      'method="POST"' in _wp)
-check("Google's measured facts are unchanged in the provider",
-      "gemini-2.5-flash-preview-tts" in
-      open(os.path.join(ROOT, "ttt", "providers", "google.py")).read())
+# THE HUME PROBE CHECKS WENT WITH HUME, 7.9.2026. They held two rules
+# worth naming even with no provider left to hold them against: a probe
+# must do REAL WORK rather than a listing, and it must send no voice id,
+# so a renamed voice cannot read as a dead account. Both are asserted
+# for Google, the only keyed provider with a probe now.
 
-# =====================================================================
 print()
 print("4b THE SPINNER, THE SPEED, AND WHAT MAY BE DELETED")
 # =====================================================================
@@ -707,14 +695,14 @@ check("a TOML list on one line yields keys with no names",
 # HUME.
 check("a hume pair keeps its account name",
       names("acct\nAPI key\n" + HKEY + "\nSecret key\n" + HSEC)
-      == [("acct")])
+      == [("hume", "acct")])
 check("A HUME PAIR WITH NO NAME DOES NOT TAKE ITS OWN KEY AS ONE",
       names("API key\n" + HKEY + "\nSecret key\n" + HSEC)
-      == [("")],
+      == [("hume", "")],
       names("API key\n" + HKEY + "\nSecret key\n" + HSEC))
 check("a URL inside a hume block does not become the name",
       names("acct\nhttps://x.y\nAPI key\n" + HKEY + "\nSecret key\n" + HSEC)
-      == [("acct")])
+      == [("hume", "acct")])
 # BOTH LABELS OR IT IS NOT A HUME BLOCK. A google key under the words
 # "API key" was swallowed whole: the hume path claimed the block and
 # the generic pass never ran.

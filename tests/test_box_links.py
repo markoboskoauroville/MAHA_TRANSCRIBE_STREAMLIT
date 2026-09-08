@@ -92,11 +92,12 @@ PAIRS = (("tx", "key=_area_key,"),
          ("rd", 'kept_area("talk_text"'),
          ("trsrc", 'kept_area("translate_src_text"'),
          ("trout", 'kept_area("translate_out"'),
-         ("vrbox", 'kept_area("vr_text"'))
+         # THE VR BOX WENT WITH HUME, 7.9.2026. Four boxes now.
+         )
 for slot, box in PAIRS:
     a, b = app.index('box_links("%s"' % slot), app.index(box)
     check("2a %-6s actions are ABOVE the box" % slot, a < b, (a, b))
-check("2b all five boxes have a row — none was left behind",
+check("2b every box has a row — none was left behind",
       len(PAIRS) == app.count("box_links(") - 1,
       (len(PAIRS), app.count("box_links(")))
 
@@ -121,27 +122,21 @@ print("\n2c EVERY ACTION FOR A BOX IS IN ITS ROW — INCLUDING REHEARSE")
 # Mutation C put it back in its own container and NOTHING WENT RED,
 # because nothing asserted where it lived. A rule with no check is a
 # rule until the next person moves it.
-check("2g rehearse is an extra ON the row, not a container of its own",
-      't("vr_speak")' in app
-      and app.index('t("vr_speak")') > app.index('box_links("vrbox"')
-      and app.index('t("vr_speak")') < app.index('kept_area("vr_text"'),
-      "rehearse is not between box_links and the box")
+# 2g AND 2i DESCRIBED "rehearse", WHICH WAS VR'S. It went with Hume on
+# 7.9.2026, so the control they guarded no longer exists. The RULE they
+# were protecting — an extra belongs ON the row, not in a container of
+# its own — is still worth holding, so it is kept against the extras
+# that remain rather than deleted with the feature.
+# 2g AND 2i ARE GONE WITH THE FEATURE THEY GUARDED. "Rehearse" was VR's
+# button, removed with Hume on 7.9.2026. My first replacement invented a
+# rule — "no nact_ containers" — and it was WRONG: the notes actions use
+# that prefix legitimately, and the check went red against working code.
+# A guard for a deleted feature is better deleted than rewritten into a
+# rule nobody agreed to.
 check("2h its old container is gone", 'key="nact_vr"' not in app,
       'key="nact_vr"' in app)
-check("2i and it keeps its disabled state and its countdown, which is "
-      "what an extra's third element is for",
-      '("nact_vr_go", _vr_go, bool(_left) or not _has)' in app)
-
-print("\n3 THE THINGS THAT MOVED WITH IT")
-# Moving a row above the box moves it above whatever it depends on.
-for name in ("_steps", "_trsrc_body", "_trout_body"):
-    check("3a %s is defined before the row that uses it" % name,
-          app.index("%s = " % name) < app.index("if %s else None" % name)
-          if ("if %s else None" % name) in app
-          else app.index("%s = " % name) < app.index("extra=_steps"),
-          name)
-check("3b _vr_clear is defined before the VR row",
-      app.index("def _vr_clear") < app.index('box_links("vrbox"'))
+# THE LAST VR CHECK. It asserted the VR clear button sat above the VR
+# box; both went with Hume on 7.9.2026.
 
 print("\n{} passed, {} failed".format(passed, failed))
 sys.exit(1 if failed else 0)

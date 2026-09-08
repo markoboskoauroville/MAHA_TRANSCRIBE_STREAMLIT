@@ -129,15 +129,19 @@ def fake(results):
 
 state, rows = EN.check(studio, fake({"google": (EN.OK, "")}))
 check("14 every part good -> ok", state == EN.OK, state)
-check("15 one row per provider", len(rows) == 3, rows)
+# ONE ROW PER PROVIDER, AND GOOGLE IS ONE PROVIDER DOING THREE JOBS —
+# so its engine has a single row, not three. The rule is unchanged; the
+# engine it is checked against is.
+check("15 one row per provider", len(rows) == len(studio.provider_ids),
+      (rows, studio.provider_ids))
 
 state, rows = EN.check(studio, fake({"google": (EN.FAIL, "no key")}))
 check("16 ONE failure fails the whole engine — the verdict is the worst "
       "part, not an average", state == EN.FAIL, state)
 check("17 and the failing part is named",
-      [r for r in rows if r["state"] == EN.FAIL][0]["provider"] == "speechify")
+      [r for r in rows if r["state"] == EN.FAIL][0]["provider"] == "google")
 check("18 with its reason kept",
-      [r for r in rows if r["state"] == EN.FAIL][0]["detail"] == "401")
+      [r for r in rows if r["state"] == EN.FAIL][0]["detail"] == "no key")
 
 state, rows = EN.check(free, fake({"groq": (EN.OK, ""),
                                    "edge": (EN.SKIP, "no key needed")}))
