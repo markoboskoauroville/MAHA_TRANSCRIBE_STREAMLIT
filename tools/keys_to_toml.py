@@ -90,10 +90,6 @@ BACKOFF = (2, 5, 10)
 NAMES = {
     "google": ("GOOGLE_API_KEYS", "list"),
     "groq": ("GROQ_API_KEYS", "list"),
-    "assemblyai": ("ASSEMBLYAI_API_KEYS", "list"),
-    "speechify": ("SPEECHIFY_API_KEYS", "list"),
-    "anthropic": ("ANTHROPIC_API_KEY", "single"),
-    "hume": ("HUME_ACCOUNTS", "pairs"),
 }
 
 NOTES = {

@@ -114,31 +114,25 @@ ring, tried, res, err = walk(["dead", "dead", "dead"])
 check("2i all dead is an error, not a crash", res is None and err)
 check("2j and every key was tried exactly once", tried == [0, 1, 2], tried)
 
+# THREE PROVIDERS NOW. The checks for Speechify, AssemblyAI, Anthropic
+# and Hume went with them on 7.9.2026 — the RULE they shared, that every
+# provider defers to the one classifier rather than inventing its own,
+# is still asserted for the three that are left.
 print("\n3 EVERY PROVIDER IS WIRED TO IT")
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
            encoding="utf-8").read()
 code = "\n".join(l for l in app.splitlines() if not l.lstrip().startswith("#"))
+# THE GROQ PROVIDER'S OWN SOURCE. Its definition was deleted along with
+# the removed providers' checks by a regex that took one line too many.
+gcode = open(os.path.join(os.path.dirname(__file__), "..", "ttt",
+                          "providers", "groq.py"), encoding="utf-8").read()
 print("       searched app.py CODE for each classifier and its call site")
-check("3a Speechify defers to the shared rule",
-      "def sp_error_kind" in code and "classify_standard(status, body)" in code)
-check("3b AssemblyAI does too", "def aai_error_kind" in code)
-check("3c Speechify PASSES the body to the verdict, not just the message",
-      "sp_error_kind(e.code, body)" in code)
-check("3d AssemblyAI passes it too", "aai_error_kind(e.code, resp)" in code)
-check("3e Hume reads the body as well", "hume_error_kind(e.code, raw)" in code)
-check("3f and Hume's credit case defers to the shared rule rather than "
-      "keeping a private copy",
-      "PROVIDERS.base.classify_standard(status, body)" in code)
-
-groq = open(os.path.join(os.path.dirname(__file__), "..", "ttt",
-                         "providers", "groq.py"), encoding="utf-8").read()
-gcode = "\n".join(l for l in groq.splitlines() if not l.lstrip().startswith("#"))
 check("3g Groq hands the message through as the body",
       "classify_standard(status, text)" in gcode)
 check("3h and catches 1010 in the text path too, for an exception with "
       "no status", '"1010" in text' in gcode)
 check("3i Groq sends a User-Agent, which avoids the trap at source",
-      "User-Agent" in groq)
+      "User-Agent" in gcode)
 
 print("\n3b GROQ'S EXCEPTIONS")
 class E(Exception):

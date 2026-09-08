@@ -27,18 +27,23 @@ def check(name, cond, detail=""):
 print("ENGINES — mechanism alone\n")
 
 free = EN.get("free")
-studio = EN.get("studio")
+studio = EN.get("google")   # the OTHER engine; named studio in this suite since v100
 
 # --- the presets --------------------------------------------------
 # THREE SINCE GOOGLE, and the count was never the claim. What matters is
 # that the two originals are still there, still first, and still say what
 # they said — DEFAULT falls back to the first, and a preset that quietly
 # reordered would move somebody's tier without anybody pressing anything.
-check("1 the two original engines are still present and first",
-      [e.id for e in EN.ENGINES][:2] == ["normal", "studio"],
+# TWO ENGINES SINCE 7.9.2026. Baba: "Just Edge, Groq and Google.
+# That's all." The studio engine went with Speechify, AssemblyAI,
+# Anthropic and Hume — this asserted it was still first, and was right
+# to go red.
+check("1 two engines: the free pair, then Google",
+      [e.id for e in EN.ENGINES] == ["normal", "google"],
       [e.id for e in EN.ENGINES])
-check("1b and google is added after them, never in front",
-      [e.id for e in EN.ENGINES][2:] == ["google"],
+check("1b the free pair is first, so the default cannot drift onto a "
+      "metered engine",
+      [e.id for e in EN.ENGINES][0] == "normal",
       [e.id for e in EN.ENGINES])
 check("1c the default is still the free tier — adding an engine must "
       "not move anybody", EN.DEFAULT == "normal", EN.DEFAULT)
@@ -67,9 +72,9 @@ check("1f so it is ONE VENDOR across the board, which is the pair Baba "
 check("1g it is a free-tier engine", _g.tier == "free", _g.tier)
 check("2 Edge/Groq is the free one",
       free.routes == {"stt": "groq", "tts": "edge", "llm": "groq"}, free.routes)
-check("3 Speechify/AssemblyAI/Claude is the other",
-      studio.routes == {"stt": "assemblyai", "tts": "speechify",
-                        "llm": "anthropic"}, studio.routes)
+check("3 Google is the other",
+      studio.routes == {"stt": "google", "tts": "google",
+                        "llm": "google"}, studio.routes)
 
 # EVERY TASK IN routing.TASKS MUST BE COVERED, or choosing an engine
 # would leave one job patched to whatever it was before — a silent
@@ -81,8 +86,8 @@ for eng in EN.ENGINES:
 # --- the settings it writes ---------------------------------------
 rs = EN.route_settings(studio)
 check("5 it writes the SAME route_* keys the patch bay uses",
-      rs == {"route_stt": "assemblyai", "route_tts": "speechify",
-             "route_llm": "anthropic"}, rs)
+      rs == {"route_stt": "google", "route_tts": "google",
+             "route_llm": "google"}, rs)
 for t_ in RO.TASKS:
     check("6 route_%s matches routing's own setting_key name" % t_.id,
           t_.setting_key in rs, t_.setting_key)
@@ -111,7 +116,7 @@ check("10b and the defaults it falls back to are routing's own",
 check("11 free lists each provider once, in task order",
       free.provider_ids == ["groq", "edge"], free.provider_ids)
 check("12 studio lists all three",
-      studio.provider_ids == ["assemblyai", "speechify", "anthropic"],
+      studio.provider_ids == ["google"],
       studio.provider_ids)
 
 check("13 tasks_for says WHAT stops working, not just who refused",
@@ -122,21 +127,21 @@ def fake(results):
     return lambda pid: results.get(pid, (EN.FAIL, "not asked"))
 
 
-state, rows = EN.check(studio, fake({"assemblyai": (EN.OK, ""),
-                                     "speechify": (EN.OK, ""),
-                                     "anthropic": (EN.OK, "")}))
-check("14 all three good -> ok", state == EN.OK, state)
-check("15 one row per provider", len(rows) == 3, rows)
+state, rows = EN.check(studio, fake({"google": (EN.OK, "")}))
+check("14 every part good -> ok", state == EN.OK, state)
+# ONE ROW PER PROVIDER, AND GOOGLE IS ONE PROVIDER DOING THREE JOBS —
+# so its engine has a single row, not three. The rule is unchanged; the
+# engine it is checked against is.
+check("15 one row per provider", len(rows) == len(studio.provider_ids),
+      (rows, studio.provider_ids))
 
-state, rows = EN.check(studio, fake({"assemblyai": (EN.OK, ""),
-                                     "speechify": (EN.FAIL, "401"),
-                                     "anthropic": (EN.OK, "")}))
+state, rows = EN.check(studio, fake({"google": (EN.FAIL, "no key")}))
 check("16 ONE failure fails the whole engine — the verdict is the worst "
       "part, not an average", state == EN.FAIL, state)
 check("17 and the failing part is named",
-      [r for r in rows if r["state"] == EN.FAIL][0]["provider"] == "speechify")
+      [r for r in rows if r["state"] == EN.FAIL][0]["provider"] == "google")
 check("18 with its reason kept",
-      [r for r in rows if r["state"] == EN.FAIL][0]["detail"] == "401")
+      [r for r in rows if r["state"] == EN.FAIL][0]["detail"] == "no key")
 
 state, rows = EN.check(free, fake({"groq": (EN.OK, ""),
                                    "edge": (EN.SKIP, "no key needed")}))

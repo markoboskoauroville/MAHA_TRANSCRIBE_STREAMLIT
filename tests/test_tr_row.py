@@ -29,7 +29,7 @@ def check(n, c, d=""):
 
 app = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
            encoding="utf-8").read()
-tr = app[app.index('elif active == "translate":'):app.index('elif active == "vr":')]
+tr = app[app.index('elif active == "translate":'):app.index('elif active == "looks":')]
 
 print("1 READ IS IN THE ROW, NOT UNDER IT")
 print("       searched the translate tab, %d chars" % len(tr))

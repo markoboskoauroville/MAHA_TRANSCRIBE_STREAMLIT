@@ -31,7 +31,10 @@ def app(tier):
     # crosspoint reads "mixed" instead of claiming an engine that is no
     # longer running. Setting _assigned_engine alone proves nothing.
     from ttt import engines as EN
-    eng = EN.get(tier)
+    # A TIER IS NOT AN ENGINE. It was, while "studio" was both a tier
+    # and an engine name; the studio ENGINE went on 7.9.2026 and the
+    # tier stayed. So a tier with no engine of its own gets the default.
+    eng = EN.get(tier) or EN.get(EN.DEFAULT)
     for task, provider in eng.routes.items():
         at.session_state["route_%s" % task] = provider
     return at

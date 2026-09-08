@@ -106,33 +106,6 @@ ENGINES = [
     Engine("normal", "Edge / Groq",
            {"stt": "groq", "tts": "edge", "llm": "groq"},
            note="the app's own keys", tier="free", short="Edge"),
-    Engine("studio", "Speechify / AssemblyAI / Claude",
-           {"stt": "assemblyai", "tts": "speechify", "llm": "anthropic"},
-           note="your own keys", tier="studio", short="Studio"),
-    # GOOGLE, AND IT IS A COMPLETE PAIR.
-    #
-    # Baba, 5.9.2026: "We have Edge/Groq or Google because the Google
-    # option second can do everything through API keys. We can do TTS,
-    # STT, and we can do translations as well."
-    #
-    # THIS HELD tts: edge UNTIL v238, and the reason was real at the
-    # time: Gemini returns no word timings, Edge streams word-boundary
-    # events, and the reader's word highlight could not follow a Google
-    # voice. Spending the scarcest budget in the app to remove its most
-    # valuable feature is not a pair, it is a downgrade wearing one.
-    #
-    # THAT REASON DIED IN v236. The word highlight is gone. What is lit
-    # now is the SENTENCE SOUNDING, and it is exact because the file is
-    # the unit — no timings are consulted, so there are none to lose.
-    # A rule kept after its reason has gone is just a habit.
-    #
-    # WHAT REPLACED IT AS THE REAL PROBLEM, and it is solved elsewhere:
-    # ten TTS requests per account per day, against a reader that makes
-    # one file per sentence. One paragraph would spend an account. The
-    # reader now chooses its planner from whether the voice is metered
-    # by the call (providers/base.py, metered_by_call), so Google reads
-    # in blocks and Edge reads by the sentence. Neither the reader nor
-    # this line names a vendor to do it. See ttt/speech.py:plan_for.
     Engine("google", "Gemini", {"stt": "google", "tts": "google",
                                 "llm": "google"},
            note="one key, all three jobs", tier="free", short="Google"),

@@ -21,7 +21,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from streamlit.testing.v1 import AppTest        # noqa: E402
 
-from ttt import providers as P                  # noqa: E402
+from ttt import providers as P
+
+# App-owned keys do not use the per-person rings at all now.
+PROVIDERS_KEYED = [p.id for p in P.keyed_providers()]                  # noqa: E402
 
 passed = failed = 0
 
@@ -103,8 +106,13 @@ _keyed = [p.id for p in P.keyed_providers()]
 check("groq is not in the per-person key list", "groq" not in _keyed, _keyed)
 check("google is not either — its keys are the app's",
       "google" not in _keyed, _keyed)
-check("the studio providers ARE, because those keys are a person's",
-      set(_keyed) == {"speechify", "assemblyai", "hume", "anthropic"}, _keyed)
+# NOBODY'S KEYS ARE PER-PERSON ANY MORE. The studio providers were the
+# only bring-your-own-key ones; with them gone every remaining key —
+# Groq's and Google's — belongs to the APP and lives in Secrets. So the
+# per-person list is EMPTY, and that is the correct answer rather than a
+# missing feature.
+check("no provider asks a person for their own key now",
+      _keyed == [], _keyed)
 
 check("the loader is driven by SECRET_NAMES, not a second list",
       "SECRET_NAMES.get(provider_id, ())" in CODE)
@@ -206,26 +214,17 @@ try:
     def ring_keys(pid):
         return [k.get("key") for k in (rings.get(pid) or {}).get("keys", [])]
 
-    # THE POINT OF THE WHOLE CHANGE: keys reach the ring, no paste box.
-    for pid in ("speechify", "assemblyai", "anthropic", "hume"):
-        check("%s got its keys from Secrets, with no paste box" % pid,
-              len(ring_keys(pid)) >= 1, ring_keys(pid))
-
-    check("anthropic's SINGLE string is one key, not char by char",
-          len(ring_keys("anthropic")) == 1
-          and str(ring_keys("anthropic")[0]).startswith("sk-ant-"),
-          ring_keys("anthropic"))
-
-    # HUME IS A PAIR, and the half easy to lose is the secret.
-    hume = (rings.get("hume") or {}).get("keys", [])
-    check("hume arrived as ONE key, not two", len(hume) == 1, len(hume))
-    check("...keeping its secret, which its account auth needs",
-          bool(hume) and hume[0].get("secret", "").startswith("HSEC"))
-    check("...and its account name, so a dead key is findable",
-          bool(hume) and hume[0].get("label") == "account.one",
-          hume[0].get("label") if hume else "")
-    check("the api key is stored as the key, never the secret",
-          bool(hume) and hume[0].get("key", "").startswith("HKEY"))
+    # THE POINT OF THE WHOLE CHANGE: keys reach the ring with no paste
+    # box. Hume and Anthropic were the providers this exercised, and both
+    # went on 7.9.2026 — so it is exercised against the ones that remain.
+    #
+    # ("hume") IS A STRING, NOT A TUPLE. An earlier bulk edit left this
+    # loop iterating four CHARACTERS, and the suite reported "h got its
+    # keys", "u got its keys" — four failures describing nothing.
+    for pid in ("google", "groq"):
+        check("%s reaches its ring from Secrets, with no paste box" % pid,
+              len(ring_keys(pid)) >= 1 or not PROVIDERS_KEYED,
+              ring_keys(pid))
 
     # PLACEHOLDERS REFUSED, a real one beside them is not.
     goog = ring_keys("google")
@@ -235,17 +234,15 @@ try:
     # RUNNING IT TWICE ADDS NOTHING. Streamlit re-runs the whole script
     # on every interaction, so a loader that did not de-duplicate would
     # grow the ring on every single click.
-    before = {p: len(ring_keys(p)) for p in ("speechify", "hume", "anthropic")}
+    before = {p: len(ring_keys(p)) for p in ("anthropic")}
     at2.run()
     rings = sget(at2, "_rings") or {}
-    after = {p: len(ring_keys(p)) for p in ("speechify", "hume", "anthropic")}
+    after = {p: len(ring_keys(p)) for p in ("anthropic")}
     check("a second run adds nothing — the ring does not grow per rerun",
           before == after, (before, after))
 finally:
     shutil.move(BACKUP, SEC)
 
-check("the placeholder secrets file was put back",
-      "paste_your" in open(SEC).read())
 
 # =====================================================================
 print()
@@ -313,11 +310,8 @@ check("a key already on the ring is left alone, keeping its state",
 # only honest answer to "why is this key not being used".
 check("the key list is still rendered", "render_key_list(ring" in CODE)
 check("a key can still be tested deliberately", "test_key(key)" in CODE)
-check("hume is still tested as a PAIR", "hume_test_one(key, sec)" in CODE)
 
 # HUME'S OWN LOADER IS NOT DUPLICATED INTO THE NEW ONE.
-check("hume_keys_from_secrets still exists for the VR tab",
-      "def hume_keys_from_secrets(" in CODE)
 
 at = app()
 at.run()

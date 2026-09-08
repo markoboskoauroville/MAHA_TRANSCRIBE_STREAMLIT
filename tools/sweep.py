@@ -130,6 +130,32 @@ MISSING = {
     "test_users.py": "logging in against the spreadsheet's user list, "
                      "removed in v237. The door reads Secrets now and "
                      "test_door covers it",
+    # RETIRED WITH THE STUDIO ENGINE, 7.9.2026. Baba: "Just Edge, Groq
+    # and Google. That's all." These suites test providers the app no
+    # longer has — they are not failing, they are describing something
+    # that is gone. Named here rather than deleted, so the sweep still
+    # counts them and somebody can see WHY the number changed.
+    "test_aai_sync.py": "AssemblyAI's sync and async models, removed "
+                        "with the studio engine on 7.9.2026",
+    "test_anthropic_call.py": "the Claude text provider, removed with "
+                              "the studio engine on 7.9.2026",
+    "test_hume_limits.py": "Hume's per-account limits, removed with the "
+                           "VR tab on 7.9.2026",
+    "test_hume_ring.py": "Hume's key ring and its pairs, removed with "
+                         "the VR tab on 7.9.2026",
+    "test_vr.py": "the VR tab, which was Hume's whole reason to exist",
+    "test_vr_keep.py": "the VR tab's keep-and-stitch panel",
+    "test_sp_voices.py": "Speechify's voice rows, removed 7.9.2026",
+    "test_vr_filter.py": "the VR tab's voice filters",
+    "test_vr_panels.py": "the VR tab's panels",
+    "test_vr_tags.py": "the VR tab's emotion tags",
+    "test_normalise.py": "how VR normalised a script before speaking it",
+    "test_stitch_share.py": "that VR and R shared one stitcher — there is "
+                            "only R now",
+    "test_teleprompter.py": "the VR teleprompter",
+    "test_vr_tags_panel.py": "the VR tags panel",
+    "test_double_play.py": "the VR deck needing two presses",
+    "test_pill_contrast.py": "the VR panel's pill contrast",
     "test_accounts.py": "the accounts screen — log_out_btn and the "
                         "password section. Ask before deleting: this may "
                         "be wanted for studio users too",

@@ -105,7 +105,7 @@ if _es:
     _es[0].click().run()
 check("7 choosing studio patches every route",
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm"))
-      == ("assemblyai", "speechify", "anthropic"),
+      == ("anthropic"),
       (sget(at2, "route_stt"), sget(at2, "route_tts"), sget(at2, "route_llm")))
 
 _en = [b for b in at2.get("button") if b.key == "eng_normal"]

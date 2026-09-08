@@ -161,8 +161,8 @@ def region(src, start, end, label, least=50, most=6000):
 
 seam = region(APP, "def talking_is_metered", "def llm_bridge",
               "the metering seam")
-for vendor in ("google", "gemini", "edge", "speechify", "hume",
-               "assemblyai", "anthropic", "groq"):
+for vendor in ("google", "gemini", "edge", "hume",
+               "groq"):
     check("the metering seam does not name %r" % vendor,
           vendor not in seam.lower(), seam.strip()[:80])
 
@@ -251,15 +251,17 @@ check("...and an Edge reading still gets one sentence per file",
 
 # STUDIO STAYS AN ENGINE, and its three providers stay providers.
 # Baba: "Hume can stay, AssemblyAI can stay, Speechify can stay."
-studio = EN.get("studio")
-check("studio is still an engine", studio is not None)
-check("studio is unchanged",
-      studio.routes == {"stt": "assemblyai", "tts": "speechify",
-                        "llm": "anthropic"}, studio.routes)
-for pid in ("speechify", "assemblyai", "hume"):
-    check("%s is still a provider in the registry" % pid, get(pid) is not None)
+# THE STUDIO ENGINE IS GONE, 7.9.2026. Baba: "Just Edge, Groq and
+# Google. That's all." What this asserted about studio now belongs
+# to the ONE remaining tier fact: every engine is free, so no tier
+# can be empty and the toggle always has somewhere to go.
+google_eng = EN.get("google")
+check("google is still an engine", google_eng is not None)
+check("google is unchanged",
+      google_eng.routes == {"stt": "google", "tts": "google",
+                            "llm": "google"}, google_eng.routes)
 check("none of the studio providers became an engine",
-      not any(e.id in ("speechify", "assemblyai", "hume") for e in EN.ENGINES))
+      not any(e.id in ("hume") for e in EN.ENGINES))
 
 # THE CHANGE ITSELF.
 g = EN.get("google")
@@ -271,7 +273,7 @@ check("it is one vendor now, so it is a PAIR in Baba's sense",
 check("and it is a Google reading that gets blocks",
       S.plan_for(SENT, get("google").metered_by_call) == S.plan_even(SENT))
 
-check("three engines, no more and no fewer", len(EN.ENGINES) == 3,
+check("two engines, no more and no fewer", len(EN.ENGINES) == 2,
       [e.id for e in EN.ENGINES])
 check("the default engine did not move", EN.DEFAULT == "normal")
 check("the old 'free' id still resolves — rows written before 22.8 say it",

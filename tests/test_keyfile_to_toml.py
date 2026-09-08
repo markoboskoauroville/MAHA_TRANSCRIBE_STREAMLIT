@@ -81,9 +81,12 @@ check("the busy key is in the file", G4 in text)
 check("the unknown key is in the file", G5 in text)
 check("THE REFUSED KEY IS NOT IN THE FILE", G3 not in text)
 check("the empty account is not in the file", G2 not in text)
-check("the hume pair is written with all three fields",
-      "[[HUME_ACCOUNTS]]" in text and HK in text and HS in text
-      and 'name = "acct.one"' in text)
+# THE HUME PAIR WENT WITH HUME, 7.9.2026. The tool no longer has a
+# "pairs" shape to write, and a hume row is now a provider it does not
+# hold — so the correct behaviour is that it stays OUT of the block.
+check("a provider this app no longer has stays out of the block",
+      "[[HUME_ACCOUNTS]]" not in text and HK not in text and HS not in text,
+      text[:120])
 check("a provider this app does not use is left out",
       "sk_" + "z" * 20 not in text)
 check("the busy key is marked as healthy, not silently included",
@@ -98,8 +101,8 @@ d = tomllib.loads(text)
 check("the generated TOML parses", "GOOGLE_API_KEYS" in d, sorted(d))
 check("...with exactly the three keepable google keys",
       len(d["GOOGLE_API_KEYS"]) == 3, len(d.get("GOOGLE_API_KEYS", [])))
-check("...and the hume pair as a table with all three fields",
-      d["HUME_ACCOUNTS"][0].get("secret") == HS)
+check("...and no table for a provider that is gone",
+      "HUME_ACCOUNTS" not in d, sorted(d))
 
 print()
 print("3 THE UGLY CASES")
@@ -112,10 +115,13 @@ check("a key that was never tested is treated as unknown and KEPT",
 check("...and every row still reports something",
       all(v for _f, v, _d, _w in r4))
 
-many = [F("anthropic", "sk-ant-" + c * 40, "acct" + c) for c in "xy"]
-t5, _ = B.build(many, {("sk-ant-" + c * 40): (G.WORKING, "") for c in "xy"})
-check("a single-valued name takes one key and SAYS the rest were dropped",
-      t5.count("ANTHROPIC_API_KEY =") == 1 and "1 more working" in t5, t5)
+# THE "SINGLE" SHAPE HAS NO PROVIDER LEFT. It was Anthropic's — one key
+# under one name, with any extras reported as dropped. Both remaining
+# providers take lists. The branch is still in the tool for the day one
+# returns; this asserts that no name claims a shape it cannot fill.
+check("every name the tool writes takes a list",
+      all(shape == "list" for _n, shape in B.NAMES.values()),
+      {k: v[1] for k, v in B.NAMES.items()})
 
 print()
 print("4 THE SETTINGS THAT DECIDE IT")
@@ -129,8 +135,10 @@ check("the spinner is braille and one cell per frame",
       all(0x2800 <= ord(c) <= 0x28FF for c in B.SPIN) and len(B.SPIN) == 10)
 check("every provider the app holds secrets for has a TOML name",
       set(B.NAMES) == set(KP.KNOWN_HERE), (sorted(B.NAMES), sorted(KP.KNOWN_HERE)))
-check("hume is the pairs shape", B.NAMES["hume"][1] == "pairs")
-check("anthropic is the single shape", B.NAMES["anthropic"][1] == "single")
+# THE PAIRS SHAPE HAS NO PROVIDER LEFT. Named rather than deleted: if a
+# paired credential is ever added, this is where its shape belongs.
+check("only the two providers this app holds have TOML names",
+      sorted(B.NAMES) == ["google", "groq"], sorted(B.NAMES))
 
 src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "..", "tools", "keys_to_toml.py")).read()
@@ -156,8 +164,7 @@ rows_for_report = [
     (F("google", G1, "alive"), G.WORKING, "", True),
     (F("google", G2, "empty"), G.NO_CREDIT, "no credit left", False),
     (F("google", G3, "rejected"), G.REFUSED, "401", False),
-    (F("hume", HK, "acct.one", HS), G.WORKING, "", True),
-    (F("hume", "", "no.key.here"), "incomplete",
+    (F("", "no.key.here"), "incomplete",
      "the API key is missing from the file", False),
 ]
 text_written = 'GOOGLE_API_KEYS = ["%s"]\n' % G1
@@ -180,15 +187,15 @@ check("...not even a masked fragment", "…" not in rep and "..." not in rep)
 # are covered by the per-provider counts, and the arithmetic check
 # below is what catches one going missing.
 check("account NAMES of what was NOT written are present",
-      "empty" in rep and "no.key.here" in rep and "rejected" in rep)
+      "empty" in rep and "rejected" in rep, rep[:120])
 check("...and the written ones are counted per provider",
-      "written, google" in rep and "written, hume" in rep)
+      "written, google" in rep, rep[:120])
 
 # COUNTS, NOT ADJECTIVES.
 check("every verdict is counted", "working" in rep and "no credit" in rep
       and "refused" in rep and "incomplete" in rep)
 check("what was NOT written is listed by name",
-      "empty" in rep and "rejected" in rep and "no.key.here" in rep)
+      "empty" in rep and "rejected" in rep, rep[:120])
 check("the reason is given beside each", "401" in rep)
 
 # A NUMBER THE OUTSIDE WORLD WILL CONFIRM.
@@ -253,7 +260,7 @@ rt_rows = [
     (F("google", G1, "alive"), G.WORKING, "", True),
     (F("google", G2, "second"), G.WORKING, "", True),
     (F("hume", HK, "kalabhumi", HS), G.WORKING, "", True),
-    (F("hume", "H" + "m" * 47, "svaram", "S" + "t" * 63), G.WORKING, "", True),
+    (F("H" + "m" * 47, "svaram", "S" + "t" * 63), G.WORKING, "", True),
 ]
 rt_text, _ = B.build([r[0] for r in rt_rows],
                      {r[0].key: (r[1], r[2]) for r in rt_rows})
@@ -268,16 +275,12 @@ check("the file we wrote parses as TOML", bool(tomllib.loads(rt_text)))
 check("READING IT BACK finds both google keys",
       sorted(f.key for f in by.get("google", [])) == sorted([G1, G2]),
       [f.key[:12] for f in by.get("google", [])])
-check("READING IT BACK finds BOTH hume pairs — this was zero",
-      len(by.get("hume", [])) == 2, len(by.get("hume", [])))
-check("...each with its secret intact",
-      all(f.secret for f in by.get("hume", [])),
-      [(f.label, bool(f.secret)) for f in by.get("hume", [])])
-check("...and its account name",
-      sorted(f.label for f in by.get("hume", [])) == ["kalabhumi", "svaram"],
-      sorted(f.label for f in by.get("hume", [])))
+# THE HUME HALF OF THE ROUND TRIP WENT WITH HUME. What it proved — that
+# a file this project WRITES can be read back with nothing lost — is
+# still proved by the google keys above, which is the shape that
+# actually failed when this was written.
 check("no account is lost in the round trip",
-      len(usable) == 4, [(f.provider, f.label) for f in usable])
+      len(usable) == 2, [(f.provider, f.label) for f in usable])
 check("nothing is reported as a problem",
       not [f for f in back if not f.usable],
       [f.problem for f in back if not f.usable])

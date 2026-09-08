@@ -63,6 +63,8 @@ assume a shape.
 """
 
 import json
+import time
+import time
 import re
 
 # ---- the five words --------------------------------------------------
@@ -492,7 +494,17 @@ TTS_PER_DAY = 10
 # Four covers the measured pattern — two slow, one spent, two good —
 # with room to spare, and the timeout is generous again because a slow
 # key no longer blocks a fast one.
-RACE_WIDTH = 8
+# NARROWED FROM EIGHT. Discovery races several keys and the losers'
+# requests are ALREADY SENT — so a working account among them spends a
+# request it never got credit for. Now that discovery happens once and
+# not per sentence, four is enough to find a live key quickly and costs
+# half as much when it does.
+RACE_WIDTH = 4
+# HOW LONG TO WAIT BEFORE ONE MORE FULL PASS when every key refused.
+# Gemini allows three TTS requests per minute per key, so a burst of
+# sentences can spend the fast accounts and leave the ring looking dead
+# when it is merely busy.
+RETRY_PAUSE = 20
 # HOW LONG A WHOLE BATCH MAY TAKE BEFORE IT IS ABANDONED. A working key
 # answers in about two seconds; twelve leaves room for a slow-but-real
 # one without waiting out the hung ones.
@@ -648,7 +660,7 @@ class Google(Provider):
         self.ring = ring
         self.active_key = 0
 
-    def _rotate(self, attempt):
+    def _rotate(self, attempt, retrying=False):
         """Same contract as Groq._rotate: run `attempt(key)` down the ring
         until one works, and stop early on an error no key can fix."""
         if self.ring is not None:
@@ -730,6 +742,38 @@ class Google(Provider):
         # never which key to pick, it was waiting for the wrong one.
         from concurrent.futures import ThreadPoolExecutor, as_completed
         last = "no keys"
+
+        # THE KEY THAT WORKED LAST TIME, ALONE, FIRST.
+        #
+        # Baba, 8.9.2026: "If one key works, keep it. Don't rotate the
+        # keys until one works."
+        #
+        # HE IS RIGHT, AND THE REASON IS WORSE THAN GOOGLE BEING CLEVER.
+        # The race below fires RACE_WIDTH requests at once — eight
+        # different accounts for ONE sentence. Every one of those counts
+        # against that account's day. Five sentences spent forty
+        # requests; at roughly ten a day across eighteen accounts, the
+        # whole ring empties in about twenty sentences. That is why it
+        # died an hour after every top-up, and it was my doing.
+        #
+        # So the race is now DISCOVERY ONLY. Once a key answers it is
+        # remembered and used ALONE — one request per sentence, the same
+        # as any ordinary client — and the ring is only reopened when
+        # that key stops working.
+        if not retrying and 0 < self.active_key <= len(self.keys):
+            stuck = self.keys[self.active_key - 1]
+            if _fp(stuck) not in _SPENT:
+                result, err, kind = attempt(stuck)
+                if not err:
+                    return result, None
+                # IT STOPPED WORKING. Say why it is being dropped, then
+                # fall through to find another — this is the only path
+                # that reopens the ring.
+                last = err
+                if kind == "dead" and any(m in str(err).lower()
+                                          for m in MONEY_MARKS):
+                    _mark_spent(stuck)
+                self.active_key = 0
         for start in range(0, len(order), RACE_WIDTH):
             batch = order[start:start + RACE_WIDTH]
             if not batch:
@@ -785,6 +829,26 @@ class Google(Provider):
                         % BATCH_DEADLINE)
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
+        # EVERY KEY REFUSED — BUT THAT IS OFTEN A MINUTE, NOT A DAY.
+        #
+        # FOUND BY A STRESS TEST, 7.9.2026: five sentences generated
+        # back to back. Four succeeded in about six seconds each; the
+        # fifth failed with "all keys failed" — because Gemini allows
+        # THREE TTS REQUESTS PER MINUTE PER KEY, so the handful of fast
+        # accounts had just spent theirs on parts one to four.
+        #
+        # A reading of five sentences that produces four is worse than
+        # one that is slow: the fifth part never exists, so the DOWNLOAD
+        # cannot be stitched at all. One missing sentence loses the whole
+        # file.
+        #
+        # So: one more full pass after a short wait. Per-minute limits
+        # clear in well under a minute, and the alternative is a reading
+        # with a hole in it. Bounded at one retry — if the ring is
+        # genuinely empty, this must still fail rather than spin.
+        if not retrying:
+            time.sleep(RETRY_PAUSE)
+            return self._rotate(attempt, retrying=True)
         return None, "All Google keys failed. Last: %s" % last
 
     # ---- key testing -------------------------------------------------
@@ -890,7 +954,18 @@ class Google(Provider):
                 continue
             pcm = _audio_of(data)
             if pcm is None:
-                last = "Google answered without audio."
+                # A 200 WITH NO AUDIO IS NOT A MYSTERY — Google says why,
+                # and this used to throw the reason away.
+                #
+                # Seen live on 8.9.2026: "That voice would not read this:
+                # Google answered without audio." That sentence names the
+                # symptom and nothing else, so there is no next step. The
+                # cause is in finishReason (SAFETY, MAX_TOKENS,
+                # RECITATION), in promptFeedback.blockReason, or in a
+                # TEXT part where audio was asked for — which is Gemini
+                # answering the prompt as a question instead of speaking
+                # it.
+                last = _no_audio_reason(data)
                 continue
             return to_wav(pcm), pcm_seconds(pcm), None
         raise RuntimeError(last or "Google produced no audio.")
@@ -949,6 +1024,33 @@ class Google(Provider):
                 continue
             return _text_of(data).strip()
         raise RuntimeError(last or "Google could not answer that.")
+
+
+def _no_audio_reason(data) -> str:
+    """Why a 200 carried no audio, in words a person can act on."""
+    try:
+        cand = (data.get("candidates") or [{}])[0]
+    except Exception:                                        # noqa: BLE001
+        cand = {}
+    fin = str(cand.get("finishReason") or "")
+    block = ""
+    try:
+        block = str((data.get("promptFeedback") or {}).get("blockReason") or "")
+    except Exception:                                        # noqa: BLE001
+        pass
+    said = _text_of(data).strip()
+    if block:
+        return ("Google refused that text (%s). Try rewording it." % block)
+    if fin and fin.upper() not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+        return ("Google stopped before speaking (%s)." % fin
+                + (" It replied with words instead of audio."
+                   if said else ""))
+    if said:
+        # THE COMMONEST ONE, AND THE LEAST OBVIOUS. Ask Gemini to speak
+        # a line that reads like an instruction and it ANSWERS it.
+        return ("Google replied with text instead of audio: %.90s"
+                % said.replace("\n", " "))
+    return "Google answered with neither audio nor a reason."
 
 
 def _parts(data):
